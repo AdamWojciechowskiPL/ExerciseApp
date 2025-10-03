@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>L5–S1 Trening – tygodniowy plan</title>
+  <style>
+    /* =====================
+       Design System (CSS Variables)
+       ===================== */
+    :root{
+      --bg: #0b0f14;             /* tło */
+      --surface: #10161d;        /* karty */
+      --surface-2: #0e1319;
+      --text: #e6edf3;
+      --muted: #92a1b1;
+      --primary: #59d0ff;
+      --primary-2: #8ee3ff;
+      --accent: #6ee7b7; /* zielony sygnał */
+      --warn: #fde047;   /* żółty */
+      --danger: #fb6f84; /* czerwony */
+      --shadow: 0 8px 30px rgba(0,0,0,.35);
+      --radius-xl: 18px;
+      --radius-lg: 14px;
+      --radius-md: 12px;
+      --radius-sm: 10px;
+      --gap: 14px;
+      --card-pad: 16px;
+      --focus-ring: 0 0 0 2px rgba(89,208,255,.35), 0 0 0 6px rgba(89,208,255,.15);
+    }
+
+    *{ box-sizing: border-box; }
+    html,body{ height:100%; }
+    body{
+      margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Apple Color Emoji","Segoe UI Emoji";
+      background: radial-gradient(1200px 700px at 20% -10%, rgba(89,208,255,.12), transparent 60%),
+                  radial-gradient(900px 600px at 110% 20%, rgba(110,231,183,.10), transparent 60%),
+                  var(--bg);
+      color:var(--text);
+    }
+
+    a{ color:var(--primary-2); text-decoration: none; }
+    a:hover{ text-decoration: underline; }
+
+    .container{ max-width:1024px; margin:0 auto; padding:16px; }
+
+    /* Header */
+    header{
+      position: sticky; top:0; z-index:50; backdrop-filter: saturate(140%) blur(8px);
+      background: linear-gradient(180deg, rgba(13,18,24,.95) 0%, rgba(13,18,24,.75) 100%);
+      border-bottom: 1px solid rgba(255,255,255,.06);
+    }
+    .header-inner{ display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 16px; }
+    .brand{ display:flex; align-items:center; gap:12px; }
+    .logo{
+      width:36px; height:36px; border-radius: 10px;
+      background: conic-gradient(from 210deg, var(--primary), var(--primary-2), #a7f3d0, var(--primary));
+      box-shadow: inset 0 0 0 2px rgba(255,255,255,.12), var(--shadow);
+      display:grid; place-items:center;
+    }
+    .logo svg{ width:24px; height:24px; filter: drop-shadow(0 2px 6px rgba(0,0,0,.4)); }
+    .title{ font-weight:700; letter-spacing:.2px; }
+    .nav{ display:flex; gap:8px; flex-wrap:wrap; }
+    .tab-btn{
+      appearance:none; border:none; cursor:pointer; color:var(--text); background:transparent;
+      padding:10px 14px; border-radius:12px; transition: .2s ease; font-weight:600;
+    }
+    .tab-btn[aria-selected="true"], .tab-btn:hover{
+      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.10);
+    }
+
+    /* Safety banner */
+    .safety{
+      margin:10px auto 0; padding:12px 14px; border-radius: var(--radius-lg);
+      background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+      border:1px solid rgba(255,255,255,.08);
+      display:flex; align-items:flex-start; gap:12px; box-shadow: var(--shadow);
+    }
+    .safety .flag{ width:22px; height:22px; border-radius:8px; display:grid; place-items:center; flex:none;
+      background: linear-gradient(180deg, rgba(251,111,132,.25), rgba(251,111,132,.12));
+      box-shadow: inset 0 0 0 1px rgba(251,111,132,.35);
+    }
+    .switch{
+      display:flex; align-items:center; gap:10px; margin-left:auto;
+      background: rgba(255,255,255,.03); padding:6px; border-radius:999px; border:1px solid rgba(255,255,255,.08);
+    }
+    .switch input{ display:none; }
+    .knob{ position:relative; width:44px; height:26px; background:#1a2430; border-radius:999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
+    .knob::after{ content:""; position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:999px; background:linear-gradient(180deg,#fff,#dbeafe); transition:.2s; }
+    .switch input:checked + .knob{ background: linear-gradient(90deg, #0ea5e9, #22d3ee); }
+    .switch input:checked + .knob::after{ transform: translateX(18px); }
+
+    /* Cards & grids */
+    .grid{ display:grid; grid-template-columns: repeat(12, 1fr); gap: var(--gap); }
+    .card{
+      grid-column: span 12;
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+      border:1px solid rgba(255,255,255,.08); border-radius: var(--radius-xl);
+      padding: var(--card-pad); box-shadow: var(--shadow);
+    }
+    @media(min-width: 720px){ .col-6{ grid-column: span 6; } }
+
+    .section-title{ font-size: 14px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 4px 0 10px; }
+
+    .day-header{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+    .pill{ padding:6px 10px; border-radius:999px; background: rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10); color:var(--muted); font-size:12px; }
+    .btn{
+      appearance:none; border:none; cursor:pointer; font-weight:700; color:#0a1016; border-radius:14px; padding:12px 14px;
+      background: linear-gradient(90deg, var(--primary), var(--primary-2));
+      box-shadow: 0 10px 20px rgba(89,208,255,.18), inset 0 0 0 1px rgba(255,255,255,.35);
+    }
+    .btn:focus{ outline:none; box-shadow: var(--focus-ring); }
+    .btn.secondary{ color:var(--text); background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)); box-shadow: inset 0 0 0 1px rgba(255,255,255,.1); }
+    .btn.danger{ color:#1a0f12; background: linear-gradient(90deg, #ff9aa2, #ff5c74); box-shadow: 0 10px 20px rgba(251,111,132,.18), inset 0 0 0 1px rgba(255,255,255,.25); }
+
+    .list{ display:flex; flex-direction:column; gap:10px; }
+    .exercise{ display:flex; gap:12px; align-items:flex-start; padding:10px; border-radius:12px; background: rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); }
+    .exercise .dot{ width:10px; height:10px; border-radius:999px; background: linear-gradient(180deg, var(--primary-2), var(--primary)); margin-top:6px; }
+
+    .row{ display:flex; flex-wrap:wrap; gap:8px; color:var(--muted); font-size:14px; }
+    .row span{ background: rgba(255,255,255,.04); padding:6px 8px; border-radius:10px; border:1px solid rgba(255,255,255,.08); }
+
+    /* Training flow */
+    .flow-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
+    .flow-name{ font-size:18px; font-weight:800; }
+    .timer{
+      display:flex; align-items:center; gap:8px; padding:10px; border-radius:12px; background: rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .controls{ display:flex; gap:8px; flex-wrap:wrap; }
+    .chip{ padding:8px 10px; border-radius:12px; background: rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); color:var(--muted); }
+
+    /* Inputs */
+    .field{ display:flex; flex-direction:column; gap:6px; }
+    label{ font-size:12px; text-transform:uppercase; letter-spacing:.12em; color:var(--muted); }
+    input[type="range"]{ width:100%; }
+    textarea, input[type="text"]{
+      width:100%; padding:12px; border-radius:12px; color:var(--text);
+      background: rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.12);
+    }
+
+    .muted{ color: var(--muted); }
+    .ok{ color: var(--accent); }
+    .warn{ color: var(--warn); }
+    .danger{ color: var(--danger); }
+
+    footer{ text-align:center; color:var(--muted); font-size:12px; padding:24px 12px 60px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container header-inner">
+      <div class="brand">
+        <div class="logo" aria-hidden="true">
+          <!-- minimalistyczne logo kręgosłupa L5–S1 -->
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Logo L5–S1">
+            <path d="M6 6c2.4-2 9.6-2 12 0M6 12c2.4-2 9.6-2 12 0M6 18c2.4-2 9.6-2 12 0" stroke="#081318" stroke-width="3" stroke-linecap="round"/>
+            <circle cx="12" cy="6" r="1.5" fill="#0ea5e9"/>
+            <circle cx="12" cy="12" r="1.5" fill="#22d3ee"/>
+            <circle cx="12" cy="18" r="1.5" fill="#a7f3d0"/>
+          </svg>
+        </div>
+        <div>
+          <div class="title">L5–S1 Trening</div>
+          <div class="muted" style="font-size:12px">Plan tygodniowy • środkowe zakresy • bez ruchów balistycznych</div>
+        </div>
+      </div>
+      <nav class="nav" role="tablist" aria-label="Nawigacja">
+        <button class="tab-btn" data-tab="dni" aria-selected="true">Dni</button>
+        <button class="tab-btn" data-tab="trening">Trening</button>
+        <button class="tab-btn" data-tab="progresja">Progresja</button>
+        <button class="tab-btn" data-tab="flagisafety">Czerwone flagi</button>
+        <button class="tab-btn" data-tab="eksport">Eksport</button>
+      </nav>
+    </div>
+    <div class="container">
+      <div class="safety" role="note" aria-label="Zasady bezpieczeństwa">
+        <div class="flag">⚑</div>
+        <div style="line-height:1.45">
+          <strong>Zasady bezpieczeństwa:</strong> zakres środkowy, ruch wolny (2–3 s/faza). Jeśli ból miejscowy &gt;3/10 lub pojawia się promieniowanie – przerwij.
+          Roller tylko T‑spine/pośladki. <span class="muted">Mata do akupresury: 5–10 min po sesji – opcjonalnie.</span>
+        </div>
+        <label class="switch" title="Tryb zaostrzenia">
+          <span class="muted" style="padding:0 6px">Zaostrzenie</span>
+          <input id="flareToggle" type="checkbox" />
+          <div class="knob" aria-hidden="true"></div>
+        </label>
+      </div>
+    </div>
+  </header>
+
+  <main class="container" id="app" style="padding-top:14px"></main>
+
+  <footer>© L5–S1 Trening • dane lokalne (localStorage) • wersja single‑file</footer>
+
+  <script>
+    // =====================
+    // Dane aplikacji (nie modyfikuj treści planu)
+    // =====================
+    const PLAN = {
+      GlobalRules: {
+        language: "pl",
+        defaultRestSecondsBetweenSets: 30,
+        defaultRestSecondsBetweenExercises: 60,
+        tempoGuideline: "Powoli 2–3 s w każdej fazie; izometrie według opisu.",
+        lumbarRange: "Zakres środkowy; unikać skrajnej fleksji i przeprostu.",
+        notes: "Neutral kręgosłupa, kontrola miednicy i oddechu."
+      },
+      Days: [
+        { dayNumber:1, title:"Stabilizacja bazowa (McGill + anty-przeprost)", duration_estimate_min:26, duration_estimate_max:29,
+          warmup:[
+            { name:"Oddychanie przeponowe (leżenie)", sets:"1", reps_or_time:"2–3 min", tempo_or_iso:"spokojny oddech 4–6/min", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=UB3tSaiEbNY" },
+            { name:"Quadruped rock back", sets:"2", reps_or_time:"8–10", tempo_or_iso:"pauza 1–2 s w końcu ruchu", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=gNs0QgWiUto" }
+          ],
+          main:[
+            { name:"McGill curl-up", sets:"3", reps_or_time:"5–6", tempo_or_iso:"izometria 8–10 s", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=3nhAkkzh738" },
+            { name:"Bird-dog", sets:"3", reps_or_time:"6–8/str.", tempo_or_iso:"izometria 5–8 s", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=xo7Qpb_NTKE" },
+            { name:"Side plank (na kolanach)", sets:"2–3", reps_or_time:"10–20 s/str.", tempo_or_iso:"izometria", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=gMMgnm5_QIs" }
+          ],
+          cooldown:[
+            { name:"Hip flexor stretch (klęk półkolanowy)", sets:"2", reps_or_time:"30–45 s/str.", tempo_or_iso:"rozciąganie statyczne", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=Z-u4RDhWrhc" },
+            { name:"Hamstring stretch z taśmą (leżenie)", sets:"2", reps_or_time:"30–45 s/str.", tempo_or_iso:"rozciąganie statyczne", equipment:"Pasek/Mata", youtube_url:"https://www.youtube.com/watch?v=r7Of03DkVMA" }
+          ]
+        },
+        { dayNumber:2, title:"Anty-rotacja + anty-przeprost (statycznie)", duration_estimate_min:27, duration_estimate_max:30,
+          warmup:[
+            { name:"Cat–cow (mała amplituda)", sets:"1–2", reps_or_time:"6–8 cykli", tempo_or_iso:"płynnie", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=lmKhCTz0y8w" },
+            { name:"Foam rolling T-spine (nie lędźwie)", sets:"1", reps_or_time:"60–90 s", tempo_or_iso:"powoli", equipment:"Roller", youtube_url:"https://www.youtube.com/watch?v=PRAJ5HNhc6Q" }
+          ],
+          main:[
+            { name:"Dead bug (bazowy)", sets:"2–3", reps_or_time:"6–8/str.", tempo_or_iso:"pauza 2–3 s na wydechu", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=GbSC02oU3To" },
+            { name:"Pallof press (stanie)", sets:"3", reps_or_time:"6/str.", tempo_or_iso:"izometria 10 s przy wyprostowanych ramionach", equipment:"Taśma", youtube_url:"https://www.youtube.com/watch?v=n8ZZG9gElhs" },
+            { name:"Glute bridge – izometria", sets:"3", reps_or_time:"5 × 10–15 s", tempo_or_iso:"izometria w neutralu", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=PPNCe7nX3Fc" }
+          ],
+          cooldown:[
+            { name:"Piriformis/figure-4 (leżenie)", sets:"2", reps_or_time:"30–45 s/str.", tempo_or_iso:"rozciąganie statyczne", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=qgbpYL_NDZ0" },
+            { name:"Oddychanie przeponowe", sets:"1", reps_or_time:"2 min", tempo_or_iso:"spokojny oddech", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=UB3tSaiEbNY" }
+          ]
+        },
+        { dayNumber:3, title:"Boczna stabilizacja + biodro (kontrola)", duration_estimate_min:25, duration_estimate_max:28,
+          warmup:[
+            { name:"Quadruped rock back", sets:"2", reps_or_time:"8–10", tempo_or_iso:"pauza 1–2 s", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=gNs0QgWiUto" },
+            { name:"Open book (T-spine)", sets:"2", reps_or_time:"8/str.", tempo_or_iso:"kontrola zakresu", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=720_avYMUDY" }
+          ],
+          main:[
+            { name:"Side plank (kolana → stopy jeśli łatwo)", sets:"3", reps_or_time:"12–20 s/str.", tempo_or_iso:"izometria", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=gMMgnm5_QIs" },
+            { name:"Clamshell (opcjonalnie z minibandem)", sets:"2–3", reps_or_time:"10/str.", tempo_or_iso:"pauza 2 s w górze", equipment:"Mata/Taśma", youtube_url:"https://www.youtube.com/watch?v=QJ9Rmst88iE" },
+            { name:"Bird-dog – dłuższa izometria", sets:"2", reps_or_time:"5/str.", tempo_or_iso:"izometria 8–10 s", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=xo7Qpb_NTKE" }
+          ],
+          cooldown:[
+            { name:"Hip flexor stretch", sets:"2", reps_or_time:"30–45 s/str.", tempo_or_iso:"statycznie", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=Z-u4RDhWrhc" },
+            { name:"Hamstring stretch", sets:"2", reps_or_time:"30–45 s/str.", tempo_or_iso:"statycznie", equipment:"Pasek/Mata", youtube_url:"https://www.youtube.com/watch?v=r7Of03DkVMA" }
+          ]
+        },
+        { dayNumber:4, title:"Reset (mobilność + core w środkowym zakresie)", duration_estimate_min:24, duration_estimate_max:27,
+          warmup:[
+            { name:"Cat–cow (kontrola segmentarna)", sets:"1–2", reps_or_time:"6–8", tempo_or_iso:"płynnie", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=lmKhCTz0y8w" },
+            { name:"Foam roll T-spine", sets:"1", reps_or_time:"60–90 s", tempo_or_iso:"powoli", equipment:"Roller", youtube_url:"https://www.youtube.com/watch?v=PRAJ5HNhc6Q" }
+          ],
+          main:[
+            { name:"Dead bug (pauza na wydechu)", sets:"2", reps_or_time:"8/str.", tempo_or_iso:"pauza 3 s", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=GbSC02oU3To" },
+            { name:"McGill curl-up (krótsze serie)", sets:"2", reps_or_time:"5", tempo_or_iso:"izometria 8 s", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=3nhAkkzh738" }
+          ],
+          cooldown:[
+            { name:"Piriformis/figure-4", sets:"2", reps_or_time:"30–45 s/str.", tempo_or_iso:"statycznie", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=qgbpYL_NDZ0" },
+            { name:"Oddychanie przeponowe", sets:"1", reps_or_time:"2 min", tempo_or_iso:"spokojny oddech", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=UB3tSaiEbNY" }
+          ]
+        },
+        { dayNumber:5, title:"Anty-rotacja + stabilizacja miednicy", duration_estimate_min:26, duration_estimate_max:29,
+          warmup:[
+            { name:"Quadruped rock back", sets:"2", reps_or_time:"8–10", tempo_or_iso:"pauza 1–2 s", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=gNs0QgWiUto" },
+            { name:"Open book", sets:"2", reps_or_time:"8/str.", tempo_or_iso:"kontrola zakresu", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=720_avYMUDY" }
+          ],
+          main:[
+            { name:"Pallof press (½-klęk)", sets:"3", reps_or_time:"5/str.", tempo_or_iso:"izometria 10–12 s", equipment:"Taśma", youtube_url:"https://www.youtube.com/watch?v=n8ZZG9gElhs" },
+            { name:"Side plank (wg tolerancji: kolana/stopy krótko)", sets:"2–3", reps_or_time:"12–20 s/str.", tempo_or_iso:"izometria", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=gMMgnm5_QIs" },
+            { name:"Clamshell (z izometrią 2–3 s)", sets:"2", reps_or_time:"12/str.", tempo_or_iso:"pauza w końcu ruchu", equipment:"Mata/Taśma", youtube_url:"https://www.youtube.com/watch?v=QJ9Rmst88iE" }
+          ],
+          cooldown:[
+            { name:"Hip flexor stretch", sets:"2", reps_or_time:"30–45 s/str.", tempo_or_iso:"statycznie", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=Z-u4RDhWrhc" },
+            { name:"Hamstring stretch", sets:"2", reps_or_time:"30–45 s/str.", tempo_or_iso:"statycznie", equipment:"Pasek/Mata", youtube_url:"https://www.youtube.com/watch?v=r7Of03DkVMA" }
+          ]
+        },
+        { dayNumber:6, title:"Gluty + anty-przeprost (kontrola miednicy)", duration_estimate_min:25, duration_estimate_max:28,
+          warmup:[
+            { name:"Cat–cow", sets:"1", reps_or_time:"8", tempo_or_iso:"płynnie", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=lmKhCTz0y8w" },
+            { name:"Quadruped rock back", sets:"1–2", reps_or_time:"8", tempo_or_iso:"pauza 1–2 s", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=gNs0QgWiUto" }
+          ],
+          main:[
+            { name:"Glute bridge – izometria", sets:"3", reps_or_time:"5 × 10–15 s", tempo_or_iso:"izometria w neutralu", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=PPNCe7nX3Fc" },
+            { name:"Bird-dog", sets:"2", reps_or_time:"6/str.", tempo_or_iso:"izometria 8 s", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=xo7Qpb_NTKE" },
+            { name:"Dead bug", sets:"2", reps_or_time:"8/str.", tempo_or_iso:"pauza 2–3 s", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=GbSC02oU3To" }
+          ],
+          cooldown:[
+            { name:"Piriformis", sets:"2", reps_or_time:"30–45 s/str.", tempo_or_iso:"statycznie", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=qgbpYL_NDZ0" },
+            { name:"Open book", sets:"1", reps_or_time:"8/str.", tempo_or_iso:"kontrola zakresu", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=720_avYMUDY" }
+          ]
+        },
+        { dayNumber:7, title:"Delikatny miks + oddech", duration_estimate_min:24, duration_estimate_max:27,
+          warmup:[
+            { name:"Oddychanie przeponowe", sets:"1", reps_or_time:"2–3 min", tempo_or_iso:"spokojny oddech", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=UB3tSaiEbNY" },
+            { name:"Cat–cow (krótkie zakresy)", sets:"1", reps_or_time:"6–8", tempo_or_iso:"płynnie", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=lmKhCTz0y8w" }
+          ],
+          main:[
+            { name:"McGill curl-up", sets:"2", reps_or_time:"5", tempo_or_iso:"izometria 8–10 s", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=3nhAkkzh738" },
+            { name:"Pallof press (lekka taśma)", sets:"2", reps_or_time:"5/str.", tempo_or_iso:"izometria 8–10 s", equipment:"Taśma", youtube_url:"https://www.youtube.com/watch?v=n8ZZG9gElhs" },
+            { name:"Side plank (kolana)", sets:"2", reps_or_time:"12–15 s/str.", tempo_or_iso:"izometria", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=gMMgnm5_QIs" }
+          ],
+          cooldown:[
+            { name:"Hamstring stretch", sets:"2", reps_or_time:"30–45 s/str.", tempo_or_iso:"statycznie", equipment:"Pasek/Mata", youtube_url:"https://www.youtube.com/watch?v=r7Of03DkVMA" },
+            { name:"Hip flexor stretch", sets:"2", reps_or_time:"30–45 s/str.", tempo_or_iso:"statycznie", equipment:"Mata", youtube_url:"https://www.youtube.com/watch?v=Z-u4RDhWrhc" }
+          ]
+        }
+      ],
+      AcupressureNote: "Mata do akupresury opcjonalnie po treningu 5–10 min (komfort), nie zastępuje ćwiczeń."
+    };
+
+    const SAFETY_RULES = {
+      flare: "Zaostrzenie objawów: zredukuj objętość o 30–50%, izometrie do 5–8 s, pomiń Pallof/mosty danego dnia. Zostaw: oddech + rock back + open book (10–12 min).",
+      range: "Zakresy i tempo: zakres środkowy, powoli; jeśli ból miejscowy >3/10 lub promieniowanie — przerwij.",
+      load: "Obciążenia osiowe/ścinanie: unikaj głębokich kątów i dźwigni bez kontroli.",
+      roller: "Roller: tylko T-spine/pośladki; nie roluj lędźwi.",
+      redflags: "Czerwone flagi — przerwij i skonsultuj lekarza: narastające osłabienie, zaburzenia czucia w kroku/siodle, problemy ze zwieraczami (nietrzymanie/retencja), ból promieniujący z drętwieniem + osłabienie, gorączka/uraz/nowotwór, niezamierzona utrata masy.",
+      evidence: "Uwaga o dowodach: najlepsze wyniki daje konsekwencja i kontrola motoryczna; mata do akupresury — słabsze dowody, tylko dodatek."
+    };
+
+    const PROGRESSION = [
+      "Izometrie: co 1–2 tyg. +5 s w plankach, bird-dog i mostach (cele: plank boczny 20–30 s, bird-dog 10–15 s). Jeśli reakcja bólu >3/10 albo zaostrzenie >24 h — krok wstecz.",
+      "Objętość: z 2 do 3 serii w ćwiczeniach głównych po 2–3 tyg. bez zaostrzeń.",
+      "Pozycje ułatwione → pełne: side plank kolana → stopy (krótko); Pallof bliżej → dalej od zaczepu; bird-dog krótsza dźwignia → pełna.",
+      "Kontrola miednicy: w glute bridge dodaj taśmę nad kolana dopiero po 3×5×15 s stabilnie.",
+      "Kryteria przejścia: brak promieniowania, brak ‘łapania’ przy wstawaniu, stabilny neutral bez kompensacji."
+    ];
+
+    // =====================
+    // Stan i persystencja
+    // =====================
+    const STORAGE_KEY = "l5s1_trainer_state_v1";
+    const nowDate = () => new Date().toISOString().slice(0,10);
+
+    let state = {
+      selectedTab: "dni",
+      selectedDay: 1,
+      flare: false,
+      logs: {
+        // przykładowa struktura: "2025-10-03": { day:1, entries:[ {exercise:"Bird-dog", set:1, status:"done", pain:2, note:"..."} ], painDuring:2, painAfter:1, dayNote:"...", completed:false }
+      }
+    };
+
+    function load(){
+      try{ const raw = localStorage.getItem(STORAGE_KEY); if(raw) state = JSON.parse(raw); }catch(e){ console.warn("Brak stanu / błąd odczytu", e); }
+      // zapewnij pola domyślne
+      state.selectedTab ||= "dni"; state.selectedDay ||= 1; state.flare ||= false; state.logs ||= {};
+    }
+    function save(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){ console.error("Błąd zapisu", e); }
+    }
+
+    load();
+
+    // =====================
+    // Narzędzia UI
+    // =====================
+    function el(html){ const t=document.createElement('template'); t.innerHTML=html.trim(); return t.content.firstElementChild; }
+    function secondsToMMSS(s){ const m = Math.floor(s/60).toString().padStart(2,'0'); const ss=(s%60).toString().padStart(2,'0'); return `${m}:${ss}`; }
+    function beep(){
+      try{ const ctx=new (window.AudioContext||window.webkitAudioContext)(); const o=ctx.createOscillator(); const g=ctx.createGain();
+        o.type='sine'; o.frequency.value=880; o.connect(g); g.connect(ctx.destination); g.gain.setValueAtTime(0.0001, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime+0.01); o.start(); setTimeout(()=>{ g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+0.2); o.stop(ctx.currentTime+0.25); }, 220);
+      }catch(_){}
+      if(navigator.vibrate) navigator.vibrate(120);
+    }
+
+    // =====================
+    // Redukcja w trybie zaostrzenia
+    // =====================
+    function isSkippedInFlare(exName){
+      const n = exName.toLowerCase();
+      return n.includes('pallof') || n.includes('glute bridge');
+    }
+    function adjustForFlare(ex){
+      if(!state.flare) return {...ex};
+      let r = {...ex};
+      // redukcja objętości ~40% i izometrii do 5–8 s
+      // Przykład: sets: "3" -> "2" / "2–3" -> "1–2"; izometria "10–12 s" -> "6–8 s"
+      const sets = (ex.sets||"").trim();
+      if(sets.includes('–')){
+        const [a,b]=sets.split('–').map(x=>parseInt(x)); if(!isNaN(a)&&!isNaN(b)){ r.sets = `${Math.max(1, Math.round(a*0.6))}–${Math.max(Math.round(b*0.6),1)}`; }
+      } else {
+        const v=parseInt(sets); if(!isNaN(v)) r.sets = String(Math.max(1, Math.round(v*0.6)));
+      }
+      const t=(ex.tempo_or_iso||"").toLowerCase();
+      if(t.includes('izometria')){ r.tempo_or_iso = 'izometria 6–8 s'; }
+      if(isSkippedInFlare(ex.name)) r._skip=true;
+      return r;
+    }
+
+    // =====================
+    // Renderery
+    // =====================
+    const app = document.getElementById('app');
+
+    function render(){
+      app.innerHTML = '';
+      // tabs aria
+      document.querySelectorAll('.tab-btn').forEach(b=> b.setAttribute('aria-selected', String(b.dataset.tab===state.selectedTab)) );
+
+      if(state.selectedTab==='dni') renderDays();
+      else if(state.selectedTab==='trening') renderTraining();
+      else if(state.selectedTab==='progresja') renderProgression();
+      else if(state.selectedTab==='flagisafety') renderFlags();
+      else if(state.selectedTab==='eksport') renderExport();
+    }
+
+    function renderDays(){
+      const wrap = el(`<div class="grid"></div>`);
+      PLAN.Days.forEach(day=>{
+        const dKey = `day-${day.dayNumber}`;
+        const complete = Object.values(state.logs).some(x=> x.day===day.dayNumber && x.completed );
+        const card = el(`<section class="card col-6" aria-labelledby="${dKey}">
+          <div class="day-header">
+            <div>
+              <h2 id="${dKey}" style="margin:0 0 6px">Dzień ${day.dayNumber} — ${day.title}</h2>
+              <div class="row">
+                <span>Szacowany czas: ${day.duration_estimate_min}–${day.duration_estimate_max} min</span>
+                <span class="${complete?'ok':'muted'}">Status: ${complete?'Ukończono':'Nieukończono'}</span>
+              </div>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center">
+              <button class="btn" data-start="${day.dayNumber}">Start treningu dnia</button>
+              <span class="pill">Dzień ${day.dayNumber}</span>
+            </div>
+          </div>
+          <div style="margin-top:10px" class="grid">
+            ${['warmup','main','cooldown'].map(section=>{
+              const items = day[section];
+              return `<div class="card col-6" style="padding:12px">
+                <div class="section-title">${section==='warmup'?'Rozgrzewka':section==='main'?'Część główna':'Schłodzenie'}</div>
+                <div class="list">
+                  ${items.map(ex=>{
+                    const adj = adjustForFlare(ex);
+                    if(adj._skip) return `<div class="exercise" title="Pominięte w trybie Zaostrzenie"><div class="dot"></div><div><strong>${ex.name}</strong><div class="muted">(pominięte — Zaostrzenie)</div></div></div>`;
+                    return `<div class="exercise">
+                      <div class="dot" aria-hidden="true"></div>
+                      <div>
+                        <div><strong>${adj.name}</strong></div>
+                        <div class="row" style="margin-top:6px">
+                          <span>Serie: ${adj.sets}</span>
+                          <span>${adj.reps_or_time ? `Powt./czas: ${adj.reps_or_time}`:''}</span>
+                          <span>${adj.tempo_or_iso || PLAN.GlobalRules.tempoGuideline}</span>
+                          <span>Sprzęt: ${adj.equipment||'—'}</span>
+                          <span><a href="${adj.youtube_url}" target="_blank" rel="noopener">YouTube ↗</a></span>
+                        </div>
+                      </div>
+                    </div>`;
+                  }).join('')}
+                </div>
+              </div>`;
+            }).join('')}
+          </div>
+        </section>`);
+        wrap.appendChild(card);
+      });
+      app.appendChild(wrap);
+
+      app.querySelectorAll('[data-start]').forEach(btn=> btn.addEventListener('click', (e)=>{ state.selectedDay = parseInt(e.currentTarget.dataset.start); state.selectedTab='trening'; save(); render(); }))
+    }
+
+    // ===== Timer util =====
+    let timerInt=null, timerSecs=0, running=false;
+    function startTimer(sec){ clearInterval(timerInt); timerSecs=sec; running=true; renderTimer(); timerInt=setInterval(()=>{ if(!running) return; if(timerSecs>0){ timerSecs--; renderTimer(); if(timerSecs===0){ beep(); running=false; renderTimer(); } } }, 1000); }
+    function pauseTimer(){ running=false; renderTimer(); }
+    function resumeTimer(){ running=true; renderTimer(); }
+    function stopTimer(){ clearInterval(timerInt); running=false; timerSecs=0; renderTimer(); }
+
+    function renderTimer(){
+      const out = document.getElementById('timerOut'); if(!out) return; out.textContent = secondsToMMSS(timerSecs);
+      const play = document.getElementById('timerPlay'); const pause = document.getElementById('timerPause');
+      if(play && pause){ play.style.display = running? 'none':'inline-flex'; pause.style.display = running? 'inline-flex':'none'; }
+    }
+
+    function renderTraining(){
+      const day = PLAN.Days.find(d=> d.dayNumber===state.selectedDay) || PLAN.Days[0];
+      const sections = ['warmup','main','cooldown'];
+      const exercises = sections.flatMap(sec=> day[sec].map(ex=> ({...adjustForFlare(ex), section:sec, original:ex})) ).filter(x=> !x._skip);
+
+      // indeks progresu treningu sesji
+      const sessionKey = `${nowDate()}__${day.dayNumber}`;
+      const l = state.logs[sessionKey] ||= { date: nowDate(), day: day.dayNumber, entries: [], painDuring: 0, painAfter: 0, dayNote: '', completed:false };
+
+      let currentIdx = l.entries.length ? l.entries[l.entries.length-1]._cursor || 0 : 0; // wskaźnik kroków
+      if(currentIdx >= exercises.length) currentIdx = exercises.length-1;
+      const ex = exercises[currentIdx];
+
+      const wrap = el(`<section class="grid">
+        <div class="card" style="grid-column: span 12;">
+          <div class="flow-head">
+            <div>
+              <div class="muted">Dzień ${day.dayNumber} • ${day.title}</div>
+              <div class="flow-name">${ex ? ex.name : 'Zakończono'}</div>
+            </div>
+            <div class="row">
+              <span>Szac. ${day.duration_estimate_min}–${day.duration_estimate_max} min</span>
+              <span>${state.flare? 'Tryb: Zaostrzenie' : 'Tryb: Standard'}</span>
+            </div>
+          </div>
+
+          ${ex ? `
+          <div class="row" style="margin-bottom:10px">
+            <span>Serie: ${ex.sets}</span>
+            <span>${ex.reps_or_time? 'Powt./czas: '+ex.reps_or_time:''}</span>
+            <span>${ex.tempo_or_iso || PLAN.GlobalRules.tempoGuideline}</span>
+            <span>Sprzęt: ${ex.equipment||'—'}</span>
+            <span><a href="${ex.youtube_url}" target="_blank" rel="noopener">YouTube ↗</a></span>
+          </div>
+
+          <div class="timer">
+            <strong style="font-size:22px" id="timerOut">00:00</strong>
+            <div class="controls">
+              <button class="btn secondary" id="timerStart">Start odliczania</button>
+              <button class="btn secondary" id="timerPause" style="display:none">Pauza</button>
+              <button class="btn secondary" id="timerPlay" style="display:none">Wznów</button>
+              <button class="btn secondary" id="timerStop">Reset</button>
+            </div>
+          </div>
+
+          <div class="row" style="margin-top:10px">
+            <span>Domyślne przerwy: ${PLAN.GlobalRules.defaultRestSecondsBetweenSets}s / ${PLAN.GlobalRules.defaultRestSecondsBetweenExercises}s</span>
+            <span>Kręgosłup: ${PLAN.GlobalRules.lumbarRange}</span>
+          </div>
+
+          <div class="row" style="margin-top:10px">
+            <span class="muted">Oznaczaj serię po wykonaniu:</span>
+            <button class="btn" id="markDone">Zakończ serię</button>
+          </div>
+          ` : `
+          <div class="ok" style="margin:10px 0 16px">Wszystkie ćwiczenia wykonane.</div>
+          <div class="controls">
+            <button class="btn" id="finishDay">Zakończ dzień</button>
+            <button class="btn secondary" id="goDays">Wróć do listy dni</button>
+          </div>
+          `}
+
+          <div style="margin-top:16px" class="grid">
+            <div class="card col-6" style="padding:14px">
+              <div class="section-title">Ból – w trakcie</div>
+              <div class="field">
+                <label for="painDuring">Skala 0–10</label>
+                <input id="painDuring" type="range" min="0" max="10" step="1" value="${l.painDuring||0}" />
+              </div>
+            </div>
+            <div class="card col-6" style="padding:14px">
+              <div class="section-title">Ból – po 24 h</div>
+              <div class="field">
+                <label for="painAfter">Skala 0–10</label>
+                <input id="painAfter" type="range" min="0" max="10" step="1" value="${l.painAfter||0}" />
+              </div>
+            </div>
+            <div class="card" style="padding:14px; grid-column: span 12;">
+              <div class="section-title">Notatka – ćwiczenie / dzień</div>
+              <textarea id="note" rows="3" placeholder="Opcjonalnie krótka notatka…">${l.dayNote||''}</textarea>
+            </div>
+          </div>
+        </div>
+      </section>`);
+
+      app.appendChild(wrap);
+
+      // Timer bind – heurystyka: jeśli opis zawiera izometrię XX s lub czas XX s wyciągamy liczbę i podpowiadamy
+      const hint = (ex && (ex.tempo_or_iso||'').match(/(\d+)[–-]?(\d+)?\s*s/)) || (ex && (ex.reps_or_time||'').match(/(\d+)[–-]?(\d+)?\s*s/));
+      const suggested = hint ? parseInt(hint[2]||hint[1],10) : 0;
+      document.getElementById('timerOut').textContent = suggested? secondsToMMSS(suggested) : '00:00';
+      timerSecs = suggested||0; running=false;
+
+      const startBtn = document.getElementById('timerStart');
+      const pauseBtn = document.getElementById('timerPause');
+      const playBtn = document.getElementById('timerPlay');
+      const stopBtn = document.getElementById('timerStop');
+      if(startBtn) startBtn.onclick = ()=> startTimer(timerSecs||30);
+      if(pauseBtn) pauseBtn.onclick = ()=> pauseTimer();
+      if(playBtn) playBtn.onclick = ()=> resumeTimer();
+      if(stopBtn) stopBtn.onclick = ()=> stopTimer();
+
+      // Mark done
+      const mark = document.getElementById('markDone');
+      if(mark) mark.onclick = ()=>{
+        const entry = { exercise: ex.name, section: ex.section, ts: new Date().toISOString(), status: 'done', _cursor: Math.min(exercises.length-1, currentIdx+1) };
+        l.entries.push(entry); save(); beep(); renderTraining();
+      };
+
+      // Finish
+      const finishDay = document.getElementById('finishDay');
+      if(finishDay) finishDay.onclick = ()=>{ l.completed=true; save(); state.selectedTab='dni'; render(); };
+      const goDays = document.getElementById('goDays'); if(goDays) goDays.onclick = ()=>{ state.selectedTab='dni'; render(); };
+
+      // Inputs
+      const painDuring = document.getElementById('painDuring'); painDuring.oninput = (e)=>{ l.painDuring = parseInt(e.target.value,10); save(); };
+      const painAfter = document.getElementById('painAfter'); painAfter.oninput = (e)=>{ l.painAfter = parseInt(e.target.value,10); save(); };
+      const note = document.getElementById('note'); note.oninput = (e)=>{ l.dayNote = e.target.value; save(); };
+    }
+
+    function renderProgression(){
+      const box = el(`<section class="grid">
+        <div class="card">
+          <h2 style="margin:0 0 8px">Progresja – zasady i kryteria</h2>
+          <ul style="margin:0; padding-left:18px; line-height:1.6">${PROGRESSION.map(x=>`<li>${x}</li>`).join('')}</ul>
+          <div class="muted" style="margin-top:10px">Kryteria przejścia: brak promieniowania, brak „łapania” przy wstawaniu, stabilny neutral bez kompensacji.</div>
+        </div>
+        <div class="card">
+          <div class="section-title">Podpowiedź</div>
+          <p class="muted">Wskazówka „Gotowy na kolejny krok?” pojawi się po 2–3 tyg. regularnych sesji bez zaostrzeń oraz ból ≤3/10.</p>
+        </div>
+      </section>`);
+      app.appendChild(box);
+    }
+
+    function renderFlags(){
+      const box = el(`<section class="grid">
+        <div class="card">
+          <h2 style="margin-top:0">Czerwone flagi</h2>
+          <ul style="margin:0; padding-left:18px; line-height:1.7">
+            <li>${SAFETY_RULES.redflags}</li>
+          </ul>
+          <div class="controls" style="margin-top:12px">
+            <button class="btn danger" id="stopTraining">Zatrzymaj trening i skontaktuj się z lekarzem</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="section-title">Pozostałe zasady bezpieczeństwa</div>
+          <ul style="margin:0; padding-left:18px; line-height:1.7">
+            <li>${SAFETY_RULES.flare}</li>
+            <li>${SAFETY_RULES.range}</li>
+            <li>${SAFETY_RULES.load}</li>
+            <li>${SAFETY_RULES.roller}</li>
+            <li>${SAFETY_RULES.evidence}</li>
+          </ul>
+        </div>
+      </section>`);
+      app.appendChild(box);
+      const stopBtn = box.querySelector('#stopTraining'); if(stopBtn) stopBtn.onclick = ()=>{ alert('Zatrzymaj: przerwij sesję i skontaktuj się z lekarzem.'); };
+    }
+
+    function renderExport(){
+      const container = el(`<section class="grid">
+        <div class="card">
+          <h2 style="margin:0 0 10px">Eksport danych (CSV)</h2>
+          <p class="muted">Zawiera: data; dzień; ćwiczenie; serie/powt./czas; status; ból (0–10); notatka. Kodowanie UTF‑8‑SIG, separator „;”. Dane zapisywane są lokalnie (localStorage).</p>
+          <div class="controls" style="margin-top:10px">
+            <button class="btn" id="exportCsv">Pobierz CSV</button>
+            <button class="btn secondary" id="backupJson">Kopia zapasowa (JSON)</button>
+            <input type="file" id="restoreJson" accept="application/json" style="display:none" />
+            <button class="btn secondary" id="restoreBtn">Przywróć z JSON</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="section-title">Uwaga o prywatności</div>
+          <p class="muted">Aplikacja nie wysyła danych na żaden serwer. Wszystko pozostaje na urządzeniu. Usunięcie danych możliwe przez wyczyszczenie pamięci przeglądarki dla tego pliku.</p>
+        </div>
+      </section>`);
+      app.appendChild(container);
+
+      container.querySelector('#exportCsv').onclick = ()=>{
+        const csv = toCSV();
+        const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `l5s1_log_${nowDate()}.csv`; a.click(); URL.revokeObjectURL(a.href);
+      };
+      container.querySelector('#backupJson').onclick = ()=>{
+        const blob = new Blob([JSON.stringify(state)], {type:'application/json'});
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `l5s1_backup_${nowDate()}.json`; a.click(); URL.revokeObjectURL(a.href);
+      };
+      const restoreInput = container.querySelector('#restoreJson');
+      container.querySelector('#restoreBtn').onclick = ()=> restoreInput.click();
+      restoreInput.onchange = (e)=>{
+        const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = ()=>{
+          try{ state = JSON.parse(reader.result); save(); alert('Przywrócono dane.'); render(); }catch(err){ alert('Nieprawidłowy plik.'); }
+        }; reader.readAsText(file);
+      }
+    }
+
+    function toCSV(){
+      const rows = [ ['data','dzień','ćwiczenie','serie/powt./czas','status','ból','notatka'].join(';') ];
+      Object.values(state.logs).forEach(l=>{
+        const day = PLAN.Days.find(d=> d.dayNumber===l.day);
+        const dayName = day? day.title: '';
+        if(l.entries && l.entries.length){
+          l.entries.forEach(ent=>{
+            rows.push([ l.date, `D${l.day} ${dayName}`, ent.exercise, '-', ent.status, (l.painDuring??''), (l.dayNote??'') ].map(v=> String(v).replaceAll(';',',')).join(';'));
+          });
+        } else {
+          rows.push([ l.date, `D${l.day} ${dayName}`, '-', '-', l.completed? 'done':'', (l.painDuring??''), (l.dayNote??'') ].map(v=> String(v).replaceAll(';',',')).join(';'));
+        }
+      });
+      return rows.join('\n');
+    }
+
+    // =====================
+    // Nav + toggles
+    // =====================
+    document.querySelectorAll('.tab-btn').forEach(b=> b.addEventListener('click', ()=>{ state.selectedTab = b.dataset.tab; save(); render(); }) );
+    const flareToggle = document.getElementById('flareToggle'); flareToggle.checked = !!state.flare; flareToggle.onchange = (e)=>{ state.flare = e.target.checked; save(); render(); };
+
+    // start
+    render();
+  </script>
+</body>
+</html>

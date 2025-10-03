@@ -489,9 +489,11 @@
       const sessionKey = `${nowDate()}__${day.dayNumber}`;
       const l = state.logs[sessionKey] ||= { date: nowDate(), day: day.dayNumber, entries: [], painDuring: 0, painAfter: 0, dayNote: '', completed:false };
 
-      let currentIdx = l.entries.length ? l.entries[l.entries.length-1]._cursor || 0 : 0; // wskaźnik kroków
-      if(currentIdx >= exercises.length) currentIdx = exercises.length-1;
-      const ex = exercises[currentIdx];
+      const progressCursor = l.entries.length ? (l.entries[l.entries.length-1]._cursor ?? 0) : 0; // wskazuje NA następne ćwiczenie
+      const hasExercises = exercises.length > 0;
+      const ex = hasExercises && progressCursor < exercises.length ? exercises[progressCursor] : null;
+      const lastValidIdx = Math.max(0, exercises.length - 1);
+      const currentIdx = ex ? progressCursor : lastValidIdx;
 
       const wrap = el(`<section class="grid">
         <div class="card" style="grid-column: span 12;">
@@ -570,7 +572,8 @@
       // Timer bind – heurystyka: jeśli opis zawiera izometrię XX s lub czas XX s wyciągamy liczbę i podpowiadamy
       const hint = (ex && (ex.tempo_or_iso||'').match(/(\d+)[–-]?(\d+)?\s*s/)) || (ex && (ex.reps_or_time||'').match(/(\d+)[–-]?(\d+)?\s*s/));
       const suggested = hint ? parseInt(hint[2]||hint[1],10) : 0;
-      document.getElementById('timerOut').textContent = suggested? secondsToMMSS(suggested) : '00:00';
+      const timerOut = document.getElementById('timerOut');
+      if(timerOut) timerOut.textContent = suggested? secondsToMMSS(suggested) : '00:00';
       timerSecs = suggested||0; running=false;
 
       const startBtn = document.getElementById('timerStart');
@@ -585,7 +588,7 @@
       // Mark done
       const mark = document.getElementById('markDone');
       if(mark) mark.onclick = ()=>{
-        const entry = { exercise: ex.name, section: ex.section, ts: new Date().toISOString(), status: 'done', _cursor: Math.min(exercises.length-1, currentIdx+1) };
+        const entry = { exercise: ex.name, section: ex.section, ts: new Date().toISOString(), status: 'done', _cursor: currentIdx + 1 };
         l.entries.push(entry); save(); beep(); renderTraining();
       };
 

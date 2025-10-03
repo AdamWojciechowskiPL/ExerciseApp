@@ -60,7 +60,7 @@ Jednoplikowe rozwiązanie (HTML + CSS + JS) działające **offline**, z **lokaln
 
 ## Szybki start
 
-1. Zapisz plik `l5s1_trening.html` na urządzeniu.
+1. Zapisz plik `main.html` na urządzeniu.
 2. Otwórz w przeglądarce.
 3. Przejdź do zakładki **Dni** → wybierz **Start treningu dnia**.
 4. W trakcie używaj timera i oznaczaj serie przyciskiem **Zakończ serię**.

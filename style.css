@@ -1,0 +1,320 @@
+/* ============================================= */
+/* === ZMIENNE GLOBALNE I PODSTAWOWE STYLE === */
+/* ============================================= */
+:root {
+    --primary-color: #005f73;
+    --secondary-color: #0a9396;
+    --background-color: #f4f4f9;
+    --card-background: #ffffff;
+    --text-color: #333;
+    --light-text-color: #ffffff;
+    --border-color: #e0e0e0;
+    --success-color: #2a9d8f;
+    --inprogress-color: #e9c46a;
+    --danger-color: #e76f51;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    margin: 0;
+    background-color: var(--background-color);
+    color: var(--text-color);
+    line-height: 1.6;
+}
+
+header {
+    background-color: var(--primary-color);
+    color: var(--light-text-color);
+    padding: 1rem;
+    text-align: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+header nav {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin-top: 0.5rem;
+}
+
+header nav button {
+    background: var(--secondary-color);
+    color: var(--light-text-color);
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+header nav button:hover { background-color: #007f8b; }
+main { padding: 1rem; padding-bottom: 6rem; }
+.screen { display: none; }
+.screen.active { display: block; }
+.hidden { display: none !important; }
+
+/* ============================================= */
+/* ========= EKRAN GŁÓWNY (LISTA DNI) ========== */
+/* ============================================= */
+.day-card {
+    background-color: var(--card-background);
+    border: 1px solid var(--border-color);
+    border-left: 5px solid var(--secondary-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+.day-card[data-status="completed"] { border-left-color: var(--success-color); }
+.day-card[data-status="in_progress"] { border-left-color: var(--inprogress-color); }
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+.day-card h3 { margin: 0; color: var(--primary-color); }
+.day-card .status {
+    font-weight: bold;
+    font-size: 0.9rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 5px;
+    color: var(--light-text-color);
+    white-space: nowrap;
+}
+.status.completed { background-color: var(--success-color); }
+.status.in_progress { background-color: var(--inprogress-color); color: var(--text-color); }
+.status.not_started { background-color: #ccc; }
+.day-card h4 {
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+    color: var(--secondary-color);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.25rem;
+}
+.action-btn {
+    display: block;
+    width: 100%;
+    padding: 1rem;
+    font-size: 1.2rem;
+    font-weight: bold;
+    text-align: center;
+    background-color: var(--secondary-color);
+    color: var(--light-text-color);
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    margin-top: 1.5rem;
+    transition: background-color 0.3s;
+}
+.action-btn:hover { background-color: #007f8b; }
+.nav-btn {
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    border: 1px solid var(--primary-color);
+    background-color: var(--card-background);
+    color: var(--primary-color);
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+/* ============================================= */
+/* ====== NOWY EKRAN: PODGLĄD TRENINGU ====== */
+/* ============================================= */
+.pre-training-section-header {
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+    color: var(--primary-color);
+    border-bottom: 2px solid var(--primary-color);
+    padding-bottom: 0.5rem;
+}
+.pre-training-exercise-card {
+    background-color: var(--card-background);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border: 1px solid var(--border-color);
+}
+.pre-training-exercise-card h4 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+}
+.pre-training-exercise-card a {
+    color: var(--secondary-color);
+    text-decoration: none;
+    font-weight: bold;
+}
+.pre-training-exercise-card .details {
+    margin: 1rem 0;
+    color: #555;
+}
+.pre-training-inputs {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+.pre-training-inputs .form-group {
+    flex: 1;
+}
+.pre-training-inputs label {
+    font-size: 0.9rem;
+    font-weight: normal;
+}
+.pre-training-inputs input {
+    width: 100%;
+    box-sizing: border-box;
+}
+.pre-training-nav {
+    display: flex;
+    gap: 1rem;
+    margin-top: 2rem;
+}
+.pre-training-nav .nav-btn {
+    background-color: transparent;
+}
+.pre-training-nav .action-btn {
+    flex-grow: 1;
+}
+
+/* ============================================= */
+/* ====== EKRAN TRENINGU (TRYB SKUPIENIA) ====== */
+/* ============================================= */
+#training-screen {
+    background-color: var(--primary-color);
+    color: var(--light-text-color);
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease-in-out;
+}
+#training-screen.active { opacity: 1; pointer-events: auto; }
+.focus-view {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    text-align: center;
+    width: 100%;
+    max-width: 500px;
+    height: 100%;
+    padding: 1.5rem;
+    box-sizing: border-box;
+}
+.focus-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 1rem;
+    opacity: 0.7;
+}
+#exit-training-btn {
+    background: none;
+    border: none;
+    color: var(--light-text-color);
+    font-size: 1rem;
+    cursor: pointer;
+    padding: 0.5rem;
+}
+#exit-training-btn:hover { text-decoration: underline; }
+.focus-timer-container {
+    flex-grow: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+#focus-timer-display {
+    font-size: clamp(4rem, 25vw, 8rem);
+    font-weight: 700;
+    margin: 0;
+    line-height: 1;
+    font-family: 'monospace', sans-serif;
+}
+.focus-exercise-info h2 { font-size: clamp(1.5rem, 6vw, 2.5rem); margin: 0 0 0.5rem 0; font-weight: 600; }
+.focus-exercise-info p { font-size: 1.1rem; opacity: 0.8; margin: 0; }
+.focus-controls {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin: 2rem 0;
+    flex-wrap: wrap;
+}
+.control-btn {
+    padding: 1rem 1.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    border: 2px solid rgba(255, 255, 255, 0.8);
+    background-color: transparent;
+    color: var(--light-text-color);
+    border-radius: 50px;
+    cursor: pointer;
+    min-width: 100px;
+    transition: background-color 0.2s, color 0.2s, opacity 0.2s;
+}
+.control-btn:hover { background-color: rgba(255, 255, 255, 0.1); }
+.control-btn.action-btn { background-color: var(--success-color); border-color: var(--success-color); }
+.control-btn.action-btn:hover { background-color: #248a7f; }
+.control-btn:disabled { opacity: 0.4; cursor: not-allowed; background-color: transparent; }
+.control-btn:disabled:hover { background-color: transparent; }
+.focus-next-up { opacity: 0.7; height: 40px; }
+.focus-next-up p { margin: 0; }
+
+/* ============================================= */
+/* ====== EKRANY STATYCZNE I PODSUMOWANIE ====== */
+/* ============================================= */
+.form-group {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 1rem;
+}
+.form-group label { margin-bottom: 0.5rem; font-weight: bold; }
+.form-group input, .form-group textarea {
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    font-size: 1rem;
+    background-color: var(--card-background);
+}
+.static-content ul { list-style: none; padding-left: 0; }
+.static-content li {
+    background: var(--card-background);
+    padding: 1rem;
+    margin-bottom: 0.5rem;
+    border-radius: 5px;
+    border-left: 3px solid var(--secondary-color);
+}
+#stop-training-btn {
+    display: block;
+    width: 100%;
+    padding: 1rem;
+    background: var(--danger-color);
+    color: var(--light-text-color);
+    border: none;
+    border-radius: 5px;
+    font-size: 1.2rem;
+    margin-top: 2rem;
+    cursor: pointer;
+}
+
+/* ============================================= */
+/* ========= BANER BEZPIECZEŃSTWA (FOOTER) ===== */
+/* ============================================= */
+#safety-banner {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background-color: var(--inprogress-color);
+    color: var(--text-color);
+    padding: 0.5rem 1rem;
+    text-align: center;
+    box-shadow: 0 -2px 5px rgba(0,0,0,0.1);
+    z-index: 1000;
+}
+#safety-banner summary { cursor: pointer; font-weight: bold; }

@@ -75,6 +75,7 @@ document.addEventListener('DOMContentLoaded', () => {
         exerciseName: document.getElementById('focus-exercise-name'),
         exerciseDetails: document.getElementById('focus-exercise-details'),
         exerciseInfoContainer: document.querySelector('.focus-exercise-info'),
+        focusDescription: document.getElementById('focus-description'), // NOWY SELEKTOR
         nextExerciseName: document.getElementById('next-exercise-name'),
         exitTrainingBtn: document.getElementById('exit-training-btn'),
         prevStepBtn: document.getElementById('prev-step-btn'),
@@ -189,10 +190,10 @@ document.addEventListener('DOMContentLoaded', () => {
             section.exercises.forEach((ex) => {
                 const card = document.createElement('div');
                 card.className = 'pre-training-exercise-card';
-                // Używamy unikalnego licznika, aby uniknąć konfliktu ID
                 const uniqueId = `ex-${exerciseCounter}`;
                 card.innerHTML = `
                     <h4>${ex.name}</h4>
+                    <p class="pre-training-description">${ex.description || 'Brak opisu.'}</p>
                     <a href="${ex.youtube_url}" target="_blank">Obejrzyj wideo ↗</a>
                     <p class="details">Tempo: ${ex.tempo_or_iso} | Sprzęt: ${ex.equipment}</p>
                     <div class="pre-training-inputs">
@@ -319,9 +320,11 @@ document.addEventListener('DOMContentLoaded', () => {
             focus.exerciseName.textContent = `${exercise.name} (Seria ${exercise.currentSet} / ${exercise.totalSets})`;
             focus.exerciseDetails.textContent = `Czas/Powt: ${exercise.reps_or_time} | Tempo: ${exercise.tempo_or_iso}`;
             focus.exerciseInfoContainer.style.visibility = 'visible';
+            focus.focusDescription.textContent = exercise.description || ''; // Wypełnij opis
         } else {
             focus.exerciseName.textContent = exercise.name;
             focus.exerciseInfoContainer.style.visibility = 'hidden';
+            focus.focusDescription.textContent = ''; // Wyczyść opis podczas przerw
         }
         
         const duration = getExerciseDuration(exercise);

@@ -46,6 +46,12 @@ document.addEventListener('DOMContentLoaded', () => {
             gainNode.gain.setValueAtTime(0.3, state.audioContext.currentTime);
             oscillator.start();
             oscillator.stop(state.audioContext.currentTime + 0.2);
+        },
+        tts: {
+            synth: window.speechSynthesis,
+            polishVoice: null,
+            isSupported: 'speechSynthesis' in window,
+            isSoundOn: true // Globalny przełącznik dźwięku
         }
     };
 
@@ -75,13 +81,46 @@ document.addEventListener('DOMContentLoaded', () => {
         exerciseName: document.getElementById('focus-exercise-name'),
         exerciseDetails: document.getElementById('focus-exercise-details'),
         exerciseInfoContainer: document.querySelector('.focus-exercise-info'),
-        focusDescription: document.getElementById('focus-description'), // NOWY SELEKTOR
+        focusDescription: document.getElementById('focus-description'),
+        ttsToggleBtn: document.getElementById('tts-toggle-btn'),
         nextExerciseName: document.getElementById('next-exercise-name'),
         exitTrainingBtn: document.getElementById('exit-training-btn'),
         prevStepBtn: document.getElementById('prev-step-btn'),
         pauseResumeBtn: document.getElementById('pause-resume-btn'),
         repBasedDoneBtn: document.getElementById('rep-based-done-btn'),
         skipBtn: document.getElementById('skip-btn'),
+    };
+
+    // =============================================
+    // ============== LOGIKA TTS (MOWA) ==============
+    // =============================================
+    const loadVoices = () => {
+        if (!state.tts.isSupported) return;
+        const voices = state.tts.synth.getVoices();
+        state.tts.polishVoice = voices.find(voice => voice.lang === 'pl-PL') || voices.find(voice => voice.lang.startsWith('pl'));
+    };
+
+    const speak = (text, interrupt = true, onEndCallback = null) => {
+        if (!state.tts.isSupported || !text || !state.tts.isSoundOn) {
+            if (onEndCallback) onEndCallback();
+            return;
+        }
+
+        if (interrupt && state.tts.synth.speaking) {
+            state.tts.synth.cancel();
+        }
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        if (state.tts.polishVoice) {
+            utterance.voice = state.tts.polishVoice;
+        }
+        utterance.lang = 'pl-PL';
+        
+        if (onEndCallback) {
+            utterance.onend = onEndCallback;
+        }
+        
+        state.tts.synth.speak(utterance);
     };
 
     // =============================================
@@ -158,11 +197,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const renderSummaryScreen = () => {
         const day = TRAINING_PLAN.Days[state.currentDayIndex];
-        document.getElementById('summary-title').innerText = `Podsumowanie Dnia ${day.dayNumber}`;
         const dayProgress = state.userProgress.days[`day_${day.dayNumber}`] || {};
-        document.getElementById('pain-during').value = dayProgress.pain_during || '';
-        document.getElementById('pain-after').value = dayProgress.pain_after_24h || '';
-        document.getElementById('general-notes').value = dayProgress.notes || '';
+        const summaryScreen = screens.summary;
+        summaryScreen.innerHTML = `
+            <h2 id="summary-title">Podsumowanie Dnia ${day.dayNumber}</h2>
+            <p>Gratulacje! Dobra robota.</p>
+            <form id="summary-form">
+                <div class="form-group">
+                    <label for="pain-during">Ocena bólu W TRAKCIE treningu (0-10):</label>
+                    <input type="number" id="pain-during" min="0" max="10" required value="${dayProgress.pain_during || ''}">
+                </div>
+                <div class="form-group">
+                    <label for="pain-after">Ocena bólu PO 24H (wróć tu później):</label>
+                    <input type="number" id="pain-after" min="0" max="10" value="${dayProgress.pain_after_24h || ''}">
+                </div>
+                <div class="form-group">
+                    <label for="general-notes">Notatki ogólne:</label>
+                    <textarea id="general-notes" rows="4">${dayProgress.notes || ''}</textarea>
+                </div>
+                <button type="submit" class="action-btn">Zapisz i zakończ</button>
+            </form>
+        `;
+        summaryScreen.querySelector('#summary-form').addEventListener('submit', handleSummarySubmit);
     };
 
     const renderPreTrainingScreen = (dayIndex) => {
@@ -310,6 +366,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const exercise = state.flatExercises[index];
         const nextExercise = state.flatExercises[index + 1];
 
+        focus.ttsToggleBtn.textContent = state.tts.isSoundOn ? '🔊' : '🔇';
         focus.prevStepBtn.disabled = (index === 0);
         focus.sectionName.textContent = exercise.sectionName;
         focus.progress.textContent = `${index + 1} / ${state.flatExercises.length}`;
@@ -320,11 +377,22 @@ document.addEventListener('DOMContentLoaded', () => {
             focus.exerciseName.textContent = `${exercise.name} (Seria ${exercise.currentSet} / ${exercise.totalSets})`;
             focus.exerciseDetails.textContent = `Czas/Powt: ${exercise.reps_or_time} | Tempo: ${exercise.tempo_or_iso}`;
             focus.exerciseInfoContainer.style.visibility = 'visible';
-            focus.focusDescription.textContent = exercise.description || ''; // Wypełnij opis
+            focus.focusDescription.textContent = exercise.description || '';
+            focus.ttsToggleBtn.style.display = 'inline-block';
+
+            let announcement = `Następne ćwiczenie: ${exercise.name}, seria ${exercise.currentSet} z ${exercise.totalSets}.`;
+            if (exercise.reps_or_time) announcement += ` Wykonaj ${exercise.reps_or_time}.`;
+            if (exercise.tempo_or_iso) announcement += ` W tempie: ${exercise.tempo_or_iso}.`;
+            
+            speak(announcement, true, () => {
+                speak(exercise.description, false);
+            });
+
         } else {
             focus.exerciseName.textContent = exercise.name;
             focus.exerciseInfoContainer.style.visibility = 'hidden';
-            focus.focusDescription.textContent = ''; // Wyczyść opis podczas przerw
+            focus.focusDescription.textContent = '';
+            focus.ttsToggleBtn.style.display = 'none';
         }
         
         const duration = getExerciseDuration(exercise);
@@ -342,6 +410,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     
     const moveToNextExercise = () => {
+        if (state.tts.isSupported) state.tts.synth.cancel();
         stopTimer();
         if (state.currentExerciseIndex < state.flatExercises.length - 1) {
             startExercise(state.currentExerciseIndex + 1);
@@ -353,6 +422,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const moveToPreviousExercise = () => {
         if (state.currentExerciseIndex > 0) {
+            if (state.tts.isSupported) state.tts.synth.cancel();
             stopTimer();
             startExercise(state.currentExerciseIndex - 1);
         }
@@ -404,6 +474,21 @@ document.addEventListener('DOMContentLoaded', () => {
     // =============== OBSŁUGA ZDARZEŃ ===============
     // =============================================
     
+    const handleSummarySubmit = (e) => {
+        e.preventDefault();
+        const dayKey = `day_${TRAINING_PLAN.Days[state.currentDayIndex].dayNumber}`;
+        const progress = state.userProgress.days[dayKey];
+        progress.status = 'completed';
+        progress.pain_during = document.getElementById('pain-during').value;
+        progress.pain_after_24h = document.getElementById('pain-after').value;
+        progress.notes = document.getElementById('general-notes').value;
+        progress.lastCompletedDate = new Date().toISOString();
+        dataStore.save();
+        state.currentDayIndex = null;
+        navigateTo('main');
+        renderMainScreen();
+    };
+
     document.getElementById('nav-main').addEventListener('click', () => navigateTo('main'));
     document.getElementById('nav-progression').addEventListener('click', () => navigateTo('progression'));
     document.getElementById('nav-safety').addEventListener('click', () => navigateTo('safety'));
@@ -421,7 +506,17 @@ document.addEventListener('DOMContentLoaded', () => {
     focus.exitTrainingBtn.addEventListener('click', () => {
         if (confirm('Czy na pewno chcesz zakończyć trening? Dzień pozostanie oznaczony jako "W trakcie".')) {
             stopTimer();
+            if (state.tts.isSupported) state.tts.synth.cancel();
             navigateTo('main');
+        }
+    });
+    
+    focus.ttsToggleBtn.addEventListener('click', () => {
+        state.tts.isSoundOn = !state.tts.isSoundOn;
+        focus.ttsToggleBtn.textContent = state.tts.isSoundOn ? '🔊' : '🔇';
+
+        if (!state.tts.isSoundOn) {
+            if (state.tts.isSupported) state.tts.synth.cancel();
         }
     });
 
@@ -430,21 +525,6 @@ document.addEventListener('DOMContentLoaded', () => {
     focus.skipBtn.addEventListener('click', moveToNextExercise);
     focus.repBasedDoneBtn.addEventListener('click', moveToNextExercise);
     
-    summaryForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const dayKey = `day_${TRAINING_PLAN.Days[state.currentDayIndex].dayNumber}`;
-        const progress = state.userProgress.days[dayKey];
-        progress.status = 'completed';
-        progress.pain_during = document.getElementById('pain-during').value;
-        progress.pain_after_24h = document.getElementById('pain-after').value;
-        progress.notes = document.getElementById('general-notes').value;
-        progress.lastCompletedDate = new Date().toISOString();
-        dataStore.save();
-        state.currentDayIndex = null;
-        navigateTo('main');
-        renderMainScreen();
-    });
-
     // =============================================
     // ============ INICJALIZACJA APLIKACJI ===========
     // =============================================
@@ -453,6 +533,13 @@ document.addEventListener('DOMContentLoaded', () => {
         renderMainScreen();
         renderStaticContent();
         navigateTo('main');
+
+        if (state.tts.isSupported) {
+            loadVoices();
+            if (speechSynthesis.onvoiceschanged !== undefined) {
+                speechSynthesis.onvoiceschanged = loadVoices;
+            }
+        }
     };
 
     init();

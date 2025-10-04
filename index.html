@@ -29,9 +29,7 @@
         <!-- EKRAN PODGLĄDU I MODYFIKACJI TRENINGU -->
         <section id="pre-training-screen" class="screen">
             <h2 id="pre-training-title">Podgląd Treningu</h2>
-            <div id="pre-training-list">
-                <!-- Ćwiczenia będą generowane przez JavaScript -->
-            </div>
+            <div id="pre-training-list"></div>
             <div class="pre-training-nav">
                 <button id="pre-training-back-btn" class="nav-btn">Wróć</button>
                 <button id="start-modified-training-btn" class="action-btn">Rozpocznij Trening</button>
@@ -52,14 +50,15 @@
                 </div>
 
                 <div class="focus-exercise-info">
-                    <h2 id="focus-exercise-name">Nazwa Ćwiczenia</h2>
+                    <div class="exercise-title-container">
+                        <h2 id="focus-exercise-name">Nazwa Ćwiczenia</h2>
+                        <!-- ZMIENIONE ID PRZYCISKU -->
+                        <button id="tts-toggle-btn" class="tts-button">🔊</button>
+                    </div>
                     <p id="focus-exercise-details">Serie: 3 | Powtórzenia: 10 | Tempo: 2s/2s</p>
                 </div>
 
-                <!-- NOWY KONTENER NA OPIS ĆWICZENIA W TRYBIE SKUPIENIA -->
-                <div id="focus-description" class="focus-description-container">
-                    <!-- Opis będzie wstawiany przez JavaScript -->
-                </div>
+                <div id="focus-description" class="focus-description-container"></div>
 
                 <div class="focus-controls">
                     <button id="prev-step-btn" class="control-btn">Cofnij</button>
@@ -73,7 +72,6 @@
                 </div>
             </div>
         </section>
-
         <!-- Pozostałe ekrany -->
         <section id="summary-screen" class="screen">
             <h2 id="summary-title">Podsumowanie Dnia</h2>

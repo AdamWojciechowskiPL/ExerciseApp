@@ -1,25 +1,34 @@
 # Aplikacja Treningowa L5-S1
 
-Dedykowana aplikacja webowa (Progressive Web App) wspierająca 7-dniowy, z góry zdefiniowany plan treningowy dla osób z bólem w okolicy kręgosłupa lędźwiowo-krzyżowego (L5-S1) i przeciążeniem stawów międzywyrostkowych. Aplikacja została zaprojektowana z myślą o maksymalnej prostocie, bezpieczeństwie i prywatności użytkownika.
+Dedykowana, responsywna aplikacja webowa (Progressive Web App) wspierająca spersonalizowany, cykliczny plan treningowy dla osób z bólem w okolicy kręgosłupa lędźwiowo-krzyżowego (L5-S1). Aplikacja została zaprojektowana z myślą o maksymalnej prostocie, personalizacji, bezpieczeństwie i prywatności użytkownika.
 
 ## Cel Projektu
 
-Głównym celem aplikacji jest bezpieczne prowadzenie użytkownika przez plan treningowy, monitorowanie jego postępów oraz subiektywnych odczuć bólowych. Aplikacja edukuje również w zakresie bezpieczeństwa i kładzie nacisk na prawidłowe wykonywanie ćwiczeń, działając w pełni offline po pierwszym załadowaniu.
+Głównym celem aplikacji jest bezpieczne i automatyczne prowadzenie użytkownika przez spersonalizowany plan treningowy, monitorowanie postępów w kalendarzu oraz umożliwienie dostosowania intensywności treningu. Aplikacja kładzie nacisk na edukację (opisy ćwiczeń, TTS) i działa w pełni offline po pierwszym załadowaniu.
 
 ## Kluczowe Funkcje
 
-*   **7-dniowy Plan Treningowy:** Aplikacja wczytuje gotowy, szczegółowy plan treningowy z zewnętrznego pliku, co ułatwia jego modyfikację.
-*   **Ekran Podglądu i Modyfikacji:** Przed rozpoczęciem sesji użytkownik może przejrzeć listę wszystkich ćwiczeń, zapoznać się z ich opisem oraz **dostosować liczbę serii i powtórzeń/czas** do swoich aktualnych możliwości.
-*   **Zautomatyzowany Tryb Treningu ("Focus Mode"):** Po rozpoczęciu sesji aplikacja przechodzi w tryb pełnoekranowy, który automatycznie prowadzi użytkownika krok po kroku przez każde ćwiczenie, serię i przerwę.
-*   **Inteligentny Timer:** Aplikacja automatycznie rozpoznaje, czy dane ćwiczenie jest oparte na czasie (np. izometria, rozciąganie), czy na liczbie powtórzeń, i dostosowuje do tego interfejs.
-*   **Obsługa Serii i Przerw:** Plan treningowy jest automatycznie rozbijany na poszczególne serie, a między nimi uruchamiane są timery na odpoczynek (krótszy między seriami, dłuższy między ćwiczeniami).
-*   **Pełna Nawigacja w Trakcie Treningu:** Użytkownik ma pełną kontrolę nad sesją dzięki przyciskom:
-    *   **Cofnij:** Powrót do poprzedniego kroku (serii lub przerwy).
-    *   **Pauza / Wznów:** Zatrzymanie i wznowienie timera.
-    *   **Pomiń:** Przejście do następnego kroku.
-    *   **Zakończ:** Możliwość przerwania całej sesji i powrotu do ekranu głównego.
-*   **Lokalny Zapis Postępów:** Wszystkie postępy (statusy dni, notatki, oceny bólu) są **automatycznie zapisywane w `localStorage` przeglądarki**.
-*   **Prywatność i Działanie Offline:** Aplikacja nie wymaga połączenia z internetem (poza pierwszym załadowaniem i linkami do YouTube) i nie wysyła żadnych danych na zewnętrzne serwery.
+*   **Dynamiczny Plan na 7 Dni:** Ekran główny zawsze pokazuje plan treningowy na najbliższe 7 dni, zaczynając od dnia dzisiejszego, z automatycznie przypisanym dniem z cyklu treningowego.
+*   **Historia i Kalendarz Treningów:**
+    *   Dedykowana sekcja "Historia" z interaktywnym kalendarzem.
+    *   Możliwość przeglądania poprzednich i przyszłych miesięcy.
+    *   Automatyczne, cykliczne przypisywanie planu treningowego do dni w kalendarzu od daty startowej.
+    *   Wizualne oznaczenie statusu każdego dnia (ukończony, w trakcie, nie rozpoczęto).
+*   **Moduł Ustawień:**
+    *   **Personalizacja Przerw:** Użytkownik może globalnie ustawić długość przerwy między ćwiczeniami.
+    *   **Współczynnik Progresji:** Intuicyjny suwak pozwala na skalowanie intensywności treningu (od 50% do 200%), co automatycznie przelicza czas trwania i liczbę powtórzeń w ćwiczeniach.
+*   **Backup i Przywracanie Danych:**
+    *   Możliwość wyeksportowania wszystkich postępów i ustawień do jednego pliku `.json`.
+    *   Funkcja przywracania danych z pliku, co pozwala na przenoszenie postępów między urządzeniami lub przeglądarkami.
+*   **Zautomatyzowany Tryb Treningu ("Focus Mode"):**
+    *   Pełnoekranowy interfejs, który automatycznie prowadzi użytkownika przez każdą serię i przerwę.
+    *   Inteligentny timer, który rozpoznaje ćwiczenia na czas i na powtórzenia.
+*   **Asystent Głosowy (TTS):**
+    *   **Automatyczne zapowiedzi:** Aplikacja głosem zapowiada nazwę, serię, liczbę powtórzeń i tempo każdego ćwiczenia.
+    *   **Automatyczne odczytywanie opisów:** Po zapowiedzi, asystent głosowy odczytuje szczegółowy opis wykonania ćwiczenia.
+    *   **Globalny przełącznik:** Możliwość włączenia/wyłączenia wszystkich komunikatów głosowych jednym przyciskiem.
+*   **Ekran Podglądu i Modyfikacji:** Przed sesją użytkownik może przejrzeć plan dnia, przeczytać opisy i jednorazowo zmodyfikować liczbę serii lub powtórzeń.
+*   **Lokalny Zapis i Prywatność:** Wszystkie dane są automatycznie zapisywane w `localStorage` przeglądarki. Aplikacja nie wysyła żadnych danych na zewnętrzne serwery, gwarantując 100% prywatności.
 
 ## Specyfikacja Techniczna
 
@@ -49,15 +58,10 @@ Aplikacja nie wymaga skomplikowanej instalacji ani serwera.
 
 Aplikacja jest gotowa do użycia.
 
-## Jak Korzystać z Aplikacji (Przepływ Użytkownika)
+### Uruchomienie na telefonie (PWA)
 
-1.  **Ekran Główny:** Po otwarciu aplikacji zobaczysz listę 7 dni treningowych.
-2.  **Rozpoczęcie Dnia:** Kliknij przycisk **"Start treningu dnia"** przy wybranym dniu.
-3.  **Podgląd i Modyfikacja:** Zostaniesz przeniesiony na ekran podglądu, gdzie możesz przejrzeć listę ćwiczeń i opcjonalnie zmienić liczbę serii lub powtórzeń.
-4.  **Uruchomienie Sesji:** Kliknij **"Rozpocznij Trening"**, aby przejść do zautomatyzowanego trybu skupienia.
-5.  **Wykonywanie Ćwiczeń:** Aplikacja poprowadzi Cię przez każdą serię i przerwę. Postępuj zgodnie z instrukcjami na ekranie:
-    *   Jeśli widzisz **timer**, wykonuj ćwiczenie przez wskazany czas.
-    *   Jeśli widzisz przycisk **"WYKONAJ"**, wykonaj zadaną liczbę powtórzeń i kliknij go, aby przejść dalej.
-6.  **Zakończenie Treningu:** Po ostatnim ćwiczeniu zostaniesz przeniesiony na ekran podsumowania.
-7.  **Podsumowanie:** Wypełnij formularz z oceną bólu i notatkami, a następnie kliknij **"Zapisz i zakończ"**.
-8.  **Powrót:** Wrócisz do ekranu głównego, a ukończony dzień będzie oznaczony zielonym kolorem.
+Aplikację można łatwo "zainstalować" na telefonie, aby działała jak natywna aplikacja:
+1.  **Opublikuj aplikację online** używając darmowej usługi takiej jak [Netlify](https://www.netlify.com/) lub [Vercel](https://vercel.com/) (wystarczy przeciągnąć folder z projektem).
+2.  **Otwórz link** do opublikowanej aplikacji w przeglądarce Chrome na telefonie z Androidem.
+3.  Kliknij menu z trzema kropkami i wybierz opcję **"Zainstaluj aplikację"** (lub "Dodaj do ekranu głównego").
+4.  Ikona aplikacji pojawi się na ekranie głównym Twojego telefonu.

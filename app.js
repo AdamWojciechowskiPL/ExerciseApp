@@ -3,37 +3,23 @@ document.addEventListener('DOMContentLoaded', () => {
     // =============================================
     // =========== DANE STATYCZNE APLIKACJI ==========
     // =============================================
-    const APP_CONTENT = {
-        safetyRules: [
-            "Natychmiast przerwij trening, jeśli poczujesz ostry, przeszywający ból.",
-            "Nie ćwicz, jeśli odczuwasz drętwienie, mrowienie lub osłabienie siły w nogach.",
-            "Zatrzymaj trening w przypadku problemów z kontrolą pęcherza lub jelit i pilnie skontaktuj się z lekarzem.",
-            "Unikaj ćwiczeń, które powodują ból promieniujący w dół nogi.",
-            "Jeśli ból spoczynkowy w nocy znacząco się nasila, skonsultuj się ze specjalistą."
-        ],
-        progressionRules: [
-            "Zwiększaj czas izometrii: Jeśli standard to 8-10s, spróbuj dojść do 12-15s.",
-            "Zwiększaj liczbę powtórzeń: Jeśli robisz 5-6 powtórzeń, spróbuj zrobić 7-8 w tej samej jakości.",
-            "Dodaj serię: Jeśli plan zakłada 3 serie, po 2 tygodniach dobrej tolerancji dodaj czwartą serię w kluczowych ćwiczeniach.",
-            "Skracaj przerwy: Zmniejsz czas odpoczynku między seriami z 60s do 45s.",
-            "Dodaj utrudnienie: W ćwiczeniu Bird-dog możesz dodać lekki ruch ramieniem lub nogą w bok, utrzymując stabilny tułów.",
-            "Słuchaj swojego ciała: Progresja nie jest obowiązkowa. Jeśli czujesz się gorzej, wróć do poprzedniego etapu."
-        ]
-    };
+    const APP_CONTENT = { /* PUSTE */ };
 
     // =============================================
     // ================ STAN APLIKACJI ===============
     // =============================================
     let state = {
         userProgress: {},
-        currentDayIndex: null,
+        settings: {
+            appStartDate: null,
+            restBetweenExercises: 60,
+            progressionFactor: 100
+        },
+        currentTrainingDate: null,
+        currentCalendarView: new Date(),
         currentExerciseIndex: null,
         flatExercises: [],
-        timer: {
-            interval: null,
-            timeLeft: 0,
-            isActive: false,
-        },
+        timer: { interval: null, timeLeft: 0, isActive: false },
         audioContext: null,
         completionSound: () => {
             if (!state.audioContext) state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -51,7 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
             synth: window.speechSynthesis,
             polishVoice: null,
             isSupported: 'speechSynthesis' in window,
-            isSoundOn: true // Globalny przełącznik dźwięku
+            isSoundOn: true
         }
     };
 
@@ -60,36 +46,18 @@ document.addEventListener('DOMContentLoaded', () => {
     // =============================================
     const screens = {
         main: document.getElementById('main-screen'),
+        history: document.getElementById('history-screen'),
+        settings: document.getElementById('settings-screen'),
         preTraining: document.getElementById('pre-training-screen'),
         training: document.getElementById('training-screen'),
         summary: document.getElementById('summary-screen'),
-        progression: document.getElementById('progression-screen'),
-        safety: document.getElementById('safety-screen')
     };
     const containers = {
         days: document.getElementById('days-container'),
-        preTrainingList: document.getElementById('pre-training-list'),
-        progressionContent: document.getElementById('progression-content'),
-        safetyContent: document.getElementById('safety-content')
+        calendarGrid: document.getElementById('calendar-grid'),
     };
     const mainNav = document.getElementById('main-nav');
-    const summaryForm = document.getElementById('summary-form');
-    const focus = {
-        sectionName: document.getElementById('focus-section-name'),
-        progress: document.getElementById('focus-progress'),
-        timerDisplay: document.getElementById('focus-timer-display'),
-        exerciseName: document.getElementById('focus-exercise-name'),
-        exerciseDetails: document.getElementById('focus-exercise-details'),
-        exerciseInfoContainer: document.querySelector('.focus-exercise-info'),
-        focusDescription: document.getElementById('focus-description'),
-        ttsToggleBtn: document.getElementById('tts-toggle-btn'),
-        nextExerciseName: document.getElementById('next-exercise-name'),
-        exitTrainingBtn: document.getElementById('exit-training-btn'),
-        prevStepBtn: document.getElementById('prev-step-btn'),
-        pauseResumeBtn: document.getElementById('pause-resume-btn'),
-        repBasedDoneBtn: document.getElementById('rep-based-done-btn'),
-        skipBtn: document.getElementById('skip-btn'),
-    };
+    let focus = {}; // Pusty obiekt, zostanie wypełniony dynamicznie
 
     // =============================================
     // ============== LOGIKA TTS (MOWA) ==============
@@ -99,27 +67,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const voices = state.tts.synth.getVoices();
         state.tts.polishVoice = voices.find(voice => voice.lang === 'pl-PL') || voices.find(voice => voice.lang.startsWith('pl'));
     };
-
     const speak = (text, interrupt = true, onEndCallback = null) => {
         if (!state.tts.isSupported || !text || !state.tts.isSoundOn) {
             if (onEndCallback) onEndCallback();
             return;
         }
-
         if (interrupt && state.tts.synth.speaking) {
             state.tts.synth.cancel();
         }
-
         const utterance = new SpeechSynthesisUtterance(text);
         if (state.tts.polishVoice) {
             utterance.voice = state.tts.polishVoice;
         }
         utterance.lang = 'pl-PL';
-        
         if (onEndCallback) {
             utterance.onend = onEndCallback;
         }
-        
         state.tts.synth.speak(utterance);
     };
 
@@ -128,20 +91,37 @@ document.addEventListener('DOMContentLoaded', () => {
     // =============================================
     const dataStore = {
         load: () => {
-            const data = localStorage.getItem('trainingAppProgress');
-            if (data) {
-                state.userProgress = JSON.parse(data);
-            } else {
-                state.userProgress = { days: {} };
-                TRAINING_PLAN.Days.forEach(day => {
-                    state.userProgress.days[`day_${day.dayNumber}`] = { status: 'not_started' };
-                });
-                dataStore.save();
+            const progressData = localStorage.getItem('trainingAppProgress');
+            if (progressData) state.userProgress = JSON.parse(progressData);
+            
+            const settingsData = localStorage.getItem('trainingAppSettings');
+            if (settingsData) state.settings = { ...state.settings, ...JSON.parse(settingsData) };
+            
+            if (!state.settings.appStartDate) {
+                state.settings.appStartDate = getISODate(new Date());
+                dataStore.saveSettings();
             }
         },
-        save: () => {
+        saveProgress: () => {
             localStorage.setItem('trainingAppProgress', JSON.stringify(state.userProgress));
+        },
+        saveSettings: () => {
+            localStorage.setItem('trainingAppSettings', JSON.stringify(state.settings));
         }
+    };
+    
+    // =============================================
+    // ============= FUNKCJE POMOCNICZE (DATY) ===========
+    // =============================================
+    const getISODate = (date) => date.toISOString().split('T')[0];
+    const getTrainingDayForDate = (date) => {
+        const startDate = new Date(state.settings.appStartDate);
+        const currentDate = new Date(getISODate(date));
+        const diffTime = currentDate - startDate;
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        const dayIndex = diffDays % TRAINING_PLAN.Days.length;
+        const planDayNumber = (dayIndex < 0) ? dayIndex + TRAINING_PLAN.Days.length + 1 : dayIndex + 1;
+        return TRAINING_PLAN.Days.find(d => d.dayNumber === planDayNumber);
     };
 
     // =============================================
@@ -154,7 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             screens.training.classList.remove('active');
             mainNav.style.display = 'flex';
-            Object.values(screens).forEach(s => s.classList.remove('active'));
+            Object.values(screens).forEach(s => { if (s) s.classList.remove('active'); });
             if (screens[screenName]) screens[screenName].classList.add('active');
         }
         window.scrollTo(0, 0);
@@ -165,51 +145,177 @@ document.addEventListener('DOMContentLoaded', () => {
     // =============================================
     const renderMainScreen = () => {
         containers.days.innerHTML = '';
-        TRAINING_PLAN.Days.forEach((day, index) => {
-            const dayKey = `day_${day.dayNumber}`;
-            const progress = state.userProgress.days[dayKey] || { status: 'not_started' };
+        const today = new Date();
+        for (let i = 0; i < 7; i++) {
+            const date = new Date(today);
+            date.setDate(today.getDate() + i);
+            const isoDate = getISODate(date);
+            
+            const trainingDay = getTrainingDayForDate(date);
+            if (!trainingDay) continue;
+
+            const progress = state.userProgress[isoDate] || { status: 'not_started' };
             const statusText = {
                 not_started: "Nie rozpoczęto",
                 in_progress: "W trakcie",
                 completed: "Ukończono"
             }[progress.status];
-            
+
+            let dateLabel = date.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' });
+            if (i === 0) dateLabel = `Dzisiaj, ${dateLabel}`;
+            if (i === 1) dateLabel = `Jutro, ${dateLabel}`;
+
             const card = document.createElement('div');
             card.className = 'day-card';
             card.dataset.status = progress.status;
             card.innerHTML = `
+                <p class="day-card-date">${dateLabel}</p>
                 <div class="card-header">
-                    <h3>Dzień ${day.dayNumber}: ${day.title}</h3>
+                    <h3>Dzień ${trainingDay.dayNumber}: ${trainingDay.title}</h3>
                     <span class="status ${progress.status}">${statusText}</span>
                 </div>
-                <p><strong>Szacowany czas:</strong> ${day.duration_estimate_min}–${day.duration_estimate_max} min</p>
-                <div><h4>Rozgrzewka</h4><h4>Część główna</h4><h4>Schłodzenie</h4></div>
-                <button class="action-btn" data-day-index="${index}">Start treningu dnia</button>
+                <button class="action-btn" data-date="${isoDate}">Start treningu dnia</button>
             `;
             containers.days.appendChild(card);
-        });
+        }
+    };
+
+    const renderHistoryScreen = () => {
+        const date = state.currentCalendarView;
+        const year = date.getFullYear();
+        const month = date.getMonth();
+        
+        document.getElementById('month-year-header').textContent = date.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' });
+        
+        const grid = containers.calendarGrid;
+        grid.innerHTML = '';
+        
+        const firstDayOfMonth = new Date(year, month, 1);
+        const lastDayOfMonth = new Date(year, month + 1, 0);
+        const daysInMonth = lastDayOfMonth.getDate();
+        
+        let startDay = firstDayOfMonth.getDay();
+        if (startDay === 0) startDay = 7;
+        
+        for (let i = 1; i < startDay; i++) {
+            grid.innerHTML += `<div class="calendar-day other-month"></div>`;
+        }
+        
+        const todayISO = getISODate(new Date());
+        for (let i = 1; i <= daysInMonth; i++) {
+            const currentDate = new Date(year, month, i);
+            const isoDate = getISODate(currentDate);
+            const trainingDay = getTrainingDayForDate(currentDate);
+            const progress = state.userProgress[isoDate] || { status: 'not_started' };
+            
+            const dayEl = document.createElement('div');
+            dayEl.className = `calendar-day ${progress.status}`;
+            if (isoDate === todayISO) {
+                dayEl.classList.add('today');
+            }
+            
+            dayEl.innerHTML = `
+                <div class="day-number">${i}</div>
+                <div class="day-plan">Dzień ${trainingDay.dayNumber}</div>
+            `;
+            grid.appendChild(dayEl);
+        }
+        navigateTo('history');
     };
     
-    const renderStaticContent = () => {
-        containers.safetyContent.innerHTML = `<ul>${APP_CONTENT.safetyRules.map(rule => `<li>${rule}</li>`).join('')}</ul>`;
-        containers.progressionContent.innerHTML = `<ul>${APP_CONTENT.progressionRules.map(rule => `<li>${rule}</li>`).join('')}</ul>`;
+    const renderSettingsScreen = () => {
+        const form = document.getElementById('settings-form');
+        form['setting-rest-duration'].value = state.settings.restBetweenExercises;
+        form['setting-progression-factor'].value = state.settings.progressionFactor;
+        document.getElementById('progression-factor-value').textContent = `${state.settings.progressionFactor}%`;
+        navigateTo('settings');
+    };
+
+    const renderPreTrainingScreen = (isoDate) => {
+        state.currentTrainingDate = isoDate;
+        const date = new Date(isoDate);
+        const trainingDay = getTrainingDayForDate(date);
+        
+        if (!trainingDay) return;
+
+        const factor = state.settings.progressionFactor;
+        
+        const screen = screens.preTraining;
+        screen.innerHTML = `
+            <h2 id="pre-training-title">Podgląd: ${date.toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' })}</h2>
+            <div id="pre-training-list"></div>
+            <div class="pre-training-nav">
+                <button id="pre-training-back-btn" class="nav-btn">Wróć</button>
+                <button id="start-modified-training-btn" class="action-btn">Rozpocznij Trening</button>
+            </div>
+        `;
+        
+        const listContainer = screen.querySelector('#pre-training-list');
+
+        const sections = [
+            { name: 'Rozgrzewka', exercises: trainingDay.warmup || [] },
+            { name: 'Część główna', exercises: trainingDay.main || [] },
+            { name: 'Schłodzenie', exercises: trainingDay.cooldown || [] }
+        ];
+
+        let exerciseCounter = 0;
+        sections.forEach(section => {
+            if (section.exercises.length === 0) return;
+            const header = document.createElement('h3');
+            header.className = 'pre-training-section-header';
+            header.textContent = section.name;
+            listContainer.appendChild(header);
+
+            section.exercises.forEach((ex) => {
+                const card = document.createElement('div');
+                card.className = 'pre-training-exercise-card';
+                const uniqueId = `ex-${exerciseCounter}`;
+                const modifiedReps = applyProgression(ex.reps_or_time, factor);
+                const modifiedTempo = applyProgression(ex.tempo_or_iso, factor);
+                
+                card.innerHTML = `
+                    <h4>${ex.name}</h4>
+                    <p class="pre-training-description">${ex.description || 'Brak opisu.'}</p>
+                    <a href="${ex.youtube_url}" target="_blank">Obejrzyj wideo ↗</a>
+                    <p class="details">Tempo: ${modifiedTempo} | Sprzęt: ${ex.equipment}</p>
+                    <div class="pre-training-inputs">
+                        <div class="form-group">
+                            <label for="sets-${uniqueId}">Serie</label>
+                            <input type="text" id="sets-${uniqueId}" value="${ex.sets}" data-original-name="${ex.name}">
+                        </div>
+                        <div class="form-group">
+                            <label for="reps-${uniqueId}">Powtórzenia/Czas</label>
+                            <input type="text" id="reps-${uniqueId}" value="${modifiedReps}" data-original-name="${ex.name}">
+                        </div>
+                    </div>
+                `;
+                listContainer.appendChild(card);
+                exerciseCounter++;
+            });
+        });
+        
+        screen.querySelector('#pre-training-back-btn').addEventListener('click', () => { navigateTo('main'); renderMainScreen(); });
+        screen.querySelector('#start-modified-training-btn').addEventListener('click', startModifiedTraining);
+        
+        navigateTo('preTraining');
     };
 
     const renderSummaryScreen = () => {
-        const day = TRAINING_PLAN.Days[state.currentDayIndex];
-        const dayProgress = state.userProgress.days[`day_${day.dayNumber}`] || {};
+        const day = getTrainingDayForDate(new Date(state.currentTrainingDate));
+        const dayProgress = state.userProgress[state.currentTrainingDate] || {};
+        const initialPainValue = dayProgress.pain_during || 0;
         const summaryScreen = screens.summary;
+
         summaryScreen.innerHTML = `
             <h2 id="summary-title">Podsumowanie Dnia ${day.dayNumber}</h2>
             <p>Gratulacje! Dobra robota.</p>
             <form id="summary-form">
                 <div class="form-group">
                     <label for="pain-during">Ocena bólu W TRAKCIE treningu (0-10):</label>
-                    <input type="number" id="pain-during" min="0" max="10" required value="${dayProgress.pain_during || ''}">
-                </div>
-                <div class="form-group">
-                    <label for="pain-after">Ocena bólu PO 24H (wróć tu później):</label>
-                    <input type="number" id="pain-after" min="0" max="10" value="${dayProgress.pain_after_24h || ''}">
+                    <div class="slider-container">
+                        <input type="range" id="pain-during" min="0" max="10" step="1" value="${initialPainValue}">
+                        <span class="slider-value" id="pain-during-value">${initialPainValue}</span>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="general-notes">Notatki ogólne:</label>
@@ -218,62 +324,96 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button type="submit" class="action-btn">Zapisz i zakończ</button>
             </form>
         `;
+
+        const slider = summaryScreen.querySelector('#pain-during');
+        const sliderValueDisplay = summaryScreen.querySelector('#pain-during-value');
+        slider.addEventListener('input', () => {
+            sliderValueDisplay.textContent = slider.value;
+        });
+
         summaryScreen.querySelector('#summary-form').addEventListener('submit', handleSummarySubmit);
     };
 
-    const renderPreTrainingScreen = (dayIndex) => {
-        state.currentDayIndex = dayIndex;
-        const day = TRAINING_PLAN.Days[dayIndex];
-        document.getElementById('pre-training-title').innerText = `Podgląd: Dzień ${day.dayNumber}`;
-        
-        containers.preTrainingList.innerHTML = '';
-
-        const sections = [
-            { name: 'Rozgrzewka', exercises: day.warmup || [] },
-            { name: 'Część główna', exercises: day.main || [] },
-            { name: 'Schłodzenie', exercises: day.cooldown || [] }
-        ];
-
-        let exerciseCounter = 0;
-        sections.forEach(section => {
-            if (section.exercises.length === 0) return;
-
-            const header = document.createElement('h3');
-            header.className = 'pre-training-section-header';
-            header.textContent = section.name;
-            containers.preTrainingList.appendChild(header);
-
-            section.exercises.forEach((ex) => {
-                const card = document.createElement('div');
-                card.className = 'pre-training-exercise-card';
-                const uniqueId = `ex-${exerciseCounter}`;
-                card.innerHTML = `
-                    <h4>${ex.name}</h4>
-                    <p class="pre-training-description">${ex.description || 'Brak opisu.'}</p>
-                    <a href="${ex.youtube_url}" target="_blank">Obejrzyj wideo ↗</a>
-                    <p class="details">Tempo: ${ex.tempo_or_iso} | Sprzęt: ${ex.equipment}</p>
-                    <div class="pre-training-inputs">
-                        <div class="form-group">
-                            <label for="sets-${uniqueId}">Serie</label>
-                            <input type="text" id="sets-${uniqueId}" value="${ex.sets}" data-original-name="${ex.name}">
-                        </div>
-                        <div class="form-group">
-                            <label for="reps-${uniqueId}">Powtórzenia/Czas</label>
-                            <input type="text" id="reps-${uniqueId}" value="${ex.reps_or_time}" data-original-name="${ex.name}">
-                        </div>
+    const renderTrainingScreen = () => {
+        screens.training.innerHTML = `
+            <div class="focus-view">
+                <div class="focus-header">
+                    <p id="focus-section-name"></p>
+                    <button id="exit-training-btn">Zakończ</button>
+                    <p id="focus-progress"></p>
+                </div>
+                <div class="focus-timer-container">
+                    <p id="focus-timer-display"></p>
+                </div>
+                <div class="focus-exercise-info">
+                    <div class="exercise-title-container">
+                        <h2 id="focus-exercise-name"></h2>
+                        <button id="tts-toggle-btn" class="tts-button"></button>
                     </div>
-                `;
-                containers.preTrainingList.appendChild(card);
-                exerciseCounter++;
-            });
+                    <p id="focus-exercise-details"></p>
+                </div>
+                <div id="focus-description" class="focus-description-container"></div>
+                <div class="focus-controls">
+                    <button id="prev-step-btn" class="control-btn">Cofnij</button>
+                    <button id="pause-resume-btn" class="control-btn">Pauza</button>
+                    <button id="rep-based-done-btn" class="control-btn action-btn hidden">GOTOWE</button>
+                    <button id="skip-btn" class="control-btn">Pomiń</button>
+                </div>
+                <div class="focus-next-up">
+                    <p><strong>Następne:</strong> <span id="next-exercise-name"></span></p>
+                </div>
+            </div>`;
+
+        focus = {
+            sectionName: document.getElementById('focus-section-name'),
+            progress: document.getElementById('focus-progress'),
+            timerDisplay: document.getElementById('focus-timer-display'),
+            exerciseName: document.getElementById('focus-exercise-name'),
+            exerciseDetails: document.getElementById('focus-exercise-details'),
+            exerciseInfoContainer: screens.training.querySelector('.focus-exercise-info'),
+            focusDescription: document.getElementById('focus-description'),
+            ttsToggleBtn: document.getElementById('tts-toggle-btn'),
+            nextExerciseName: document.getElementById('next-exercise-name'),
+            exitTrainingBtn: document.getElementById('exit-training-btn'),
+            prevStepBtn: document.getElementById('prev-step-btn'),
+            pauseResumeBtn: document.getElementById('pause-resume-btn'),
+            repBasedDoneBtn: document.getElementById('rep-based-done-btn'),
+            skipBtn: document.getElementById('skip-btn'),
+        };
+        
+        focus.exitTrainingBtn.addEventListener('click', () => {
+            if (confirm('Czy na pewno chcesz zakończyć trening? Dzień pozostanie oznaczony jako "W trakcie".')) {
+                stopTimer();
+                if (state.tts.isSupported) state.tts.synth.cancel();
+                navigateTo('main');
+                renderMainScreen();
+            }
         });
-        navigateTo('preTraining');
+        focus.ttsToggleBtn.addEventListener('click', () => {
+            state.tts.isSoundOn = !state.tts.isSoundOn;
+            focus.ttsToggleBtn.textContent = state.tts.isSoundOn ? '🔊' : '🔇';
+            if (!state.tts.isSoundOn) {
+                if (state.tts.isSupported) state.tts.synth.cancel();
+            }
+        });
+        focus.prevStepBtn.addEventListener('click', moveToPreviousExercise);
+        focus.pauseResumeBtn.addEventListener('click', togglePauseTimer);
+        focus.skipBtn.addEventListener('click', moveToNextExercise);
+        focus.repBasedDoneBtn.addEventListener('click', moveToNextExercise);
     };
 
     // =============================================
     // ============== LOGIKA TRENINGU ================
     // =============================================
-
+    const applyProgression = (value, factor) => {
+        if (!value || factor === 100) return value;
+        const multiplier = factor / 100;
+        return value.replace(/(\d+)/g, (match) => {
+            const num = parseInt(match, 10);
+            return Math.round(num * multiplier);
+        });
+    };
+    
     const parseSetCount = (setsString) => {
         if (!setsString) return 1;
         const parts = String(setsString).split('-');
@@ -304,7 +444,6 @@ document.addEventListener('DOMContentLoaded', () => {
             { name: 'Część główna', exercises: dayData.main || [] },
             { name: 'Schłodzenie', exercises: dayData.cooldown || [] }
         ];
-
         sections.forEach(section => {
             section.exercises.forEach((exercise, exerciseIndex) => {
                 const setCount = parseSetCount(exercise.sets);
@@ -316,23 +455,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 const isLastExerciseInSection = exerciseIndex === section.exercises.length - 1;
                 if (!isLastExerciseInSection) {
-                     plan.push({ name: 'Przerwa', isRest: true, duration: TRAINING_PLAN.GlobalRules.defaultRestSecondsBetweenExercises, sectionName: 'Przerwa' });
+                     plan.push({ name: 'Przerwa', isRest: true, duration: state.settings.restBetweenExercises, sectionName: 'Przerwa' });
                 }
             });
         });
         return plan;
     };
-
+    
     const startModifiedTraining = () => {
-        const originalDay = TRAINING_PLAN.Days[state.currentDayIndex];
-        const modifiedDay = JSON.parse(JSON.stringify(originalDay));
-        const allExercises = [
-            ...(modifiedDay.warmup || []),
-            ...(modifiedDay.main || []),
-            ...(modifiedDay.cooldown || [])
-        ];
+        const trainingDay = getTrainingDayForDate(new Date(state.currentTrainingDate));
+        const modifiedDay = JSON.parse(JSON.stringify(trainingDay));
 
-        const allInputs = containers.preTrainingList.querySelectorAll('input[data-original-name]');
+        const sectionKeys = ['warmup', 'main', 'cooldown'];
+        const allExercises = sectionKeys.flatMap(key => modifiedDay[key] || []);
+
+        const allInputs = screens.preTraining.querySelectorAll('input[data-original-name]');
         allInputs.forEach(input => {
             const exerciseName = input.dataset.originalName;
             const targetExercise = allExercises.find(ex => ex.name === exerciseName);
@@ -344,13 +481,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         });
-
-        const dayKey = `day_${modifiedDay.dayNumber}`;
-        if (!state.userProgress.days[dayKey]) state.userProgress.days[dayKey] = {};
-        if (state.userProgress.days[dayKey].status !== 'completed') {
-            state.userProgress.days[dayKey].status = 'in_progress';
+        
+        const dateKey = state.currentTrainingDate;
+        if (!state.userProgress[dateKey]) state.userProgress[dateKey] = {};
+        if (state.userProgress[dateKey].status !== 'completed') {
+            state.userProgress[dateKey].status = 'in_progress';
         }
-        dataStore.save();
+        dataStore.saveProgress();
 
         state.flatExercises = [
             { name: "Przygotuj się", isRest: true, duration: 5, sectionName: "Start" },
@@ -360,7 +497,7 @@ document.addEventListener('DOMContentLoaded', () => {
         startExercise(0);
         navigateTo('training');
     };
-
+    
     const startExercise = (index) => {
         state.currentExerciseIndex = index;
         const exercise = state.flatExercises[index];
@@ -397,11 +534,13 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const duration = getExerciseDuration(exercise);
         if (duration !== null) {
+            focus.timerDisplay.classList.remove('rep-based-text');
             focus.timerDisplay.style.display = 'block';
             focus.repBasedDoneBtn.classList.add('hidden');
             focus.pauseResumeBtn.classList.remove('hidden');
             startTimer(duration);
         } else {
+            focus.timerDisplay.classList.add('rep-based-text');
             stopTimer();
             focus.timerDisplay.textContent = "WYKONAJ";
             focus.repBasedDoneBtn.classList.remove('hidden');
@@ -428,9 +567,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // =============================================
-    // ================ LOGIKA TIMERA ================
-    // =============================================
     const startTimer = (seconds) => {
         stopTimer();
         state.timer.timeLeft = seconds;
@@ -473,67 +609,108 @@ document.addEventListener('DOMContentLoaded', () => {
     // =============================================
     // =============== OBSŁUGA ZDARZEŃ ===============
     // =============================================
-    
     const handleSummarySubmit = (e) => {
         e.preventDefault();
-        const dayKey = `day_${TRAINING_PLAN.Days[state.currentDayIndex].dayNumber}`;
-        const progress = state.userProgress.days[dayKey];
-        progress.status = 'completed';
-        progress.pain_during = document.getElementById('pain-during').value;
-        progress.pain_after_24h = document.getElementById('pain-after').value;
-        progress.notes = document.getElementById('general-notes').value;
-        progress.lastCompletedDate = new Date().toISOString();
-        dataStore.save();
-        state.currentDayIndex = null;
+        const dateKey = state.currentTrainingDate;
+        if (!state.userProgress[dateKey]) state.userProgress[dateKey] = {};
+        
+        state.userProgress[dateKey].status = 'completed';
+        state.userProgress[dateKey].pain_during = document.getElementById('pain-during').value;
+        state.userProgress[dateKey].notes = document.getElementById('general-notes').value;
+        state.userProgress[dateKey].lastCompletedDate = new Date().toISOString();
+        
+        dataStore.saveProgress();
+        state.currentTrainingDate = null;
         navigateTo('main');
         renderMainScreen();
     };
 
-    document.getElementById('nav-main').addEventListener('click', () => navigateTo('main'));
-    document.getElementById('nav-progression').addEventListener('click', () => navigateTo('progression'));
-    document.getElementById('nav-safety').addEventListener('click', () => navigateTo('safety'));
+    document.getElementById('nav-main').addEventListener('click', () => { navigateTo('main'); renderMainScreen(); });
+    document.getElementById('nav-history').addEventListener('click', renderHistoryScreen);
+    document.getElementById('nav-settings').addEventListener('click', renderSettingsScreen);
     
+    document.getElementById('prev-month-btn').addEventListener('click', () => {
+        state.currentCalendarView.setMonth(state.currentCalendarView.getMonth() - 1);
+        renderHistoryScreen();
+    });
+    document.getElementById('next-month-btn').addEventListener('click', () => {
+        state.currentCalendarView.setMonth(state.currentCalendarView.getMonth() + 1);
+        renderHistoryScreen();
+    });
+
     containers.days.addEventListener('click', (e) => {
         if (e.target.matches('.action-btn')) {
-            const dayIndex = parseInt(e.target.dataset.dayIndex, 10);
-            renderPreTrainingScreen(dayIndex);
+            const date = e.target.dataset.date;
+            renderPreTrainingScreen(date);
         }
     });
 
-    document.getElementById('pre-training-back-btn').addEventListener('click', () => navigateTo('main'));
-    document.getElementById('start-modified-training-btn').addEventListener('click', startModifiedTraining);
-
-    focus.exitTrainingBtn.addEventListener('click', () => {
-        if (confirm('Czy na pewno chcesz zakończyć trening? Dzień pozostanie oznaczony jako "W trakcie".')) {
-            stopTimer();
-            if (state.tts.isSupported) state.tts.synth.cancel();
-            navigateTo('main');
-        }
+    document.getElementById('settings-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        state.settings.restBetweenExercises = parseInt(e.target['setting-rest-duration'].value, 10);
+        state.settings.progressionFactor = parseInt(e.target['setting-progression-factor'].value, 10);
+        dataStore.saveSettings();
+        alert('Ustawienia zostały zapisane.');
+        navigateTo('main');
+        renderMainScreen();
     });
     
-    focus.ttsToggleBtn.addEventListener('click', () => {
-        state.tts.isSoundOn = !state.tts.isSoundOn;
-        focus.ttsToggleBtn.textContent = state.tts.isSoundOn ? '🔊' : '🔇';
-
-        if (!state.tts.isSoundOn) {
-            if (state.tts.isSupported) state.tts.synth.cancel();
-        }
+    document.getElementById('setting-progression-factor').addEventListener('input', (e) => {
+        document.getElementById('progression-factor-value').textContent = `${e.target.value}%`;
     });
 
-    focus.prevStepBtn.addEventListener('click', moveToPreviousExercise);
-    focus.pauseResumeBtn.addEventListener('click', togglePauseTimer);
-    focus.skipBtn.addEventListener('click', moveToNextExercise);
-    focus.repBasedDoneBtn.addEventListener('click', moveToNextExercise);
+    document.getElementById('backup-btn').addEventListener('click', () => {
+        const dataToBackup = {
+            userProgress: state.userProgress,
+            settings: state.settings
+        };
+        const dataStr = JSON.stringify(dataToBackup, null, 2);
+        const dataBlob = new Blob([dataStr], {type: "application/json"});
+        const url = URL.createObjectURL(dataBlob);
+        const link = document.createElement('a');
+        link.download = `trening-app-backup-${getISODate(new Date())}.json`;
+        link.href = url;
+        link.click();
+        URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('restore-btn').addEventListener('click', () => {
+        document.getElementById('restore-input').click();
+    });
+
+    document.getElementById('restore-input').addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const importedData = JSON.parse(e.target.result);
+                if (importedData.userProgress && importedData.settings) {
+                    if(confirm("Czy na pewno chcesz nadpisać obecne dane danymi z pliku? Strona zostanie przeładowana.")) {
+                        localStorage.setItem('trainingAppProgress', JSON.stringify(importedData.userProgress));
+                        localStorage.setItem('trainingAppSettings', JSON.stringify(importedData.settings));
+                        alert("Dane zostały przywrócone. Aplikacja zostanie teraz przeładowana.");
+                        window.location.reload();
+                    }
+                } else {
+                    alert("Błąd: Nieprawidłowy format pliku z kopią zapasową.");
+                }
+            } catch (error) {
+                alert("Błąd podczas wczytywania pliku. Upewnij się, że jest to prawidłowy plik JSON z backupem.");
+                console.error("Restore error:", error);
+            }
+        };
+        reader.readAsText(file);
+        event.target.value = '';
+    });
     
     // =============================================
     // ============ INICJALIZACJA APLIKACJI ===========
     // =============================================
     const init = () => {
+        renderTrainingScreen();
         dataStore.load();
         renderMainScreen();
-        renderStaticContent();
-        navigateTo('main');
-
         if (state.tts.isSupported) {
             loadVoices();
             if (speechSynthesis.onvoiceschanged !== undefined) {

@@ -14,101 +14,74 @@
         <h1>Plan Treningowy L5-S1</h1>
         <nav id="main-nav">
             <button id="nav-main">Ekran Główny</button>
-            <button id="nav-progression">Progresja</button>
-            <button id="nav-safety">Bezpieczeństwo</button>
+            <button id="nav-history">Historia</button>
+            <button id="nav-settings">Ustawienia</button>
         </nav>
     </header>
 
     <main>
         <!-- Ekran Główny -->
         <section id="main-screen" class="screen active">
-            <h2>7-dniowy Plan Regeneracyjny</h2>
+            <h2>Plan na najbliższe 7 dni</h2>
             <div id="days-container"></div>
         </section>
 
-        <!-- EKRAN PODGLĄDU I MODYFIKACJI TRENINGU -->
-        <section id="pre-training-screen" class="screen">
-            <h2 id="pre-training-title">Podgląd Treningu</h2>
-            <div id="pre-training-list"></div>
-            <div class="pre-training-nav">
-                <button id="pre-training-back-btn" class="nav-btn">Wróć</button>
-                <button id="start-modified-training-btn" class="action-btn">Rozpocznij Trening</button>
+        <!-- EKRAN HISTORII Z KALENDARZEM -->
+        <section id="history-screen" class="screen">
+            <h2>Historia Treningów</h2>
+            <div class="calendar-container">
+                <div class="calendar-header">
+                    <button id="prev-month-btn">&lt;</button>
+                    <h3 id="month-year-header">Październik 2025</h3>
+                    <button id="next-month-btn">&gt;</button>
+                </div>
+                <div class="calendar-weekdays">
+                    <div>Pn</div><div>Wt</div><div>Śr</div><div>Cz</div><div>Pt</div><div>So</div><div>Nd</div>
+                </div>
+                <div class="calendar-grid" id="calendar-grid"></div>
             </div>
         </section>
 
-        <!-- EKRAN TRENINGU -->
-        <section id="training-screen" class="screen">
-            <div class="focus-view">
-                <div class="focus-header">
-                    <p id="focus-section-name">Rozgrzewka</p>
-                    <button id="exit-training-btn">Zakończ</button>
-                    <p id="focus-progress">1 / 10</p>
+        <!-- EKRAN USTAWIEŃ -->
+        <section id="settings-screen" class="screen">
+            <h2>Ustawienia</h2>
+            <form id="settings-form">
+                <div class="form-group">
+                    <label for="setting-rest-duration">Długość przerwy między ćwiczeniami (w sekundach)</label>
+                    <input type="number" id="setting-rest-duration" min="0" step="5" required>
                 </div>
-
-                <div class="focus-timer-container">
-                    <p id="focus-timer-display">START</p>
-                </div>
-
-                <div class="focus-exercise-info">
-                    <div class="exercise-title-container">
-                        <h2 id="focus-exercise-name">Nazwa Ćwiczenia</h2>
-                        <!-- ZMIENIONE ID PRZYCISKU -->
-                        <button id="tts-toggle-btn" class="tts-button">🔊</button>
+                <div class="form-group">
+                    <label for="setting-progression-factor">Współczynnik progresji (długość / powtórzenia)</label>
+                    <div class="slider-container">
+                        <input type="range" id="setting-progression-factor" min="50" max="200" step="5">
+                        <span class="slider-value" id="progression-factor-value">100%</span>
                     </div>
-                    <p id="focus-exercise-details">Serie: 3 | Powtórzenia: 10 | Tempo: 2s/2s</p>
                 </div>
-
-                <div id="focus-description" class="focus-description-container"></div>
-
-                <div class="focus-controls">
-                    <button id="prev-step-btn" class="control-btn">Cofnij</button>
-                    <button id="pause-resume-btn" class="control-btn">Pauza</button>
-                    <button id="rep-based-done-btn" class="control-btn action-btn hidden">GOTOWE</button>
-                    <button id="skip-btn" class="control-btn">Pomiń</button>
-                </div>
-
-                <div class="focus-next-up">
-                    <p><strong>Następne:</strong> <span id="next-exercise-name">Kolejne Ćwiczenie</span></p>
+                <button type="submit" class="action-btn">Zapisz ustawienia</button>
+            </form>
+            <div class="settings-section">
+                <h3>Backup i Przywracanie Danych</h3>
+                <p>Zapisz swoje postępy i ustawienia do pliku, aby móc je przywrócić później lub przenieść na inne urządzenie.</p>
+                <button id="backup-btn" class="nav-btn backup-btn">Utwórz backup (pobierz plik)</button>
+                <div class="restore-container">
+                    <p>Wybierz plik z kopią zapasową, aby przywrócić dane.</p>
+                    <input type="file" id="restore-input" accept=".json" class="hidden">
+                    <button id="restore-btn" class="nav-btn restore-btn">Przywróć z pliku</button>
                 </div>
             </div>
         </section>
-        <!-- Pozostałe ekrany -->
-        <section id="summary-screen" class="screen">
-            <h2 id="summary-title">Podsumowanie Dnia</h2>
-            <p>Gratulacje! Dobra robota.</p>
-            <form id="summary-form">
-                <div class="form-group">
-                    <label for="pain-during">Ocena bólu W TRAKCIE treningu (0-10):</label>
-                    <input type="number" id="pain-during" min="0" max="10" required>
-                </div>
-                <div class="form-group">
-                    <label for="pain-after">Ocena bólu PO 24H (wróć tu później):</label>
-                    <input type="number" id="pain-after" min="0" max="10">
-                </div>
-                <div class="form-group">
-                    <label for="general-notes">Notatki ogólne:</label>
-                    <textarea id="general-notes" rows="4"></textarea>
-                </div>
-                <button type="submit" class="action-btn">Zapisz i zakończ</button>
-            </form>
-        </section>
-        <section id="progression-screen" class="screen">
-            <h2>Zasady Progresji (4–12 tyg.)</h2>
-            <div id="progression-content" class="static-content"></div>
-        </section>
-        <section id="safety-screen" class="screen">
-            <h2>Bezpieczeństwo: Czerwone Flagi</h2>
-            <div id="safety-content" class="static-content"></div>
-            <button id="stop-training-btn">Zatrzymaj trening i skontaktuj się z lekarzem</button>
-        </section>
-    </main>
 
-    <footer id="safety-banner">
-        <details>
-            <summary>Kluczowe Zasady Bezpieczeństwa</summary>
-            <p>Pamiętaj o zakresie środkowym i wolnym tempie. Przerwij ćwiczenie przy bólu > 3/10. Nigdy nie spiesz się podczas wykonywania ćwiczeń.</p>
-        </details>
-    </footer>
+        <!-- EKRAN PODGLĄDU I MODYFIKACJI TRENINGU (DYNAMICZNIE WYPEŁNIANY) -->
+        <section id="pre-training-screen" class="screen"></section>
+
+        <!-- EKRAN TRENINGU (DYNAMICZNIE WYPEŁNIANY) -->
+        <section id="training-screen" class="screen"></section>
+
+        <!-- EKRAN PODSUMOWANIA (DYNAMICZNIE WYPEŁNIANY) -->
+        <section id="summary-screen" class="screen"></section>
+
+        <!-- EKRAN BEZPIECZEŃSTWA (USUNIĘTY) -->
+    </main>
     
     <script src="training-plan.js"></script>
     <script src="app.js"></script>

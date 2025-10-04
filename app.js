@@ -129,12 +129,14 @@ function init() {
 
     document.getElementById('settings-form').addEventListener('submit', (e) => {
         e.preventDefault();
+        // NOWA LINIA: Pobranie i zapisanie daty startowej
+        state.settings.appStartDate = e.target['setting-start-date'].value;
         state.settings.restBetweenExercises = parseInt(e.target['setting-rest-duration'].value, 10);
         state.settings.progressionFactor = parseInt(e.target['setting-progression-factor'].value, 10);
         dataStore.saveSettings();
         alert('Ustawienia zostały zapisane.');
         navigateTo('main');
-        renderMainScreen();
+        renderMainScreen(); // Kluczowe jest odświeżenie ekranu głównego
     });
     
     document.getElementById('setting-progression-factor').addEventListener('input', (e) => {

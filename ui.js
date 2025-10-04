@@ -80,7 +80,6 @@ export const renderHistoryScreen = () => {
         if (dayEntries.length > 0) {
             dayEl.classList.add('has-entry');
             dayEl.dataset.date = isoDate;
-            // Oznacz jako ukończony, jeśli którakolwiek sesja jest ukończona
             if (dayEntries.some(e => e.status === 'completed')) {
                 dayEl.classList.add('completed');
             } else {
@@ -94,10 +93,21 @@ export const renderHistoryScreen = () => {
             dayEl.classList.add('today');
         }
         
-        const trainingDayForVisuals = getTrainingDayForDate(currentDate);
+        // =========================================================================
+        // KLUCZOWA ZMIANA: Wyświetlaj przydział planu tylko dla dnia dzisiejszego i przyszłych
+        // =========================================================================
+        let planHtml = '';
+        // Porównanie stringów 'YYYY-MM-DD' jest bezpieczne i wydajne
+        if (isoDate >= todayISO) {
+            const trainingDayForVisuals = getTrainingDayForDate(currentDate);
+            if (trainingDayForVisuals) { // Upewnij się, że dzień istnieje
+                 planHtml = `<div class="day-plan">Plan: Dzień ${trainingDayForVisuals.dayNumber}</div>`;
+            }
+        }
+
         dayEl.innerHTML = `
             <div class="day-number">${i}</div>
-            <div class="day-plan">Plan: Dzień ${trainingDayForVisuals.dayNumber}</div>
+            ${planHtml} 
         `;
         grid.appendChild(dayEl);
     }
@@ -160,6 +170,8 @@ export const renderDayDetailsScreen = (isoDate) => {
 
 export const renderSettingsScreen = () => {
     const form = document.getElementById('settings-form');
+    // NOWA LINIA: Ustawienie wartości w polu kalendarza
+    form['setting-start-date'].value = state.settings.appStartDate;
     form['setting-rest-duration'].value = state.settings.restBetweenExercises;
     form['setting-progression-factor'].value = state.settings.progressionFactor;
     document.getElementById('progression-factor-value').textContent = `${state.settings.progressionFactor}%`;

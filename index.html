@@ -32,7 +32,7 @@
             <div class="calendar-container">
                 <div class="calendar-header">
                     <button id="prev-month-btn">&lt;</button>
-                    <h3 id="month-year-header">Październik 2025</h3>
+                    <h3 id="month-year-header"></h3>
                     <button id="next-month-btn">&gt;</button>
                 </div>
                 <div class="calendar-weekdays">
@@ -40,6 +40,13 @@
                 </div>
                 <div class="calendar-grid" id="calendar-grid"></div>
             </div>
+        </section>
+
+        <!-- EKRAN SZCZEGÓŁÓW DNIA -->
+        <section id="day-details-screen" class="screen">
+            <h2 id="details-day-title">Szczegóły Dnia</h2>
+            <div id="day-details-content"></div>
+            <button id="details-back-btn" class="action-btn">Wróć do Historii</button>
         </section>
 
         <!-- EKRAN USTAWIEŃ -->
@@ -54,7 +61,7 @@
                     <label for="setting-progression-factor">Współczynnik progresji (długość / powtórzenia)</label>
                     <div class="slider-container">
                         <input type="range" id="setting-progression-factor" min="50" max="200" step="5">
-                        <span class="slider-value" id="progression-factor-value">100%</span>
+                        <span class="slider-value" id="progression-factor-value"></span>
                     </div>
                 </div>
                 <button type="submit" class="action-btn">Zapisz ustawienia</button>
@@ -79,11 +86,17 @@
 
         <!-- EKRAN PODSUMOWANIA (DYNAMICZNIE WYPEŁNIANY) -->
         <section id="summary-screen" class="screen"></section>
-
-        <!-- EKRAN BEZPIECZEŃSTWA (USUNIĘTY) -->
     </main>
-    
-    <script src="training-plan.js"></script>
-    <script src="app.js"></script>
+        <footer id="app-footer">
+        <div class="footer-content">
+            <p class="disclaimer">
+                <strong>Zastrzeżenie:</strong> Ta aplikacja ma charakter wyłącznie informacyjny i nie zastępuje profesjonalnej porady medycznej. Zawsze konsultuj się z lekarzem lub fizjoterapeutą przed rozpoczęciem lub modyfikacją programu ćwiczeń.
+            </p>
+            <p class="copyright">
+                &copy; <span id="current-year"></span> Aplikacja Treningowa L5-S1. Wersja 1.0.0
+            </p>
+        </div>
+    </footer>
+    <script type="module" src="app.js"></script>
 </body>
 </html>

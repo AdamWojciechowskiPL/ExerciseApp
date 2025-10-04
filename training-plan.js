@@ -528,3 +528,4 @@ const TRAINING_PLAN = {
   ],
   "AcupressureNote": "Mata do akupresury opcjonalnie po treningu 5–10 min (komfort), nie zastępuje ćwiczeń."
 };
+export { TRAINING_PLAN };

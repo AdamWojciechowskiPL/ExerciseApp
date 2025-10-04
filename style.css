@@ -124,7 +124,7 @@ main { padding: 1rem; padding-bottom: 6rem; }
 }
 
 /* ============================================= */
-/* =========== NOWY EKRAN: HISTORIA ============ */
+/* =========== EKRAN HISTORII ============ */
 /* ============================================= */
 .calendar-container {
     background: var(--card-background);
@@ -171,6 +171,9 @@ main { padding: 1rem; padding-bottom: 6rem; }
 .day-number { font-weight: bold; }
 .day-plan { font-size: 0.7rem; opacity: 0.7; }
 .calendar-day.other-month { opacity: 0.3; }
+.calendar-day.has-entry {
+    cursor: pointer;
+}
 .calendar-day.completed { background-color: var(--success-color); color: var(--light-text-color); }
 .calendar-day.in_progress { background-color: var(--inprogress-color); }
 .calendar-day.not_started { background-color: #f0f0f0; }
@@ -185,6 +188,93 @@ main { padding: 1rem; padding-bottom: 6rem; }
 }
 
 /* ============================================= */
+/* ======== EKRAN SZCZEGÓŁÓW DNIA ========= */
+/* ============================================= */
+.details-session-card {
+    background: var(--card-background);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+.details-session-card summary {
+    padding: 1rem;
+    font-weight: bold;
+    color: var(--primary-color);
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+}
+.details-session-card-content {
+    padding: 0 1rem 1rem 1rem;
+}
+.details-summary-card {
+    background: #fdfdfd;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+}
+.details-summary-card h3 {
+    margin-top: 0;
+    color: var(--primary-color);
+}
+.details-summary-card p {
+    margin: 0.5rem 0;
+}
+.details-summary-card strong {
+    color: var(--primary-color);
+}
+.details-notes {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+    white-space: pre-wrap;
+    font-style: italic;
+    color: #555;
+}
+.details-exercise-list h4 {
+    color: var(--primary-color);
+    border-bottom: 2px solid var(--primary-color);
+    padding-bottom: 0.5rem;
+    margin-top: 2rem;
+}
+.details-exercise-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border-color);
+}
+.details-exercise-item:last-child {
+    border-bottom: none;
+}
+.details-exercise-info strong {
+    display: block;
+}
+.details-exercise-info span {
+    font-size: 0.9rem;
+    color: #666;
+}
+.details-exercise-status {
+    font-weight: bold;
+    padding: 0.25rem 0.5rem;
+    border-radius: 5px;
+    font-size: 0.8rem;
+    text-align: center;
+}
+.details-exercise-status.completed {
+    background-color: var(--success-color);
+    color: var(--light-text-color);
+}
+.details-exercise-status.skipped {
+    background-color: var(--danger-color);
+    color: var(--light-text-color);
+}
+.details-exercise-status.rep-based {
+    background-color: var(--inprogress-color);
+}
+
+/* ============================================= */
 /* ====== EKRAN USTAWIEŃ & BACKUP ======= */
 /* ============================================= */
 .settings-section {
@@ -192,28 +282,11 @@ main { padding: 1rem; padding-bottom: 6rem; }
     padding-top: 1.5rem;
     border-top: 1px solid var(--border-color);
 }
-.settings-section h3 {
-    color: var(--primary-color);
-}
-.settings-section p {
-    font-size: 0.9rem;
-    color: #555;
-    margin-bottom: 1rem;
-}
-.backup-btn {
-    width: 100%;
-    background-color: var(--primary-color);
-    color: var(--light-text-color);
-}
-.restore-container {
-    margin-top: 1.5rem;
-}
-.restore-btn {
-    width: 100%;
-    background-color: var(--danger-color);
-    color: var(--light-text-color);
-    border-color: var(--danger-color);
-}
+.settings-section h3 { color: var(--primary-color); }
+.settings-section p { font-size: 0.9rem; color: #555; margin-bottom: 1rem; }
+.backup-btn { width: 100%; background-color: var(--primary-color); color: var(--light-text-color); }
+.restore-container { margin-top: 1.5rem; }
+.restore-btn { width: 100%; background-color: var(--danger-color); color: var(--light-text-color); border-color: var(--danger-color); }
 
 /* ============================================= */
 /* ====== EKRAN PODGLĄDU TRENINGU ====== */
@@ -442,4 +515,32 @@ input[type="range"]::-moz-range-thumb {
     border-radius: 5px;
     min-width: 4ch;
     text-align: center;
+}
+/* ============================================= */
+/* ===============      STOPKA     =============== */
+/* ============================================= */
+#app-footer {
+    background-color: var(--card-background);
+    border-top: 1px solid var(--border-color);
+    padding: 2rem 1rem;
+    text-align: center;
+    color: #666;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    margin-top: 2rem; /* Dodatkowy margines od głównej treści */
+}
+
+.footer-content {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+#app-footer .disclaimer {
+    font-style: italic;
+    margin-bottom: 1rem;
+}
+
+#app-footer .copyright {
+    margin: 0;
+    opacity: 0.8;
 }

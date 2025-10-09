@@ -15,72 +15,72 @@ const TRAINING_PLAN = {
       "duration_estimate_min": 26,
       "duration_estimate_max": 29,
       "warmup": [
-        { 
-          "name": "Oddychanie przeponowe (leżenie)", 
-          "sets": "1", 
-          "reps_or_time": "2–3 min", 
-          "tempo_or_iso": "spokojny oddech 4–6/min", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=UB3tSaiEbNY",
-          "description": "Połóż się na plecach, kolana ugięte, stopy na podłodze. Jedna dłoń na brzuchu, druga na klatce piersiowej. Wdech nosem – brzuch unosi się, klatka minimalnie. Wydech ustami – żebra schodzą w dół, pępek delikatnie do kręgosłupa. Szyja i barki rozluźnione. Lędźwie w neutralu, bez dociskania na siłę. Jeśli czujesz napięcie w szyi – zmniejsz głębokość oddechu. Utrzymuj spokojny, równy rytm."
+        {
+          "name": "Oddychanie przeponowe (leżenie)",
+          "sets": "1",
+          "reps_or_time": "3 min",
+          "tempo_or_iso": "spokojny oddech 4–6/min",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/watch?v=eXtpk0khmLs",
+          "description": "Połóż się na plecach z ugiętymi kolanami. Jedna dłoń na brzuchu, druga na klatce piersiowej. Wdech nosem tak, by unosił się głównie brzuch; wydech przez lekko zaciśnięte usta – żebra opadają. Szyja i barki rozluźnione, lędźwie w neutralnej pozycji. Oddychaj spokojnie, w równym rytmie."
         },
-        { 
-          "name": "Quadruped rock back", 
-          "sets": "2", 
-          "reps_or_time": "8–10", 
-          "tempo_or_iso": "pauza 1–2 s w końcu ruchu", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=gNs0QgWiUto",
-          "description": "Ustaw pozycję na czworakach: dłonie pod barkami, kolana pod biodrami, kręgosłup w neutralu. Napnij delikatnie brzuch, żebra w dół. Cofaj biodra do pięt, aż poczujesz łagodny rozciąg w biodrach/plecach, bez zaokrąglania lędźwi. Zatrzymaj 1–2 s, wróć do startu z kontrolą. Głowa w przedłużeniu kręgosłupa, nie unoś barków do uszu."
+        {
+          "name": "Quadruped rock back",
+          "sets": "2",
+          "reps_or_time": "10",
+          "tempo_or_iso": "pauza 2 s w końcu ruchu",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/2T1zLAtpHIQ",
+          "description": "Pozycja na czworaka: dłonie pod barkami, kolana pod biodrami, kręgosłup neutralnie. Lekko napnij mięśnie głębokie brzucha (ustabilizuj tułów). Cofaj biodra w kierunku pięt bez zaokrąglania lędźwi; zatrzymaj na 2 s i wróć kontrolnie. Głowa w przedłużeniu kręgosłupa, łopatki stabilne."
         }
       ],
       "main": [
-        { 
-          "name": "McGill curl-up", 
-          "sets": "3", 
-          "reps_or_time": "5–6", 
-          "tempo_or_iso": "izometria 8–10 s", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=3nhAkkzh738",
-          "description": "Leżenie tyłem, jedna noga ugięta, druga wyprostowana. Ręce pod naturalną lordozą lędźwiową dla podparcia. Napnij delikatnie brzuch (bracing), żebra w dół. Uniesienie głowy i łopatek o 1–2 cm (mikroruch), bez zginania w lędźwiach. Utrzymaj 8–10 s, oddychaj płytko, barki daleko od uszu. Opuść powoli. Unikaj ciągnięcia brody do klatki – patrz w sufit, szyja neutralnie."
+        {
+          "name": "McGill curl-up",
+          "sets": "3",
+          "reps_or_time": "6",
+          "tempo_or_iso": "izometria 10 s",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/4TtogRci6ZQ",
+          "description": "Leżenie tyłem; jedna noga zgięta, druga wyprostowana. Dłonie pod naturalną lordozą lędźwiową (nie dociskaj pleców). Delikatnie napnij mięśnie brzucha, utrzymaj żebra w dół. Unieś głowę i łopatki o 1–2 cm, nie zginając lędźwi; trzymaj 10 s z płytkim oddechem, opuść powoli."
         },
-        { 
-          "name": "Bird-dog", 
-          "sets": "3", 
-          "reps_or_time": "6–8/str.", 
-          "tempo_or_iso": "izometria 5–8 s", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=xo7Qpb_NTKE",
-          "description": "Pozycja na czworakach, kręgosłup neutralnie, żebra w dół. Wysuń naprzemiennie rękę i przeciwległą nogę, pilnując stabilnej miednicy (brak kołysania). Utrzymaj 5–8 s, oddychaj spokojnie, następnie wróć z kontrolą. Pięta nogi aktywnie do tyłu, kciuk ręki do przodu. Nie unoś kończyn zbyt wysoko – ciało w jednej linii."
+        {
+          "name": "Bird-dog",
+          "sets": "3",
+          "reps_or_time": "6/str.",
+          "tempo_or_iso": "izometria 10 s",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/J5Filrte5uw",
+          "description": "Pozycja na czworaka; kręgosłup i miednica stabilne. Wysuń jednocześnie rękę do przodu i przeciwległą nogę do tyłu do jednej linii z tułowiem; nie kołysz tułowiem. Utrzymaj 10 s, wróć z kontrolą. Pięta aktywnie do tyłu, kciuk do przodu; nie unoś kończyn ponad linię tułowia."
         },
-        { 
-          "name": "Side plank (na kolanach)", 
-          "sets": "2–3", 
-          "reps_or_time": "10–20 s/str.", 
-          "tempo_or_iso": "izometria", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=gMMgnm5_QIs",
-          "description": "Leżenie bokiem, łokieć pod barkiem, kolana ugięte. Unieś biodra, tworząc linię: bark–biodro–kolano. Napnij brzuch i pośladki, nie wypychaj żeber. Głowa w jednej linii z tułowiem. Utrzymaj napięcie boczne brzucha, oddychaj spokojnie. Jeśli boli bark lub lędźwie – skróć czas, dociągnij łokieć bliżej tułowia."
+        {
+          "name": "Side plank (na kolanach)",
+          "sets": "2",
+          "reps_or_time": "10 s/str.",
+          "tempo_or_iso": "izometria",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/OxUqMcC944g",
+          "description": "Leżenie bokiem; łokieć pod barkiem, kolana ugięte. Unieś biodra tak, by bark–biodro–kolano tworzyły linię prostą. Utrzymuj napięcie mięśni brzucha i pośladków, żebra skieruj w dół. Głowa w jednej linii z tułowiem; oddychaj spokojnie."
         }
       ],
       "cooldown": [
-        { 
-          "name": "Hip flexor stretch (klęk półkolanowy)", 
-          "sets": "2", 
-          "reps_or_time": "30–45 s/str.", 
-          "tempo_or_iso": "rozciąganie statyczne", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=Z-u4RDhWrhc",
-          "description": "Pozycja wykroku w klęku: jedna noga z przodu, druga klęczy. Miednicę ustaw w lekkim tyłopochyleniu (ogon pod siebie), napnij pośladek nogi zakrocznej. Przesuń tułów minimalnie do przodu, aż poczujesz rozciąganie w przodzie biodra. Plecy neutralnie, żebra w dół. Oddychaj spokojnie, nie przeprostowuj lędźwi."
+        {
+          "name": "Hip flexor stretch (klęk półkolanowy)",
+          "sets": "2",
+          "reps_or_time": "30 s/str.",
+          "tempo_or_iso": "rozciąganie statyczne",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/XshgpFfzwAs",
+          "description": "Półklęk. Ustaw miednicę w lekkim tyłopochyleniu (jak podwinięcie „ogona”) i napnij pośladek nogi zakrocznej. Przesuń biodra minimalnie do przodu, aż poczujesz rozciąganie z przodu biodra. Plecy neutralnie, żebra w dół; oddychaj spokojnie."
         },
-        { 
-          "name": "Hamstring stretch z taśmą (leżenie)", 
-          "sets": "2", 
-          "reps_or_time": "30–45 s/str.", 
-          "tempo_or_iso": "rozciąganie statyczne", 
-          "equipment": "Pasek/Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=r7Of03DkVMA",
-          "description": "Leżenie tyłem. Załóż pasek/taśmę na stopę, unieś wyprostowaną nogę do odczucia łagodnego ciągnięcia z tyłu uda. Druga noga zgięta lub wyprostowana – bez bólu w krzyżu. Kostka w lekkim zgięciu grzbietowym. Oddychaj spokojnie, nie ciągnij na siłę; utrzymuj neutral lędźwi."
+        {
+          "name": "Hamstring stretch z taśmą (leżenie)",
+          "sets": "2",
+          "reps_or_time": "30 s/str.",
+          "tempo_or_iso": "rozciąganie statyczne",
+          "equipment": "Pasek/Mata",
+          "youtube_url": "https://www.youtube.com/shorts/YNfj9bXXoXo",
+          "description": "Leżenie tyłem. Załóż pasek na stopę i unieś wyprostowaną nogę do łagodnego rozciągania tylnej części uda. Druga noga zgięta lub wyprostowana – bez bólu w krzyżu. Kostka w lekkim zgięciu grzbietowym. Oddychaj spokojnie; nie ciągnij na siłę."
         }
       ]
     },
@@ -90,72 +90,72 @@ const TRAINING_PLAN = {
       "duration_estimate_min": 27,
       "duration_estimate_max": 30,
       "warmup": [
-        { 
-          "name": "Cat–cow (mała amplituda)", 
-          "sets": "1–2", 
-          "reps_or_time": "6–8 cykli", 
-          "tempo_or_iso": "płynnie", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=lmKhCTz0y8w",
-          "description": "Pozycja na czworakach. Delikatnie zmieniaj ustawienie kręgosłupa od lekkiego zaokrąglenia do łagodnego wyprostowania, w małym zakresie i bez bólu. Oddychaj: wydech przy zaokrąglaniu, wdech przy powrocie. Ruch kontrolowany segmentarnie, barki daleko od uszu."
+        {
+          "name": "Cat–cow (mała amplituda)",
+          "sets": "1",
+          "reps_or_time": "15 cykli",
+          "tempo_or_iso": "płynnie",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/ZsbK-jZOTxM",
+          "description": "Klęk podparty: nadgarstki pod barkami, kolana pod biodrami, kręgosłup neutralnie. Na wydechu segmentarnie zaokrąglaj plecy (miednica podwija się, żebra w dół), broda lekko do mostka. Na wdechu łagodnie wróć do ustawienia z lekkim uniesieniem mostka bez zapadania lędźwi. Zakres mały, bez bólu. Unikaj unoszenia barków do uszu i zadzierania głowy."
         },
-        { 
-          "name": "Foam rolling T-spine (nie lędźwie)", 
-          "sets": "1", 
-          "reps_or_time": "60–90 s", 
-          "tempo_or_iso": "powoli", 
-          "equipment": "Roller", 
-          "youtube_url": "https://www.youtube.com/watch?v=PRAJ5HNhc6Q",
-          "description": "Połóż wałek pod odcinkiem piersiowym (górne/środkowe plecy). Podpieraj głowę dłońmi, biodra opuszczone lub na ziemi. Przetaczaj powoli w górę i w dół od łopatek do dolnej części żeber. Nie roluj lędźwi. Oddychaj równomiernie, nie dociskaj na siłę bolesnych punktów."
+        {
+          "name": "Foam rolling T-spine (nie lędźwie)",
+          "sets": "1",
+          "reps_or_time": "90 s",
+          "tempo_or_iso": "powoli",
+          "equipment": "Roller",
+          "youtube_url": "https://www.youtube.com/shorts/n42oBoM_b1s",
+          "description": "Leżenie tyłem, wałek pod odcinkiem piersiowym. Dłonie pod głową, łokcie lekko zbliżone. Przetaczaj powoli od dolnych kątów łopatek do dolnej krawędzi żeber. Miednica może spoczywać na ziemi; nie roluj lędźwi. Oddychaj spokojnie, zatrzymuj się krótko na napiętych miejscach bez dociskania na siłę."
         }
       ],
       "main": [
-        { 
-          "name": "Dead bug (bazowy)", 
-          "sets": "2–3", 
-          "reps_or_time": "6–8/str.", 
-          "tempo_or_iso": "pauza 2–3 s na wydechu", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=GbSC02oU3To",
-          "description": "Leżenie tyłem, biodra i kolana 90°, ręce nad klatką. Utrzymaj żebra w dół, miednica neutralnie. Na wydechu oddal jedną nogę i przeciwną rękę, nie wyginaj lędźwi. Pauza 2–3 s, wróć z kontrolą i zmień stronę. Jeśli krzyż odrywa się – zmniejsz zakres lub dotknij piętą podłogi zamiast pełnego wyprostu."
+        {
+          "name": "Dead bug (bazowy)",
+          "sets": "2",
+          "reps_or_time": "8/str.",
+          "tempo_or_iso": "pauza 3 s na wydechu",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/c0hPg8Sv47U",
+          "description": "Leżenie tyłem. Biodra i kolana 90°, ręce nad klatką. Utrzymaj żebra w dół i neutralną miednicę (lędźwie nie odrywają się). Na wydechu powoli oddal jedną nogę i przeciwną rękę, zatrzymaj 2–3 s; na wdechu wróć. Zmieniaj strony. Unikaj przeprostu w lędźwiach, unoszenia żeber i pośpiechu; w razie trudności zmniejsz zakres."
         },
-        { 
-          "name": "Pallof press (stanie)", 
-          "sets": "3", 
-          "reps_or_time": "6/str.", 
-          "tempo_or_iso": "izometria 10 s przy wyprostowanych ramionach", 
-          "equipment": "Taśma", 
-          "youtube_url": "https://www.youtube.com/watch?v=n8ZZG9gElhs",
-          "description": "Stań bokiem do punktu zaczepienia taśmy. Stopy na szerokość bioder, kolana lekko ugięte, żebra w dół. Trzymając taśmę przy klatce wypchnij ręce do przodu i trzymaj 10 s, nie pozwalając na rotację tułowia. Miednica stabilna, oddychaj. Wróć powoli. Zmieniaj stronę."
+        {
+          "name": "Pallof press (stanie)",
+          "sets": "2",
+          "reps_or_time": "6/str.",
+          "tempo_or_iso": "izometria 10 s przy wyprostowanych ramionach",
+          "equipment": "Taśma",
+          "youtube_url": "https://www.youtube.com/shorts/rQ1nEcYvWig",
+          "description": "Stań bokiem do zaczepu taśmy, stopy na szerokość bioder, kolana lekko ugięte. Dłonie przy mostku, żebra w dół, napnij mięśnie głębokie brzucha. Wypchnij ręce przed siebie i utrzymaj 10 s bez rotacji tułowia; oddychaj spokojnie. Wróć z kontrolą i zmień stronę. Unikaj kołysania, wysuwania żeber i przeprostu w lędźwiach."
         },
-        { 
-          "name": "Glute bridge – izometria", 
-          "sets": "3", 
-          "reps_or_time": "5 × 10–15 s", 
-          "tempo_or_iso": "izometria w neutralu", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=PPNCe7nX3Fc",
-          "description": "Leżenie tyłem, kolana ugięte, stopy na szerokość bioder. Dociśnij stopy, napnij pośladki, unieś biodra do linii bark–biodra–kolana, bez przeprostu w lędźwiach. Utrzymaj 10–15 s, oddychaj spokojnie. Opuść z kontrolą. Jeśli czujesz krzyż – obniż biodra, wzmocnij napięcie brzucha."
+        {
+          "name": "Glute bridge – izometria",
+          "sets": "3",
+          "reps_or_time": "5 × 15 s",
+          "tempo_or_iso": "izometria w neutralu",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/_heWM-2yF3s",
+          "description": "Leżenie tyłem, kolana ugięte, stopy na szerokość bioder. Delikatnie podwiń miednicę, napnij pośladki i unieś biodra do linii barki–biodra–kolana bez przeprostu w lędźwiach. Utrzymaj 10–15 s, oddychaj swobodnie. Opuść z kontrolą. Unikaj odchylania żeber w górę, zapadania kolan i przenoszenia pracy na odcinek lędźwiowy."
         }
       ],
       "cooldown": [
-        { 
-          "name": "Piriformis/figure-4 (leżenie)", 
-          "sets": "2", 
-          "reps_or_time": "30–45 s/str.", 
-          "tempo_or_iso": "rozciąganie statyczne", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=qgbpYL_NDZ0",
-          "description": "Leżenie tyłem. Załóż kostkę jednej nogi na kolano drugiej (pozycja „4”). Przeciągnij udo nogi podporowej do klatki, aż poczujesz rozciąganie pośladka. Miednica neutralnie, barki rozluźnione. Oddychaj spokojnie; nie dociskaj kolana na siłę."
+        {
+          "name": "Piriformis",
+          "sets": "2",
+          "reps_or_time": "45 s/str.",
+          "tempo_or_iso": "rozciąganie statyczne",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/axbdUK3jnmE",
+          "description": "Leżenie tyłem. Załóż kostkę jednej nogi na kolano drugiej (kształt „4”). Chwyć udo nogi podporowej i delikatnie przyciągnij do klatki do uczucia rozciągania pośladka. Miednica neutralnie, żebra w dół, barki rozluźnione. Oddychaj spokojnie; nie dociskaj kolana ręką i nie odrywaj krzyża."
         },
-        { 
-          "name": "Oddychanie przeponowe", 
-          "sets": "1", 
-          "reps_or_time": "2 min", 
-          "tempo_or_iso": "spokojny oddech", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=UB3tSaiEbNY",
-          "description": "Połóż się lub usiądź wygodnie. Wdech nosem do brzucha, szeroko na boki żeber; wydech ustami, żebra w dół. Utrzymuj rozluźnione barki i szyję. Równy rytm oddechu, bez napinania brzucha na siłę."
+        {
+          "name": "Oddychanie przeponowe",
+          "sets": "1",
+          "reps_or_time": "2 min",
+          "tempo_or_iso": "spokojny oddech",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/9v_1TbzxpvU",
+          "description": "Pozycja leżąca lub siedząca, barki rozluźnione. Jedna dłoń na brzuchu, druga na klatce. Wdech nosem „do brzucha” tak, by dolne żebra rozszerzały się na boki; dłuższy, spokojny wydech ustami – żebra w dół. Równy rytm oddechu, bez unoszenia klatki i napinania szyi."
         }
       ]
     },
@@ -165,72 +165,72 @@ const TRAINING_PLAN = {
       "duration_estimate_min": 25,
       "duration_estimate_max": 28,
       "warmup": [
-        { 
-          "name": "Quadruped rock back", 
-          "sets": "2", 
-          "reps_or_time": "8–10", 
-          "tempo_or_iso": "pauza 1–2 s", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=gNs0QgWiUto",
-          "description": "Pozycja na czworakach, plecy neutralnie. Cofaj biodra do pięt bez zapadania lędźwi. Oddychaj, zatrzymaj 1–2 s w końcu zakresu. Kolana i stopy stabilnie, barki oddalone od uszu."
+        {
+          "name": "Quadruped rock back",
+          "sets": "2",
+          "reps_or_time": "10",
+          "tempo_or_iso": "pauza 2 s",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/NK2_By5eEmM",
+          "description": "Pozycja na czworaka: dłonie pod barkami, kolana pod biodrami; kręgosłup i miednica neutralnie. „Żebra w dół”, napnij mięśnie głębokie brzucha, łopatki stabilne. Wdech; z wydechem cofaj biodra w kierunku pięt, ruch z bioder bez zaokrąglania lędźwi; pauza 1–2 s przy pierwszym oporze i powrót. Zakres: bez bólu i bez utraty neutralnej pozycji. Błędy: zapadanie lędźwi, kołysanie miednicy, unoszenie żeber, przenoszenie ciężaru na barki, wstrzymywanie oddechu."
         },
-        { 
-          "name": "Open book (T-spine)", 
-          "sets": "2", 
-          "reps_or_time": "8/str.", 
-          "tempo_or_iso": "kontrola zakresu", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=720_avYMUDY",
-          "description": "Leżenie bokiem, kolana ugięte, ręce wyciągnięte przed sobą. Otwórz górną rękę łukiem za siebie, rotując klatkę piersiową – miednica stabilna. Patrz za dłonią. Wróć powoli. Nie ciągnij siłą – ruch ma być płynny, bez bólu."
+        {
+          "name": "Open book (T-spine)",
+          "sets": "2",
+          "reps_or_time": "8/str.",
+          "tempo_or_iso": "kontrola zakresu",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/SKapoHxQxuk",
+          "description": "Leżenie bokiem, biodra i kolana zgięte ~90°, ręce wyciągnięte przed klatką. Miednica stabilna, brzuch lekko napięty. Wdech; z wydechem otwieraj górną rękę łukiem za siebie, rotując klatkę piersiową; głowa podąża za dłonią, dolne kolano dociśnięte. Pauza oddechowa i powrót. Zakres: do łagodnego rozciągnięcia bez bólu. Błędy: odrywanie kolan/miednicy, przeprost w lędźwiach, ciągnięcie samą ręką, unoszenie żeber, pośpiech."
         }
       ],
       "main": [
-        { 
-          "name": "Side plank (kolana → stopy jeśli łatwo)", 
-          "sets": "3", 
-          "reps_or_time": "12–20 s/str.", 
-          "tempo_or_iso": "izometria", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=gMMgnm5_QIs",
-          "description": "Start jak w podporze bokiem na kolanach. Biodra wysoko, linia prosta. Jeśli łatwo – przejdź na podpór na stopach (pełna wersja). Pośladki i brzuch napięte, żebra w dół. Oddychaj. Zakończ przed utratą pozycji."
+        {
+          "name": "Side plank (kolana → stopy jeśli łatwo)",
+          "sets": "2",
+          "reps_or_time": "20 s/str.",
+          "tempo_or_iso": "izometria",
+          "equipment": "Mata",
+          "youtube_url": "[https://www.youtube.com/shorts/7ACbue6ZfRc",
+          "description": "Leżenie bokiem; łokieć pod barkiem, kolana ugięte, stopy w linii z tułowiem. Miednica neutralna, „żebra w dół”, napnij mięśnie głębokie brzucha i pośladek. Unieś biodra do prostej od kolan do barków; szyja wydłużona. Oddychaj spokojnie, utrzymaj napięcie. Wersja trudniejsza: podpór na stopach (linia od kostek do barków). Błędy: zapadanie bioder, wysunięty bark, rotacja tułowia, wstrzymany oddech, wbijanie barku w ucho."
         },
-        { 
-          "name": "Clamshell (opcjonalnie z minibandem)", 
-          "sets": "2–3", 
-          "reps_or_time": "10/str.", 
-          "tempo_or_iso": "pauza 2 s w górze", 
-          "equipment": "Mata/Taśma", 
-          "youtube_url": "https://www.youtube.com/watch?v=QJ9Rmst88iE",
-          "description": "Leżenie bokiem, kolana ugięte, stopy razem. Utrzymując stopy w kontakcie, unieś górne kolano, nie rotuj tułowia. Pauza 2 s w górze, powrót wolno. Miednica stabilna, nie kołysz biodrami. Miniband nad kolanami zwiększa opór."
+        {
+          "name": "Clamshell (opcjonalnie z minibandem)",
+          "sets": "2",
+          "reps_or_time": "10/str.",
+          "tempo_or_iso": "pauza 2 s w górze",
+          "equipment": "Mata/Taśma",
+          "youtube_url": "https://www.youtube.com/shorts/sNKCdm_AZhE",
+          "description": "Leżenie bokiem, biodra i kolana zgięte, stopy razem w linii z tułowiem. Brzuch lekko napięty, miednica stabilna. Wdech; z wydechem unieś górne kolano, nie odrywaj stóp i nie rotuj tułowia; pauza 2 s, powrót wolno. Zakres: do momentu bez kołysania miednicy. Błędy: „otwieranie” biodra do tyłu, rozchylanie stóp, przeprost w lędźwiach, pchanie ruchem z pleców; z taśmą — zapadanie kolan do środka."
         },
-        { 
-          "name": "Bird-dog – dłuższa izometria", 
-          "sets": "2", 
-          "reps_or_time": "5/str.", 
-          "tempo_or_iso": "izometria 8–10 s", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=xo7Qpb_NTKE",
-          "description": "Ustaw czworaki, napnij „gorset” brzuszny. Wyprostuj przeciwległą rękę i nogę; trzymaj 8–10 s w stabilnej pozycji, bez rotacji miednicy. Wróć powoli, zmień stronę. Oddychaj równomiernie."
+        {
+          "name": "Bird-dog – dłuższa izometria",
+          "sets": "2",
+          "reps_or_time": "5/str.",
+          "tempo_or_iso": "izometria 10 s",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/j-cX-4I-1pQ",
+          "description": "Pozycja na czworaka: dłonie pod barkami, kolana pod biodrami; kręgosłup i miednica neutralnie. „Żebra w dół”, napnij mięśnie głębokie brzucha, łopatki stabilne. Z wydechem wyprostuj przeciwległą rękę i nogę do linii tułowia; trzymaj 8–10 s, oddychając spokojnie, bez rotacji miednicy. Wróć kontrolowanie, zmień stronę. Błędy: unoszenie żeber, przeprost szyi, kołysanie tułowia, przodopochylenie/tyłopochylenie miednicy."
         }
       ],
       "cooldown": [
-        { 
-          "name": "Hip flexor stretch", 
-          "sets": "2", 
-          "reps_or_time": "30–45 s/str.", 
-          "tempo_or_iso": "statycznie", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=Z-u4RDhWrhc",
-          "description": "Klęk półkolanowy, ogon pod siebie, pośladek nogi zakrocznej napięty. Minimalnie przesuń ciężar do przodu przy zachowaniu neutralnych lędźwi. Oddychaj spokojnie, barki rozluźnione."
+        {
+          "name": "Hip flexor stretch",
+          "sets": "2",
+          "reps_or_time": "45 s/str.",
+          "tempo_or_iso": "statycznie",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/PGvojsBrZR0",
+          "description": "Klęk półkolanowy. Podwiń miednicę („ogon pod siebie”) i napnij pośladek nogi zakrocznej — najpierw uzyskaj rozciąganie z przodu biodra, dopiero potem delikatnie przesuń miednicę do przodu bez przeprostu lędźwi. Tułów wysoki, żebra w dół. Oddychaj spokojnie, wydłużaj wydech. Błędy: wyginanie lędźwi, wypychanie żeber, pochylanie tułowia, brak napięcia pośladka, ból w pachwinie."
         },
-        { 
-          "name": "Hamstring stretch", 
-          "sets": "2", 
-          "reps_or_time": "30–45 s/str.", 
-          "tempo_or_iso": "statycznie", 
-          "equipment": "Pasek/Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=r7Of03DkVMA",
-          "description": "Leżenie tyłem lub siad z wyprostowaną nogą. Pochyl się z biodra, plecy długie, nie garb się. Utrzymuj łagodny ciąg z tyłu uda, bez bólu pod kolanem. Oddychaj równomiernie."
+        {
+          "name": "Hamstring stretch",
+          "sets": "2",
+          "reps_or_time": "45 s/str.",
+          "tempo_or_iso": "statycznie",
+          "equipment": "Pasek/Mata",
+          "youtube_url": "https://www.youtube.com/shorts/YNfj9bXXoXo",
+          "description": "Leżenie tyłem; jedna noga na podłodze (prosta lub ugięta), druga z paskiem na stopie. Kręgosłup i miednica neutralnie, kolano rozciąganej nogi niemal proste (dopuszczalne mikrozgięcie). Z wydechem unieś nogę do pierwszego oporu, pięta do sufitu, palce lekko do siebie; trzymaj stałe napięcie paska bez szarpania. Oddychaj miarowo 45 s. Błędy: zaokrąglanie lędźwi, przeprost kolana, ból pod kolanem, ciągnięcie barkami."
         }
       ]
     },
@@ -240,63 +240,63 @@ const TRAINING_PLAN = {
       "duration_estimate_min": 24,
       "duration_estimate_max": 27,
       "warmup": [
-        { 
-          "name": "Cat–cow (kontrola segmentarna)", 
-          "sets": "1–2", 
-          "reps_or_time": "6–8", 
-          "tempo_or_iso": "płynnie", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=lmKhCTz0y8w",
-          "description": "Na czworakach prowadzaj ruch kręg po kręgu w niewielkim zakresie. Wydech – delikatnie zaokrąglij; wdech – wróć do neutralu. Nie dociskaj ruchu w lędźwiach, barki pozostają nisko."
+        {
+          "name": "Cat–cow",
+          "sets": "1",
+          "reps_or_time": "15",
+          "tempo_or_iso": "płynnie",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/droZedhAz94",
+          "description": "Pozycja na czworaka: dłonie pod barkami, kolana pod biodrami; kręgosłup i miednica neutralnie. Wdech – delikatnie unieś mostek, rozszerz dolne żebra; wydech – łagodnie zaokrąglij grzbiet, „żebra w dół”, napnij mięśnie głębokie brzucha. Ruch segmentarny, mały zakres, bez bólu. Błędy: przesadny ruch w lędźwiach, unoszenie barków, kołysanie miednicy, wstrzymywanie oddechu."
         },
-        { 
-          "name": "Foam roll T-spine", 
-          "sets": "1", 
-          "reps_or_time": "60–90 s", 
-          "tempo_or_iso": "powoli", 
-          "equipment": "Roller", 
-          "youtube_url": "https://www.youtube.com/watch?v=PRAJ5HNhc6Q",
-          "description": "Powoli roluj od łopatek do dolnych żeber. Oddychaj głęboko, unikaj lędźwi. Jeśli któryś punkt jest tkliwy – zatrzymaj na kilka oddechów, nie dociskaj gwałtownie."
+        {
+          "name": "Foam roll T-spine",
+          "sets": "1",
+          "reps_or_time": "90 s",
+          "tempo_or_iso": "powoli",
+          "equipment": "Roller",
+          "youtube_url": "https://www.youtube.com/shorts/n42oBoM_b1s",
+          "description": "Leżenie na plecach, roller poprzecznie pod górnym odcinkiem pleców; dłonie pod głową. „Żebra w dół”, brzuch lekko napięty. Roluj powoli od łopatek do dolnych żeber, zatrzymuj na 1–2 oddechy w tkliwych punktach. Nie zjeżdżaj na lędźwie. Błędy: mostkowanie bez kontroli tułowia, zadzieranie głowy, szybkie szarpane ruchy, dociskanie bólu na siłę."
         }
       ],
       "main": [
-        { 
-          "name": "Dead bug (pauza na wydechu)", 
-          "sets": "2", 
-          "reps_or_time": "8/str.", 
-          "tempo_or_iso": "pauza 3 s", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=GbSC02oU3To",
-          "description": "Ustaw pozycję jak w dead bug. Z wydechem oddal kończyny, utrzymaj 3 s napięcie brzucha bez unoszenia żeber. Wróć wolno. Jeśli lędźwie odklejają się – zmniejsz zakres ruchu."
+        {
+          "name": "Dead bug (pauza na wydechu)",
+          "sets": "2",
+          "reps_or_time": "8/str.",
+          "tempo_or_iso": "pauza 3 s",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/c0hPg8Sv47U",
+          "description": "Leżenie tyłem; biodra i kolana 90°, ręce nad barkami. „Żebra w dół”, napnij mięśnie głębokie brzucha; lędźwie blisko podłoża w neutralnym ustawieniu. Z wydechem oddal przeciwną rękę i nogę, zatrzymaj 3 s bez rotacji miednicy; z wdechem wróć. Zakres tak daleki, by lędźwie nie odrywały się. Błędy: przeprost lędźwi, unoszenie żeber, kołysanie miednicy, wstrzymany oddech."
         },
-        { 
-          "name": "McGill curl-up (krótsze serie)", 
-          "sets": "2", 
-          "reps_or_time": "5", 
-          "tempo_or_iso": "izometria 8 s", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=3nhAkkzh738",
-          "description": "Mikropodniesienie głowy i łopatek przy neutralnych lędźwiach. Brzuch delikatnie napięty, oddychaj spokojnie. Utrzymaj 8 s, kontrola szyi (patrz w sufit), brak ciągnięcia brody."
+        {
+          "name": "McGill curl-up (krótsze serie)",
+          "sets": "2",
+          "reps_or_time": "5",
+          "tempo_or_iso": "izometria 8 s",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/ywvxPANcA48",
+          "description": "Leżenie tyłem; jedna noga ugięta, druga prosta; dłonie pod lędźwiami, by zachować neutralną krzywiznę. „Żebra w dół”, brzuch delikatnie napięty. Uniesienie głowy i łopatek to mikro-ruch; szyja długa, wzrok w sufit. Utrzymaj 8 s, oddychaj spokojnie, opuść kontrolowanie. Błędy: dociskanie lędźwi do podłoża, zbyt duży skłon, ciągnięcie głowy rękami, unoszenie żeber."
         }
       ],
       "cooldown": [
-        { 
-          "name": "Piriformis/figure-4", 
-          "sets": "2", 
-          "reps_or_time": "30–45 s/str.", 
-          "tempo_or_iso": "statycznie", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=qgbpYL_NDZ0",
-          "description": "Pozycja „4” w leżeniu. Delikatnie przyciągnij udo do siebie do uczucia rozciągania pośladka. Miednica stabilnie, barki rozluźnione. Oddychaj i nie forsuj zakresu."
+        {
+          "name": "Piriformis",
+          "sets": "2",
+          "reps_or_time": "45 s/str.",
+          "tempo_or_iso": "statycznie",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/mpCt25ZKFHg",
+          "description": "Leżenie tyłem; załóż kostkę jednej nogi na udo drugiej (pozycja „4”). Miednica neutralnie, brzuch lekko napięty. Chwyć udo nogi podporowej i przyciągaj do uczucia rozciągania w pośladku; barki rozluźnione, oddychaj równomiernie. Błędy: skręcanie miednicy, dociskanie kolana ręką, ból w pachwinie, napinanie szyi."
         },
-        { 
-          "name": "Oddychanie przeponowe", 
-          "sets": "1", 
-          "reps_or_time": "2 min", 
-          "tempo_or_iso": "spokojny oddech", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=UB3tSaiEbNY",
-          "description": "Wdech nosem do brzucha, wydech ustami – długi i rozluźniający. Utrzymuj neutralne lędźwie i miękkość w barkach."
+        {
+          "name": "Oddychanie przeponowe",
+          "sets": "1",
+          "reps_or_time": "2 min",
+          "tempo_or_iso": "spokojny oddech",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/opZMEDlJ8y0",
+          "description": "Leżenie tyłem; jedna dłoń na dolnych żebrach, druga na brzuchu; kręgosłup i miednica neutralnie. Wdech nosem – rozszerz dolne żebra i miękko unieś brzuch; powolny wydech przez lekko zaciśnięte usta, „żebra w dół”. Oddech cichy, równy. Błędy: unoszenie barków, napinanie szyi, wypychanie wyłącznie brzucha bez ruchu żeber, hiperwentylacja."
         }
       ]
     },
@@ -306,72 +306,72 @@ const TRAINING_PLAN = {
       "duration_estimate_min": 26,
       "duration_estimate_max": 29,
       "warmup": [
-        { 
-          "name": "Quadruped rock back", 
-          "sets": "2", 
-          "reps_or_time": "8–10", 
-          "tempo_or_iso": "pauza 1–2 s", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=gNs0QgWiUto",
-          "description": "Cofaj biodra do pięt, zachowaj neutral lędźwi. Oddychaj spokojnie, dociśnij dłonie w matę, szyja długa. Nie pozwól na zapadanie barków."
+        {
+          "name": "Quadruped rock back",
+          "sets": "2",
+          "reps_or_time": "10",
+          "tempo_or_iso": "pauza 1–2 s",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/NK2_By5eEmM",
+          "description": "Pozycja na czworaka: dłonie pod barkami, kolana pod biodrami, kręgosłup i miednica neutralnie. Napnij mięśnie głębokie brzucha, „żebra w dół”. Cofaj biodra do pięt, utrzymując długie lędźwie; pauza 1–2 s i wróć. Oddychaj spokojnie (wydech w tył). Zakres tylko do lekkiego rozciągania bioder. Błędy: zaokrąglanie lub zapadanie lędźwi, unoszenie barków, kołysanie tułowia."
         },
-        { 
-          "name": "Open book", 
-          "sets": "2", 
-          "reps_or_time": "8/str.", 
-          "tempo_or_iso": "kontrola zakresu", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=720_avYMUDY",
-          "description": "Rotacja piersiowa z ustabilizowaną miednicą. Otwórz rękę łagodnym łukiem, oddychaj spokojnie. Zakres bez bólu, powrót płynny."
+        {
+          "name": "Open book",
+          "sets": "2",
+          "reps_or_time": "8/str.",
+          "tempo_or_iso": "kontrola zakresu",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/k0mwD94LYcc",
+          "description": "Leżenie bokiem, biodra i kolana ok. 90°, ramiona wyciągnięte przed sobą; głowa podparta. Ustabilizuj tułów i miednicę. Z wdechem otwieraj górną rękę łukiem za siebie, rotując klatkę piersiową; patrz za dłonią. Z wydechem wróć. Zakres bez bólu, kolana zostają w kontakcie z podłożem. Błędy: ciągnięcie ręką zamiast rotacji piersiowej, unoszenie żeber, rotacja miednicy."
         }
       ],
       "main": [
-        { 
-          "name": "Pallof press (½-klęk)", 
-          "sets": "3", 
-          "reps_or_time": "5/str.", 
-          "tempo_or_iso": "izometria 10–12 s", 
-          "equipment": "Taśma", 
-          "youtube_url": "https://www.youtube.com/watch?v=n8ZZG9gElhs",
-          "description": "Pozycja półklęku (kolano pod biodrem, druga stopa z przodu). Miednica poziomo, żebra w dół. Wypchnij uchwyt przed klatkę i trzymaj 10–12 s, nie pozwalaj na skręt tułowia. Oddychaj, wróć kontrolowanie. Zmień strony."
+        {
+          "name": "Pallof press (½-klęk)",
+          "sets": "3",
+          "reps_or_time": "5/str.",
+          "tempo_or_iso": "izometria 10–12 s",
+          "equipment": "Taśma",
+          "youtube_url": "https://www.youtube.com/shorts/oQE1OgcDEeo",
+          "description": "Pozycja półklęku: kolano pod biodrem, druga stopa z przodu; taśma zakotwiczona z boku na wysokości mostka. Miednica poziomo, „żebra w dół”, mięśnie głębokie brzucha napięte. Wypchnij uchwyt przed klatkę i utrzymaj 10–12 s, nie dopuszczając do skrętu tułowia; oddychaj swobodnie. Powrót kontrolowany, zmień stronę. Błędy: przeprost w lędźwiach i ucieczka żeber, skręt do kotwicy, kołysanie miednicy."
         },
-        { 
-          "name": "Side plank (wg tolerancji: kolana/stopy krótko)", 
-          "sets": "2–3", 
-          "reps_or_time": "12–20 s/str.", 
-          "tempo_or_iso": "izometria", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=gMMgnm5_QIs",
-          "description": "Ustaw podpor boczny w wersji tolerowanej (kolana lub stopy). Utrzymaj linię ciała, napięcie boczne brzucha i pośladków. Jeśli pozycja „ucieka” – skróć czas lub wróć do wersji na kolanach."
+        {
+          "name": "Side plank (wg tolerancji: kolana/stopy krótko)",
+          "sets": "2",
+          "reps_or_time": "20 s/str.",
+          "tempo_or_iso": "izometria",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/sjcgyRMSdgY",
+          "description": "Podpór bokiem na przedramieniu, łokieć pod barkiem. Wersja wg tolerancji: kolana ugięte lub stopy jedna na drugiej. Ustaw ciało w linii prostej, biodra wysoko; napnij pośladek i bok brzucha, „żebra w dół”. Oddychaj płynnie; trzymaj 12–20 s. Błędy: opadanie bioder, zapadanie barku, zadzieranie głowy, wstrzymywanie oddechu."
         },
-        { 
-          "name": "Clamshell (z izometrią 2–3 s)", 
-          "sets": "2", 
-          "reps_or_time": "12/str.", 
-          "tempo_or_iso": "pauza w końcu ruchu", 
-          "equipment": "Mata/Taśma", 
-          "youtube_url": "https://www.youtube.com/watch?v=QJ9Rmst88iE",
-          "description": "Unieś kolano do uczucia pracy w pośladku, zatrzymaj 2–3 s. Miednica stabilnie, stopy razem. Powrót wolny. Uważaj, by nie kompensować rotacją tułowia."
+        {
+          "name": "Clamshell (z izometrią 2–3 s)",
+          "sets": "2",
+          "reps_or_time": "12/str.",
+          "tempo_or_iso": "pauza w końcu ruchu",
+          "equipment": "Mata/Taśma",
+          "youtube_url": "https://www.youtube.com/shorts/iF_kTPauoFs",
+          "description": "Leżenie bokiem, biodra lekko zgięte, kolana ok. 90°, stopy razem; opcjonalnie taśma nad kolanami. Ustabilizuj miednicę i tułów, napnij mięśnie głębokie brzucha. Unieś górne kolano bez odrywania stóp; pauza 2–3 s; powrót wolno. Oddychaj spokojnie. Zakres do pracy w pośladku, bez rotacji tułowia. Błędy: kołysanie miednicą, rozchodzenie się stóp, ciągnięcie ruchem z przodu uda."
         }
       ],
       "cooldown": [
-        { 
-          "name": "Hip flexor stretch", 
-          "sets": "2", 
-          "reps_or_time": "30–45 s/str.", 
-          "tempo_or_iso": "statycznie", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=Z-u4RDhWrhc",
-          "description": "Półklęk, ogon pod siebie, pośladek napięty. Lekko do przodu, bez przeprostu w lędźwiach. Oddychaj równomiernie."
+        {
+          "name": "Hip flexor stretch",
+          "sets": "2",
+          "reps_or_time": "45 s/str.",
+          "tempo_or_iso": "statycznie",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/XshgpFfzwAs",
+          "description": "Klęk półkolanowy; „ogon pod siebie”, pośladek nogi zakrocznej napięty, tułów wysoki. Delikatnie przesuń biodra w przód przy neutralnych lędźwiach; możesz unieść ramię po stronie nogi zakrocznej. Oddychaj długim wydechem; trzymaj 30–45 s/str., bez bólu. Błędy: przeprost w lędźwiach, wysuwanie żeber, zbyt duże wysunięcie kolana, brak napięcia pośladka."
         },
-        { 
-          "name": "Hamstring stretch", 
-          "sets": "2", 
-          "reps_or_time": "30–45 s/str.", 
-          "tempo_or_iso": "statycznie", 
-          "equipment": "Pasek/Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=r7Of03DkVMA",
-          "description": "Delikatne rozciąganie tyłu uda w pozycji leżenia lub siadu. Utrzymuj długie plecy, bez wymuszania zakresu. Oddech miarowy."
+        {
+          "name": "Hamstring stretch",
+          "sets": "2",
+          "reps_or_time": "45 s/str.",
+          "tempo_or_iso": "statycznie",
+          "equipment": "Pasek/Mata",
+          "youtube_url": "https://www.youtube.com/shorts/EO_JVx1najw",
+          "description": "Leżenie tyłem; pasek wokół śródstopia ćwiczonej nogi, druga noga prosta na podłodze. „Żebra w dół”, lędźwie neutralnie. Wyprostuj kolano i powoli unieś nogę, aż poczujesz rozciąganie z tyłu uda/łydki; trzymaj 30–45 s, oddychaj spokojnie. Zakres bez bólu i bez ciągnięcia pod kolanem. Błędy: szarpanie paskiem, blokowanie kolana w przeproście, objawy nerwowe."
         }
       ]
     },
@@ -381,72 +381,72 @@ const TRAINING_PLAN = {
       "duration_estimate_min": 25,
       "duration_estimate_max": 28,
       "warmup": [
-        { 
-          "name": "Cat–cow", 
-          "sets": "1", 
-          "reps_or_time": "8", 
-          "tempo_or_iso": "płynnie", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=lmKhCTz0y8w",
-          "description": "Łagodna mobilizacja kręgosłupa w małym zakresie. Synchronizuj z oddechem, nie dociskaj końcowych pozycji. Utrzymuj barki z dala od uszu."
+        {
+          "name": "Cat–cow",
+          "sets": "1",
+          "reps_or_time": "8",
+          "tempo_or_iso": "płynnie",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/Tn4dXCaJHu8",
+          "description": "Pozycja na czworaka: dłonie pod barkami, kolana pod biodrami; kręgosłup i miednica neutralnie. Wdech – delikatnie unieś mostek i wydłuż odcinek piersiowy; wydech – łagodnie zaokrąglij grzbiet, „żebra w dół”, niewielkie podwinięcie miednicy. Zakres mały, segmentarny, bez bólu. Oddychaj płynnie. Błędy: dociskanie ruchu w lędźwiach, unoszenie barków, kołysanie miednicy, wstrzymywanie oddechu."
         },
-        { 
-          "name": "Quadruped rock back", 
-          "sets": "1–2", 
-          "reps_or_time": "8", 
-          "tempo_or_iso": "pauza 1–2 s", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=gNs0QgWiUto",
-          "description": "Kontrolowany dosiad na pięty przy neutralnych lędźwiach. Oddychaj, trzymaj napięcie brzucha. Bez bólu, bez kołysania miednicy."
+        {
+          "name": "Quadruped rock back",
+          "sets": "2",
+          "reps_or_time": "16",
+          "tempo_or_iso": "pauza 1–2 s",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/NK2_By5eEmM",
+          "description": "Pozycja na czworaka: dłonie pod barkami, kolana pod biodrami; kręgosłup i miednica neutralnie. „Żebra w dół”, napnij mięśnie głębokie brzucha, łopatki stabilne. Z wydechem cofaj biodra w kierunku pięt, ruch z bioder bez zaokrąglania ani zapadania lędźwi; pauza 1–2 s i powrót. Zakres bez bólu. Błędy: przeprost lub zaokrąglanie lędźwi, unoszenie barków, kołysanie miednicy."
         }
       ],
       "main": [
-        { 
-          "name": "Glute bridge – izometria", 
-          "sets": "3", 
-          "reps_or_time": "5 × 10–15 s", 
-          "tempo_or_iso": "izometria w neutralu", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=PPNCe7nX3Fc",
-          "description": "Unieś biodra do linii z udami, napnij pośladki, trzymaj żebra w dół. Utrzymaj 10–15 s, oddech płynny. Opuść wolno. Bez przeprostu w krzyżu."
+        {
+          "name": "Glute bridge – izometria",
+          "sets": "3",
+          "reps_or_time": "5 × 15 s",
+          "tempo_or_iso": "izometria w neutralu",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/45OW5NVTDbQ",
+          "description": "Leżenie tyłem; stopy na szerokość bioder, kolana ~90°. Delikatnie podwiń miednicę („ogon pod siebie”), „żebra w dół”. Unieś biodra do linii uda–tułów bez przeprostu w lędźwiach; napnij pośladki, kolana stabilnie nad stopami. Utrzymaj 15 s, oddychaj spokojnie; opuść kontrolowanie. Błędy: praca głównie tyłem uda, rozszerzanie żeber, zapadanie kolan, odgięta szyja/przeprost lędźwi."
         },
-        { 
-          "name": "Bird-dog", 
-          "sets": "2", 
-          "reps_or_time": "6/str.", 
-          "tempo_or_iso": "izometria 8 s", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=xo7Qpb_NTKE",
-          "description": "Wyprostuj przeciwległe kończyny, trzymaj miednicę stabilnie przez ~8 s. Wracaj z kontrolą, oddychaj. Nie unoś kończyn zbyt wysoko."
+        {
+          "name": "Bird-dog",
+          "sets": "2",
+          "reps_or_time": "6/str.",
+          "tempo_or_iso": "izometria 8 s",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/j-cX-4I-1pQ",
+          "description": "Pozycja na czworaka: dłonie pod barkami, kolana pod biodrami; kręgosłup i miednica neutralnie. „Żebra w dół”, napnij mięśnie głębokie brzucha. Wyprostuj przeciwległą rękę i nogę do linii tułowia; trzymaj ok. 8 s, oddychając spokojnie i bez rotacji miednicy. Wróć kontrolowanie, zmień stronę. Błędy: unoszenie kończyn zbyt wysoko (przeprost lędźwi), zapadanie barku, przeprost szyi, kołysanie tułowia."
         },
-        { 
-          "name": "Dead bug", 
-          "sets": "2", 
-          "reps_or_time": "8/str.", 
-          "tempo_or_iso": "pauza 2–3 s", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=GbSC02oU3To",
-          "description": "Z wydechem oddal rękę i przeciwną nogę, pauza 2–3 s przy stabilnym tułowiu. Wróć powoli, zmień stronę. Jeśli lędźwie odklejają się – zmniejsz zakres."
+        {
+          "name": "Dead bug",
+          "sets": "2",
+          "reps_or_time": "8/str.",
+          "tempo_or_iso": "pauza 2–3 s",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/c0hPg8Sv47U",
+          "description": "Leżenie tyłem; biodra i kolana 90°, ręce nad barkami. „Żebra w dół”, brzuch napięty; lędźwie blisko podłoża w neutralnym ustawieniu. Z wydechem oddal przeciwną rękę i nogę, zatrzymaj 2–3 s bez odrywania lędźwi; z wdechem wróć. Zakres tak daleki, by tułów pozostał stabilny. Błędy: przeprost lędźwi, unoszenie żeber, szarpanie, napięta szyja."
         }
       ],
       "cooldown": [
-        { 
-          "name": "Piriformis", 
-          "sets": "2", 
-          "reps_or_time": "30–45 s/str.", 
-          "tempo_or_iso": "statycznie", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=qgbpYL_NDZ0",
-          "description": "Pozycja „figure-4”. Rozciągaj pośladek do uczucia łagodnego napięcia, bez bólu. Miednica i barki rozluźnione, oddech spokojny."
+        {
+          "name": "Piriformis",
+          "sets": "2",
+          "reps_or_time": "45 s/str.",
+          "tempo_or_iso": "statycznie",
+          "equipment": "Mata",
+          "youtube_url": https://www.youtube.com/shorts/mpCt25ZKFHg",
+          "description": "Leżenie tyłem; załóż kostkę jednej nogi na udo drugiej. Miednica neutralnie, brzuch lekko napięty. Chwyć udo nogi podporowej i przyciągaj do uczucia rozciągania w pośladku; barki rozluźnione, oddychaj równomiernie 45 s. Błędy: skręcanie miednicy, dociskanie kolana ręką, ból/ciągnięcie nerwowe pod kolanem."
         },
-        { 
-          "name": "Open book", 
-          "sets": "1", 
-          "reps_or_time": "8/str.", 
-          "tempo_or_iso": "kontrola zakresu", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=720_avYMUDY",
-          "description": "Rotacja piersiowa przy stabilnej miednicy. Płynny ruch, wzrok podąża za dłonią. Oddychaj, nie forsuj zakresu."
+        {
+          "name": "Open book",
+          "sets": "1",
+          "reps_or_time": "8/str.",
+          "tempo_or_iso": "kontrola zakresu",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/k0mwD94LYcc",
+          "description": "Leżenie bokiem; biodra i kolana zgięte ~90°, ręce wyciągnięte przed klatką. Ustabilizuj miednicę i „żebra w dół”. Wdech; z wydechem otwieraj górną rękę łukiem za siebie, rotując klatkę piersiową; głowa podąża za dłonią. Pauza oddechowa i powrót. Błędy: odrywanie kolan/miednicy, przeprost w lędźwiach, ciągnięcie samą ręką, pośpiech."
         }
       ]
     },
@@ -456,72 +456,72 @@ const TRAINING_PLAN = {
       "duration_estimate_min": 24,
       "duration_estimate_max": 27,
       "warmup": [
-        { 
-          "name": "Oddychanie przeponowe", 
-          "sets": "1", 
-          "reps_or_time": "2–3 min", 
-          "tempo_or_iso": "spokojny oddech", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=UB3tSaiEbNY",
-          "description": "Wdech nosem do brzucha, rozszerz żebra na boki; wydech długi ustami, żebra w dół. Barki rozluźnione, szyja miękka. Równy rytm oddechu."
+        {
+          "name": "Oddychanie przeponowe",
+          "sets": "1",
+          "reps_or_time": "3 min",
+          "tempo_or_iso": "spokojny oddech",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/opZMEDlJ8y0",
+          "description": "Leżenie tyłem; jedna dłoń na dolnych żebrach, druga na brzuchu; kręgosłup i miednica neutralnie. „Żebra w dół”, szyja i barki rozluźnione. Wdech nosem – rozszerz dolne żebra i łagodnie unieś brzuch; powolny wydech przez lekko zaciśnięte usta. Rytm równy, bez napięcia. Błędy: unoszenie barków, oddychanie tylko klatką, wstrzymywanie oddechu, hiperwentylacja."
         },
-        { 
-          "name": "Cat–cow (krótkie zakresy)", 
-          "sets": "1", 
-          "reps_or_time": "6–8", 
-          "tempo_or_iso": "płynnie", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=lmKhCTz0y8w",
-          "description": "Łagodna zmiana ustawienia kręgosłupa w komfortowym zakresie. Oddech prowadzi ruch. Unikaj przeprostu w lędźwiach i unoszenia barków."
+        {
+          "name": "Cat–cow (krótkie zakresy)",
+          "sets": "1",
+          "reps_or_time": "8",
+          "tempo_or_iso": "płynnie",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/Tn4dXCaJHu8",
+          "description": "Pozycja na czworaka: dłonie pod barkami, kolana pod biodrami; kręgosłup i miednica neutralnie. Wdech – delikatnie unieś mostek i wydłuż odcinek piersiowy; wydech – łagodnie zaokrąglij grzbiet, „żebra w dół”, małe podwinięcie miednicy. Zakres mały i segmentarny, bez bólu. Błędy: dociskanie ruchu w lędźwiach, unoszenie barków, kołysanie miednicy, pośpiech."
         }
       ],
       "main": [
-        { 
-          "name": "McGill curl-up", 
-          "sets": "2", 
-          "reps_or_time": "5", 
-          "tempo_or_iso": "izometria 8–10 s", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=3nhAkkzh738",
-          "description": "Mikrouniesienie głowy i łopatek przy neutralnych lędźwiach, lekko napięty brzuch. Trzymaj 8–10 s, oddychaj płytko. Odkładaj z kontrolą."
+        {
+          "name": "McGill curl-up",
+          "sets": "2",
+          "reps_or_time": "5",
+          "tempo_or_iso": "izometria 10 s",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/ywvxPANcA48",
+          "description": "Leżenie tyłem; jedna noga ugięta, druga prosta; dłonie pod lędźwiami dla utrzymania neutralnej krzywizny. „Żebra w dół”, brzuch delikatnie napięty. Unieś lekko głowę i łopatki (mikro-ruch) i utrzymaj ~10 s, oddychając spokojnie; opuść kontrolowanie. Błędy: dociskanie lędźwi do podłoża, zbyt duży skłon, ciągnięcie głowy rękami, unoszenie żeber."
         },
-        { 
-          "name": "Pallof press (lekka taśma)", 
-          "sets": "2", 
-          "reps_or_time": "5/str.", 
-          "tempo_or_iso": "izometria 8–10 s", 
-          "equipment": "Taśma", 
-          "youtube_url": "https://www.youtube.com/watch?v=n8ZZG9gElhs",
-          "description": "Stań bokiem do oporu, stopy stabilnie. Wypchnij ręce przed klatkę i trzymaj 8–10 s, nie pozwalając na skręt tułowia. Oddychaj, utrzymuj miednicę w neutralu."
+        {
+          "name": "Pallof press (lekka taśma)",
+          "sets": "2",
+          "reps_or_time": "5/str.",
+          "tempo_or_iso": "izometria 8–10 s",
+          "equipment": "Taśma",
+          "youtube_url": "https://www.youtube.com/shorts/oQE1OgcDEeo",
+          "description": "Stój bokiem do zakotwiczenia taśmy; stopy na szerokość bioder. Miednica poziomo, „żebra w dół”, napnij mięśnie głębokie brzucha. Wypchnij ręce przed klatkę i utrzymaj 8–10 s bez skrętu tułowia; oddychaj swobodnie, wróć kontrolowanie. Błędy: rotacja w stronę taśmy, przeprost w lędźwiach, wysuwanie żeber, kołysanie miednicy."
         },
-        { 
-          "name": "Side plank (kolana)", 
-          "sets": "2", 
-          "reps_or_time": "12–15 s/str.", 
-          "tempo_or_iso": "izometria", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=gMMgnm5_QIs",
-          "description": "Podpór bokiem na kolanach. Biodra wysoko, brzuch i pośladek napięte. Oddychaj równomiernie, utrzymuj linię ciała bez zapadania barku."
+        {
+          "name": "Side plank (kolana)",
+          "sets": "2",
+          "reps_or_time": "15 s/str.",
+          "tempo_or_iso": "izometria",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/sjcgyRMSdgY",
+          "description": "Podpór bokiem na przedramieniu; łokieć pod barkiem, kolana ugięte. Ustaw ciało w linii od kolan do barków; miednica neutralnie, „żebra w dół”, napnij pośladek i bok brzucha. Oddychaj spokojnie i utrzymaj czas. Błędy: opadanie bioder, zapadanie barku, rotacja tułowia, zadzieranie głowy, wstrzymany oddech."
         }
       ],
       "cooldown": [
-        { 
-          "name": "Hamstring stretch", 
-          "sets": "2", 
-          "reps_or_time": "30–45 s/str.", 
-          "tempo_or_iso": "statycznie", 
-          "equipment": "Pasek/Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=r7Of03DkVMA",
-          "description": "Rozciągaj tył uda w bezbolesnym zakresie. Plecy długie, szyja rozluźniona. Oddech spokojny; nie sprężynuj."
+        {
+          "name": "Hamstring stretch",
+          "sets": "2",
+          "reps_or_time": "45 s/str.",
+          "tempo_or_iso": "statycznie",
+          "equipment": "Pasek/Mata",
+          "youtube_url": "https://www.youtube.com/shorts/EO_JVx1najw",
+          "description": "Leżenie tyłem; pasek na śródstopiu rozciąganej nogi, druga noga na podłodze (prosta lub ugięta). Kręgosłup i miednica neutralnie, „żebra w dół”. Z wydechem unieś nogę do pierwszego oporu; kolano niemal proste (dopuszczalne mikrozgięcie), pięta do sufitu, palce lekko do siebie. Trzymaj 30–45 s, oddychaj spokojnie. Błędy: szarpanie paskiem, przeprost kolana, unoszenie miednicy, ból pod kolanem."
         },
-        { 
-          "name": "Hip flexor stretch", 
-          "sets": "2", 
-          "reps_or_time": "30–45 s/str.", 
-          "tempo_or_iso": "statycznie", 
-          "equipment": "Mata", 
-          "youtube_url": "https://www.youtube.com/watch?v=Z-u4RDhWrhc",
-          "description": "Półklęk, ogon pod siebie, pośladek napięty. Delikatnie do przodu bez wyginania lędźwi. Oddychaj i utrzymuj rozluźnione barki."
+        {
+          "name": "Hip flexor stretch",
+          "sets": "2",
+          "reps_or_time": "45 s/str.",
+          "tempo_or_iso": "statycznie",
+          "equipment": "Mata",
+          "youtube_url": "https://www.youtube.com/shorts/XshgpFfzwAs",
+          "description": "Klęk półkolanowy. Podwiń miednicę („ogon pod siebie”) i napnij pośladek nogi zakrocznej, utrzymując neutralne lędźwie i „żebra w dół”. Delikatnie przesuń biodra do przodu do uczucia rozciągania z przodu biodra; oddychaj długim wydechem. Błędy: przeprost w lędźwiach, wysuwanie żeber, pochylanie tułowia, brak napięcia pośladka, ból w pachwinie."
         }
       ]
     }

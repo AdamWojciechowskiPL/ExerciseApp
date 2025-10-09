@@ -4,7 +4,7 @@ import { state } from './state.js';
 import { focus, screens } from './dom.js';
 import { speak } from './tts.js';
 import { startTimer, stopTimer } from './timer.js';
-import { getExerciseDuration, parseSetCount } from './utils.js';
+import { getExerciseDuration, parseSetCount, formatForTTS } from './utils.js';
 import { TRAINING_PLAN } from './training-plan.js';
 import { navigateTo, renderSummaryScreen } from './ui.js';
 import dataStore from './dataStore.js';
@@ -45,6 +45,9 @@ export function moveToNextExercise(options = { skipped: false }) {
     if (state.currentExerciseIndex < state.flatExercises.length - 1) {
         startExercise(state.currentExerciseIndex + 1);
     } else {
+        state.finalCompletionSound();
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+
         navigateTo('summary');
         renderSummaryScreen();
     }
@@ -66,46 +69,88 @@ export function startExercise(index) {
 
     focus.ttsToggleBtn.textContent = state.tts.isSoundOn ? '🔊' : '🔇';
     focus.prevStepBtn.disabled = (index === 0);
-    focus.sectionName.textContent = exercise.sectionName;
     focus.progress.textContent = `${index + 1} / ${state.flatExercises.length}`;
-    const nextName = nextExercise ? (nextExercise.isWork ? `${nextExercise.name} (Seria ${nextExercise.currentSet})` : nextExercise.name) : "Koniec treningu";
-    focus.nextExerciseName.textContent = nextName;
     
     if (exercise.isWork) {
+        // --- ETAP WYKONYWANIA ĆWICZENIA ---
+        focus.sectionName.textContent = exercise.sectionName;
         focus.exerciseName.textContent = `${exercise.name} (Seria ${exercise.currentSet} / ${exercise.totalSets})`;
         focus.exerciseDetails.textContent = `Czas/Powt: ${exercise.reps_or_time} | Tempo: ${exercise.tempo_or_iso}`;
         focus.exerciseInfoContainer.style.visibility = 'visible';
         focus.focusDescription.textContent = exercise.description || '';
         focus.ttsToggleBtn.style.display = 'inline-block';
+        focus.nextExerciseName.textContent = nextExercise ? (nextExercise.isRest ? "Odpoczynek" : `${nextExercise.name}`) : "Koniec treningu";
 
-        let announcement = `Następne ćwiczenie: ${exercise.name}, seria ${exercise.currentSet} z ${exercise.totalSets}.`;
-        if (exercise.reps_or_time) announcement += ` Wykonaj ${exercise.reps_or_time}.`;
-        if (exercise.tempo_or_iso) announcement += ` W tempie: ${exercise.tempo_or_iso}.`;
+        const duration = getExerciseDuration(exercise);
+        if (duration !== null) {
+            focus.timerDisplay.classList.remove('rep-based-text');
+            focus.timerDisplay.style.display = 'block';
+            focus.repBasedDoneBtn.classList.add('hidden');
+            focus.pauseResumeBtn.classList.remove('hidden');
+            startTimer(duration, () => moveToNextExercise({ skipped: false }));
+        } else {
+            focus.timerDisplay.classList.add('rep-based-text');
+            stopTimer();
+            focus.timerDisplay.textContent = "WYKONAJ";
+            focus.repBasedDoneBtn.classList.remove('hidden');
+            focus.pauseResumeBtn.classList.add('hidden');
+        }
+    } else {
+        // =========================================================================
+        // NOWA LOGIKA: Dynamiczna przerwa oparta na czasie trwania mowy TTS
+        // =========================================================================
+        const upcomingExercise = nextExercise;
+        if (!upcomingExercise) {
+            moveToNextExercise({ skipped: false });
+            return;
+        }
+
+        // Krok 1: Zaktualizuj interfejs na czas przygotowania
+        focus.sectionName.textContent = "PRZYGOTUJ SIĘ";
+        focus.exerciseName.textContent = `Następne: ${upcomingExercise.name}`;
+        focus.exerciseDetails.textContent = `Seria ${upcomingExercise.currentSet}/${upcomingExercise.totalSets} | Czas/Powt: ${upcomingExercise.reps_or_time} | Tempo: ${upcomingExercise.tempo_or_iso}`;
+        focus.exerciseInfoContainer.style.visibility = 'visible';
+        focus.focusDescription.textContent = upcomingExercise.description || 'Brak opisu.';
+        focus.ttsToggleBtn.style.display = 'inline-block';
         
-        speak(announcement, true, () => {
-            speak(exercise.description, false);
-        });
+        const afterUpcoming = state.flatExercises[index + 2];
+        focus.nextExerciseName.textContent = afterUpcoming ? (afterUpcoming.isRest ? "Odpoczynek" : `${afterUpcoming.name}`) : "Koniec treningu";
 
-    } else {
-        focus.exerciseName.textContent = exercise.name;
-        focus.exerciseInfoContainer.style.visibility = 'hidden';
-        focus.focusDescription.textContent = '';
-        focus.ttsToggleBtn.style.display = 'none';
-    }
-    
-    const duration = getExerciseDuration(exercise);
-    if (duration !== null) {
-        focus.timerDisplay.classList.remove('rep-based-text');
-        focus.timerDisplay.style.display = 'block';
+        // Ukryj przyciski timera, bo go nie używamy w tej fazie
         focus.repBasedDoneBtn.classList.add('hidden');
-        focus.pauseResumeBtn.classList.remove('hidden');
-        startTimer(duration, () => moveToNextExercise({ skipped: false }));
-    } else {
-        focus.timerDisplay.classList.add('rep-based-text');
-        stopTimer();
-        focus.timerDisplay.textContent = "WYKONAJ";
-        focus.repBasedDoneBtn.classList.remove('hidden');
         focus.pauseResumeBtn.classList.add('hidden');
+
+        // Funkcja, która rozpocznie kolejne ćwiczenie
+        const startNextExercise = () => {
+            moveToNextExercise({ skipped: false });
+        };
+
+        // Krok 2: Sprawdź, czy dźwięk jest włączony i wybierz strategię
+        if (state.tts.isSoundOn) {
+            // STRATEGIA 1: Dźwięk WŁĄCZONY - czas przerwy zależy od TTS
+            
+            // Pokaż informację, że użytkownik ma słuchać
+            focus.timerDisplay.classList.add('rep-based-text');
+            focus.timerDisplay.textContent = "SŁUCHAJ";
+            
+            // Przygotuj zapowiedzi
+            let announcement = `Przygotuj się. Następne ćwiczenie: ${upcomingExercise.name}, seria ${upcomingExercise.currentSet} z ${upcomingExercise.totalSets}.`;
+            if (upcomingExercise.reps_or_time) announcement += ` Wykonaj ${formatForTTS(upcomingExercise.reps_or_time)}.`;
+            if (upcomingExercise.tempo_or_iso) announcement += ` W tempie: ${formatForTTS(upcomingExercise.tempo_or_iso)}.`;
+            
+            const friendlyDescription = formatForTTS(upcomingExercise.description);
+
+            // Uruchom łańcuch zapowiedzi: po zakończeniu opisu, automatycznie przejdź dalej
+            speak(announcement, true, () => {
+                speak(friendlyDescription, false, startNextExercise);
+            });
+
+        } else {
+            // STRATEGIA 2: Dźwięk WYŁĄCZONY - daj użytkownikowi stały, krótki czas na przeczytanie
+            focus.timerDisplay.classList.remove('rep-based-text');
+            focus.pauseResumeBtn.classList.remove('hidden'); // Pokaż przycisk pauzy
+            startTimer(exercise.duration > 5 ? exercise.duration : 5, startNextExercise);
+        }
     }
 }
 
@@ -122,12 +167,12 @@ export function generateFlatExercises(dayData) {
             for (let i = 1; i <= setCount; i++) {
                 plan.push({ ...exercise, isWork: true, sectionName: section.name, currentSet: i, totalSets: setCount });
                 if (i < setCount) {
-                    plan.push({ name: 'Odpoczynek', isRest: true, duration: TRAINING_PLAN.GlobalRules.defaultRestSecondsBetweenSets, sectionName: 'Przerwa' });
+                    plan.push({ name: 'Odpoczynek', isRest: true, isWork: false, duration: TRAINING_PLAN.GlobalRules.defaultRestSecondsBetweenSets, sectionName: 'Przerwa' });
                 }
             }
             const isLastExerciseInSection = exerciseIndex === section.exercises.length - 1;
             if (!isLastExerciseInSection) {
-                 plan.push({ name: 'Przerwa', isRest: true, duration: state.settings.restBetweenExercises, sectionName: 'Przerwa' });
+                 plan.push({ name: 'Przerwa', isRest: true, isWork: false, duration: state.settings.restBetweenExercises, sectionName: 'Przerwa' });
             }
         });
     });
@@ -154,15 +199,10 @@ export function startModifiedTraining() {
         }
     });
     
-    // =================================================================
-    // POPRAWIONA LOGIKA:
-    // Czyścimy log sesji i przygotowujemy ćwiczenia.
-    // NIE TWORZYMY tutaj wpisu 'in_progress' w state.userProgress.
-    // Wpis zostanie utworzony dopiero po ZAKOŃCZENIU lub PRZERWANIU sesji.
-    // =================================================================
     state.sessionLog = [];
     state.flatExercises = [
-        { name: "Przygotuj się", isRest: true, duration: 5, sectionName: "Start" },
+        // Używamy obiektu `isRest: true` jako sygnału do zapowiedzi pierwszego ćwiczenia
+        { name: "Przygotuj się", isRest: true, isWork: false, duration: 30, sectionName: "Start" },
         ...generateFlatExercises(modifiedDay)
     ];
     

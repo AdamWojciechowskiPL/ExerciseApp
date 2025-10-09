@@ -69,6 +69,17 @@ main { padding: 1rem; padding-bottom: 6rem; }
     margin-bottom: 1rem;
     box-shadow: 0 2px 5px rgba(0,0,0,0.05);
 }
+.day-card-equipment {
+    font-size: 0.9rem;
+    color: #555;
+    margin-top: 1rem;
+    margin-bottom: 0;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+.day-card-equipment strong {
+    color: var(--primary-color);
+}
 .day-card-date {
     font-size: 0.9rem;
     font-weight: bold;

@@ -9,23 +9,60 @@ import { getISODate } from './utils.js';
 import { moveToNextExercise, moveToPreviousExercise } from './training.js';
 import { stopTimer, togglePauseTimer } from './timer.js';
 
+// =========================================================================
+// NOWY MODUŁ: Zarządzanie blokadą wygaszania ekranu (Wake Lock)
+// =========================================================================
+export const wakeLockManager = {
+    wakeLock: null,
+
+    // Funkcja prosząca o aktywację blokady
+    async request() {
+        // Sprawdź, czy przeglądarka wspiera Wake Lock API
+        if ('wakeLock' in navigator) {
+            try {
+                this.wakeLock = await navigator.wakeLock.request('screen');
+                console.log('Blokada wygaszania ekranu została aktywowana.');
+
+                // Nasłuchuj na zdarzenie zwolnienia blokady (np. przez zminimalizowanie okna)
+                this.wakeLock.addEventListener('release', () => {
+                    console.log('Blokada wygaszania ekranu została zwolniona przez system.');
+                    this.wakeLock = null; // Zresetuj stan po zwolnieniu
+                });
+            } catch (err) {
+                console.error(`Błąd Wake Lock: ${err.name}, ${err.message}`);
+            }
+        } else {
+            console.warn('Wake Lock API nie jest wspierane w tej przeglądarce.');
+        }
+    },
+
+    // Funkcja zwalniająca blokadę
+    async release() {
+        if (this.wakeLock !== null) {
+            try {
+                await this.wakeLock.release();
+                this.wakeLock = null;
+                console.log('Blokada wygaszania ekranu została zwolniona.');
+            } catch (err) {
+                console.error(`Błąd Wake Lock: ${err.name}, ${err.message}`);
+            }
+        }
+    }
+};
+
+
 // === GŁÓWNE HANDLERY ZDARZEŃ ===
 
 export function handleSummarySubmit(e) {
     e.preventDefault();
     const dateKey = state.currentTrainingDate;
     
-    // =========================================================================
-    // POPRAWKA: Defensywne sprawdzenie i naprawa danych
-    // Ten kod sprawdzi, czy dane dla dzisiejszego dnia istnieją, ale nie są tablicą.
-    // Jeśli tak, naprawi je, resetując do pustej tablicy.
-    // =========================================================================
+    // Defensywne sprawdzenie i naprawa danych na wypadek uszkodzenia w localStorage
     if (state.userProgress[dateKey] && !Array.isArray(state.userProgress[dateKey])) {
         console.warn(`Wykryto uszkodzone dane dla daty ${dateKey}. Naprawianie...`);
         state.userProgress[dateKey] = [];
     }
 
-    // Oryginalna logika, która teraz jest w 100% bezpieczna
     if (!state.userProgress[dateKey]) {
         state.userProgress[dateKey] = [];
     }
@@ -129,14 +166,13 @@ function init() {
 
     document.getElementById('settings-form').addEventListener('submit', (e) => {
         e.preventDefault();
-        // NOWA LINIA: Pobranie i zapisanie daty startowej
         state.settings.appStartDate = e.target['setting-start-date'].value;
         state.settings.restBetweenExercises = parseInt(e.target['setting-rest-duration'].value, 10);
         state.settings.progressionFactor = parseInt(e.target['setting-progression-factor'].value, 10);
         dataStore.saveSettings();
         alert('Ustawienia zostały zapisane.');
         navigateTo('main');
-        renderMainScreen(); // Kluczowe jest odświeżenie ekranu głównego
+        renderMainScreen();
     });
     
     document.getElementById('setting-progression-factor').addEventListener('input', (e) => {
@@ -154,15 +190,11 @@ function init() {
             
             const dateKey = state.currentTrainingDate;
 
-            // =========================================================================
-            // POPRAWKA: Defensywne sprawdzenie również przy przerywaniu treningu
-            // =========================================================================
             if (state.userProgress[dateKey] && !Array.isArray(state.userProgress[dateKey])) {
                 console.warn(`Wykryto uszkodzone dane dla daty ${dateKey} podczas przerywania. Naprawianie...`);
-                delete state.userProgress[dateKey]; // Usuń uszkodzony obiekt
+                delete state.userProgress[dateKey];
             }
 
-            // Oznacz dzień jako "w trakcie", ale tylko jeśli nie ma jeszcze żadnych ukończonych sesji
             if (dateKey && (!state.userProgress[dateKey] || state.userProgress[dateKey].length === 0)) {
                 state.userProgress[dateKey] = [{
                     sessionId: Date.now(),
@@ -198,7 +230,18 @@ function init() {
         }
     }
 
+    // Dynamiczne ustawienie roku w stopce
     document.getElementById('current-year').textContent = new Date().getFullYear();
+    
+    // =========================================================================
+    // NOWY LISTENER: Ponowne aktywowanie blokady po powrocie do aplikacji
+    // =========================================================================
+    document.addEventListener('visibilitychange', async () => {
+        // Jeśli strona stała się znowu widoczna ORAZ jesteśmy na ekranie treningu
+        if (document.visibilityState === 'visible' && screens.training.classList.contains('active')) {
+            await wakeLockManager.request();
+        }
+    });
 }
 
 init();

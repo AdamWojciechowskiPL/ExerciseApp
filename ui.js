@@ -3,17 +3,27 @@
 import { state } from './state.js';
 import { screens, containers, mainNav, initializeFocusElements } from './dom.js';
 import { getISODate, getTrainingDayForDate, applyProgression } from './utils.js';
-import { handleSummarySubmit } from './app.js';
+import { handleSummarySubmit, wakeLockManager } from './app.js'; // Dodano import wakeLockManager
 import { startModifiedTraining } from './training.js';
-import { TRAINING_PLAN } from './training-plan.js'; // Dodano import TRAINING_PLAN
+import { TRAINING_PLAN } from './training-plan.js';
 
 export const navigateTo = (screenName) => {
+    // Zarządzanie blokadą ekranu przy zmianie widoku
+    if (screenName === 'training') {
+        wakeLockManager.request(); // Aktywuj blokadę przy wejściu w tryb focus
+    } else {
+        wakeLockManager.release(); // Zwolnij blokadę przy opuszczaniu trybu focus
+    }
+
+    // Logika przełączania ekranów i widoczności elementów UI
     if (screenName === 'training') {
         screens.training.classList.add('active');
         mainNav.style.display = 'none';
+        document.getElementById('app-footer').style.display = 'none'; // Ukryj stopkę
     } else {
         screens.training.classList.remove('active');
         mainNav.style.display = 'flex';
+        document.getElementById('app-footer').style.display = 'block'; // Pokaż stopkę
         Object.values(screens).forEach(s => { if (s) s.classList.remove('active'); });
         if (screens[screenName]) screens[screenName].classList.add('active');
     }
@@ -30,7 +40,33 @@ export const renderMainScreen = () => {
         const trainingDay = getTrainingDayForDate(date);
         if (!trainingDay) continue;
 
-        let dateLabel = date.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' });
+        // =========================================================================
+        // NOWA LOGIKA: Zbieranie i formatowanie listy wymaganego sprzętu
+        // =========================================================================
+        const equipmentSet = new Set();
+        const allExercises = [
+            ...(trainingDay.warmup || []),
+            ...(trainingDay.main || []),
+            ...(trainingDay.cooldown || [])
+        ];
+
+        allExercises.forEach(exercise => {
+            if (exercise.equipment && exercise.equipment.trim() !== '') {
+                // Obsługa wielu sprzętów w jednym polu (np. "Mata, Pasek")
+                const items = exercise.equipment.split(',').map(item => item.trim());
+                items.forEach(item => equipmentSet.add(item));
+            }
+        });
+
+        let equipmentHtml = '';
+        if (equipmentSet.size > 0) {
+            const equipmentList = [...equipmentSet].join(', ');
+            equipmentHtml = `<p class="day-card-equipment"><strong>Sprzęt:</strong> ${equipmentList}</p>`;
+        } else {
+            equipmentHtml = `<p class="day-card-equipment"><strong>Sprzęt:</strong> Brak wymaganego sprzętu</p>`;
+        }
+
+        let dateLabel = date.toLocaleString('pl-PL', { day: 'numeric', month: 'short' });
         if (i === 0) dateLabel = `Dzisiaj, ${dateLabel}`;
         if (i === 1) dateLabel = `Jutro, ${dateLabel}`;
 
@@ -41,6 +77,7 @@ export const renderMainScreen = () => {
             <div class="card-header">
                 <h3>Dzień ${trainingDay.dayNumber}: ${trainingDay.title}</h3>
             </div>
+            ${equipmentHtml}
             <button class="action-btn" data-day-id="${trainingDay.dayNumber}">Start treningu (Dzień ${trainingDay.dayNumber})</button>
         `;
         containers.days.appendChild(card);
@@ -93,14 +130,11 @@ export const renderHistoryScreen = () => {
             dayEl.classList.add('today');
         }
         
-        // =========================================================================
-        // KLUCZOWA ZMIANA: Wyświetlaj przydział planu tylko dla dnia dzisiejszego i przyszłych
-        // =========================================================================
+        // Wyświetlaj przydział planu tylko dla dnia dzisiejszego i przyszłych
         let planHtml = '';
-        // Porównanie stringów 'YYYY-MM-DD' jest bezpieczne i wydajne
         if (isoDate >= todayISO) {
             const trainingDayForVisuals = getTrainingDayForDate(currentDate);
-            if (trainingDayForVisuals) { // Upewnij się, że dzień istnieje
+            if (trainingDayForVisuals) {
                  planHtml = `<div class="day-plan">Plan: Dzień ${trainingDayForVisuals.dayNumber}</div>`;
             }
         }
@@ -170,7 +204,6 @@ export const renderDayDetailsScreen = (isoDate) => {
 
 export const renderSettingsScreen = () => {
     const form = document.getElementById('settings-form');
-    // NOWA LINIA: Ustawienie wartości w polu kalendarza
     form['setting-start-date'].value = state.settings.appStartDate;
     form['setting-rest-duration'].value = state.settings.restBetweenExercises;
     form['setting-progression-factor'].value = state.settings.progressionFactor;
@@ -179,11 +212,8 @@ export const renderSettingsScreen = () => {
 };
 
 export const renderPreTrainingScreen = (dayId) => {
-    // =========================================================================
-    // NAPRAWIONA CZĘŚĆ: Poprawna logika renderowania
-    // =========================================================================
-    state.currentTrainingDayId = dayId; // Zapisz ID dnia z planu
-    state.currentTrainingDate = getISODate(new Date()); // Zapisz DZISIEJSZĄ datę jako datę treningu
+    state.currentTrainingDayId = dayId;
+    state.currentTrainingDate = getISODate(new Date());
     
     const trainingDay = TRAINING_PLAN.Days.find(d => d.dayNumber === dayId);
     if (!trainingDay) return;

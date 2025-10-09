@@ -23,6 +23,27 @@ export const state = {
         oscillator.start();
         oscillator.stop(state.audioContext.currentTime + 0.2);
     },
+
+    // =========================================================================
+    // NOWA FUNKCJA: Dźwięk na zakończenie całej sesji treningowej
+    // =========================================================================
+    finalCompletionSound: () => {
+        if (!state.audioContext) state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const now = state.audioContext.currentTime;
+        const oscillator = state.audioContext.createOscillator();
+        const gainNode = state.audioContext.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(state.audioContext.destination);
+        gainNode.gain.setValueAtTime(0.3, now);
+        oscillator.type = 'sine';
+
+        // Odtwórz dwa tony, jeden po drugim (prosta melodia)
+        oscillator.frequency.setValueAtTime(659.25, now); // E5
+        oscillator.frequency.setValueAtTime(880.00, now + 0.2); // A5
+
+        oscillator.start(now);
+        oscillator.stop(now + 0.4);
+    },
     tts: {
         synth: window.speechSynthesis,
         polishVoice: null,

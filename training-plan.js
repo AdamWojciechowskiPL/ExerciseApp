@@ -388,7 +388,7 @@ const TRAINING_PLAN = {
           "tempo_or_iso": "płynnie",
           "equipment": "Mata",
           "youtube_url": "https://www.youtube.com/shorts/Tn4dXCaJHu8",
-          "description": "Pozycja na czworaka: dłonie pod barkami, kolana pod biodrami; kręgosłup i miednica neutralnie. Wdech – delikatnie unieś mostek i wydłuż odcinek piersiowy; wydech – łagodnie zaokrąglij grzbiet, „żebra w dół”, niewielkie podwinięcie miednicy. Zakres mały, segmentarny, bez bólu. Oddychaj płynnie. Błędy: dociskanie ruchu w lędźwiach, unoszenie barków, kołysanie miednicy, wstrzymywanie oddechu."
+          "description": "Pozycja na czworaka: dłonie pod barkami, kolana pod biodrami; kręgosłup i miednica neutralnie. Wdech – delikatnie unieś mostek i wydłuż odcinek piersiowy; wydech – łagodnie zaokrąglij grzbiet, żebra w dół, niewielkie podwinięcie miednicy. Zakres mały, segmentarny, bez bólu. Oddychaj płynnie. Błędy: dociskanie ruchu w lędźwiach, unoszenie barków, kołysanie miednicy, wstrzymywanie oddechu."
         },
         {
           "name": "Quadruped rock back",
@@ -397,7 +397,7 @@ const TRAINING_PLAN = {
           "tempo_or_iso": "pauza 1–2 s",
           "equipment": "Mata",
           "youtube_url": "https://www.youtube.com/shorts/NK2_By5eEmM",
-          "description": "Pozycja na czworaka: dłonie pod barkami, kolana pod biodrami; kręgosłup i miednica neutralnie. „Żebra w dół”, napnij mięśnie głębokie brzucha, łopatki stabilne. Z wydechem cofaj biodra w kierunku pięt, ruch z bioder bez zaokrąglania ani zapadania lędźwi; pauza 1–2 s i powrót. Zakres bez bólu. Błędy: przeprost lub zaokrąglanie lędźwi, unoszenie barków, kołysanie miednicy."
+          "description": "Pozycja na czworaka: dłonie pod barkami, kolana pod biodrami; kręgosłup i miednica neutralnie. Żebra w dół, napnij mięśnie głębokie brzucha, łopatki stabilne. Z wydechem cofaj biodra w kierunku pięt, ruch z bioder bez zaokrąglania ani zapadania lędźwi; pauza 1–2 s i powrót. Zakres bez bólu. Błędy: przeprost lub zaokrąglanie lędźwi, unoszenie barków, kołysanie miednicy."
         }
       ],
       "main": [
@@ -408,7 +408,7 @@ const TRAINING_PLAN = {
           "tempo_or_iso": "izometria w neutralu",
           "equipment": "Mata",
           "youtube_url": "https://www.youtube.com/shorts/45OW5NVTDbQ",
-          "description": "Leżenie tyłem; stopy na szerokość bioder, kolana ~90°. Delikatnie podwiń miednicę („ogon pod siebie”), „żebra w dół”. Unieś biodra do linii uda–tułów bez przeprostu w lędźwiach; napnij pośladki, kolana stabilnie nad stopami. Utrzymaj 15 s, oddychaj spokojnie; opuść kontrolowanie. Błędy: praca głównie tyłem uda, rozszerzanie żeber, zapadanie kolan, odgięta szyja/przeprost lędźwi."
+          "description": "Leżenie tyłem; stopy na szerokość bioder, kolana ~90°. Delikatnie podwiń miednicę (ogon pod siebie), żebra w dół. Unieś biodra do linii uda–tułów bez przeprostu w lędźwiach; napnij pośladki, kolana stabilnie nad stopami. Utrzymaj 15 s, oddychaj spokojnie; opuść kontrolowanie. Błędy: praca głównie tyłem uda, rozszerzanie żeber, zapadanie kolan, odgięta szyja/przeprost lędźwi."
         },
         {
           "name": "Bird-dog",
@@ -417,7 +417,7 @@ const TRAINING_PLAN = {
           "tempo_or_iso": "izometria 8 s",
           "equipment": "Mata",
           "youtube_url": "https://www.youtube.com/shorts/j-cX-4I-1pQ",
-          "description": "Pozycja na czworaka: dłonie pod barkami, kolana pod biodrami; kręgosłup i miednica neutralnie. „Żebra w dół”, napnij mięśnie głębokie brzucha. Wyprostuj przeciwległą rękę i nogę do linii tułowia; trzymaj ok. 8 s, oddychając spokojnie i bez rotacji miednicy. Wróć kontrolowanie, zmień stronę. Błędy: unoszenie kończyn zbyt wysoko (przeprost lędźwi), zapadanie barku, przeprost szyi, kołysanie tułowia."
+          "description": "Pozycja na czworaka: dłonie pod barkami, kolana pod biodrami; kręgosłup i miednica neutralnie. Żebra w dół, napnij mięśnie głębokie brzucha. Wyprostuj przeciwległą rękę i nogę do linii tułowia; trzymaj ok. 8 s, oddychając spokojnie i bez rotacji miednicy. Wróć kontrolowanie, zmień stronę. Błędy: unoszenie kończyn zbyt wysoko (przeprost lędźwi), zapadanie barku, przeprost szyi, kołysanie tułowia."
         },
         {
           "name": "Dead bug",
@@ -426,7 +426,7 @@ const TRAINING_PLAN = {
           "tempo_or_iso": "pauza 2–3 s",
           "equipment": "Mata",
           "youtube_url": "https://www.youtube.com/shorts/c0hPg8Sv47U",
-          "description": "Leżenie tyłem; biodra i kolana 90°, ręce nad barkami. „Żebra w dół”, brzuch napięty; lędźwie blisko podłoża w neutralnym ustawieniu. Z wydechem oddal przeciwną rękę i nogę, zatrzymaj 2–3 s bez odrywania lędźwi; z wdechem wróć. Zakres tak daleki, by tułów pozostał stabilny. Błędy: przeprost lędźwi, unoszenie żeber, szarpanie, napięta szyja."
+          "description": "Leżenie tyłem; biodra i kolana 90°, ręce nad barkami. Żebra w dół, brzuch napięty; lędźwie blisko podłoża w neutralnym ustawieniu. Z wydechem oddal przeciwną rękę i nogę, zatrzymaj 2–3 s bez odrywania lędźwi; z wdechem wróć. Zakres tak daleki, by tułów pozostał stabilny. Błędy: przeprost lędźwi, unoszenie żeber, szarpanie, napięta szyja."
         }
       ],
       "cooldown": [
@@ -436,7 +436,7 @@ const TRAINING_PLAN = {
           "reps_or_time": "45 s/str.",
           "tempo_or_iso": "statycznie",
           "equipment": "Mata",
-          "youtube_url": https://www.youtube.com/shorts/mpCt25ZKFHg",
+          "youtube_url": "https://www.youtube.com/shorts/mpCt25ZKFHg",
           "description": "Leżenie tyłem; załóż kostkę jednej nogi na udo drugiej. Miednica neutralnie, brzuch lekko napięty. Chwyć udo nogi podporowej i przyciągaj do uczucia rozciągania w pośladku; barki rozluźnione, oddychaj równomiernie 45 s. Błędy: skręcanie miednicy, dociskanie kolana ręką, ból/ciągnięcie nerwowe pod kolanem."
         },
         {

@@ -39,3 +39,34 @@ export const togglePauseTimer = () => {
         }
     }
 };
+
+/**
+ * Aktualizuje wyświetlacz stopera, formatując czas do MM:SS.
+ */
+export const updateStopwatchDisplay = () => {
+    const minutes = Math.floor(state.stopwatch.seconds / 60);
+    const seconds = state.stopwatch.seconds % 60;
+    focus.timerDisplay.classList.remove('rep-based-text'); // Upewnij się, że tekst jest w stylu timera
+    focus.timerDisplay.textContent = `${minutes < 10 ? '0' : ''}${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+};
+
+/**
+ * Startuje stoper, resetując go i rozpoczynając odliczanie w górę.
+ */
+export const startStopwatch = () => {
+    stopStopwatch(); // Zatrzymaj poprzedni, jeśli działał
+    state.stopwatch.seconds = 0;
+    updateStopwatchDisplay();
+    state.stopwatch.interval = setInterval(() => {
+        state.stopwatch.seconds++;
+        updateStopwatchDisplay();
+    }, 1000);
+};
+
+/**
+ * Zatrzymuje stoper, czyszcząc interwał.
+ */
+export const stopStopwatch = () => {
+    clearInterval(state.stopwatch.interval);
+    state.stopwatch.interval = null;
+};

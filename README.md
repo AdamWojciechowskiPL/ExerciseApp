@@ -1,72 +1,78 @@
 # Aplikacja Treningowa L5-S1
 
-Dedykowana, responsywna aplikacja webowa (Progressive Web App) wspierająca spersonalizowany, cykliczny plan treningowy dla osób z bólem w okolicy kręgosłupa lędźwiowo-krzyżowego (L5-S1). Aplikacja została zaprojektowana z myślą o maksymalnej prostocie, elastyczności w planowaniu, bezpieczeństwie i prywatności użytkownika.
+Modułowa i responsywna platforma webowa (PWA) wspierająca spersonalizowane, cykliczne plany treningowe dla osób z bólem w okolicy kręgosłupa lędźwiowo-krzygowego (L5-S1). Aplikacja została przekształcona w elastyczny system, który oddziela bazę ćwiczeń od planów treningowych, umożliwiając łatwą rozbudowę i personalizację.
 
 ## Cel Projektu
 
-Głównym celem aplikacji jest bezpieczne i automatyczne prowadzenie użytkownika przez spersonalizowany plan treningowy, szczegółowe monitorowanie postępów w kalendarzu oraz umożliwienie dostosowania intensywności treningu. Aplikacja kładzie nacisk na edukację (opisy ćwiczeń, TTS) i działa w pełni offline po pierwszym załadowaniu.
+Głównym celem aplikacji jest bezpieczne i automatyczne prowadzenie użytkownika przez wybrany plan treningowy. Aplikacja kładzie nacisk na elastyczność (możliwość zmiany planu), edukację (dedykowana baza ćwiczeń z opisami i wideo), szczegółowe monitorowanie postępów oraz działanie w pełni offline po pierwszym załadowaniu, gwarantując 100% prywatności.
 
 ## Kluczowe Funkcje
 
-### Najważniejsze Aktualizacje
-*   **Inteligentne, dynamiczne przerwy** dostosowujące się do czasu trwania zapowiedzi głosowej.
-*   **Pełna personalizacja cyklu treningowego** dzięki możliwości zmiany daty startowej.
-*   **Blokada wygaszania ekranu** w trybie treningu, zapewniająca nieprzerwaną sesję.
-*   **Dynamiczna lista wymaganego sprzętu** widoczna na ekranie głównym.
+### Najważniejsze Aktualizacje (Wersja 2.0)
+*   **Modułowa Architektura:** Całkowite oddzielenie danych o ćwiczeniach (opisy, linki wideo) od struktury planów treningowych (serie, powtórzenia), co pozwala na łatwe dodawanie nowych planów i ćwiczeń.
+*   **Wybór Planu Treningowego:** Użytkownik może wybrać aktywny plan z dostępnej listy w ustawieniach. Zmiana jest natychmiast odzwierciedlana w harmonogramie na ekranie głównym.
+*   **Nowy Ekran: Baza Ćwiczeń:** Dedykowana sekcja w aplikacji, która pozwala na przeglądanie, wyszukiwanie i studiowanie wszystkich dostępnych ćwiczeń, niezależnie od aktywnego planu.
+*   **Ulepszony Tryb Treningu:**
+    *   **Inteligentne Rozróżnianie Ćwiczeń:** Aplikacja inaczej traktuje ćwiczenia na czas i na powtórzenia, optymalizując przepływ sesji.
+    *   **Informacyjny Stoper:** Podczas ćwiczeń na powtórzenia (z ręcznym potwierdzeniem) na ekranie wyświetlany jest licznik czasu (stoper), informujący użytkownika, jak długo wykonuje daną serię.
 
 ### Pełna Lista Funkcji
 
-*   **Elastyczny Plan Treningowy:**
-    *   Ekran główny prezentuje 7-dniowy cykl treningowy z dynamicznie generowaną **listą wymaganego sprzętu** dla każdego dnia.
-    *   Użytkownik może wybrać i wykonać **dowolny trening w dowolnym dniu**, a postęp zostanie zapisany pod **aktualną datą**.
+*   **Wybór i Zarządzanie Planami Treningowymi:**
+    *   Możliwość wyboru aktywnego planu treningowego w panelu ustawień.
+    *   Ekran główny dynamicznie prezentuje 7-dniowy harmonogram oparty na **aktualnie wybranym planie**.
+    *   Automatyczne generowanie listy wymaganego sprzętu dla każdego dnia.
+*   **Dedykowana Baza Ćwiczeń:**
+    *   Osobna zakładka z listą wszystkich ćwiczeń dostępnych w aplikacji.
+    *   Funkcjonalność **wyszukiwania na żywo** pozwala na szybkie filtrowanie ćwiczeń po nazwie lub opisie.
+    *   Każde ćwiczenie posiada szczegółowy opis, informację o sprzęcie i bezpośredni link do wideo instruktażowego.
 *   **Historia i Kalendarz Treningów:**
-    *   Dedykowana sekcja "Historia" z interaktywnym kalendarzem.
-    *   Wizualne oznaczenie dni z wykonanym treningiem.
-    *   **Dynamiczny widok planu:** Przypisany dzień treningowy jest wyświetlany tylko dla dnia dzisiejszego i dat przyszłych, co nadaje aplikacji "żywy" charakter.
-*   **Szczegółowe Logowanie Sesji:**
-    *   Możliwość wykonania i zapisania **wielu sesji treningowych tego samego dnia**.
-    *   Szczegółowe podsumowanie każdej sesji, w tym: nazwa planu, godzina ukończenia, ocena bólu, notatki oraz **pełny log wykonanych ćwiczeń**.
+    *   Interaktywny kalendarz wizualnie oznaczający dni z wykonanym treningiem.
+    *   **Kompatybilność wsteczna:** Historia poprawnie wyświetla treningi wykonane przed zmianą architektury.
+    *   Szczegółowy widok dnia z zapisanym logiem każdej sesji.
 *   **Zaawansowany Moduł Ustawień:**
-    *   **Personalizacja Cyklu Treningowego:** Użytkownik może w dowolnym momencie **zmienić datę rozpoczęcia cyklu** za pomocą wbudowanego kalendarza, co natychmiast przelicza cały plan.
-    *   **Personalizacja Długości Przerw (w trybie cichym):** Użytkownik może ustawić długość przerwy, która będzie używana jako timer w przypadku, gdy asystent głosowy jest wyłączony.
-    *   **Współczynnik Progresji:** Intuicyjny suwak pozwala na skalowanie intensywności treningu (od 50% do 200%).
+    *   **Personalizacja Cyklu:** Możliwość zmiany daty rozpoczęcia cyklu treningowego.
+    *   **Wybór Planu:** Intuicyjna lista rozwijana do zmiany aktywnego planu.
+    *   **Współczynnik Progresji:** Suwak do skalowania intensywności treningu (od 50% do 200%).
 *   **Zautomatyzowany Tryb Treningu ("Focus Mode"):**
-    *   **Inteligentne, dynamiczne przerwy:** Czas trwania przerwy jest **automatycznie dostosowywany do długości zapowiedzi głosowej**. Aplikacja przechodzi do kolejnego ćwiczenia dokładnie w momencie, gdy asystent kończy czytać opis.
-    *   **Brak wygaszania ekranu:** Aplikacja aktywnie blokuje automatyczne wygaszanie ekranu telefonu podczas trwania całej sesji treningowej (Wake Lock API).
-    *   Pełnoekranowy interfejs, który prowadzi użytkownika przez każdą serię i przerwę.
-    *   Precyzyjny mechanizm rozróżniający ćwiczenia na czas (automatyczny timer) od tych na powtórzenia (ręczne potwierdzenie).
-*   **Inteligentny Asystent Głosowy (TTS):**
-    *   **Naturalne zapowiedzi:** Asystent głosowy inteligentnie formatuje tekst z planu, poprawnie odmieniając jednostki ("2 sekundy", "5 powtórzeń") i tłumacząc skróty, co zapewnia naturalne i zrozumiałe komunikaty.
-    *   **Zapowiedzi wyłącznie podczas przerw:** Aby zapewnić maksymalne skupienie, wszystkie komunikaty głosowe (nazwa ćwiczenia, opis) odtwarzane są **tylko w fazie przygotowania**. Faza wykonywania ćwiczenia jest całkowicie cicha.
+    *   **Zróżnicowany Przepływ Sesji:**
+        *   **Ćwiczenia na czas:** Asystent głosowy odtwarza instrukcje w fazie przygotowania.
+        *   **Ćwiczenia na powtórzenia:** Krótka, cicha faza przygotowania, po której asystent głosowy odtwarza instrukcje **w trakcie wykonywania ćwiczenia**, a na ekranie działa stoper.
+    *   **Blokada Wygaszania Ekranu:** Aplikacja aktywnie blokuje automatyczne wygaszanie ekranu (Wake Lock API).
+    *   Inteligentny asystent głosowy (TTS) z naturalnie brzmiącymi komunikatami.
 *   **Backup i Przywracanie Danych:** Możliwość eksportu i importu wszystkich postępów i ustawień do pliku `.json`.
-*   **Ekran Podglądu i Modyfikacji:** Przed sesją użytkownik może przejrzeć plan dnia, przeczytać opisy i jednorazowo zmodyfikować liczbę serii lub powtórzeń.
-*   **Lokalny Zapis i Prywatność:** Wszystkie dane są automatycznie zapisywane w `localStorage` przeglądarki. Aplikacja nie wysyła żadnych danych na zewnętrzne serwery.
+*   **Lokalny Zapis i Prywatność:** Wszystkie dane są zapisywane wyłącznie w `localStorage` przeglądarki. Aplikacja nie wysyła żadnych danych na zewnętrzne serwery.
 
 ## Specyfikacja Techniczna
 
 *   **Frontend:** Czysty (Vanilla) JavaScript z wykorzystaniem modułów ES6, HTML5, CSS3.
 *   **Kluczowe API Webowe:** Web Speech API (Text-to-Speech), Wake Lock API.
 *   **Architektura:** Aplikacja jednostronicowa (SPA) bez użycia frameworków.
-*   **Źródło Danych:** Plan treningowy jest przechowywany w obiekcie JavaScript w osobnym pliku (`training-plan.js`).
+*   **Źródło Danych:** Dane są podzielone na dwa pliki:
+    *   `exercise-library.js`: Centralna baza wszystkich unikalnych ćwiczeń (opisy, wideo).
+    *   `training-plans.js`: Definicje struktur planów treningowych (kolejność, serie, powtórzenia).
 *   **Przechowywanie Danych Użytkownika:** `localStorage` przeglądarki internetowej.
 *   **Zależności:** Brak zewnętrznych bibliotek i zależności.
 
 ## Struktura Projektu
 
-Projekt został podzielony na logiczne moduły, aby ułatwić jego utrzymanie i rozwój:
+Projekt został zrestrukturyzowany w celu oddzielenia danych od logiki, co ułatwia jego utrzymanie i przyszły rozwój.
 ```
 /aplikacja-treningowa
 │
-├── index.html         # Główny plik HTML, struktura aplikacji
-├── style.css          # Plik CSS, definicje stylów
+├── index.html              # Główny plik HTML, struktura aplikacji
+├── style.css               # Plik CSS, definicje stylów
 │
-├── app.js             # Główny plik, inicjalizacja i obsługa zdarzeń
-├── training-plan.js   # Dane z planem treningowym
-├── dataStore.js   # Obsługa localStorage
-├── dom.js         # Selektory elementów DOM
-├── state.js       # Centralny obiekt stanu aplikacji
-├── timer.js       # Logika timera
-├── training.js    # Logika przebiegu sesji treningowej
-├── tts.js         # Logika syntezatora mowy (Text-to-Speech)
-├── ui.js          # Funkcje renderujące interfejs
-└── utils.js       # Funkcje pomocnicze (daty, obliczenia)
+├── app.js                  # Główny plik, inicjalizacja i obsługa zdarzeń
+│
+├── exercise-library.js     # NOWOŚĆ: Baza danych ćwiczeń (opisy, wideo)
+├── training-plans.js       # NOWOŚĆ: Struktura planów (serie, powtórzenia)
+│
+├── dataStore.js            # Obsługa localStorage
+├── dom.js                  # Selektory elementów DOM
+├── state.js                # Centralny obiekt stanu aplikacji
+├── timer.js                # Logika timera i stopera
+├── training.js             # Logika przebiegu sesji treningowej
+├── tts.js                  # Logika syntezatora mowy (Text-to-Speech)
+├── ui.js                   # Funkcje renderujące interfejs
+└── utils.js                # Funkcje pomocnicze (daty, "nawadnianie" danych)

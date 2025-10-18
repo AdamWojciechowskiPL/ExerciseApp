@@ -4,6 +4,7 @@ export const screens = {
     main: document.getElementById('main-screen'),
     history: document.getElementById('history-screen'),
     dayDetails: document.getElementById('day-details-screen'), // NAPRAWIONA CZĘŚĆ: DODANO BRAKUJĄCY SELEKTOR
+    library: document.getElementById('library-screen'),
     settings: document.getElementById('settings-screen'),
     preTraining: document.getElementById('pre-training-screen'),
     training: document.getElementById('training-screen'),
@@ -13,6 +14,7 @@ export const screens = {
 export const containers = {
     days: document.getElementById('days-container'),
     calendarGrid: document.getElementById('calendar-grid'),
+    exerciseLibrary: document.getElementById('exercise-library-container'),
 };
 
 export const mainNav = document.getElementById('main-nav');

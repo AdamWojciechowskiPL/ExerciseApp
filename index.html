@@ -11,10 +11,14 @@
 <body>
 
     <header>
-        <h1>Plan Treningowy L5-S1</h1>
+        <!-- ========================================================================= -->
+        <!-- ZMIANA 1: Zmieniamy nazwę aplikacji na bardziej ogólną.                 -->
+        <!-- ========================================================================= -->
+        <h1>Aplikacja Treningowa</h1>
         <nav id="main-nav">
             <button id="nav-main">Ekran Główny</button>
             <button id="nav-history">Historia</button>
+            <button id="nav-library">Baza Ćwiczeń</button>
             <button id="nav-settings">Ustawienia</button>
         </nav>
     </header>
@@ -22,7 +26,10 @@
     <main>
         <!-- Ekran Główny -->
         <section id="main-screen" class="screen active">
-            <h2>Plan na najbliższe 7 dni</h2>
+            <!-- ========================================================================= -->
+            <!-- ZMIANA 2: Dodajemy ID do nagłówka, aby móc dynamicznie wstawić nazwę planu. -->
+            <!-- ========================================================================= -->
+            <h2 id="main-screen-title">Plan na najbliższe 7 dni</h2>
             <div id="days-container"></div>
         </section>
 
@@ -41,6 +48,15 @@
                 <div class="calendar-grid" id="calendar-grid"></div>
             </div>
         </section>
+        
+        <!-- EKRAN BAZY ĆWICZEŃ -->
+        <section id="library-screen" class="screen">
+            <h2>Baza Ćwiczeń</h2>
+            <div class="search-container" style="margin-bottom: 1.5rem;">
+                <input type="text" id="library-search-input" placeholder="Szukaj ćwiczeń po nazwie..." style="width: 100%; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 5px; font-size: 1rem; box-sizing: border-box;">
+            </div>
+            <div id="exercise-library-container"></div>
+        </section>
 
         <!-- EKRAN SZCZEGÓŁÓW DNIA -->
         <section id="day-details-screen" class="screen">
@@ -54,9 +70,15 @@
             <h2>Ustawienia</h2>
             <form id="settings-form">
                 <div class="form-group">
-            <label for="setting-start-date">Data rozpoczęcia cyklu treningowego</label>
-            <input type="date" id="setting-start-date" required>
+                    <label for="setting-start-date">Data rozpoczęcia cyklu treningowego</label>
+                    <input type="date" id="setting-start-date" required>
                 </div>
+                
+                <div class="form-group">
+                    <label for="setting-training-plan">Aktywny plan treningowy</label>
+                    <select id="setting-training-plan" style="padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 5px; font-size: 1rem; background-color: var(--card-background); width: 100%;"></select>
+                </div>
+
                 <div class="form-group">
                     <label for="setting-rest-duration">Długość przerwy między ćwiczeniami (w sekundach)</label>
                     <input type="number" id="setting-rest-duration" min="0" step="5" required>
@@ -82,13 +104,9 @@
             </div>
         </section>
 
-        <!-- EKRAN PODGLĄDU I MODYFIKACJI TRENINGU (DYNAMICZNIE WYPEŁNIANY) -->
+        <!-- EKRANY DYNAMICZNE -->
         <section id="pre-training-screen" class="screen"></section>
-
-        <!-- EKRAN TRENINGU (DYNAMICZNIE WYPEŁNIANY) -->
         <section id="training-screen" class="screen"></section>
-
-        <!-- EKRAN PODSUMOWANIA (DYNAMICZNIE WYPEŁNIANY) -->
         <section id="summary-screen" class="screen"></section>
     </main>
         <footer id="app-footer">
@@ -97,7 +115,7 @@
                 <strong>Zastrzeżenie:</strong> Ta aplikacja ma charakter wyłącznie informacyjny i nie zastępuje profesjonalnej porady medycznej. Zawsze konsultuj się z lekarzem lub fizjoterapeutą przed rozpoczęciem lub modyfikacją programu ćwiczeń.
             </p>
             <p class="copyright">
-                &copy; <span id="current-year"></span> Aplikacja Treningowa L5-S1. Wersja 1.0.0
+                &copy; <span id="current-year"></span> Aplikacja Treningowa. Wersja 3.0.0
             </p>
         </div>
     </footer>

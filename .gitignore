@@ -1,0 +1,22 @@
+# Plik ignorowanych plików i folderów dla Git
+
+# Zależności Node.js
+# Ten folder jest generowany przez `npm install` i nigdy nie powinien być w repozytorium.
+/node_modules
+
+# Pliki blokujące wersje zależności. W prostych projektach można ignorować.
+# W bardziej złożonych, gdzie spójność wersji jest krytyczna, usuń tę linię.
+/package-lock.json
+
+# Pliki generowane przez Netlify CLI
+# Zawierają lokalny stan środowiska deweloperskiego.
+/.netlify
+
+# Pliki systemowe i specyficzne dla edytorów
+.DS_Store
+.vscode/
+
+# Pliki logów
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

@@ -1,78 +1,151 @@
 // dataStore.js
 
 import { state } from './state.js';
-import { getISODate } from './utils.js';
+import { getToken, getUserPayload } from './auth.js';
 
 /**
- * Moduł Zarządzania Danymi
- * 
- * Odpowiada za komunikację z pamięcią przeglądarki (localStorage).
- * Hermetyzuje logikę wczytywania i zapisywania stanu aplikacji,
- * zapewniając, że dane użytkownika są trwale przechowywane między sesjami.
+ * Centralna funkcja do wysyłania uwierzytelnionych zapytań do API (funkcji Netlify).
+ * Automatycznie dołącza token autoryzacyjny i obsługuje błędy.
+ * @param {string} endpoint - Nazwa funkcji serverless do wywołania.
+ * @param {object} options - Opcje dla funkcji `fetch` (np. method, body).
+ * @returns {Promise<any>} - Sparsowana odpowiedź JSON lub tekst.
  */
+const fetchAPI = async (endpoint, options = {}) => {
+    const token = await getToken();
+    if (!token) throw new Error("User not authenticated");
+
+    const payload = getUserPayload();
+    if (!payload || !payload.sub) {
+      throw new Error("Token payload is invalid or missing user ID (sub).");
+    }
+
+    const defaultHeaders = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        'X-Dev-User-Id': payload.sub
+    };
+
+    const response = await fetch(`/.netlify/functions/${endpoint}`, {
+        ...options,
+        headers: { ...defaultHeaders, ...options.headers }
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`API Error (${response.status}) on endpoint ${endpoint}:`, errorText);
+        throw new Error(`API Error (${response.status}): ${errorText}`);
+    }
+    
+    // Niezawodne parsowanie odpowiedzi: próbuj jako JSON, a jeśli się nie uda, zwróć tekst.
+    try {
+        const data = await response.clone().json();
+        return data;
+    } catch (e) {
+        return response.text();
+    }
+};
+
 const dataStore = {
     /**
-     * Wczytuje postępy i ustawienia użytkownika z localStorage do obiektu stanu.
-     * Wykonywane raz przy starcie aplikacji.
+     * ZMIANA: Inicjalizuje tylko podstawowe dane użytkownika (ustawienia).
+     * Nie pobiera już całej historii treningów, co zapewnia błyskawiczne ładowanie aplikacji.
      */
-    load: () => {
-        // Wczytywanie postępów w treningach
-        const progressData = localStorage.getItem('trainingAppProgress');
-        if (progressData) {
-            try {
-                state.userProgress = JSON.parse(progressData);
-            } catch (e) {
-                console.error("Błąd podczas parsowania danych postępów:", e);
-                state.userProgress = {}; // Resetuj w przypadku błędu
+    initialize: async () => {
+        try {
+            const data = await fetchAPI('get-or-create-user-data', { method: 'GET' });
+            
+            // Inicjujemy historię jako pusty obiekt. Będzie ona wypełniana na żądanie.
+            state.userProgress = {}; 
+
+            if (data.settings) {
+                state.settings = { ...state.settings, ...data.settings };
+            } else {
+                throw new Error("CRITICAL: Server failed to return settings.");
             }
-        }
-        
-        // Wczytywanie ustawień
-        const settingsData = localStorage.getItem('trainingAppSettings');
-        if (settingsData) {
-            try {
-                const loadedSettings = JSON.parse(settingsData);
-                // =========================================================================
-                // KLUCZOWA ZMIANA: Zapewnienie kompatybilności wstecznej.
-                // Łączymy domyślne ustawienia z wczytanymi. Jeśli w localStorage
-                // brakuje nowego pola (np. 'activePlanId'), zostanie ono dodane
-                // z domyślną wartością z obiektu `state`. Istniejące ustawienia
-                // użytkownika zostaną zachowane.
-                // =========================================================================
-                state.settings = { ...state.settings, ...loadedSettings };
-            } catch (e) {
-                console.error("Błąd podczas parsowania danych ustawień:", e);
-                // W przypadku błędu, ustawienia pozostaną domyślne
-            }
-        }
-        
-        // Inicjalizacja daty startowej, jeśli nie została jeszcze ustawiona
-        if (!state.settings.appStartDate) {
-            state.settings.appStartDate = getISODate(new Date());
-            dataStore.saveSettings();
+        } catch (error) {
+            console.error("Failed to initialize user data:", error);
+            alert("Nie udało się wczytać danych z serwera. Spróbuj odświeżyć stronę.");
+            throw error;
         }
     },
 
     /**
-     * Zapisuje aktualny stan postępów użytkownika do localStorage.
+     * NOWA FUNKCJA: Pobiera historię treningów dla konkretnego miesiąca na żądanie (lazy loading).
+     * @param {number} year - Rok, dla którego mają być pobrane dane.
+     * @param {number} month - Miesiąc (1-12), dla którego mają być pobrane dane.
      */
-    saveProgress: () => {
+    getHistoryForMonth: async (year, month) => {
         try {
-            localStorage.setItem('trainingAppProgress', JSON.stringify(state.userProgress));
-        } catch (e) {
-            console.error("Nie udało się zapisać postępów w localStorage:", e);
-            alert("Wystąpił błąd podczas zapisywania Twoich postępów. Możliwe, że pamięć przeglądarki jest pełna.");
+            const historyData = await fetchAPI(`get-history-by-month?year=${year}&month=${month}`, { method: 'GET' });
+
+            // Scalamy pobrane dane z istniejącym stanem w aplikacji.
+            historyData.forEach(session => {
+                const dateKey = new Date(session.completedAt).toISOString().split('T')[0];
+                if (!state.userProgress[dateKey]) {
+                    state.userProgress[dateKey] = [];
+                }
+                // Unikamy duplikatów na wypadek wielokrotnego wywołania.
+                if (!state.userProgress[dateKey].some(s => s.sessionId === session.sessionId)) {
+                    state.userProgress[dateKey].push(session);
+                }
+            });
+        } catch (error) {
+            console.error(`Failed to fetch history for ${year}-${month}:`, error);
+            alert("Nie udało się pobrać historii treningów.");
+        }
+    },
+    
+    /**
+     * Zapisuje ukończoną sesję treningową w bazie danych.
+     * @param {object} sessionData - Obiekt zawierający dane sesji.
+     */
+    saveSession: async (sessionData) => {
+        try {
+            await fetchAPI('save-session', { method: 'POST', body: JSON.stringify(sessionData) });
+        } catch (error) {
+            console.error("Failed to save session:", error);
+            alert("Nie udało się zapisać sesji treningowej. Sprawdź swoje połączenie z internetem.");
         }
     },
 
     /**
-     * Zapisuje aktualny stan ustawień aplikacji do localStorage.
+     * Zapisuje aktualne ustawienia użytkownika w bazie danych.
      */
-    saveSettings: () => {
+    saveSettings: async () => {
         try {
-            localStorage.setItem('trainingAppSettings', JSON.stringify(state.settings));
-        } catch (e) {
-            console.error("Nie udało się zapisać ustawień w localStorage:", e);
+            await fetchAPI('save-settings', { method: 'PUT', body: JSON.stringify(state.settings) });
+        } catch (error) {
+            console.error("Failed to save settings:", error);
+        }
+    },
+    
+    /**
+     * Migruje dane z lokalnego хранилища (localStorage) na konto użytkownika w chmurze.
+     * @param {object} progressData - Dane postępów z localStorage.
+     */
+    migrateData: async (progressData) => {
+        try {
+            const sessionsArray = Object.values(progressData).flat();
+            if (sessionsArray.length === 0) return;
+            await fetchAPI('migrate-data', { method: 'POST', body: JSON.stringify(sessionsArray) });
+            console.log("Data migration was successful!");
+        } catch (error) {
+            console.error("Failed to migrate data:", error);
+            throw error;
+        }
+    },
+
+    /**
+     * Wysyła żądanie usunięcia wszystkich danych konta do backendu.
+     * Operacja jest nieodwracalna.
+     */
+    deleteAccount: async () => {
+        try {
+            await fetchAPI('delete-user-data', { method: 'DELETE' });
+            console.log("User account data deleted successfully from the server.");
+        } catch (error) {
+            console.error("Failed to delete account data:", error);
+            throw new Error("Nie udało się usunąć konta z serwera. Spróbuj ponownie."); 
         }
     }
 };

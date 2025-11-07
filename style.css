@@ -22,6 +22,9 @@ body {
     line-height: 1.6;
 }
 
+/* ============================================= */
+/* ===========      NAGŁÓWEK      ============ */
+/* ============================================= */
 header {
     background-color: var(--primary-color);
     color: var(--light-text-color);
@@ -31,6 +34,13 @@ header {
     position: sticky;
     top: 0;
     z-index: 100;
+}
+
+header h1 {
+    margin: 0;
+    font-family: inherit;
+    font-size: 1.5rem;
+    font-weight: 600;
 }
 
 header nav {
@@ -52,10 +62,38 @@ header nav button {
 }
 
 header nav button:hover { background-color: #007f8b; }
+
+#user-info-container {
+    position: absolute;
+    top: 50%;
+    right: 1rem;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+#user-display-name {
+    font-weight: bold;
+    color: var(--light-text-color);
+    opacity: 0.9;
+    white-space: nowrap;
+}
+
+#logout-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+
 main { padding: 1rem; padding-bottom: 6rem; }
 .screen { display: none; }
 .screen.active { display: block; }
 .hidden { display: none !important; }
+
+.mobile-only { display: none; }
+.desktop-only { display: inline-block; }
+
 
 /* ============================================= */
 /* ========= EKRAN GŁÓWNY (LISTA DNI) ========== */
@@ -132,6 +170,15 @@ main { padding: 1rem; padding-bottom: 6rem; }
     color: var(--primary-color);
     border-radius: 5px;
     cursor: pointer;
+    text-decoration: none;
+}
+.danger-btn {
+    background-color: var(--danger-color);
+    border-color: var(--danger-color);
+    color: var(--light-text-color);
+}
+.danger-btn:hover {
+    background-color: #d95a3d;
 }
 
 /* ============================================= */
@@ -299,6 +346,15 @@ main { padding: 1rem; padding-bottom: 6rem; }
 .restore-container { margin-top: 1.5rem; }
 .restore-btn { width: 100%; background-color: var(--danger-color); color: var(--light-text-color); border-color: var(--danger-color); }
 
+#danger-zone {
+    border-top: 2px solid var(--danger-color);
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+}
+#danger-zone h3 {
+    color: var(--danger-color);
+}
+
 /* ============================================= */
 /* ====== EKRAN BAZY ĆWICZEŃ ============ */
 /* ============================================= */
@@ -415,45 +471,24 @@ main { padding: 1rem; padding-bottom: 6rem; }
     transition: opacity 0.3s ease-in-out;
 }
 #training-screen.active { opacity: 1; pointer-events: auto; }
-
-/* ============================================= */
-/*      POPRAWKA LAYOUTU DLA DŁUGIEJ TREŚCI      */
-/* ============================================= */
 .focus-view {
     display: flex;
     flex-direction: column;
-    /* ZMIANA 1: Usuwamy space-between, aby layout nie rozciągał się sztucznie. */
-    /* justify-content: space-between; */ 
     text-align: center;
     width: 100%;
     max-width: 500px;
     height: 100%;
     padding: 1.5rem;
     box-sizing: border-box;
-    /* ZMIANA 2: Dodajemy overflow, aby umożliwić przewijanie, jeśli treść się nie mieści. */
     overflow-y: auto; 
 }
-.focus-controls {
-    /* ZMIANA 3: Ta "magiczna" właściwość pcha przyciski do dołu ekranu, */
-    /* jeśli jest wolne miejsce. Jeśli nie ma, zachowują się normalnie w scrollowanym widoku. */
-    margin-top: auto; 
-    padding-top: 1rem; /* Dodatkowy odstęp od opisu */
-
-    display: flex;
-    justify-content: center;
-    gap: 1rem;
-    flex-wrap: wrap;
-    flex-shrink: 0; /* Zapobiega kurczeniu się kontenera z przyciskami */
-}
-/* ============================================= */
-
 .focus-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     font-size: 1rem;
     opacity: 0.7;
-    flex-shrink: 0; /* Zapobiega kurczeniu się nagłówka */
+    flex-shrink: 0;
 }
 #exit-training-btn {
     background: none;
@@ -465,8 +500,6 @@ main { padding: 1rem; padding-bottom: 6rem; }
 }
 #exit-training-btn:hover { text-decoration: underline; }
 .focus-timer-container {
-    /* ZMIANA 4: Usuwamy flex-grow, aby timer nie zajmował niepotrzebnie miejsca */
-    /* flex-grow: 1; */
     display: flex;
     align-items: center;
     justify-content: center;
@@ -505,17 +538,24 @@ main { padding: 1rem; padding-bottom: 6rem; }
     padding: 0;
 }
 .tts-button:hover { opacity: 1; }
-
 .focus-description-container {
     font-size: 1rem;
     line-height: 1.5;
     opacity: 0.9;
     margin: 1rem 0;
-    min-height: 50px; /* Gwarantuje minimalną przestrzeń */
+    min-height: 50px;
     overflow-y: auto;
     padding-right: 10px;
 }
-
+.focus-controls {
+    margin-top: auto; 
+    padding-top: 1rem;
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+}
 .control-btn {
     padding: 1rem 1.5rem;
     font-size: 1rem;
@@ -535,7 +575,6 @@ main { padding: 1rem; padding-bottom: 6rem; }
 .control-btn:disabled:hover { background-color: transparent; }
 .focus-next-up { 
     opacity: 0.7; 
-    height: auto; /* Pozwalamy, aby wysokość była naturalna */
     min-height: 40px;
     flex-shrink: 0;
     padding-bottom: 1rem;
@@ -543,7 +582,7 @@ main { padding: 1rem; padding-bottom: 6rem; }
 .focus-next-up p { margin: 0; }
 
 /* ============================================= */
-/* ====== EKRANY STATYCZNE I PODSUMOWANIE ====== */
+/* ====== EKRANY PODSUMOWANIA I FORMULARZE ====== */
 /* ============================================= */
 .form-group {
     display: flex;
@@ -598,6 +637,7 @@ input[type="range"]::-moz-range-thumb {
     min-width: 4ch;
     text-align: center;
 }
+
 /* ============================================= */
 /* ===============      STOPKA     =============== */
 /* ============================================= */
@@ -622,4 +662,144 @@ input[type="range"]::-moz-range-thumb {
 #app-footer .copyright {
     margin: 0;
     opacity: 0.8;
+}
+
+/* ============================================= */
+/* ====== STYLE DLA EKRANU LOGOWANIA ====== */
+/* ============================================= */
+#welcome-screen .welcome-content {
+    max-width: 600px;
+    margin: 3rem auto;
+    padding: 2rem;
+    text-align: center;
+    background-color: var(--card-background);
+    border-radius: 8px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+}
+#welcome-screen h2 {
+    color: var(--primary-color);
+}
+
+/* ============================================= */
+/* ======       WSKAŹNIK ŁADOWANIA      ====== */
+/* ============================================= */
+#loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.6);
+    z-index: 9999;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    backdrop-filter: blur(5px);
+    transition: opacity 0.3s ease;
+    opacity: 1;
+}
+#loading-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+.spinner {
+    width: 60px;
+    height: 60px;
+    border: 6px solid rgba(255, 255, 255, 0.3);
+    border-top-color: var(--light-text-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ============================================= */
+/* ======   NAWIGACJA MOBILNA (DOLNY PASEK)  ==== */
+/* ============================================= */
+#app-bottom-nav {
+    display: none; /* POPRAWKA: Domyślnie ukryta na desktopie */
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background-color: var(--card-background);
+    border-top: 1px solid var(--border-color);
+    box-shadow: 0 -2px 5px rgba(0,0,0,0.05);
+    z-index: 1000;
+}
+.bottom-nav-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 0.25rem;
+    border: none;
+    background: none;
+    color: var(--text-color);
+    cursor: pointer;
+    font-size: 0.7rem;
+    opacity: 0.7;
+    transition: opacity 0.2s, color 0.2s;
+}
+.bottom-nav-btn .icon {
+    font-size: 1.5rem;
+    margin-bottom: 0.1rem;
+}
+.bottom-nav-btn.active {
+    color: var(--primary-color);
+    opacity: 1;
+}
+
+/* ============================================= */
+/* ======   STYLE RESPONSIVE (MOBILE)   ====== */
+/* ============================================= */
+@media (max-width: 768px) {
+    header {
+        position: relative;
+        justify-content: center;
+        padding: 0.75rem 1rem;
+    }
+    header h1 {
+        font-size: 1.25rem;
+    }
+    #user-info-container {
+        position: absolute;
+        top: 50%;
+        right: 0.5rem;
+        transform: translateY(-50%);
+        gap: 0.5rem;
+    }
+    #logout-btn {
+        padding: 0;
+        min-width: unset;
+        width: 44px;
+        height: 44px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    #logout-btn svg {
+        width: 24px;
+        height: 24px;
+    }
+    .desktop-only {
+        display: none !important;
+    }
+    .mobile-only {
+        display: block !important;
+    }
+    header nav#main-nav {
+        display: none !important;
+    }
+    
+    /* POPRAWKA: Ta reguła pokazuje dolne menu tylko na mobile, ale respektuje klasę .hidden */
+    nav#app-bottom-nav {
+        display: flex;
+    }
+    
+    main {
+        padding-bottom: 90px;
+    }
 }

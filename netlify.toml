@@ -1,0 +1,16 @@
+# netlify.toml
+[dev]
+
+  port = 8888
+  publish = "."
+
+[build]
+  functions = "netlify/functions"
+
+
+# Zmienne środowiskowe dla `netlify dev`
+# Pamiętaj, że NETLIFY_DATABASE_URL zostanie dodane automatycznie przez CLI
+[context.development.environment]
+  AUTH0_WEBHOOK_SECRET = "*x-D$WJ9'Uzt~+"
+  AUTH0_AUDIENCE = "https://excercise-app.netlify.app/"
+  AUTH0_ISSUER_BASE_URL = "dev-2vw7d462t0vkpx5c.us.auth0.com"

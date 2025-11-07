@@ -3,8 +3,9 @@
 /**
  * Centralny Obiekt Stanu Aplikacji
  * 
- * Przechowuje wszystkie dynamiczne dane, które aplikacja wykorzystuje podczas działania,
- * takie jak postępy użytkownika, bieżące ustawienia, stan timera czy informacje o sesji treningowej.
+ * Przechowuje wszystkie dynamiczne dane, które aplikacja wykorzystuje podczas działania.
+ * Działa jako ulotna, operacyjna pamięć. Jest wypełniany danymi przez dataStore.js
+ * przy starcie aplikacji i modyfikowany w trakcie interakcji użytkownika.
  */
 export const state = {
     /**
@@ -14,17 +15,13 @@ export const state = {
     userProgress: {},
 
     /**
-     * Ustawienia aplikacji, które są zapisywane w localStorage.
+     * Ustawienia aplikacji. Służą jako domyślny szablon, który jest
+     * nadpisywany przez ustawienia wczytane z bazy danych dla zalogowanego użytkownika.
      */
     settings: {
         appStartDate: null,
         restBetweenExercises: 60,
         progressionFactor: 100,
-        // =========================================================================
-        // NOWA WŁAŚCIWOŚĆ: ID aktywnego planu treningowego.
-        // Domyślnie ustawiony na plan podstawowy. Ta wartość będzie nadpisywana
-        // przez dane z localStorage, jeśli użytkownik już dokonał wyboru.
-        // =========================================================================
         activePlanId: "l5s1-foundation"
     },
 
@@ -64,6 +61,9 @@ export const state = {
         onTimerEnd: () => {} // Callback wywoływany po zakończeniu odliczania
     },
 
+    /**
+     * Stan stopera używanego w trybie treningu.
+     */
     stopwatch: {
         interval: null,
         seconds: 0

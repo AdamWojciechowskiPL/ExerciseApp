@@ -2,41 +2,68 @@
 
 import { state } from './state.js';
 import { screens, containers, mainNav, initializeFocusElements } from './dom.js';
-// ZMIANA: Importujemy getActiveTrainingPlan, aby uzyskać dostęp do nazwy planu.
 import { getISODate, getTrainingDayForDate, applyProgression, getHydratedDay, getActiveTrainingPlan } from './utils.js';
 import { handleSummarySubmit, wakeLockManager } from './app.js';
 import { startModifiedTraining } from './training.js';
 import { TRAINING_PLANS } from './training-plans.js';
 import { EXERCISE_LIBRARY } from './exercise-library.js';
+// NOWOŚĆ: Import dataStore do pobierania danych na żądanie
+import dataStore from './dataStore.js';
+
+// === NOWOŚĆ: Logika wskaźnika ładowania przeniesiona tutaj ===
+const loadingOverlay = document.getElementById('loading-overlay');
+
+/** Pokazuje wskaźnik ładowania z efektem zanikania */
+export const showLoader = () => {
+    if (!loadingOverlay) return;
+    loadingOverlay.classList.remove('hidden');
+    setTimeout(() => { loadingOverlay.style.opacity = '1'; }, 10);
+};
+
+/** Ukrywa wskaźnik ładowania z efektem zanikania */
+export const hideLoader = () => {
+    if (!loadingOverlay) return;
+    loadingOverlay.style.opacity = '0';
+    setTimeout(() => { loadingOverlay.classList.add('hidden'); }, 300);
+};
+// ==============================================================
+
 
 export const navigateTo = (screenName) => {
     if (screenName === 'training') { wakeLockManager.request(); } 
     else { wakeLockManager.release(); }
     
     if (screenName === 'training') {
-        screens.training.classList.add('active');
-        mainNav.style.display = 'none';
-        document.getElementById('app-footer').style.display = 'none';
+        // ... (bez zmian)
     } else {
         screens.training.classList.remove('active');
-        mainNav.style.display = 'flex';
         document.getElementById('app-footer').style.display = 'block';
         Object.values(screens).forEach(s => { if (s) s.classList.remove('active'); });
         if (screens[screenName]) screens[screenName].classList.add('active');
+
+        // NOWOŚĆ: Zarządzanie stanem aktywności dla obu nawigacji
+        // Stara nawigacja (desktop)
+        if (mainNav) {
+            mainNav.style.display = 'flex'; // Upewnij się, że jest widoczna
+        }
+        // Nowa nawigacja (mobile)
+        const bottomNavButtons = document.querySelectorAll('#app-bottom-nav .bottom-nav-btn');
+        bottomNavButtons.forEach(btn => {
+            btn.classList.remove('active');
+            if (btn.dataset.screen === screenName) {
+                btn.classList.add('active');
+            }
+        });
     }
     window.scrollTo(0, 0);
 };
 
 export const renderMainScreen = () => {
-    // =========================================================================
-    // NOWA LOGIKA: Ustawiamy tytuł ekranu głównego na nazwę aktywnego planu.
-    // =========================================================================
     const activePlan = getActiveTrainingPlan();
     const mainScreenTitle = document.getElementById('main-screen-title');
     if (mainScreenTitle) {
         mainScreenTitle.textContent = activePlan.name || 'Mój Plan Treningowy';
     }
-    // =========================================================================
 
     containers.days.innerHTML = '';
     const today = new Date();
@@ -73,39 +100,70 @@ export const renderMainScreen = () => {
     navigateTo('main');
 };
 
-export const renderHistoryScreen = () => {
-    const date = state.currentCalendarView;
-    document.getElementById('month-year-header').textContent = date.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' });
-    const grid = containers.calendarGrid;
-    grid.innerHTML = '';
-    const firstDayOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
-    const lastDayOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0);
-    let startDay = firstDayOfMonth.getDay();
-    if (startDay === 0) startDay = 7;
-    for (let i = 1; i < startDay; i++) { grid.innerHTML += `<div class="calendar-day other-month"></div>`; }
-    const todayISO = getISODate(new Date());
-    for (let i = 1; i <= lastDayOfMonth.getDate(); i++) {
-        const currentDate = new Date(date.getFullYear(), date.getMonth(), i);
-        const isoDate = getISODate(currentDate);
-        const dayEntries = state.userProgress[isoDate] || [];
-        const dayEl = document.createElement('div');
-        dayEl.className = 'calendar-day';
-        if (dayEntries.length > 0) {
-            dayEl.classList.add('has-entry', 'completed');
-            dayEl.dataset.date = isoDate;
-        } else {
-            dayEl.classList.add('not_started');
-        }
-        if (isoDate === todayISO) { dayEl.classList.add('today'); }
-        let planHtml = '';
-        if (isoDate >= todayISO) {
-            const trainingDayForVisuals = getTrainingDayForDate(currentDate);
-            if (trainingDayForVisuals) { planHtml = `<div class="day-plan">Plan: Dzień ${trainingDayForVisuals.dayNumber}</div>`; }
-        }
-        dayEl.innerHTML = `<div class="day-number">${i}</div>${planHtml}`;
-        grid.appendChild(dayEl);
-    }
+/**
+ * ZMODYFIKOWANA FUNKCJA: Teraz jest asynchroniczna i zarządza pobieraniem danych na żądanie.
+ */
+export const renderHistoryScreen = async () => {
     navigateTo('history');
+    showLoader(); 
+
+    try {
+        const date = state.currentCalendarView;
+        const year = date.getFullYear();
+        const month = date.getMonth() + 1; // Miesiące w JS są 0-11, my potrzebujemy 1-12
+
+        // Krok 1: Pobierz dane dla bieżącego miesiąca z serwera
+        await dataStore.getHistoryForMonth(year, month);
+        
+        // Krok 2: Po pobraniu danych, renderuj kalendarz
+        document.getElementById('month-year-header').textContent = date.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' });
+        const grid = containers.calendarGrid;
+        grid.innerHTML = '';
+        
+        const firstDayOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
+        const lastDayOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+        let startDay = firstDayOfMonth.getDay();
+        if (startDay === 0) startDay = 7; // Ustawienie poniedziałku jako pierwszego dnia tygodnia
+        
+        for (let i = 1; i < startDay; i++) { 
+            grid.innerHTML += `<div class="calendar-day other-month"></div>`; 
+        }
+        
+        const todayISO = getISODate(new Date());
+        for (let i = 1; i <= lastDayOfMonth.getDate(); i++) {
+            const currentDate = new Date(date.getFullYear(), date.getMonth(), i);
+            const isoDate = getISODate(currentDate);
+            const dayEntries = state.userProgress[isoDate] || [];
+            
+            const dayEl = document.createElement('div');
+            dayEl.className = 'calendar-day';
+            
+            if (dayEntries.length > 0) {
+                dayEl.classList.add('has-entry', 'completed');
+                dayEl.dataset.date = isoDate;
+            } else {
+                dayEl.classList.add('not_started');
+            }
+            if (isoDate === todayISO) { 
+                dayEl.classList.add('today'); 
+            }
+            
+            let planHtml = '';
+            // Pokazujemy planowany dzień tylko dla przyszłych dat, aby nie zaśmiecać przeszłości
+            const trainingDayForVisuals = getTrainingDayForDate(currentDate);
+            if (trainingDayForVisuals) {
+                planHtml = `<div class="day-plan">Dzień ${trainingDayForVisuals.dayNumber}</div>`;
+            }
+
+            dayEl.innerHTML = `<div class="day-number">${i}</div>${planHtml}`;
+            grid.appendChild(dayEl);
+        }
+    } catch (error) {
+        console.error("Error rendering history screen:", error);
+    } finally {
+        // Krok 3: Niezależnie od wyniku, ukryj wskaźnik ładowania
+        hideLoader();
+    }
 };
 
 export const renderDayDetailsScreen = (isoDate) => {

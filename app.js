@@ -4,6 +4,7 @@
 import { state } from './state.js';
 import dataStore from './dataStore.js';
 import { configureClient, login, logout, handleRedirectCallback, isAuthenticated, getToken, getUserProfile } from './auth.js';
+// ZMIANA: Usunięto importy funkcji, które zostały przeniesione do ui.js
 import {
     renderMainScreen,
     renderHistoryScreen,
@@ -17,7 +18,6 @@ import {
     hideLoader
 } from './ui.js';
 import { containers, mainNav, focus } from './dom.js';
-import { getISODate } from './utils.js';
 import { moveToNextExercise, moveToPreviousExercise } from './training.js';
 import { stopTimer, togglePauseTimer, stopStopwatch } from './timer.js';
 import { loadVoices } from './tts.js';
@@ -25,54 +25,7 @@ import { loadVoices } from './tts.js';
 
 // === 2. GŁÓWNE FUNKCJE APLIKACJI ===
 
-export const wakeLockManager = {
-    wakeLock: null,
-    async request() {
-        if ('wakeLock' in navigator) {
-            try {
-                this.wakeLock = await navigator.wakeLock.request('screen');
-            } catch (err) {
-                console.error(`Błąd Wake Lock: ${err.name}, ${err.message}`);
-            }
-        }
-    },
-    async release() {
-        if (this.wakeLock !== null) {
-            await this.wakeLock.release();
-            this.wakeLock = null;
-        }
-    }
-};
-
-export function handleSummarySubmit(e) {
-    e.preventDefault();
-    const dateKey = state.currentTrainingDate;
-    
-    const sessionPayload = {
-        sessionId: Date.now(),
-        planId: state.settings.activePlanId,
-        trainingDayId: state.currentTrainingDayId,
-        status: 'completed',
-        pain_during: document.getElementById('pain-during').value,
-        notes: document.getElementById('general-notes').value,
-        completedAt: new Date().toISOString(),
-        sessionLog: state.sessionLog,
-    };
-    
-    if (!state.userProgress[dateKey]) {
-        state.userProgress[dateKey] = [];
-    }
-    state.userProgress[dateKey].push(sessionPayload);
-    
-    dataStore.saveSession(sessionPayload);
-    
-    state.currentTrainingDate = null;
-    state.currentTrainingDayId = null;
-    state.sessionLog = [];
-    
-    navigateTo('main');
-    renderMainScreen();
-}
+// ZMIANA: Usunięto wakeLockManager i handleSummarySubmit - zostały przeniesione do ui.js
 
 function handleBackup() {
     const dataToBackup = { userProgress: state.userProgress, settings: state.settings };
@@ -219,7 +172,6 @@ export async function main() {
     const isAuth = await isAuthenticated();
 
     if (isAuth) {
-        // --- Użytkownik ZALOGOWANY ---
         document.getElementById('welcome-screen').classList.add('hidden');
         document.querySelector('main').classList.remove('hidden');
         userInfoContainer.classList.remove('hidden');
@@ -259,13 +211,10 @@ export async function main() {
             hideLoader();
         }
     } else {
-        // --- Użytkownik WYLOGOWANY ---
         document.getElementById('welcome-screen').classList.remove('hidden');
         document.querySelector('main').classList.add('hidden');
         userInfoContainer.classList.add('hidden');
         mainNav.classList.add('hidden');
-        
-        // ZMIANA: Dodajemy ukrywanie dolnej nawigacji w stanie wylogowanym
         bottomNav.classList.add('hidden');
     }
 }

@@ -3,30 +3,77 @@
 import { state } from './state.js';
 import { screens, containers, mainNav, initializeFocusElements } from './dom.js';
 import { getISODate, getTrainingDayForDate, applyProgression, getHydratedDay, getActiveTrainingPlan } from './utils.js';
-import { handleSummarySubmit, wakeLockManager } from './app.js';
 import { startModifiedTraining } from './training.js';
 import { TRAINING_PLANS } from './training-plans.js';
 import { EXERCISE_LIBRARY } from './exercise-library.js';
-// NOWOŚĆ: Import dataStore do pobierania danych na żądanie
 import dataStore from './dataStore.js';
 
-// === NOWOŚĆ: Logika wskaźnika ładowania przeniesiona tutaj ===
+// === NOWOŚĆ: Przeniesienie logiki z app.js, aby przełamać cykliczną zależność ===
+
 const loadingOverlay = document.getElementById('loading-overlay');
 
-/** Pokazuje wskaźnik ładowania z efektem zanikania */
 export const showLoader = () => {
     if (!loadingOverlay) return;
     loadingOverlay.classList.remove('hidden');
     setTimeout(() => { loadingOverlay.style.opacity = '1'; }, 10);
 };
 
-/** Ukrywa wskaźnik ładowania z efektem zanikania */
 export const hideLoader = () => {
     if (!loadingOverlay) return;
     loadingOverlay.style.opacity = '0';
     setTimeout(() => { loadingOverlay.classList.add('hidden'); }, 300);
 };
-// ==============================================================
+
+export const wakeLockManager = {
+    wakeLock: null,
+    async request() {
+        if ('wakeLock' in navigator) {
+            try {
+                this.wakeLock = await navigator.wakeLock.request('screen');
+            } catch (err) {
+                console.error(`Błąd Wake Lock: ${err.name}, ${err.message}`);
+            }
+        }
+    },
+    async release() {
+        if (this.wakeLock !== null) {
+            await this.wakeLock.release();
+            this.wakeLock = null;
+        }
+    }
+};
+
+export function handleSummarySubmit(e) {
+    e.preventDefault();
+    const dateKey = state.currentTrainingDate;
+    
+    const sessionPayload = {
+        sessionId: Date.now(),
+        planId: state.settings.activePlanId,
+        trainingDayId: state.currentTrainingDayId,
+        status: 'completed',
+        pain_during: document.getElementById('pain-during').value,
+        notes: document.getElementById('general-notes').value,
+        completedAt: new Date().toISOString(),
+        sessionLog: state.sessionLog,
+    };
+    
+    if (!state.userProgress[dateKey]) {
+        state.userProgress[dateKey] = [];
+    }
+    state.userProgress[dateKey].push(sessionPayload);
+    
+    dataStore.saveSession(sessionPayload);
+    
+    state.currentTrainingDate = null;
+    state.currentTrainingDayId = null;
+    state.sessionLog = [];
+    
+    navigateTo('main');
+    renderMainScreen();
+}
+
+// ==============================================================================
 
 
 export const navigateTo = (screenName) => {
@@ -34,19 +81,18 @@ export const navigateTo = (screenName) => {
     else { wakeLockManager.release(); }
     
     if (screenName === 'training') {
-        // ... (bez zmian)
+        screens.training.classList.add('active');
+        mainNav.style.display = 'none';
+        document.getElementById('app-footer').style.display = 'none';
     } else {
         screens.training.classList.remove('active');
         document.getElementById('app-footer').style.display = 'block';
         Object.values(screens).forEach(s => { if (s) s.classList.remove('active'); });
         if (screens[screenName]) screens[screenName].classList.add('active');
 
-        // NOWOŚĆ: Zarządzanie stanem aktywności dla obu nawigacji
-        // Stara nawigacja (desktop)
         if (mainNav) {
-            mainNav.style.display = 'flex'; // Upewnij się, że jest widoczna
+            mainNav.style.display = 'flex';
         }
-        // Nowa nawigacja (mobile)
         const bottomNavButtons = document.querySelectorAll('#app-bottom-nav .bottom-nav-btn');
         bottomNavButtons.forEach(btn => {
             btn.classList.remove('active');
@@ -100,9 +146,6 @@ export const renderMainScreen = () => {
     navigateTo('main');
 };
 
-/**
- * ZMODYFIKOWANA FUNKCJA: Teraz jest asynchroniczna i zarządza pobieraniem danych na żądanie.
- */
 export const renderHistoryScreen = async () => {
     navigateTo('history');
     showLoader(); 
@@ -110,12 +153,10 @@ export const renderHistoryScreen = async () => {
     try {
         const date = state.currentCalendarView;
         const year = date.getFullYear();
-        const month = date.getMonth() + 1; // Miesiące w JS są 0-11, my potrzebujemy 1-12
+        const month = date.getMonth() + 1;
 
-        // Krok 1: Pobierz dane dla bieżącego miesiąca z serwera
         await dataStore.getHistoryForMonth(year, month);
         
-        // Krok 2: Po pobraniu danych, renderuj kalendarz
         document.getElementById('month-year-header').textContent = date.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' });
         const grid = containers.calendarGrid;
         grid.innerHTML = '';
@@ -123,7 +164,7 @@ export const renderHistoryScreen = async () => {
         const firstDayOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
         const lastDayOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0);
         let startDay = firstDayOfMonth.getDay();
-        if (startDay === 0) startDay = 7; // Ustawienie poniedziałku jako pierwszego dnia tygodnia
+        if (startDay === 0) startDay = 7;
         
         for (let i = 1; i < startDay; i++) { 
             grid.innerHTML += `<div class="calendar-day other-month"></div>`; 
@@ -149,7 +190,6 @@ export const renderHistoryScreen = async () => {
             }
             
             let planHtml = '';
-            // Pokazujemy planowany dzień tylko dla przyszłych dat, aby nie zaśmiecać przeszłości
             const trainingDayForVisuals = getTrainingDayForDate(currentDate);
             if (trainingDayForVisuals) {
                 planHtml = `<div class="day-plan">Dzień ${trainingDayForVisuals.dayNumber}</div>`;
@@ -161,7 +201,6 @@ export const renderHistoryScreen = async () => {
     } catch (error) {
         console.error("Error rendering history screen:", error);
     } finally {
-        // Krok 3: Niezależnie od wyniku, ukryj wskaźnik ładowania
         hideLoader();
     }
 };

@@ -3,13 +3,6 @@
 import { state } from './state.js';
 import { getToken, getUserPayload } from './auth.js';
 
-/**
- * Centralna funkcja do wysyłania uwierzytelnionych zapytań do API (funkcji Netlify).
- * Automatycznie dołącza token autoryzacyjny i obsługuje błędy.
- * @param {string} endpoint - Nazwa funkcji serverless do wywołania.
- * @param {object} options - Opcje dla funkcji `fetch` (np. method, body).
- * @returns {Promise<any>} - Sparsowana odpowiedź JSON lub tekst.
- */
 const fetchAPI = async (endpoint, options = {}) => {
     const token = await getToken();
     if (!token) throw new Error("User not authenticated");
@@ -36,7 +29,6 @@ const fetchAPI = async (endpoint, options = {}) => {
         throw new Error(`API Error (${response.status}): ${errorText}`);
     }
     
-    // Niezawodne parsowanie odpowiedzi: próbuj jako JSON, a jeśli się nie uda, zwróć tekst.
     try {
         const data = await response.clone().json();
         return data;
@@ -46,17 +38,10 @@ const fetchAPI = async (endpoint, options = {}) => {
 };
 
 const dataStore = {
-    /**
-     * ZMIANA: Inicjalizuje tylko podstawowe dane użytkownika (ustawienia).
-     * Nie pobiera już całej historii treningów, co zapewnia błyskawiczne ładowanie aplikacji.
-     */
     initialize: async () => {
         try {
             const data = await fetchAPI('get-or-create-user-data', { method: 'GET' });
-            
-            // Inicjujemy historię jako pusty obiekt. Będzie ona wypełniana na żądanie.
             state.userProgress = {}; 
-
             if (data.settings) {
                 state.settings = { ...state.settings, ...data.settings };
             } else {
@@ -70,35 +55,34 @@ const dataStore = {
     },
 
     /**
-     * NOWA FUNKCJA: Pobiera historię treningów dla konkretnego miesiąca na żądanie (lazy loading).
-     * @param {number} year - Rok, dla którego mają być pobrane dane.
-     * @param {number} month - Miesiąc (1-12), dla którego mają być pobrane dane.
+     * ZMODYFIKOWANA FUNKCJA: Pobiera historię i traktuje ją jako jedyne źródło prawdy,
+     * nadpisując dane lokalne, aby zapobiec duplikatom z "optymistycznego UI".
      */
     getHistoryForMonth: async (year, month) => {
         try {
-            const historyData = await fetchAPI(`get-history-by-month?year=${year}&month=${month}`, { method: 'GET' });
+            const historyDataFromServer = await fetchAPI(`get-history-by-month?year=${year}&month=${month}`);
 
-            // Scalamy pobrane dane z istniejącym stanem w aplikacji.
-            historyData.forEach(session => {
+            // Krok 1: Grupujemy dane otrzymane z serwera według daty.
+            const serverDataByDate = historyDataFromServer.reduce((acc, session) => {
                 const dateKey = new Date(session.completedAt).toISOString().split('T')[0];
-                if (!state.userProgress[dateKey]) {
-                    state.userProgress[dateKey] = [];
+                if (!acc[dateKey]) {
+                    acc[dateKey] = [];
                 }
-                // Unikamy duplikatów na wypadek wielokrotnego wywołania.
-                if (!state.userProgress[dateKey].some(s => s.sessionId === session.sessionId)) {
-                    state.userProgress[dateKey].push(session);
-                }
-            });
+                acc[dateKey].push(session);
+                return acc;
+            }, {});
+
+            // Krok 2: Dla każdej daty, dla której otrzymaliśmy dane, CAŁKOWICIE nadpisujemy
+            // lokalny stan. To usuwa "optymistyczne" wpisy i zastępuje je prawdziwymi danymi z bazy.
+            for (const dateKey in serverDataByDate) {
+                state.userProgress[dateKey] = serverDataByDate[dateKey];
+            }
         } catch (error) {
             console.error(`Failed to fetch history for ${year}-${month}:`, error);
             alert("Nie udało się pobrać historii treningów.");
         }
     },
     
-    /**
-     * Zapisuje ukończoną sesję treningową w bazie danych.
-     * @param {object} sessionData - Obiekt zawierający dane sesji.
-     */
     saveSession: async (sessionData) => {
         try {
             await fetchAPI('save-session', { method: 'POST', body: JSON.stringify(sessionData) });
@@ -108,9 +92,6 @@ const dataStore = {
         }
     },
 
-    /**
-     * Zapisuje aktualne ustawienia użytkownika w bazie danych.
-     */
     saveSettings: async () => {
         try {
             await fetchAPI('save-settings', { method: 'PUT', body: JSON.stringify(state.settings) });
@@ -119,10 +100,6 @@ const dataStore = {
         }
     },
     
-    /**
-     * Migruje dane z lokalnego хранилища (localStorage) na konto użytkownika w chmurze.
-     * @param {object} progressData - Dane postępów z localStorage.
-     */
     migrateData: async (progressData) => {
         try {
             const sessionsArray = Object.values(progressData).flat();
@@ -135,10 +112,6 @@ const dataStore = {
         }
     },
 
-    /**
-     * Wysyła żądanie usunięcia wszystkich danych konta do backendu.
-     * Operacja jest nieodwracalna.
-     */
     deleteAccount: async () => {
         try {
             await fetchAPI('delete-user-data', { method: 'DELETE' });

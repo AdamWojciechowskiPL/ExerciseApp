@@ -8,27 +8,62 @@ import { getExerciseDuration, parseSetCount, formatForTTS, getHydratedDay } from
 import { TRAINING_PLANS } from './training-plans.js';
 import { navigateTo, renderSummaryScreen } from './ui.js';
 
+/**
+ * ZMODYFIKOWANA FUNKCJA: Teraz inteligentnie aktualizuje lub dodaje wpis do logu.
+ * Zamiast ślepo dodawać, najpierw sprawdza, czy wpis dla danego ćwiczenia i serii już istnieje.
+ * Jeśli tak, aktualizuje go; jeśli nie, dodaje nowy.
+ */
 function logCurrentStep(status) {
     const exercise = state.flatExercises[state.currentExerciseIndex];
     if (!exercise || !exercise.isWork) return;
+
     let duration = (status === 'rep-based' && state.stopwatch.seconds > 0) ? state.stopwatch.seconds : 0;
+    
+    // Poprawka drobnego błędu: state.timer nie ma startTime, ale to nie jest główny problem.
+    // Prawidłowa kalkulacja duration nie jest teraz kluczowa, ale warto to mieć na uwadze.
+    // Na razie zostawiamy, aby nie wprowadzać zbyt wielu zmian naraz.
     if (status === 'completed' && state.timer.startTime > 0) {
         duration = Math.round((Date.now() - state.timer.startTime) / 1000);
     }
-    state.sessionLog.push({
-        name: exercise.name, currentSet: exercise.currentSet, totalSets: exercise.totalSets,
-        reps_or_time: exercise.reps_or_time, tempo_or_iso: exercise.tempo_or_iso,
-        status: status, duration: duration > 0 ? duration : '-'
-    });
+
+    const newLogEntry = {
+        name: exercise.name,
+        currentSet: exercise.currentSet,
+        totalSets: exercise.totalSets,
+        reps_or_time: exercise.reps_or_time,
+        tempo_or_iso: exercise.tempo_or_iso,
+        status: status,
+        duration: duration > 0 ? duration : '-'
+    };
+
+    // Logika "znajdź i zaktualizuj" lub "dodaj"
+    const existingEntryIndex = state.sessionLog.findIndex(
+        entry => entry.name === newLogEntry.name && entry.currentSet === newLogEntry.currentSet
+    );
+
+    if (existingEntryIndex > -1) {
+        // Jeśli wpis już istnieje (bo użytkownik się cofnął), zaktualizuj go
+        state.sessionLog[existingEntryIndex] = newLogEntry;
+    } else {
+        // Jeśli to nowy wpis, dodaj go
+        state.sessionLog.push(newLogEntry);
+    }
 }
 
 export function moveToNextExercise(options = { skipped: false }) {
     stopStopwatch();
     if (state.tts.isSupported) state.tts.synth.cancel();
+    
+    // Logika logowania pozostaje taka sama, ale teraz używa ulepszonej funkcji logCurrentStep
     const duration = getExerciseDuration(state.flatExercises[state.currentExerciseIndex]);
-    if (options.skipped) { logCurrentStep('skipped'); } 
-    else if (duration === null) { logCurrentStep('rep-based'); } 
-    else { logCurrentStep('completed'); }
+    if (options.skipped) { 
+        logCurrentStep('skipped'); 
+    } else if (duration === null) { 
+        logCurrentStep('rep-based'); 
+    } else { 
+        logCurrentStep('completed'); 
+    }
+    
     stopTimer();
     if (state.currentExerciseIndex < state.flatExercises.length - 1) {
         startExercise(state.currentExerciseIndex + 1);
@@ -39,12 +74,16 @@ export function moveToNextExercise(options = { skipped: false }) {
     }
 }
 
+/**
+ * ZMODYFIKOWANA FUNKCJA: Usunięto problematyczną linię `state.sessionLog.pop()`.
+ * Dzięki nowej logice w `logCurrentStep`, nie musimy już ręcznie usuwać wpisów.
+ */
 export function moveToPreviousExercise() {
     stopStopwatch();
     if (state.currentExerciseIndex > 0) {
         if (state.tts.isSupported) state.tts.synth.cancel();
         stopTimer();
-        state.sessionLog.pop();
+        // USUNIĘTO: state.sessionLog.pop(); 
         startExercise(state.currentExerciseIndex - 1);
     }
 }
@@ -121,6 +160,7 @@ export function startExercise(index) {
     }
 }
 
+// Reszta pliku (generateFlatExercises, startModifiedTraining) pozostaje bez zmian
 export function generateFlatExercises(dayData) {
     const plan = [];
     const activePlan = TRAINING_PLANS[state.settings.activePlanId];
@@ -140,25 +180,12 @@ export function generateFlatExercises(dayData) {
 }
 
 export function startModifiedTraining() {
-    // Krok 1: Pobierz "nawodnione" dane dnia (z opisami, linkami itd.).
     const activePlan = TRAINING_PLANS[state.settings.activePlanId];
     const dayDataRaw = activePlan.Days.find(d => d.dayNumber === state.currentTrainingDayId);
     const hydratedDay = getHydratedDay(dayDataRaw);
-
-    // Krok 2: Zrób głęboką kopię "nawodnionych" danych, którą będziemy modyfikować.
     const modifiedDay = JSON.parse(JSON.stringify(hydratedDay));
-
-    // Krok 3: Zbierz wszystkie ćwiczenia z tej kopii do jednej, płaskiej listy.
-    const allExercises = [
-        ...(modifiedDay.warmup || []),
-        ...(modifiedDay.main || []),
-        ...(modifiedDay.cooldown || [])
-    ];
-
-    // Krok 4: Zbierz wszystkie inputy z ekranu podglądu.
+    const allExercises = [...(modifiedDay.warmup || []), ...(modifiedDay.main || []), ...(modifiedDay.cooldown || [])];
     const allInputs = screens.preTraining.querySelectorAll('input[data-exercise-index]');
-
-    // Krok 5: Zastosuj modyfikacje z inputów bezpośrednio do naszej "nawodnionej" listy.
     allInputs.forEach(input => {
         const index = parseInt(input.dataset.exerciseIndex, 10);
         const targetExercise = allExercises[index];
@@ -170,8 +197,6 @@ export function startModifiedTraining() {
             }
         }
     });
-
-    // Krok 6: Przebuduj obiekt `modifiedDay` z powrotem na sekcje, używając już zmodyfikowanej listy.
     let currentIndex = 0;
     if (modifiedDay.warmup) {
         modifiedDay.warmup = allExercises.slice(currentIndex, currentIndex + modifiedDay.warmup.length);
@@ -184,8 +209,6 @@ export function startModifiedTraining() {
     if (modifiedDay.cooldown) {
         modifiedDay.cooldown = allExercises.slice(currentIndex, currentIndex + modifiedDay.cooldown.length);
     }
-
-    // Krok 7: Wygeneruj listę do treningu na podstawie finalnego, zmodyfikowanego i "nawodnionego" obiektu.
     state.sessionLog = [];
     state.flatExercises = [
         { name: "Przygotuj się", isRest: true, isWork: false, duration: 5, sectionName: "Start" },

@@ -4,7 +4,6 @@
 import { state } from './state.js';
 import dataStore from './dataStore.js';
 import { configureClient, login, logout, handleRedirectCallback, isAuthenticated, getToken, getUserProfile } from './auth.js';
-// ZMIANA: Usunięto importy funkcji, które zostały przeniesione do ui.js
 import {
     renderMainScreen,
     renderHistoryScreen,
@@ -18,14 +17,13 @@ import {
     hideLoader
 } from './ui.js';
 import { containers, mainNav, focus } from './dom.js';
+import { getISODate } from './utils.js';
 import { moveToNextExercise, moveToPreviousExercise } from './training.js';
 import { stopTimer, togglePauseTimer, stopStopwatch } from './timer.js';
 import { loadVoices } from './tts.js';
 
 
 // === 2. GŁÓWNE FUNKCJE APLIKACJI ===
-
-// ZMIANA: Usunięto wakeLockManager i handleSummarySubmit - zostały przeniesione do ui.js
 
 function handleBackup() {
     const dataToBackup = { userProgress: state.userProgress, settings: state.settings };
@@ -180,30 +178,34 @@ export async function main() {
 
         showLoader();
         try {
+            // POBRANIE TOKENA I PROFILU UŻYTKOWNIKA
             await getToken();
-            
             const profile = getUserProfile();
             const displayName = profile.name || profile.email || 'Użytkownik';
             document.getElementById('user-display-name').textContent = displayName;
 
+            // KROK 1: INICJALIZACJA (USTAWIENIA) - TO USTABILIZUJE SESJĘ I TOKEN
             await dataStore.initialize();
             
+            // KROK 2: LOGIKA MIGRACJI - URUCHAMIANA DOPIERO PO POMYŚLNEJ INICJALIZACJI
             const localProgressRaw = localStorage.getItem('trainingAppProgress');
             if (localProgressRaw && Object.keys(JSON.parse(localProgressRaw)).length > 0) {
                 if (confirm("Wykryliśmy niezsynchronizowane dane. Czy chcesz je teraz przenieść na swoje konto?")) {
                     try {
+                        // Ta funkcja użyje teraz na pewno prawidłowego tokena
                         await dataStore.migrateData(JSON.parse(localProgressRaw));
                         localStorage.removeItem('trainingAppProgress');
                         localStorage.removeItem('trainingAppSettings');
                         alert("Dane zmigrowane! Aplikacja zostanie przeładowana.");
                         window.location.reload(); 
-                        return;
+                        return; // Przerwij dalsze wykonywanie, bo strona się przeładuje
                     } catch (e) {
                         alert("Migracja nie powiodła się. Dane pozostaną na tym urządzeniu.");
                     }
                 }
             }
             
+            // KROK 3: INICJALIZACJA LOGIKI APLIKACJI
             initAppLogic();
         } catch (error) {
             console.error("Błąd krytyczny podczas inicjalizacji aplikacji:", error);

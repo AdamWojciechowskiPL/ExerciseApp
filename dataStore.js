@@ -54,15 +54,9 @@ const dataStore = {
         }
     },
 
-    /**
-     * ZMODYFIKOWANA FUNKCJA: Pobiera historię i traktuje ją jako jedyne źródło prawdy,
-     * nadpisując dane lokalne, aby zapobiec duplikatom z "optymistycznego UI".
-     */
     getHistoryForMonth: async (year, month) => {
         try {
             const historyDataFromServer = await fetchAPI(`get-history-by-month?year=${year}&month=${month}`);
-
-            // Krok 1: Grupujemy dane otrzymane z serwera według daty.
             const serverDataByDate = historyDataFromServer.reduce((acc, session) => {
                 const dateKey = new Date(session.completedAt).toISOString().split('T')[0];
                 if (!acc[dateKey]) {
@@ -71,9 +65,6 @@ const dataStore = {
                 acc[dateKey].push(session);
                 return acc;
             }, {});
-
-            // Krok 2: Dla każdej daty, dla której otrzymaliśmy dane, CAŁKOWICIE nadpisujemy
-            // lokalny stan. To usuwa "optymistyczne" wpisy i zastępuje je prawdziwymi danymi z bazy.
             for (const dateKey in serverDataByDate) {
                 state.userProgress[dateKey] = serverDataByDate[dateKey];
             }
@@ -100,15 +91,33 @@ const dataStore = {
         }
     },
     
+    /**
+     * ZMODYFIKOWANA FUNKCJA: Teraz jest odporna na nieprawidłowe dane w localStorage.
+     * Spłaszcza dane, a następnie filtruje je, aby wysłać na serwer tylko poprawne obiekty sesji.
+     */
     migrateData: async (progressData) => {
         try {
-            const sessionsArray = Object.values(progressData).flat();
-            if (sessionsArray.length === 0) return;
-            await fetchAPI('migrate-data', { method: 'POST', body: JSON.stringify(sessionsArray) });
-            console.log("Data migration was successful!");
+            // Krok 1: Spłaszcz dane. Ta linia poprawnie obsługuje strukturę {"data": [sesje]}.
+            const potentiallyCorruptedSessions = Object.values(progressData).flat();
+
+            // Krok 2: Walidacja i filtrowanie. Zachowujemy tylko obiekty, które wyglądają jak sesje.
+            // Najprostszym i najpewniejszym wskaźnikiem jest obecność klucza `completedAt`.
+            const validSessions = potentiallyCorruptedSessions.filter(
+                session => session && typeof session === 'object' && session.hasOwnProperty('completedAt')
+            );
+            
+            // Krok 3: Jeśli po filtracji nie ma żadnych poprawnych sesji, przerwij, aby uniknąć błędu.
+            if (validSessions.length === 0) {
+                console.log("No valid sessions found in localStorage to migrate. Skipping.");
+                return; // Zakończ funkcję
+            }
+
+            // Krok 4: Wyślij na serwer tylko i wyłącznie poprawną, oczyszczoną listę sesji.
+            await fetchAPI('migrate-data', { method: 'POST', body: JSON.stringify(validSessions) });
+            console.log(`Migration successful! Migrated ${validSessions.length} sessions.`);
         } catch (error) {
             console.error("Failed to migrate data:", error);
-            throw error;
+            throw error; // Rzuć błąd dalej, aby app.js mógł go obsłużyć
         }
     },
 

@@ -92,32 +92,33 @@ const dataStore = {
     },
     
     /**
-     * ZMODYFIKOWANA FUNKCJA: Teraz jest odporna na nieprawidłowe dane w localStorage.
-     * Spłaszcza dane, a następnie filtruje je, aby wysłać na serwer tylko poprawne obiekty sesji.
+     * ZMODYFIKOWANA FUNKCJA: Filtr jest teraz jeszcze bardziej rygorystyczny i sprawdza
+     * obecność wszystkich kluczowych pól wymaganych przez bazę danych (`planId` i `completedAt`).
      */
     migrateData: async (progressData) => {
         try {
-            // Krok 1: Spłaszcz dane. Ta linia poprawnie obsługuje strukturę {"data": [sesje]}.
             const potentiallyCorruptedSessions = Object.values(progressData).flat();
 
-            // Krok 2: Walidacja i filtrowanie. Zachowujemy tylko obiekty, które wyglądają jak sesje.
-            // Najprostszym i najpewniejszym wskaźnikiem jest obecność klucza `completedAt`.
+            // ZMIANA KLUCZOWA: Dodajemy sprawdzanie, czy sesja posiada RÓWNIEŻ 'planId'.
+            // To gwarantuje, że nie wyślemy na serwer niekompletnych danych ze starych wersji aplikacji.
             const validSessions = potentiallyCorruptedSessions.filter(
-                session => session && typeof session === 'object' && session.hasOwnProperty('completedAt')
+                session => session && typeof session === 'object' &&
+                           session.hasOwnProperty('completedAt') &&
+                           session.hasOwnProperty('planId')
             );
             
-            // Krok 3: Jeśli po filtracji nie ma żadnych poprawnych sesji, przerwij, aby uniknąć błędu.
             if (validSessions.length === 0) {
                 console.log("No valid sessions found in localStorage to migrate. Skipping.");
-                return; // Zakończ funkcję
+                // Opcjonalnie: można tu wyczyścić stare dane, aby okno migracji się więcej nie pojawiało
+                // localStorage.removeItem('trainingAppProgress');
+                return;
             }
 
-            // Krok 4: Wyślij na serwer tylko i wyłącznie poprawną, oczyszczoną listę sesji.
             await fetchAPI('migrate-data', { method: 'POST', body: JSON.stringify(validSessions) });
             console.log(`Migration successful! Migrated ${validSessions.length} sessions.`);
         } catch (error) {
             console.error("Failed to migrate data:", error);
-            throw error; // Rzuć błąd dalej, aby app.js mógł go obsłużyć
+            throw error;
         }
     },
 

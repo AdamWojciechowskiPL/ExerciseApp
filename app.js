@@ -138,7 +138,21 @@ function initAppLogic() {
  * Główny punkt wejścia aplikacji i funkcja odświeżająca stan UI.
  */
 export async function main() {
+    // Krok 1: Wstępna konfiguracja i POKAZANIE EKRANU ŁADOWANIA
+    showLoader();
     await configureClient();
+
+    try {
+        // Krok 2: ZAŁADOWANIE KLUCZOWEJ ZAWARTOŚCI APLIKACJI (ĆWICZENIA, PLANY)
+        // To musi się wydarzyć przed jakąkolwiek logiką UI, ponieważ dane te
+        // są potrzebne do renderowania widoków.
+        await dataStore.loadAppContent();
+    } catch (error) {
+        // Jeśli ładowanie kluczowej zawartości się nie powiedzie, nie kontynuujemy.
+        // Komunikat błędu jest już pokazany użytkownikowi wewnątrz `dataStore`.
+        hideLoader();
+        return; // Zatrzymaj dalsze wykonywanie skryptu.
+    }
 
     const loginBtn = document.getElementById('login-btn');
     const logoutBtn = document.getElementById('logout-btn');
@@ -157,8 +171,22 @@ export async function main() {
 
     const query = window.location.search;
     const shouldHandleRedirect = query.includes("code=") && query.includes("state=");
-
-    if (shouldHandleRedirect) {
+    const urlParams = new URLSearchParams(query);
+    const isReturningFromStrava = urlParams.has('strava_status');
+    if (urlParams.has('strava_status')) {
+        const status = urlParams.get('strava_status');
+        if (status === 'success') {
+            alert('Twoje konto Strava zostało pomyślnie połączone!');
+        } else if (status === 'cancelled') {
+            alert('Proces łączenia z kontem Strava został anulowany.');
+        } else {
+            const message = urlParams.get('message') || 'Nieznany błąd.';
+            alert(`Wystąpił błąd podczas łączenia z kontem Strava: ${message}`);
+        }
+        // Czyścimy parametry z URL, aby uniknąć ponownego wyświetlania alertu po odświeżeniu strony.
+        window.history.replaceState({}, document.title, window.location.pathname + "#settings");
+    }
+    if (shouldHandleRedirect && !isReturningFromStrava) {
         try {
             await handleRedirectCallback();
         } catch (error) {
@@ -175,24 +203,37 @@ export async function main() {
         userInfoContainer.classList.remove('hidden');
         mainNav.classList.remove('hidden');
         bottomNav.classList.remove('hidden');
-
         showLoader();
         try {
-            // POBRANIE TOKENA I PROFILU UŻYTKOWNIKA
             await getToken();
             const profile = getUserProfile();
-            const displayName = profile.name || profile.email || 'Użytkownik';
-            document.getElementById('user-display-name').textContent = displayName;
+            document.getElementById('user-display-name').textContent = profile.name || profile.email || 'Użytkownik';
 
-            // KROK 1: INICJALIZACJA (USTAWIENIA) - TO USTABILIZUJE SESJĘ I TOKEN
-            await dataStore.initialize();
-            
-            // KROK 2: LOGIKA MIGRACJI - URUCHAMIANA DOPIERO PO POMYŚLNEJ INICJALIZACJI
+            // Zawsze inicjalizujemy dane przy starcie
+            await dataStore.initialize(); 
+
+            if (isReturningFromStrava) {
+                const status = urlParams.get('strava_status');
+                if (status === 'success') {
+                    alert('Twoje konto Strava zostało pomyślnie połączone!');
+                    // Wymuś ponowne załadowanie danych użytkownika z serwera
+                    await dataStore.initialize(); 
+                    // Po załadowaniu nowych danych, od razu wyrenderuj ekran ustawień
+                    renderSettingsScreen(); 
+                } else if (status === 'cancelled') {
+                    alert('Proces łączenia z kontem Strava został anulowany.');
+                } else {
+                    const message = urlParams.get('message') || 'Nieznany błąd.';
+                    alert(`Wystąpił błąd podczas łączenia z kontem Strava: ${message}`);
+                }
+                // Czyścimy URL, aby alert nie pojawiał się ponownie
+                window.history.replaceState({}, document.title, window.location.pathname + '#settings');
+            }
+
             const localProgressRaw = localStorage.getItem('trainingAppProgress');
             if (localProgressRaw && Object.keys(JSON.parse(localProgressRaw)).length > 0) {
                 if (confirm("Wykryliśmy niezsynchronizowane dane. Czy chcesz je teraz przenieść na swoje konto?")) {
                     try {
-                        // Ta funkcja użyje teraz na pewno prawidłowego tokena
                         await dataStore.migrateData(JSON.parse(localProgressRaw));
                         localStorage.removeItem('trainingAppProgress');
                         localStorage.removeItem('trainingAppSettings');
@@ -205,11 +246,12 @@ export async function main() {
                 }
             }
             
-            // KROK 3: INICJALIZACJA LOGIKI APLIKACJI
+            // KROK 5: INICJALIZACJA GŁÓWNEJ LOGIKI APLIKACJI
             initAppLogic();
         } catch (error) {
             console.error("Błąd krytyczny podczas inicjalizacji aplikacji:", error);
         } finally {
+            // Ukryj wskaźnik ładowania na samym końcu procesu.
             hideLoader();
         }
     } else {
@@ -218,8 +260,25 @@ export async function main() {
         userInfoContainer.classList.add('hidden');
         mainNav.classList.add('hidden');
         bottomNav.classList.add('hidden');
+        // Ukryj wskaźnik ładowania również dla niezalogowanych użytkowników.
+        hideLoader();
     }
 }
 
 // === 4. URUCHOMIENIE APLIKACJI ===
 window.addEventListener('DOMContentLoaded', main);
+/**
+ * Logika odpowiedzialna za rejestrację Service Workera.
+ * Działa w tle, aby umożliwić działanie aplikacji w trybie offline i przyspieszyć jej ładowanie.
+ */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/service-worker.js')
+      .then(registration => {
+        console.log('Service Worker zarejestrowany pomyślnie. Zakres:', registration.scope);
+      })
+      .catch(error => {
+        console.error('Rejestracja Service Workera nie powiodła się:', error);
+      });
+  });
+}

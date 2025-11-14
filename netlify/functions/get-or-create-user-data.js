@@ -23,12 +23,9 @@ exports.handler = async (event) => {
       // Krok 3: Jeśli użytkownik nie ma ustawień (jest to jego pierwsza wizyta),
       // utwórz dla niego domyślny profil.
       if (settingsResult.rows.length === 0) {
-        // Dodaj użytkownika do głównej tabeli 'users'. 'ON CONFLICT DO NOTHING'
-        // bezpiecznie obsługuje przypadki, gdyby rekord już istniał.
         const userInsertQuery = 'INSERT INTO users (id) VALUES ($1) ON CONFLICT (id) DO NOTHING';
         await client.query(userInsertQuery, [userId]);
 
-        // Zdefiniuj domyślne ustawienia dla nowego użytkownika
         const defaultSettings = {
           appStartDate: new Date().toISOString().split('T')[0],
           restBetweenExercises: 60,
@@ -36,20 +33,29 @@ exports.handler = async (event) => {
           activePlanId: "l5s1-foundation"
         };
 
-        // Zapisz domyślne ustawienia w bazie danych
         const settingsInsertQuery = 'INSERT INTO user_settings (user_id, settings) VALUES ($1, $2)';
         await client.query(settingsInsertQuery, [userId, JSON.stringify(defaultSettings)]);
         
         userSettings = defaultSettings;
       } else {
-        // Jeśli użytkownik już istnieje, po prostu pobierz jego ustawienia
         userSettings = settingsResult.rows[0].settings;
       }
 
-      // ZMIANA KRYTYCZNA: Usunięto pobieranie historii treningów (tabela training_sessions).
-      // Ta funkcja zwraca teraz TYLKO ustawienia, co sprawia, że jest bardzo szybka.
+      // --- POCZĄTEK KLUCZOWEJ ZMIANY ---
+      // Krok 4: Sprawdź, czy istnieje aktywna integracja ze Stravą
+      const integrationQuery = "SELECT 1 FROM user_integrations WHERE user_id = $1 AND provider = 'strava' LIMIT 1";
+      const integrationResult = await client.query(integrationQuery, [userId]);
+      
+      // `integrationResult.rowCount` będzie równe 1, jeśli wpis istnieje, lub 0, jeśli nie.
+      const isStravaConnected = integrationResult.rowCount > 0;
+      // --- KONIEC KLUCZOWEJ ZMIANY ---
+
+      // Krok 5: Skonstruuj obiekt odpowiedzi, który zawiera teraz obie informacje
       const dataToReturn = {
         settings: userSettings,
+        integrations: {
+          isStravaConnected: isStravaConnected,
+        }
       };
       
       // Zatwierdź transakcję, jeśli wszystko przebiegło pomyślnie
@@ -61,7 +67,7 @@ exports.handler = async (event) => {
       // W przypadku jakiegokolwiek błędu, wycofaj wszystkie zmiany w transakcji
       await client.query('ROLLBACK');
       console.error('Database transaction failed, rolled back.', dbError);
-      throw dbError; // Rzuć błąd dalej, aby został obsłużony przez zewnętrzny blok catch
+      throw dbError;
     } finally {
       // Zawsze zwalniaj połączenie z bazą danych
       client.release();

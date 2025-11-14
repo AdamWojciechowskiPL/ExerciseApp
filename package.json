@@ -1,6 +1,6 @@
 {
   "name": "aplikacja-treningowa",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "description": "Aplikacja do śledzenia planów treningowych.",
   "main": "app.js",
   "private": true,
@@ -11,6 +11,8 @@
   "license": "ISC",
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
+    "axios": "^1.13.2",
+    "dotenv": "^17.2.3",
     "jose": "^6.1.0",
     "jsonwebtoken": "^9.0.2",
     "jwks-rsa": "^3.1.0",

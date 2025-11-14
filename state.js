@@ -25,9 +25,23 @@ export const state = {
         activePlanId: "l5s1-foundation"
     },
 
+    // --- NOWE WŁAŚCIWOŚCI ---
     /**
-     * Data bieżącej sesji treningowej w formacie ISO.
+     * Przechowuje bibliotekę ćwiczeń załadowaną z bazy danych.
+     * Struktura: { "exerciseId": { name: "...", ... } }
      */
+    exerciseLibrary: {},
+
+    /**
+     * Przechowuje plany treningowe załadowane z bazy danych.
+     * Struktura: { "planId": { name: "...", Days: [...] } }
+     */
+    trainingPlans: {},
+    // --- KONIEC NOWYCH WŁAŚCIWOŚCI ---
+
+    stravaIntegration: {
+        isConnected: false
+    },
     currentTrainingDate: null,
 
     /**
@@ -50,6 +64,7 @@ export const state = {
      */
     sessionLog: [],
 
+    sessionStartTime: null,
     /**
      * Stan timera używanego w trybie treningu.
      */

@@ -15,18 +15,20 @@ exports.handler = async (event) => {
       return { statusCode: 400, body: 'Year and month parameters are required.' };
     }
 
-    // Obliczanie daty początkowej i końcowej miesiąca
     const startDate = new Date(Date.UTC(year, month - 1, 1));
     const endDate = new Date(Date.UTC(year, month, 1));
 
     const client = await pool.connect();
     try {
+      // --- ZMIANA W ZAPYTANIU SQL ---
+      // Dodajemy kolumnę `started_at` do zapytania SELECT
       const query = `
-        SELECT session_id, plan_id, completed_at, session_data 
+        SELECT session_id, plan_id, started_at, completed_at, session_data 
         FROM training_sessions 
         WHERE user_id = $1 AND completed_at >= $2 AND completed_at < $3
         ORDER BY completed_at DESC
       `;
+      // --- KONIEC ZMIANY ---
       
       const progressResult = await client.query(query, [userId, startDate.toISOString(), endDate.toISOString()]);
       
@@ -34,7 +36,11 @@ exports.handler = async (event) => {
           ...row.session_data,
           sessionId: row.session_id,
           planId: row.plan_id,
+          // --- ZMIANA W MAPOWANIU ---
+          // Dodajemy nowe pola do obiektu wysyłanego na frontend
+          startedAt: row.started_at,
           completedAt: row.completed_at,
+          // --- KONIEC ZMIANY ---
       }));
       
       return { statusCode: 200, body: JSON.stringify(historyData) };

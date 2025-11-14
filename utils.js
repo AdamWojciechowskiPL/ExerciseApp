@@ -1,25 +1,30 @@
 // utils.js
 
 import { state } from './state.js';
-// ZMIANA: Importujemy nowe, modularne pliki zamiast starego, monolitycznego planu.
-import { TRAINING_PLANS } from './training-plans.js';
-import { EXERCISE_LIBRARY } from './exercise-library.js';
+// ZMIANA: Usunięto importy statycznych plików z danymi.
+// import { TRAINING_PLANS } from './training-plans.js';
+// import { EXERCISE_LIBRARY } from './exercise-library.js';
 
-export const getISODate = (date) => date.toISOString().split('T')[0];
-
-// NOWOŚĆ: Funkcja pomocnicza, która centralizuje logikę pobierania aktywnego planu.
-// Zapewnia rezerwowy plan, gdyby wybrany w ustawieniach nie istniał.
-export const getActiveTrainingPlan = () => {
-    return TRAINING_PLANS[state.settings.activePlanId] || TRAINING_PLANS['l5s1-foundation'];
+export const getISODate = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
-// ZMIANA: Funkcja została przepisana, aby działać na aktywnym planie treningowym.
+// ZMIANA: Funkcja korzysta teraz z `state.trainingPlans`.
+export const getActiveTrainingPlan = () => {
+    return state.trainingPlans[state.settings.activePlanId] || state.trainingPlans['l5s1-foundation'];
+};
+
+// BEZ ZMIAN: Ta funkcja korzysta z `getActiveTrainingPlan`, więc automatycznie używa nowego źródła danych.
 export const getTrainingDayForDate = (date) => {
     const activePlan = getActiveTrainingPlan();
+    if (!activePlan) return null; // Zabezpieczenie na wypadek, gdyby plany nie zostały jeszcze załadowane.
+    
     const startDate = new Date(state.settings.appStartDate);
     const currentDate = new Date(getISODate(date));
     
-    // Różnica dni jest teraz obliczana modulo długość aktywnego planu.
     const diffTime = currentDate - startDate;
     const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
     const dayIndex = diffDays % activePlan.Days.length;
@@ -29,21 +34,17 @@ export const getTrainingDayForDate = (date) => {
     return activePlan.Days.find(d => d.dayNumber === planDayNumber);
 };
 
-// NOWOŚĆ: Kluczowa funkcja, która "nawadnia" dane.
-// Bierze dane dnia z planu (które mają tylko exerciseId) i łączy je
-// z pełnymi opisami i linkami z biblioteki ćwiczeń.
+// ZMIANA: Funkcja korzysta teraz z `state.exerciseLibrary`.
 export const getHydratedDay = (dayData) => {
     if (!dayData) return null;
     
-    // Tworzymy głęboką kopię, aby nie modyfikować oryginalnego obiektu planu.
     const hydratedDay = JSON.parse(JSON.stringify(dayData));
 
     ['warmup', 'main', 'cooldown'].forEach(section => {
         if (hydratedDay[section]) {
             hydratedDay[section] = hydratedDay[section].map(exerciseRef => {
-                // Znajdź szczegóły w bibliotece, użyj pustego obiektu jako fallback.
-                const libraryDetails = EXERCISE_LIBRARY[exerciseRef.exerciseId] || {};
-                // Połącz dane z biblioteki (opis, url) z danymi z planu (serie, powtórzenia).
+                // Zmieniono EXERCISE_LIBRARY na state.exerciseLibrary
+                const libraryDetails = state.exerciseLibrary[exerciseRef.exerciseId] || {};
                 return { ...libraryDetails, ...exerciseRef };
             });
         }
@@ -126,4 +127,24 @@ export const formatForTTS = (text) => {
         }
     }
     return formattedText;
+};
+
+/**
+ * Konwertuje obiekt Date na ciąg znaków w formacie ISO 8601,
+ * ale używając LOKALNEJ strefy czasowej i usuwając informację o strefie ('Z').
+ * Zwraca format: YYYY-MM-DDTHH:mm:ss
+ * @param {Date} date Obiekt daty do sformatowania.
+ * @returns {string} Sformatowany ciąg znaków.
+ */
+export const getLocalISOString = (date) => {
+  const pad = (num) => String(num).padStart(2, '0');
+
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1); // getMonth() jest 0-indeksowane
+  const day = pad(date.getDate());
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  const seconds = pad(date.getSeconds());
+
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
 };

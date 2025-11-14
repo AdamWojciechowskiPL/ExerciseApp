@@ -11,7 +11,8 @@
   "workspace": {
     "packageJson": {
       "dependencies": [
-        "npm:https-proxy-agent@^7.0.6",
+        "npm:@neondatabase/serverless@^1.0.2",
+        "npm:dotenv@^17.2.3",
         "npm:jose@^6.1.0",
         "npm:jsonwebtoken@^9.0.2",
         "npm:jwks-rsa@^3.1.0",

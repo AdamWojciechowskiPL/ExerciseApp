@@ -1,20 +1,28 @@
 // netlify/functions/save-session.js
-const { Pool } = require('pg');
-const { getUserIdFromEvent } = require('./_auth-helper.js');
-
-const pool = new Pool({ connectionString: process.env.NETLIFY_DATABASE_URL });
+const { pool, getUserIdFromEvent } = require('./_auth-helper.js'); // Zmieniono na poprawny import
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return { statusCode: 405 };
   
   try {
     const userId = await getUserIdFromEvent(event);
-    const { planId, completedAt, ...session_data } = JSON.parse(event.body);
+    // Wyodrębniamy nowe pole `startedAt` z ciała żądania
+    const { planId, startedAt, completedAt, ...session_data } = JSON.parse(event.body);
+
+    // Walidacja, czy kluczowe dane zostały przesłane
+    if (!planId || !startedAt || !completedAt) {
+      return { statusCode: 400, body: 'Bad Request: Missing required session metadata.' };
+    }
 
     const client = await pool.connect();
     try {
-        const query = 'INSERT INTO training_sessions (user_id, plan_id, completed_at, session_data) VALUES ($1, $2, $3, $4)';
-        await client.query(query, [userId, planId, completedAt, JSON.stringify(session_data)]);
+        // Zaktualizowane zapytanie INSERT, które uwzględnia nową kolumnę `started_at`
+        const query = `
+          INSERT INTO training_sessions 
+            (user_id, plan_id, started_at, completed_at, session_data) 
+          VALUES ($1, $2, $3, $4, $5)
+        `;
+        await client.query(query, [userId, planId, startedAt, completedAt, JSON.stringify(session_data)]);
         return { statusCode: 201, body: JSON.stringify({ message: "Session saved" }) };
     } finally {
         client.release();

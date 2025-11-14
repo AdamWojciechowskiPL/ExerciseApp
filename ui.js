@@ -2,13 +2,9 @@
 
 import { state } from './state.js';
 import { screens, containers, mainNav, initializeFocusElements } from './dom.js';
-import { getISODate, getTrainingDayForDate, applyProgression, getHydratedDay, getActiveTrainingPlan } from './utils.js';
+import { getISODate, getTrainingDayForDate, applyProgression, getHydratedDay, getActiveTrainingPlan, getLocalISOString } from './utils.js';
 import { startModifiedTraining } from './training.js';
-import { TRAINING_PLANS } from './training-plans.js';
-import { EXERCISE_LIBRARY } from './exercise-library.js';
 import dataStore from './dataStore.js';
-
-// === NOWOŚĆ: Przeniesienie logiki z app.js, aby przełamać cykliczną zależność ===
 
 const loadingOverlay = document.getElementById('loading-overlay');
 
@@ -37,8 +33,12 @@ export const wakeLockManager = {
     },
     async release() {
         if (this.wakeLock !== null) {
-            await this.wakeLock.release();
-            this.wakeLock = null;
+            try {
+                await this.wakeLock.release();
+                this.wakeLock = null;
+            } catch (err) {
+                console.error(`Błąd zwalniania Wake Lock: ${err.name}, ${err.message}`);
+            }
         }
     }
 };
@@ -46,15 +46,23 @@ export const wakeLockManager = {
 export function handleSummarySubmit(e) {
     e.preventDefault();
     const dateKey = state.currentTrainingDate;
+    const activePlan = state.trainingPlans[state.settings.activePlanId];
+    const trainingDay = activePlan ? activePlan.Days.find(d => d.dayNumber === state.currentTrainingDayId) : null;
     
+    // Używamy nowej funkcji pomocniczej do formatowania czasu
+    const now = new Date();
     const sessionPayload = {
         sessionId: Date.now(),
         planId: state.settings.activePlanId,
         trainingDayId: state.currentTrainingDayId,
+        trainingTitle: trainingDay ? trainingDay.title : "Trening",
         status: 'completed',
         pain_during: document.getElementById('pain-during').value,
         notes: document.getElementById('general-notes').value,
-        completedAt: new Date().toISOString(),
+        // --- ZMIANA FORMATU DATY ---
+        startedAt: getLocalISOString(state.sessionStartTime), 
+        completedAt: getLocalISOString(now),
+        // --- KONIEC ZMIANY ---
         sessionLog: state.sessionLog,
     };
     
@@ -63,49 +71,78 @@ export function handleSummarySubmit(e) {
     }
     state.userProgress[dateKey].push(sessionPayload);
     
+    // Wysyłamy dane do naszej bazy
+    // PostgreSQL jest wystarczająco inteligentny, by poprawnie zinterpretować
+    // lokalny czas i zapisać go w kolumnie TIMESTAMPTZ.
     dataStore.saveSession(sessionPayload);
+
+    const stravaCheckbox = document.getElementById('strava-sync-checkbox');
+    if (stravaCheckbox && stravaCheckbox.checked) {
+        dataStore.uploadToStrava(sessionPayload);
+    }
     
+    // Reset stanu
     state.currentTrainingDate = null;
     state.currentTrainingDayId = null;
     state.sessionLog = [];
+    state.sessionStartTime = null;
     
     navigateTo('main');
     renderMainScreen();
 }
 
-// ==============================================================================
 
-
+// === POPRAWIONA FUNKCJA navigateTo (BEZ ZMIAN W CSS) ===
 export const navigateTo = (screenName) => {
-    if (screenName === 'training') { wakeLockManager.request(); } 
-    else { wakeLockManager.release(); }
-    
+    if (screenName === 'training') {
+        wakeLockManager.request();
+    } else {
+        wakeLockManager.release();
+    }
+
+    const bottomNav = document.getElementById('app-bottom-nav');
+    const footer = document.getElementById('app-footer');
+
+    // Logika do ukrywania/pokazywania nawigacji i stopki
     if (screenName === 'training') {
         screens.training.classList.add('active');
+        // Ukrywamy nawigacje i stopkę, dodając styl inline
         mainNav.style.display = 'none';
-        document.getElementById('app-footer').style.display = 'none';
+        if (bottomNav) bottomNav.style.display = 'none';
+        if (footer) footer.style.display = 'none';
     } else {
         screens.training.classList.remove('active');
-        document.getElementById('app-footer').style.display = 'block';
+        // Odsłaniamy nawigacje i stopkę, USUWAJĄC styl inline.
+        // To pozwala plikowi CSS ponownie przejąć pełną kontrolę nad ich widocznością.
+        mainNav.style.display = ''; // Usunięcie stylu przywraca kontrolę CSS
+        if (bottomNav) bottomNav.style.display = ''; // Usunięcie stylu przywraca kontrolę CSS
+        if (footer) footer.style.display = ''; // Usunięcie stylu przywraca kontrolę CSS
+        
+        // Logika przełączania ekranów
         Object.values(screens).forEach(s => { if (s) s.classList.remove('active'); });
         if (screens[screenName]) screens[screenName].classList.add('active');
 
-        if (mainNav) {
-            mainNav.style.display = 'flex';
+        // Logika aktywnego przycisku w dolnym menu
+        if (bottomNav) {
+            const bottomNavButtons = bottomNav.querySelectorAll('.bottom-nav-btn');
+            bottomNavButtons.forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.screen === screenName) {
+                    btn.classList.add('active');
+                }
+            });
         }
-        const bottomNavButtons = document.querySelectorAll('#app-bottom-nav .bottom-nav-btn');
-        bottomNavButtons.forEach(btn => {
-            btn.classList.remove('active');
-            if (btn.dataset.screen === screenName) {
-                btn.classList.add('active');
-            }
-        });
     }
     window.scrollTo(0, 0);
 };
 
 export const renderMainScreen = () => {
     const activePlan = getActiveTrainingPlan();
+    if (!activePlan) {
+        containers.days.innerHTML = '<p>Ładowanie planu treningowego...</p>';
+        return;
+    }
+
     const mainScreenTitle = document.getElementById('main-screen-title');
     if (mainScreenTitle) {
         mainScreenTitle.textContent = activePlan.name || 'Mój Plan Treningowy';
@@ -127,7 +164,7 @@ export const renderMainScreen = () => {
                 exercise.equipment.split(',').map(item => item.trim()).forEach(item => equipmentSet.add(item));
             }
         });
-        let equipmentHtml = equipmentSet.size > 0 
+        let equipmentHtml = equipmentSet.size > 0
             ? `<p class="day-card-equipment"><strong>Sprzęt:</strong> ${[...equipmentSet].join(', ')}</p>`
             : `<p class="day-card-equipment"><strong>Sprzęt:</strong> Brak wymaganego sprzętu</p>`;
         let dateLabel = date.toLocaleString('pl-PL', { day: 'numeric', month: 'short' });
@@ -155,6 +192,7 @@ export const renderHistoryScreen = async () => {
         const year = date.getFullYear();
         const month = date.getMonth() + 1;
 
+        // Pobierz historię dla wybranego miesiąca z serwera
         await dataStore.getHistoryForMonth(year, month);
         
         document.getElementById('month-year-header').textContent = date.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' });
@@ -164,8 +202,10 @@ export const renderHistoryScreen = async () => {
         const firstDayOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
         const lastDayOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0);
         let startDay = firstDayOfMonth.getDay();
-        if (startDay === 0) startDay = 7;
+        // Dostosuj początek tygodnia do poniedziałku
+        if (startDay === 0) startDay = 7; 
         
+        // Dodaj puste komórki dla dni z poprzedniego miesiąca
         for (let i = 1; i < startDay; i++) { 
             grid.innerHTML += `<div class="calendar-day other-month"></div>`; 
         }
@@ -207,14 +247,41 @@ export const renderHistoryScreen = async () => {
 
 export const renderDayDetailsScreen = (isoDate) => {
     const dayEntries = state.userProgress[isoDate];
-    if (!dayEntries || dayEntries.length === 0) return;
+    if (!dayEntries || dayEntries.length === 0) {
+        renderHistoryScreen();
+        return;
+    }
     const date = new Date(isoDate);
+
     let sessionsHtml = dayEntries.map(session => {
         const planId = session.planId || 'l5s1-foundation';
-        const planForHistory = TRAINING_PLANS[planId];
-        const trainingDay = planForHistory.Days.find(d => d.dayNumber === session.trainingDayId);
+        const planForHistory = state.trainingPlans[planId];
+        const trainingDay = planForHistory ? planForHistory.Days.find(d => d.dayNumber === session.trainingDayId) : null;
         const title = trainingDay ? trainingDay.title : 'Nieznany trening';
-        const completedTime = new Date(session.completedAt).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+        
+        let timeDetailsHtml = '';
+        if (session.startedAt && session.completedAt) {
+            const startTime = new Date(session.startedAt);
+            const endTime = new Date(session.completedAt);
+            const options = { hour: '2-digit', minute: '2-digit' };
+            const formattedStartTime = startTime.toLocaleTimeString('pl-PL', options);
+            const formattedEndTime = endTime.toLocaleTimeString('pl-PL', options);
+            const durationMs = endTime - startTime;
+            const totalMinutes = Math.floor(durationMs / 60000);
+            const totalSeconds = Math.floor((durationMs % 60000) / 1000);
+            const formattedDuration = `${totalMinutes} min ${totalSeconds} s`;
+
+            timeDetailsHtml = `
+                <p><strong>Czas rozpoczęcia:</strong> ${formattedStartTime}</p>
+                <p><strong>Czas zakończenia:</strong> ${formattedEndTime}</p>
+                <p><strong>Całkowity czas trwania:</strong> ${formattedDuration}</p>
+            `;
+        } else {
+            const completedTime = new Date(session.completedAt).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+            timeDetailsHtml = `<p><strong>Czas ukończenia:</strong> ${completedTime}</p>`;
+        }
+
+        // --- TUTAJ BYŁ BŁĄD - TERAZ JEST POPRAWIONY I KOMPLETNY KOD ---
         const exercisesHtml = session.sessionLog && session.sessionLog.length > 0 ? session.sessionLog.map(item => `
             <div class="details-exercise-item">
                 <div class="details-exercise-info">
@@ -226,10 +293,71 @@ export const renderDayDetailsScreen = (isoDate) => {
                 </div>
             </div>
         `).join('') : '<p>Brak szczegółowego logu dla tej sesji.</p>';
-        return `<details class="details-session-card" open><summary><span>${title}</span><span>${completedTime}</span></summary><div class="details-session-card-content"><div class="details-summary-card"><p><strong>Status:</strong> Ukończono</p><p><strong>Ocena bólu:</strong> ${session.pain_during || 'Brak oceny'}/10</p>${session.notes ? `<div class="details-notes"><strong>Notatki:</strong><br>${session.notes}</div>` : ''}</div><div class="details-exercise-list"><h4>Wykonane ćwiczenia:</h4>${exercisesHtml}</div></div></details>`;
+        // --- KONIEC POPRAWKI ---
+
+        return `
+            <details class="details-session-card" open>
+                <summary><span>${title}</span><span>${new Date(session.completedAt).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}</span></summary>
+                <div class="details-session-card-content">
+                    <div class="details-summary-card">
+                        <p><strong>Status:</strong> Ukończono</p>
+                        ${timeDetailsHtml} 
+                        <p><strong>Ocena bólu:</strong> ${session.pain_during || 'Brak oceny'}/10</p>
+                        ${session.notes ? `<div class="details-notes"><strong>Notatki:</strong><br>${session.notes}</div>` : ''}
+                    </div>
+                    <div class="details-exercise-list">
+                        <h4>Wykonane ćwiczenia:</h4>
+                        ${exercisesHtml}
+                    </div>
+                    <div class="session-actions" style="margin-top: 1rem; border-top: 1px solid var(--border-color); padding-top: 1rem; text-align: right;">
+                        <button class="nav-btn danger-btn delete-session-btn" data-session-id="${session.sessionId}">
+                            Usuń ten trening
+                        </button>
+                    </div>
+                </div>
+            </details>
+        `;
     }).join('');
-    screens.dayDetails.innerHTML = `<h2 id="details-day-title">${date.toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' })}</h2><div id="day-details-content">${sessionsHtml}</div><button id="details-back-btn" class="action-btn">Wróć do Historii</button>`;
+
+    screens.dayDetails.innerHTML = `
+        <h2 id="details-day-title">${date.toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' })}</h2>
+        <div id="day-details-content">${sessionsHtml}</div>
+        <button id="details-back-btn" class="action-btn">Wróć do Historii</button>
+    `;
+
     screens.dayDetails.querySelector('#details-back-btn').addEventListener('click', renderHistoryScreen);
+    
+    const contentContainer = screens.dayDetails.querySelector('#day-details-content');
+    contentContainer.addEventListener('click', async (e) => {
+        if (e.target && e.target.classList.contains('delete-session-btn')) {
+            const sessionId = e.target.dataset.sessionId;
+            
+            if (!confirm('Czy na pewno chcesz trwale usunąć ten trening? Tej operacji nie można cofnąć.')) {
+                return;
+            }
+
+            showLoader();
+            try {
+                await dataStore.deleteSession(sessionId);
+                state.userProgress[isoDate] = state.userProgress[isoDate].filter(
+                    session => String(session.sessionId) !== String(sessionId)
+                );
+
+                if (state.userProgress[isoDate].length > 0) {
+                    renderDayDetailsScreen(isoDate);
+                } else {
+                    delete state.userProgress[isoDate];
+                    renderHistoryScreen();
+                }
+
+            } catch (error) {
+                console.error("Deletion failed:", error);
+            } finally {
+                hideLoader();
+            }
+        }
+    });
+    
     navigateTo('dayDetails');
 };
 
@@ -242,8 +370,8 @@ export const renderSettingsScreen = () => {
     const planSelector = document.getElementById('setting-training-plan');
     if (planSelector) {
         planSelector.innerHTML = '';
-        Object.keys(TRAINING_PLANS).forEach(planId => {
-            const plan = TRAINING_PLANS[planId];
+        Object.keys(state.trainingPlans).forEach(planId => {
+            const plan = state.trainingPlans[planId];
             const option = document.createElement('option');
             option.value = planId;
             option.textContent = plan.name;
@@ -251,6 +379,59 @@ export const renderSettingsScreen = () => {
             planSelector.appendChild(option);
         });
     }
+
+    const dangerZone = document.getElementById('danger-zone');
+    if (dangerZone) {
+        const oldIntegrationSection = document.getElementById('integration-section');
+        if (oldIntegrationSection) {
+            oldIntegrationSection.remove();
+        }
+
+        const integrationSection = document.createElement('div');
+        integrationSection.id = 'integration-section';
+        integrationSection.className = 'settings-section';
+        
+        let content = '<h3>Integracje</h3>';
+        if (state.stravaIntegration.isConnected) {
+            content += `
+                <div class="integration-status">
+                    <p><strong>Strava:</strong> Połączono. Twoje przyszłe treningi będą automatycznie synchronizowane.</p>
+                    <button id="disconnect-strava-btn" class="nav-btn danger-btn">Rozłącz konto Strava</button>
+                </div>
+            `;
+        } else {
+            content += `
+                <div class="integration-status">
+                    <p>Połącz swoje konto, aby automatycznie przesyłać ukończone treningi na Stravę.</p>
+                    <button id="connect-strava-btn" class="nav-btn strava-btn">
+                        <span>Połącz ze Strava</span>
+                    </button>
+                </div>
+            `;
+        }
+        integrationSection.innerHTML = content;
+        dangerZone.parentNode.insertBefore(integrationSection, dangerZone);
+
+        if (state.stravaIntegration.isConnected) {
+            document.getElementById('disconnect-strava-btn').addEventListener('click', async () => {
+                if (confirm('Czy na pewno chcesz odłączyć swoje konto Strava?')) {
+                    showLoader();
+                    try {
+                        await dataStore.disconnectStrava();
+                        renderSettingsScreen();
+                    } finally {
+                        hideLoader();
+                    }
+                }
+            });
+        } else {
+            document.getElementById('connect-strava-btn').addEventListener('click', () => {
+                showLoader();
+                dataStore.startStravaAuth();
+            });
+        }
+    }
+    
     navigateTo('settings');
 };
 
@@ -258,7 +439,7 @@ export const renderLibraryScreen = (searchTerm = '') => {
     const container = containers.exerciseLibrary;
     container.innerHTML = '';
     const lowerCaseSearchTerm = searchTerm.toLowerCase();
-    Object.values(EXERCISE_LIBRARY).filter(exercise => exercise.name.toLowerCase().includes(lowerCaseSearchTerm) || exercise.description.toLowerCase().includes(lowerCaseSearchTerm)).forEach(exercise => {
+    Object.values(state.exerciseLibrary).filter(exercise => exercise.name.toLowerCase().includes(lowerCaseSearchTerm) || exercise.description.toLowerCase().includes(lowerCaseSearchTerm)).forEach(exercise => {
         const card = document.createElement('div');
         card.className = 'library-card';
         card.innerHTML = `<div class="card-header"><h3>${exercise.name}</h3></div><p class="library-card-description">${exercise.description}</p><div class="library-card-footer"><p><strong>Sprzęt:</strong> ${exercise.equipment || 'Brak'}</p><a href="${exercise.youtube_url}" target="_blank" rel="noopener noreferrer" class="nav-btn">Obejrzyj wideo ↗</a></div>`;
@@ -270,7 +451,8 @@ export const renderLibraryScreen = (searchTerm = '') => {
 export const renderPreTrainingScreen = (dayId) => {
     state.currentTrainingDayId = dayId;
     state.currentTrainingDate = getISODate(new Date());
-    const activePlan = TRAINING_PLANS[state.settings.activePlanId];
+    const activePlan = state.trainingPlans[state.settings.activePlanId];
+    if (!activePlan) return;
     const dayData = activePlan.Days.find(d => d.dayNumber === dayId);
     if (!dayData) return;
     const trainingDay = getHydratedDay(dayData);
@@ -317,16 +499,50 @@ export const renderPreTrainingScreen = (dayId) => {
 };
 
 export const renderSummaryScreen = () => {
-    const activePlan = TRAINING_PLANS[state.settings.activePlanId];
+    const activePlan = state.trainingPlans[state.settings.activePlanId];
+    if (!activePlan) return;
     const trainingDay = activePlan.Days.find(d => d.dayNumber === state.currentTrainingDayId);
+    if (!trainingDay) return;
     const summaryScreen = screens.summary;
-    summaryScreen.innerHTML = `<h2 id="summary-title">Podsumowanie: ${trainingDay.title}</h2><p>Gratulacje! Dobra robota.</p><form id="summary-form"><div class="form-group"><label for="pain-during">Ocena bólu W TRAKCIE treningu (0-10):</label><div class="slider-container"><input type="range" id="pain-during" min="0" max="10" step="1" value="0"><span class="slider-value" id="pain-during-value">0</span></div></div><div class="form-group"><label for="general-notes">Notatki ogólne:</label><textarea id="general-notes" rows="4"></textarea></div><button type="submit" class="action-btn">Zapisz i zakończ</button></form>`;
+
+    let stravaHtml = '';
+    if (state.stravaIntegration.isConnected) {
+        stravaHtml = `
+            <div class="form-group strava-sync-container">
+                <label class="checkbox-label" for="strava-sync-checkbox">
+                    <input type="checkbox" id="strava-sync-checkbox" checked>
+                    <span>Synchronizuj ten trening ze Strava</span>
+                </label>
+            </div>
+        `;
+    }
+
+    summaryScreen.innerHTML = `
+        <h2 id="summary-title">Podsumowanie: ${trainingDay.title}</h2>
+        <p>Gratulacje! Dobra robota.</p>
+        <form id="summary-form">
+            <div class="form-group">
+                <label for="pain-during">Ocena bólu W TRAKCIE treningu (0-10):</label>
+                <div class="slider-container">
+                    <input type="range" id="pain-during" min="0" max="10" step="1" value="0">
+                    <span class="slider-value" id="pain-during-value">0</span>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="general-notes">Notatki ogólne:</label>
+                <textarea id="general-notes" rows="4"></textarea>
+            </div>
+            ${stravaHtml}
+            <button type="submit" class="action-btn">Zapisz i zakończ</button>
+        </form>
+    `;
     const slider = summaryScreen.querySelector('#pain-during');
     const sliderValueDisplay = summaryScreen.querySelector('#pain-during-value');
     slider.addEventListener('input', () => { sliderValueDisplay.textContent = slider.value; });
     summaryScreen.querySelector('#summary-form').addEventListener('submit', handleSummarySubmit);
     navigateTo('summary');
 };
+
 
 export const renderTrainingScreen = () => {
     screens.training.innerHTML = `<div class="focus-view"><div class="focus-header"><p id="focus-section-name"></p><button id="exit-training-btn">Zakończ</button><p id="focus-progress"></p></div><div class="focus-timer-container"><p id="focus-timer-display"></p></div><div class="focus-exercise-info"><div class="exercise-title-container"><h2 id="focus-exercise-name"></h2><button id="tts-toggle-btn" class="tts-button"></button></div><p id="focus-exercise-details"></p></div><div id="focus-description" class="focus-description-container"></div><div class="focus-controls"><button id="prev-step-btn" class="control-btn">Cofnij</button><button id="pause-resume-btn" class="control-btn">Pauza</button><button id="rep-based-done-btn" class="control-btn action-btn hidden">GOTOWE</button><button id="skip-btn" class="control-btn">Pomiń</button></div><div class="focus-next-up"><p><strong>Następne:</strong> <span id="next-exercise-name"></span></p></div></div>`;

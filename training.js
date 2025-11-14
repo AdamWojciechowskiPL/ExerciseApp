@@ -5,7 +5,6 @@ import { focus, screens } from './dom.js';
 import { speak } from './tts.js';
 import { startTimer, stopTimer, togglePauseTimer, startStopwatch, stopStopwatch } from './timer.js';
 import { getExerciseDuration, parseSetCount, formatForTTS, getHydratedDay } from './utils.js';
-import { TRAINING_PLANS } from './training-plans.js';
 import { navigateTo, renderSummaryScreen } from './ui.js';
 
 /**
@@ -163,7 +162,10 @@ export function startExercise(index) {
 // Reszta pliku (generateFlatExercises, startModifiedTraining) pozostaje bez zmian
 export function generateFlatExercises(dayData) {
     const plan = [];
-    const activePlan = TRAINING_PLANS[state.settings.activePlanId];
+    // Zmieniono TRAINING_PLANS na state.trainingPlans
+    const activePlan = state.trainingPlans[state.settings.activePlanId];
+    if (!activePlan) return []; // Zabezpieczenie
+    
     const defaultRest = activePlan.GlobalRules.defaultRestSecondsBetweenExercises;
     const sections = [{ name: 'Rozgrzewka', exercises: dayData.warmup || [] }, { name: 'Część główna', exercises: dayData.main || [] }, { name: 'Schłodzenie', exercises: dayData.cooldown || [] }];
     sections.forEach(section => {
@@ -180,7 +182,13 @@ export function generateFlatExercises(dayData) {
 }
 
 export function startModifiedTraining() {
-    const activePlan = TRAINING_PLANS[state.settings.activePlanId];
+    // Zmieniono TRAINING_PLANS na state.trainingPlans
+    state.sessionStartTime = new Date();
+    const activePlan = state.trainingPlans[state.settings.activePlanId];
+    if (!activePlan) {
+        console.error("No active training plan found in state!");
+        return;
+    }
     const dayDataRaw = activePlan.Days.find(d => d.dayNumber === state.currentTrainingDayId);
     const hydratedDay = getHydratedDay(dayDataRaw);
     const modifiedDay = JSON.parse(JSON.stringify(hydratedDay));

@@ -803,3 +803,39 @@ input[type="range"]::-moz-range-thumb {
         padding-bottom: 90px;
     }
 }
+
+/* ============================================= */
+/* ========    POPRAWKI IKONY CHROMECAST    ======== */
+/* ============================================= */
+google-cast-launcher {
+    /* Ustawienie wyglądu i rozmiaru */
+    width: 24px;   /* Standardowy rozmiar ikony */
+    height: 24px;  /* Standardowy rozmiar ikony */
+    color: var(--light-text-color); /* Ustawia kolor ikony na biały */
+    cursor: pointer;
+    
+    /* Usunięcie niechcianych domyślnych stylów przeglądarki */
+    background: none;
+    border: none;
+    outline: none;
+    
+    /* Zapewnienie, że ikona nie będzie "ściskana" przez inne elementy w nagłówku */
+    flex-shrink: 0;
+    
+    /* Lepsze wyrównanie w pionie z tekstem */
+    vertical-align: middle;
+    
+    /* Efekty wizualne dla lepszego UX */
+    opacity: 0.8;
+    transition: opacity 0.2s ease-in-out;
+}
+
+google-cast-launcher:hover {
+    opacity: 1;
+}
+
+/* Ta klasa jest dodawana automatycznie przez SDK, gdy nie ma dostępnych urządzeń.
+   Upewniamy się, że przycisk jest wtedy ukryty. */
+.gck-button-hidden {
+    display: none !important;
+}

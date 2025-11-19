@@ -1,5 +1,8 @@
+// timer.js - WERSJA ZOPTYMALIZOWANA
+
 import { state } from './state.js';
 import { focus } from './dom.js';
+import { getIsCasting, sendTrainingStateUpdate } from './cast.js';
 
 export const updateTimerDisplay = () => {
     const minutes = Math.floor(state.timer.timeLeft / 60);
@@ -16,15 +19,26 @@ export const startTimer = (seconds, onEndCallback) => {
     stopTimer();
     state.timer.timeLeft = seconds;
     state.timer.isActive = true;
+    state.timer.onTimerEnd = onEndCallback;
+    
     focus.pauseResumeBtn.textContent = 'Pauza';
     updateTimerDisplay();
+
     state.timer.interval = setInterval(() => {
         state.timer.timeLeft--;
         updateTimerDisplay();
+
+        // KLUCZOWA OPTYMALIZACJA: Wysyłaj co sekundę TYLKO zmieniający się czas
+        if (getIsCasting()) {
+            sendTrainingStateUpdate({ timerValue: focus.timerDisplay.textContent });
+        }
+
         if (state.timer.timeLeft <= 0) {
             state.completionSound();
             if (navigator.vibrate) navigator.vibrate(200);
-            onEndCallback();
+            if (onEndCallback) {
+                onEndCallback();
+            }
         }
     }, 1000);
 };
@@ -35,26 +49,25 @@ export const togglePauseTimer = () => {
         focus.pauseResumeBtn.textContent = 'Wznów';
     } else {
         if (state.timer.timeLeft > 0) {
-             startTimer(state.timer.timeLeft, focus.onTimerEnd); // onTimerEnd will be attached to focus
+             startTimer(state.timer.timeLeft, state.timer.onTimerEnd);
         }
     }
 };
 
-/**
- * Aktualizuje wyświetlacz stopera, formatując czas do MM:SS.
- */
 export const updateStopwatchDisplay = () => {
     const minutes = Math.floor(state.stopwatch.seconds / 60);
     const seconds = state.stopwatch.seconds % 60;
-    focus.timerDisplay.classList.remove('rep-based-text'); // Upewnij się, że tekst jest w stylu timera
+    focus.timerDisplay.classList.remove('rep-based-text');
     focus.timerDisplay.textContent = `${minutes < 10 ? '0' : ''}${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+
+    // KLUCZOWA OPTYMALIZACJA: Wysyłaj co sekundę TYLKO zmieniający się czas
+    if (getIsCasting()) {
+        sendTrainingStateUpdate({ timerValue: focus.timerDisplay.textContent });
+    }
 };
 
-/**
- * Startuje stoper, resetując go i rozpoczynając odliczanie w górę.
- */
 export const startStopwatch = () => {
-    stopStopwatch(); // Zatrzymaj poprzedni, jeśli działał
+    stopStopwatch();
     state.stopwatch.seconds = 0;
     updateStopwatchDisplay();
     state.stopwatch.interval = setInterval(() => {
@@ -63,9 +76,6 @@ export const startStopwatch = () => {
     }, 1000);
 };
 
-/**
- * Zatrzymuje stoper, czyszcząc interwał.
- */
 export const stopStopwatch = () => {
     clearInterval(state.stopwatch.interval);
     state.stopwatch.interval = null;

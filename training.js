@@ -1,30 +1,49 @@
-// training.js
+// training.js - WERSJA FINALNA Z POPRAWKĄ DYNAMICZNEGO IMPORTU
 
 import { state } from './state.js';
 import { focus, screens } from './dom.js';
 import { speak } from './tts.js';
-import { startTimer, stopTimer, togglePauseTimer, startStopwatch, stopStopwatch } from './timer.js';
+import { startTimer, stopTimer, startStopwatch, stopStopwatch } from './timer.js';
 import { getExerciseDuration, parseSetCount, formatForTTS, getHydratedDay } from './utils.js';
 import { navigateTo, renderSummaryScreen } from './ui.js';
+import { getIsCasting, sendTrainingStateUpdate } from './cast.js';
 
 /**
- * ZMODYFIKOWANA FUNKCJA: Teraz inteligentnie aktualizuje lub dodaje wpis do logu.
- * Zamiast ślepo dodawać, najpierw sprawdza, czy wpis dla danego ćwiczenia i serii już istnieje.
- * Jeśli tak, aktualizuje go; jeśli nie, dodaje nowy.
+ * Zbiera aktualny stan treningu i wysyła go do odbiornika Chromecast.
  */
+function syncStateToChromecast() {
+    if (!getIsCasting()) {
+        return;
+    }
+
+    const exercise = state.flatExercises[state.currentExerciseIndex];
+    if (!exercise) return;
+
+    let nextWorkExercise = null;
+    for (let i = state.currentExerciseIndex + 1; i < state.flatExercises.length; i++) {
+        if (state.flatExercises[i].isWork) {
+            nextWorkExercise = state.flatExercises[i];
+            break;
+        }
+    }
+
+    const payload = {
+        sectionName: exercise.sectionName || '',
+        timerValue: focus.timerDisplay.textContent,
+        exerciseName: exercise.isWork ? `${exercise.name} (Seria ${exercise.currentSet}/${exercise.totalSets})` : exercise.name,
+        exerciseDetails: exercise.isWork ? `Czas/Powt: ${exercise.reps_or_time} | Tempo: ${exercise.tempo_or_iso}` : `Następne: ${(state.flatExercises[state.currentExerciseIndex + 1] || {}).name || ''}`,
+        nextExercise: nextWorkExercise ? nextWorkExercise.name : 'Koniec',
+        isRest: !exercise.isWork
+    };
+
+    sendTrainingStateUpdate(payload);
+}
+
 function logCurrentStep(status) {
     const exercise = state.flatExercises[state.currentExerciseIndex];
     if (!exercise || !exercise.isWork) return;
-
     let duration = (status === 'rep-based' && state.stopwatch.seconds > 0) ? state.stopwatch.seconds : 0;
     
-    // Poprawka drobnego błędu: state.timer nie ma startTime, ale to nie jest główny problem.
-    // Prawidłowa kalkulacja duration nie jest teraz kluczowa, ale warto to mieć na uwadze.
-    // Na razie zostawiamy, aby nie wprowadzać zbyt wielu zmian naraz.
-    if (status === 'completed' && state.timer.startTime > 0) {
-        duration = Math.round((Date.now() - state.timer.startTime) / 1000);
-    }
-
     const newLogEntry = {
         name: exercise.name,
         currentSet: exercise.currentSet,
@@ -35,16 +54,13 @@ function logCurrentStep(status) {
         duration: duration > 0 ? duration : '-'
     };
 
-    // Logika "znajdź i zaktualizuj" lub "dodaj"
     const existingEntryIndex = state.sessionLog.findIndex(
         entry => entry.name === newLogEntry.name && entry.currentSet === newLogEntry.currentSet
     );
 
     if (existingEntryIndex > -1) {
-        // Jeśli wpis już istnieje (bo użytkownik się cofnął), zaktualizuj go
         state.sessionLog[existingEntryIndex] = newLogEntry;
     } else {
-        // Jeśli to nowy wpis, dodaj go
         state.sessionLog.push(newLogEntry);
     }
 }
@@ -53,7 +69,6 @@ export function moveToNextExercise(options = { skipped: false }) {
     stopStopwatch();
     if (state.tts.isSupported) state.tts.synth.cancel();
     
-    // Logika logowania pozostaje taka sama, ale teraz używa ulepszonej funkcji logCurrentStep
     const duration = getExerciseDuration(state.flatExercises[state.currentExerciseIndex]);
     if (options.skipped) { 
         logCurrentStep('skipped'); 
@@ -73,16 +88,11 @@ export function moveToNextExercise(options = { skipped: false }) {
     }
 }
 
-/**
- * ZMODYFIKOWANA FUNKCJA: Usunięto problematyczną linię `state.sessionLog.pop()`.
- * Dzięki nowej logice w `logCurrentStep`, nie musimy już ręcznie usuwać wpisów.
- */
 export function moveToPreviousExercise() {
     stopStopwatch();
     if (state.currentExerciseIndex > 0) {
         if (state.tts.isSupported) state.tts.synth.cancel();
         stopTimer();
-        // USUNIĘTO: state.sessionLog.pop(); 
         startExercise(state.currentExerciseIndex - 1);
     }
 }
@@ -90,9 +100,11 @@ export function moveToPreviousExercise() {
 export function startExercise(index) {
     state.currentExerciseIndex = index;
     const exercise = state.flatExercises[index];
+    
     focus.ttsToggleBtn.textContent = state.tts.isSoundOn ? '🔊' : '🔇';
     focus.prevStepBtn.disabled = (index === 0);
     focus.progress.textContent = `${index + 1} / ${state.flatExercises.length}`;
+
     if (exercise.isWork) {
         focus.sectionName.textContent = exercise.sectionName;
         focus.exerciseName.textContent = `${exercise.name} (Seria ${exercise.currentSet} / ${exercise.totalSets})`;
@@ -108,7 +120,7 @@ export function startExercise(index) {
             focus.timerDisplay.classList.remove('rep-based-text');
             focus.repBasedDoneBtn.classList.add('hidden');
             focus.pauseResumeBtn.classList.remove('hidden');
-            startTimer(duration, () => moveToNextExercise({ skipped: false }));
+            startTimer(duration, () => moveToNextExercise({ skipped: false }), syncStateToChromecast);
         } else {
             stopTimer();
             focus.repBasedDoneBtn.classList.remove('hidden');
@@ -119,31 +131,42 @@ export function startExercise(index) {
                 speak(announcement, true, () => { speak(formatForTTS(exercise.description), false); });
             }
         }
-    } else {
+    } else { // Przerwa
         const upcomingExercise = state.flatExercises[index + 1];
         if (!upcomingExercise) { moveToNextExercise({ skipped: false }); return; }
+        
         focus.repBasedDoneBtn.classList.add('hidden');
         focus.pauseResumeBtn.classList.add('hidden');
+        
+        // Pobieramy dane o kolejnym ćwiczeniu, żeby wiedzieć co wyświetlić
         const isNextRepBased = getExerciseDuration(upcomingExercise) === null;
+        
         let afterUpcomingExercise = null;
         for (let i = index + 2; i < state.flatExercises.length; i++) {
             if (state.flatExercises[i].isWork) { afterUpcomingExercise = state.flatExercises[i]; break; }
         }
+        
+        // Wspólne aktualizacje UI (aby naprawić błąd wyświetlania starego ćwiczenia)
+        // POPRAWKA: Aktualizujemy teksty ZANIM wejdziemy w if/else timera
+        focus.sectionName.textContent = "PRZYGOTUJ SIĘ";
+        focus.exerciseName.textContent = `Następne: ${upcomingExercise.name}`;
+        focus.exerciseDetails.textContent = `Seria ${upcomingExercise.currentSet}/${upcomingExercise.totalSets} | Czas/Powt: ${upcomingExercise.reps_or_time} | Tempo: ${upcomingExercise.tempo_or_iso}`;
+        focus.focusDescription.textContent = upcomingExercise.description || 'Brak opisu.';
         focus.nextExerciseName.textContent = afterUpcomingExercise ? afterUpcomingExercise.name : "Koniec treningu";
+
         if (isNextRepBased) {
-            focus.sectionName.textContent = "PRZYGOTUJ SIĘ";
-            focus.exerciseName.textContent = `Następne: ${upcomingExercise.name}`;
-            focus.exerciseDetails.textContent = `Seria ${upcomingExercise.currentSet}/${upcomingExercise.totalSets} | Czas/Powt: ${upcomingExercise.reps_or_time}`;
-            focus.focusDescription.textContent = upcomingExercise.description || 'Brak opisu.';
-            focus.timerDisplay.classList.add('rep-based-text');
-            focus.timerDisplay.textContent = "START...";
-            setTimeout(() => { if (state.currentExerciseIndex === index) { moveToNextExercise({ skipped: false }); } }, 2000);
+             focus.timerDisplay.classList.add('rep-based-text');
+             focus.timerDisplay.textContent = "START...";
+             
+             setTimeout(() => { 
+                 if (state.currentExerciseIndex === index) { 
+                     moveToNextExercise({ skipped: false }); 
+                 } 
+             }, 2000);
         } else {
-            focus.sectionName.textContent = "PRZYGOTUJ SIĘ";
-            focus.exerciseName.textContent = `Następne: ${upcomingExercise.name}`;
-            focus.exerciseDetails.textContent = `Seria ${upcomingExercise.currentSet}/${upcomingExercise.totalSets} | Czas/Powt: ${upcomingExercise.reps_or_time} | Tempo: ${upcomingExercise.tempo_or_iso}`;
-            focus.focusDescription.textContent = upcomingExercise.description || 'Brak opisu.';
+            // Dla ćwiczeń na czas (standardowa przerwa)
             const startNextExercise = () => moveToNextExercise({ skipped: false });
+            
             if (state.tts.isSoundOn) {
                 focus.timerDisplay.classList.add('rep-based-text');
                 focus.timerDisplay.textContent = "SŁUCHAJ";
@@ -153,18 +176,18 @@ export function startExercise(index) {
                 focus.timerDisplay.classList.remove('rep-based-text');
                 focus.pauseResumeBtn.classList.remove('hidden');
                 const restDuration = exercise.duration || state.settings.restBetweenExercises;
-                startTimer(restDuration > 5 ? restDuration : 5, startNextExercise);
+                startTimer(restDuration > 5 ? restDuration : 5, startNextExercise, syncStateToChromecast);
             }
         }
     }
+    
+    syncStateToChromecast();
 }
 
-// Reszta pliku (generateFlatExercises, startModifiedTraining) pozostaje bez zmian
 export function generateFlatExercises(dayData) {
     const plan = [];
-    // Zmieniono TRAINING_PLANS na state.trainingPlans
     const activePlan = state.trainingPlans[state.settings.activePlanId];
-    if (!activePlan) return []; // Zabezpieczenie
+    if (!activePlan) return [];
     
     const defaultRest = activePlan.GlobalRules.defaultRestSecondsBetweenExercises;
     const sections = [{ name: 'Rozgrzewka', exercises: dayData.warmup || [] }, { name: 'Część główna', exercises: dayData.main || [] }, { name: 'Schłodzenie', exercises: dayData.cooldown || [] }];
@@ -178,11 +201,13 @@ export function generateFlatExercises(dayData) {
             if (exerciseIndex < section.exercises.length - 1) { plan.push({ name: 'Przerwa', isRest: true, isWork: false, duration: defaultRest, sectionName: 'Przerwa' }); }
         });
     });
+    if (plan.length > 0 && plan[plan.length - 1].isRest) {
+        plan.pop();
+    }
     return plan;
 }
 
-export function startModifiedTraining() {
-    // Zmieniono TRAINING_PLANS na state.trainingPlans
+export async function startModifiedTraining() {
     state.sessionStartTime = new Date();
     const activePlan = state.trainingPlans[state.settings.activePlanId];
     if (!activePlan) {
@@ -222,6 +247,18 @@ export function startModifiedTraining() {
         { name: "Przygotuj się", isRest: true, isWork: false, duration: 5, sectionName: "Start" },
         ...generateFlatExercises(modifiedDay)
     ];
+    
+    if (getIsCasting()) {
+        const queueItemsForReceiver = state.flatExercises.map((exercise, index) => ({
+            id: `step-${index}`,
+            title: exercise.isWork ? `${exercise.name} (Seria ${exercise.currentSet}/${exercise.totalSets})` : exercise.name,
+            subtitle: exercise.isWork ? `Czas/Powt: ${exercise.reps_or_time}` : 'Przerwa'
+        }));
+
+        // POPRAWKA: Używamy dynamicznego importu, aby uniknąć cyklicznej zależności
+        const { sendMessage } = await import('./cast.js');
+        sendMessage({ type: 'SETUP_QUEUE', payload: queueItemsForReceiver });
+    }
     
     navigateTo('training');
     startExercise(0);

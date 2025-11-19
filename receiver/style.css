@@ -1,0 +1,91 @@
+/* receiver/style.css */
+
+body, html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background-color: #000;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overflow: hidden;
+}
+
+#cast-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    box-sizing: border-box;
+    padding: 5vh 5vw;
+}
+
+.screen { display: none; }
+.screen.active { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; height: 100%; }
+
+/* --- Ekran oczekiwania --- */
+#idle-screen {
+    text-align: center;
+}
+#idle-screen .logo {
+    width: 15vw;
+    max-width: 150px;
+    margin-bottom: 2rem;
+}
+#idle-screen h1 {
+    font-size: 5vw;
+}
+#idle-screen p {
+    font-size: 2vw;
+    color: #aaa;
+}
+
+/* --- Ekran treningu --- */
+#training-screen {
+    justify-content: space-between;
+}
+.header, .footer {
+    width: 100%;
+    text-align: center;
+    opacity: 0.7;
+}
+.header p { font-size: 3vh; text-transform: uppercase; letter-spacing: 3px; }
+.footer p { font-size: 2.5vh; }
+
+.timer-display h1 {
+    font-size: 25vh;
+    font-weight: 700;
+    margin: 0;
+    font-family: 'monospace', sans-serif;
+    line-height: 1;
+}
+.timer-display.rest h1 {
+    color: #6aade4; /* Niebieski dla odpoczynku */
+}
+
+.exercise-info {
+    text-align: center;
+    margin: 2vh 0;
+}
+.exercise-info h2 {
+    font-size: 7vh;
+    font-weight: 600;
+    margin: 0;
+}
+.exercise-info p {
+    font-size: 3vh;
+    opacity: 0.8;
+    margin-top: 1vh;
+}
+
+/* --- Ekran wideo --- */
+#video-screen {
+    width: 100%;
+    height: 100%;
+}
+#youtube-player {
+    width: 100%;
+    height: 100%;
+    border: none;
+}

@@ -9,6 +9,17 @@
     <meta name="theme-color" content="#005f73">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
+
+<script type="text/javascript" src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
+    <script>
+      window.addEventListener('message', event => {
+        if (event.source === window && event.data &&
+            event.data.source === 'CastApi' &&
+            event.data.event === 'api_init_failure') {
+          console.error('KRYTYCZNY BŁĄD INICJALIZACJI CAST API:', event.data.error);
+        }
+      });
+    </script>
     <!-- Skrypt Auth0 SPA SDK - kluczowy dla uwierzytelniania -->
     <script src="https://cdn.auth0.com/js/auth0-spa-js/2.1/auth0-spa-js.production.js"></script>
 </head>
@@ -18,6 +29,7 @@
         <h1>Aplikacja Treningowa</h1>
         
         <div id="user-info-container" class="hidden">
+            <google-cast-launcher id="cast-button"></google-cast-launcher>
             <span id="user-display-name" class="desktop-only"></span>
             <button id="logout-btn" class="nav-btn danger-btn">
                 <span class="desktop-only">Wyloguj się</span>
@@ -112,16 +124,6 @@
                 </div>
                 <button type="submit" class="action-btn">Zapisz ustawienia</button>
             </form>
-            <div class="settings-section">
-                <h3>Backup i Przywracanie Danych (Lokalne)</h3>
-                <p>Zapisz swoje postępy i ustawienia do pliku, aby móc je przywrócić później lub przenieść na inne urządzenie. Funkcja ta działa lokalnie i nie jest synchronizowana z kontem.</p>
-                <button id="backup-btn" class="nav-btn backup-btn">Utwórz backup (pobierz plik)</button>
-                <div class="restore-container">
-                    <p>Wybierz plik z kopią zapasową, aby przywrócić dane.</p>
-                    <input type="file" id="restore-input" accept=".json" class="hidden">
-                    <button id="restore-btn" class="nav-btn restore-btn">Przywróć z pliku</button>
-                </div>
-            </div>
 
             <div id="danger-zone" class="settings-section">
                 <h3>Strefa Niebezpieczna</h3>
@@ -145,7 +147,7 @@
                 <strong>Zastrzeżenie:</strong> Ta aplikacja ma charakter wyłącznie informacyjny i nie zastępuje profesjonalnej porady medycznej. Zawsze konsultuj się z lekarzem lub fizjoterapeutą przed rozpoczęciem lub modyfikacją programu ćwiczeń.
             </p>
             <p class="copyright">
-                &copy; <span id="current-year"></span> Aplikacja Treningowa. Wersja 5.0.0
+                &copy; <span id="current-year"></span> Aplikacja Treningowa. Wersja 6.0.0
             </p>
         </div>
     </footer>

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aplikacja Treningowa</title>
+    <link rel="stylesheet" type="text/css" href="style.css">
+</head>
+<body>
+
+    <div id="cast-container">
+        <!-- Ekran oczekiwania, widoczny przed rozpoczęciem treningu -->
+        <div id="idle-screen" class="screen active">
+            <img src="/icons/icon-512x512.png" alt="Logo Aplikacji" class="logo">
+            <h1>Aplikacja Treningowa</h1>
+            <p>Gotowy do rozpoczęcia. Wybierz trening na swoim urządzeniu.</p>
+        </div>
+
+        <!-- Ekran treningu, domyślnie ukryty -->
+        <div id="training-screen" class="screen">
+            <div class="header">
+                <p id="section-name">Rozgrzewka</p>
+            </div>
+            <div class="timer-display">
+                <h1 id="timer">00:00</h1>
+            </div>
+            <div class="exercise-info">
+                <h2 id="exercise-name">Nazwa Ćwiczenia (Seria 1/3)</h2>
+                <p id="exercise-details">10 powtórzeń | Tempo: 3010</p>
+            </div>
+            <div class="footer">
+                <p>Następne: <span id="next-exercise">Nazwa następnego ćwiczenia</span></p>
+            </div>
+        </div>
+        
+        <!-- Odtwarzacz wideo, domyślnie ukryty -->
+        <div id="video-screen" class="screen">
+            <iframe id="youtube-player" frameborder="0" allowfullscreen></iframe>
+        </div>
+    </div>
+    <div id="version-display" style="position: fixed; bottom: 10px; right: 10px; color: rgba(255,255,255,0.3); font-size: 14px; font-family: monospace; z-index: 9999;">
+    v1.0
+</div>
+
+    <!-- Import oficjalnego SDK Google Cast Receiver -->
+    <script type="text/javascript" src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+
+    <!-- Nasz skrypt logiki odbiorcy -->
+    <script type="text/javascript" src="receiver.js"></script>
+</body>
+</html>

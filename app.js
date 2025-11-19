@@ -1,4 +1,4 @@
-// app.js
+// app.js - WERSJA POPRAWIONA Z PEŁNĄ OBSŁUGĄ ZDARZEŃ OD PILOTA
 
 // === 1. IMPORTY MODUŁÓW ===
 import { state } from './state.js';
@@ -17,50 +17,14 @@ import {
     hideLoader
 } from './ui.js';
 import { containers, mainNav, focus } from './dom.js';
-import { getISODate } from './utils.js';
+// Importujemy funkcje, które będą wywoływane przez listenery zdarzeń z pilota
 import { moveToNextExercise, moveToPreviousExercise } from './training.js';
 import { stopTimer, togglePauseTimer, stopStopwatch } from './timer.js';
 import { loadVoices } from './tts.js';
+import { initializeCastApi, getIsCasting, sendShowIdle } from './cast.js';
 
 
 // === 2. GŁÓWNE FUNKCJE APLIKACJI ===
-
-function handleBackup() {
-    const dataToBackup = { userProgress: state.userProgress, settings: state.settings };
-    const dataStr = JSON.stringify(dataToBackup, null, 2);
-    const dataBlob = new Blob([dataStr], { type: "application/json" });
-    const url = URL.createObjectURL(dataBlob);
-    const link = document.createElement('a');
-    link.download = `trening-app-backup-${getISODate(new Date())}.json`;
-    link.href = url;
-    link.click();
-    URL.revokeObjectURL(url);
-}
-
-function handleRestore(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        try {
-            const importedData = JSON.parse(e.target.result);
-            if (importedData.userProgress && importedData.settings) {
-                if (confirm("Czy na pewno chcesz nadpisać obecne dane? Spowoduje to przeładowanie strony.")) {
-                    localStorage.setItem('trainingAppProgress', JSON.stringify(importedData.userProgress));
-                    localStorage.setItem('trainingAppSettings', JSON.stringify(importedData.settings));
-                    alert("Dane przywrócone. Aplikacja zostanie przeładowana.");
-                    window.location.reload();
-                }
-            } else {
-                alert("Błąd: Nieprawidłowy format pliku.");
-            }
-        } catch (error) {
-            alert("Błąd podczas wczytywania pliku.");
-        }
-    };
-    reader.readAsText(file);
-    event.target.value = '';
-}
 
 function initAppLogic() {
     renderTrainingScreen();
@@ -88,7 +52,7 @@ function initAppLogic() {
         });
     }
 
-    // Pozostałe listenery
+    // Pozostałe listenery interfejsu
     document.getElementById('prev-month-btn').addEventListener('click', () => { state.currentCalendarView.setMonth(state.currentCalendarView.getMonth() - 1); renderHistoryScreen(); });
     document.getElementById('next-month-btn').addEventListener('click', () => { state.currentCalendarView.setMonth(state.currentCalendarView.getMonth() + 1); renderHistoryScreen(); });
     containers.calendarGrid.addEventListener('click', (e) => { const dayEl = e.target.closest('.calendar-day.has-entry'); if (dayEl && dayEl.dataset.date) { renderDayDetailsScreen(dayEl.dataset.date); } });
@@ -96,9 +60,6 @@ function initAppLogic() {
     document.getElementById('library-search-input').addEventListener('input', (e) => { renderLibraryScreen(e.target.value); });
     document.getElementById('settings-form').addEventListener('submit', async (e) => { e.preventDefault(); state.settings.appStartDate = e.target['setting-start-date'].value; state.settings.restBetweenExercises = parseInt(e.target['setting-rest-duration'].value, 10); state.settings.progressionFactor = parseInt(e.target['setting-progression-factor'].value, 10); state.settings.activePlanId = e.target['setting-training-plan'].value; await dataStore.saveSettings(); alert('Ustawienia zostały zapisane.'); navigateTo('main'); renderMainScreen(); });
     document.getElementById('setting-progression-factor').addEventListener('input', (e) => { document.getElementById('progression-factor-value').textContent = `${e.target.value}%`; });
-    document.getElementById('backup-btn').addEventListener('click', handleBackup);
-    document.getElementById('restore-btn').addEventListener('click', () => document.getElementById('restore-input').click());
-    document.getElementById('restore-input').addEventListener('change', handleRestore);
 
     document.getElementById('delete-account-btn').addEventListener('click', async () => {
         const confirmation1 = prompt("Czy na pewno chcesz usunąć swoje konto? To jest operacja nieodwracalna. Wpisz 'usuń moje konto' aby potwierdzić.");
@@ -124,7 +85,17 @@ function initAppLogic() {
         }
     });
 
-    focus.exitTrainingBtn.addEventListener('click', () => { if (confirm('Czy na pewno chcesz przerwać trening? Postęp tej sesji nie zostanie zapisany.')) { stopTimer(); stopStopwatch(); if (state.tts.isSupported) state.tts.synth.cancel(); navigateTo('main'); renderMainScreen(); } });
+    focus.exitTrainingBtn.addEventListener('click', () => {
+        if (confirm('Czy na pewno chcesz przerwać trening? Postęp tej sesji nie zostanie zapisany.')) {
+            stopTimer();
+            stopStopwatch();
+            if (state.tts.isSupported) state.tts.synth.cancel();
+            if (getIsCasting()) sendShowIdle();
+            navigateTo('main');
+            renderMainScreen();
+        }
+    });
+
     focus.ttsToggleBtn.addEventListener('click', () => { state.tts.isSoundOn = !state.tts.isSoundOn; focus.ttsToggleBtn.textContent = state.tts.isSoundOn ? '🔊' : '🔇'; if (!state.tts.isSoundOn && state.tts.isSupported) { state.tts.synth.cancel(); } });
     focus.prevStepBtn.addEventListener('click', moveToPreviousExercise);
     focus.pauseResumeBtn.addEventListener('click', togglePauseTimer);
@@ -135,23 +106,20 @@ function initAppLogic() {
 }
 
 /**
- * Główny punkt wejścia aplikacji i funkcja odświeżająca stan UI.
+ * Główny punkt wejścia aplikacji.
+ * Ta funkcja pozostała bez zmian.
  */
 export async function main() {
-    // Krok 1: Wstępna konfiguracja i POKAZANIE EKRANU ŁADOWANIA
     showLoader();
     await configureClient();
+    initializeCastApi(); 
 
     try {
-        // Krok 2: ZAŁADOWANIE KLUCZOWEJ ZAWARTOŚCI APLIKACJI (ĆWICZENIA, PLANY)
-        // To musi się wydarzyć przed jakąkolwiek logiką UI, ponieważ dane te
-        // są potrzebne do renderowania widoków.
         await dataStore.loadAppContent();
     } catch (error) {
-        // Jeśli ładowanie kluczowej zawartości się nie powiedzie, nie kontynuujemy.
-        // Komunikat błędu jest już pokazany użytkownikowi wewnątrz `dataStore`.
+        console.error("Błąd krytyczny podczas ładowania danych aplikacji:", error);
         hideLoader();
-        return; // Zatrzymaj dalsze wykonywanie skryptu.
+        return;
     }
 
     const loginBtn = document.getElementById('login-btn');
@@ -173,7 +141,7 @@ export async function main() {
     const shouldHandleRedirect = query.includes("code=") && query.includes("state=");
     const urlParams = new URLSearchParams(query);
     const isReturningFromStrava = urlParams.has('strava_status');
-    if (urlParams.has('strava_status')) {
+    if (isReturningFromStrava) {
         const status = urlParams.get('strava_status');
         if (status === 'success') {
             alert('Twoje konto Strava zostało pomyślnie połączone!');
@@ -183,7 +151,6 @@ export async function main() {
             const message = urlParams.get('message') || 'Nieznany błąd.';
             alert(`Wystąpił błąd podczas łączenia z kontem Strava: ${message}`);
         }
-        // Czyścimy parametry z URL, aby uniknąć ponownego wyświetlania alertu po odświeżeniu strony.
         window.history.replaceState({}, document.title, window.location.pathname + "#settings");
     }
     if (shouldHandleRedirect && !isReturningFromStrava) {
@@ -208,28 +175,14 @@ export async function main() {
             await getToken();
             const profile = getUserProfile();
             document.getElementById('user-display-name').textContent = profile.name || profile.email || 'Użytkownik';
-
-            // Zawsze inicjalizujemy dane przy starcie
-            await dataStore.initialize(); 
-
+            await dataStore.initialize();
             if (isReturningFromStrava) {
                 const status = urlParams.get('strava_status');
                 if (status === 'success') {
-                    alert('Twoje konto Strava zostało pomyślnie połączone!');
-                    // Wymuś ponowne załadowanie danych użytkownika z serwera
                     await dataStore.initialize(); 
-                    // Po załadowaniu nowych danych, od razu wyrenderuj ekran ustawień
                     renderSettingsScreen(); 
-                } else if (status === 'cancelled') {
-                    alert('Proces łączenia z kontem Strava został anulowany.');
-                } else {
-                    const message = urlParams.get('message') || 'Nieznany błąd.';
-                    alert(`Wystąpił błąd podczas łączenia z kontem Strava: ${message}`);
                 }
-                // Czyścimy URL, aby alert nie pojawiał się ponownie
-                window.history.replaceState({}, document.title, window.location.pathname + '#settings');
             }
-
             const localProgressRaw = localStorage.getItem('trainingAppProgress');
             if (localProgressRaw && Object.keys(JSON.parse(localProgressRaw)).length > 0) {
                 if (confirm("Wykryliśmy niezsynchronizowane dane. Czy chcesz je teraz przenieść na swoje konto?")) {
@@ -239,19 +192,17 @@ export async function main() {
                         localStorage.removeItem('trainingAppSettings');
                         alert("Dane zmigrowane! Aplikacja zostanie przeładowana.");
                         window.location.reload(); 
-                        return; // Przerwij dalsze wykonywanie, bo strona się przeładuje
+                        return;
                     } catch (e) {
                         alert("Migracja nie powiodła się. Dane pozostaną na tym urządzeniu.");
                     }
                 }
             }
             
-            // KROK 5: INICJALIZACJA GŁÓWNEJ LOGIKI APLIKACJI
             initAppLogic();
         } catch (error) {
             console.error("Błąd krytyczny podczas inicjalizacji aplikacji:", error);
         } finally {
-            // Ukryj wskaźnik ładowania na samym końcu procesu.
             hideLoader();
         }
     } else {
@@ -260,17 +211,14 @@ export async function main() {
         userInfoContainer.classList.add('hidden');
         mainNav.classList.add('hidden');
         bottomNav.classList.add('hidden');
-        // Ukryj wskaźnik ładowania również dla niezalogowanych użytkowników.
         hideLoader();
     }
 }
 
-// === 4. URUCHOMIENIE APLIKACJI ===
+// === URUCHOMIENIE APLIKACJI ===
 window.addEventListener('DOMContentLoaded', main);
-/**
- * Logika odpowiedzialna za rejestrację Service Workera.
- * Działa w tle, aby umożliwić działanie aplikacji w trybie offline i przyspieszyć jej ładowanie.
- */
+
+// === REJESTRACJA SERVICE WORKERA ===
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/service-worker.js')

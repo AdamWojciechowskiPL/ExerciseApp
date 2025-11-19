@@ -5,6 +5,7 @@ import { screens, containers, mainNav, initializeFocusElements } from './dom.js'
 import { getISODate, getTrainingDayForDate, applyProgression, getHydratedDay, getActiveTrainingPlan, getLocalISOString } from './utils.js';
 import { startModifiedTraining } from './training.js';
 import dataStore from './dataStore.js';
+import { sendPlayVideo, sendStopVideo, getIsCasting, sendShowIdle } from './cast.js';
 
 const loadingOverlay = document.getElementById('loading-overlay');
 
@@ -49,7 +50,6 @@ export function handleSummarySubmit(e) {
     const activePlan = state.trainingPlans[state.settings.activePlanId];
     const trainingDay = activePlan ? activePlan.Days.find(d => d.dayNumber === state.currentTrainingDayId) : null;
     
-    // Używamy nowej funkcji pomocniczej do formatowania czasu
     const now = new Date();
     const sessionPayload = {
         sessionId: Date.now(),
@@ -59,21 +59,17 @@ export function handleSummarySubmit(e) {
         status: 'completed',
         pain_during: document.getElementById('pain-during').value,
         notes: document.getElementById('general-notes').value,
-        // --- ZMIANA FORMATU DATY ---
-        startedAt: getLocalISOString(state.sessionStartTime), 
-        completedAt: getLocalISOString(now),
-        // --- KONIEC ZMIANY ---
+        startedAt: state.sessionStartTime.toISOString(), 
+        completedAt: now.toISOString(),
+        
         sessionLog: state.sessionLog,
     };
-    
+
     if (!state.userProgress[dateKey]) {
         state.userProgress[dateKey] = [];
     }
     state.userProgress[dateKey].push(sessionPayload);
     
-    // Wysyłamy dane do naszej bazy
-    // PostgreSQL jest wystarczająco inteligentny, by poprawnie zinterpretować
-    // lokalny czas i zapisać go w kolumnie TIMESTAMPTZ.
     dataStore.saveSession(sessionPayload);
 
     const stravaCheckbox = document.getElementById('strava-sync-checkbox');
@@ -81,7 +77,6 @@ export function handleSummarySubmit(e) {
         dataStore.uploadToStrava(sessionPayload);
     }
     
-    // Reset stanu
     state.currentTrainingDate = null;
     state.currentTrainingDayId = null;
     state.sessionLog = [];
@@ -92,7 +87,6 @@ export function handleSummarySubmit(e) {
 }
 
 
-// === POPRAWIONA FUNKCJA navigateTo (BEZ ZMIAN W CSS) ===
 export const navigateTo = (screenName) => {
     if (screenName === 'training') {
         wakeLockManager.request();
@@ -103,26 +97,20 @@ export const navigateTo = (screenName) => {
     const bottomNav = document.getElementById('app-bottom-nav');
     const footer = document.getElementById('app-footer');
 
-    // Logika do ukrywania/pokazywania nawigacji i stopki
     if (screenName === 'training') {
         screens.training.classList.add('active');
-        // Ukrywamy nawigacje i stopkę, dodając styl inline
         mainNav.style.display = 'none';
         if (bottomNav) bottomNav.style.display = 'none';
         if (footer) footer.style.display = 'none';
     } else {
         screens.training.classList.remove('active');
-        // Odsłaniamy nawigacje i stopkę, USUWAJĄC styl inline.
-        // To pozwala plikowi CSS ponownie przejąć pełną kontrolę nad ich widocznością.
-        mainNav.style.display = ''; // Usunięcie stylu przywraca kontrolę CSS
-        if (bottomNav) bottomNav.style.display = ''; // Usunięcie stylu przywraca kontrolę CSS
-        if (footer) footer.style.display = ''; // Usunięcie stylu przywraca kontrolę CSS
+        mainNav.style.display = '';
+        if (bottomNav) bottomNav.style.display = '';
+        if (footer) footer.style.display = '';
         
-        // Logika przełączania ekranów
         Object.values(screens).forEach(s => { if (s) s.classList.remove('active'); });
         if (screens[screenName]) screens[screenName].classList.add('active');
 
-        // Logika aktywnego przycisku w dolnym menu
         if (bottomNav) {
             const bottomNavButtons = bottomNav.querySelectorAll('.bottom-nav-btn');
             bottomNavButtons.forEach(btn => {
@@ -192,7 +180,6 @@ export const renderHistoryScreen = async () => {
         const year = date.getFullYear();
         const month = date.getMonth() + 1;
 
-        // Pobierz historię dla wybranego miesiąca z serwera
         await dataStore.getHistoryForMonth(year, month);
         
         document.getElementById('month-year-header').textContent = date.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' });
@@ -202,10 +189,8 @@ export const renderHistoryScreen = async () => {
         const firstDayOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
         const lastDayOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0);
         let startDay = firstDayOfMonth.getDay();
-        // Dostosuj początek tygodnia do poniedziałku
         if (startDay === 0) startDay = 7; 
         
-        // Dodaj puste komórki dla dni z poprzedniego miesiąca
         for (let i = 1; i < startDay; i++) { 
             grid.innerHTML += `<div class="calendar-day other-month"></div>`; 
         }
@@ -281,7 +266,6 @@ export const renderDayDetailsScreen = (isoDate) => {
             timeDetailsHtml = `<p><strong>Czas ukończenia:</strong> ${completedTime}</p>`;
         }
 
-        // --- TUTAJ BYŁ BŁĄD - TERAZ JEST POPRAWIONY I KOMPLETNY KOD ---
         const exercisesHtml = session.sessionLog && session.sessionLog.length > 0 ? session.sessionLog.map(item => `
             <div class="details-exercise-item">
                 <div class="details-exercise-info">
@@ -293,7 +277,6 @@ export const renderDayDetailsScreen = (isoDate) => {
                 </div>
             </div>
         `).join('') : '<p>Brak szczegółowego logu dla tej sesji.</p>';
-        // --- KONIEC POPRAWKI ---
 
         return `
             <details class="details-session-card" open>
@@ -435,18 +418,64 @@ export const renderSettingsScreen = () => {
     navigateTo('settings');
 };
 
+// ZMODYFIKOWANA FUNKCJA RENDERLIBRARYSCREEN
 export const renderLibraryScreen = (searchTerm = '') => {
     const container = containers.exerciseLibrary;
     container.innerHTML = '';
     const lowerCaseSearchTerm = searchTerm.toLowerCase();
-    Object.values(state.exerciseLibrary).filter(exercise => exercise.name.toLowerCase().includes(lowerCaseSearchTerm) || exercise.description.toLowerCase().includes(lowerCaseSearchTerm)).forEach(exercise => {
-        const card = document.createElement('div');
-        card.className = 'library-card';
-        card.innerHTML = `<div class="card-header"><h3>${exercise.name}</h3></div><p class="library-card-description">${exercise.description}</p><div class="library-card-footer"><p><strong>Sprzęt:</strong> ${exercise.equipment || 'Brak'}</p><a href="${exercise.youtube_url}" target="_blank" rel="noopener noreferrer" class="nav-btn">Obejrzyj wideo ↗</a></div>`;
-        container.appendChild(card);
-    });
+
+    Object.values(state.exerciseLibrary)
+        .filter(exercise => 
+            exercise.name.toLowerCase().includes(lowerCaseSearchTerm) || 
+            exercise.description.toLowerCase().includes(lowerCaseSearchTerm)
+        )
+        .forEach(exercise => {
+            const card = document.createElement('div');
+            card.className = 'library-card';
+            const youtubeIdMatch = exercise.youtube_url.match(/(?:v=|\/)([a-zA-Z0-9_-]{11})(?:\?|&|$)/);
+            const youtubeId = youtubeIdMatch ? youtubeIdMatch[1] : null;
+
+            card.innerHTML = `
+                <div class="card-header"><h3>${exercise.name}</h3></div>
+                <p class="library-card-description">${exercise.description}</p>
+                <div class="library-card-footer">
+                    <p><strong>Sprzęt:</strong> ${exercise.equipment || 'Brak'}</p>
+                    <div>
+                        <button class="nav-btn cast-video-btn" data-youtube-id="${youtubeId}" ${!youtubeId ? 'disabled' : ''}>Rzutuj 📺</button>
+                        <a href="${exercise.youtube_url}" target="_blank" rel="noopener noreferrer" class="nav-btn">Obejrzyj ↗</a>
+                    </div>
+                </div>`;
+            container.appendChild(card);
+        });
+
+    // Delegacja zdarzeń na kontenerze, aby uniknąć wielokrotnego dodawania listenerów
+    const eventHandler = (e) => {
+        if (e.target.classList.contains('cast-video-btn')) {
+            const youtubeId = e.target.dataset.youtubeId;
+            if (youtubeId && getIsCasting()) {
+                sendPlayVideo(youtubeId);
+                e.target.textContent = "Zatrzymaj ⏹️";
+                e.target.classList.replace('cast-video-btn', 'stop-cast-video-btn');
+            } else if (!getIsCasting()) {
+                alert("Najpierw połącz się z urządzeniem Chromecast, używając ikony w nagłówku.");
+            }
+        } else if (e.target.classList.contains('stop-cast-video-btn')) {
+            sendStopVideo();
+            e.target.textContent = "Rzutuj 📺";
+            e.target.classList.replace('stop-cast-video-btn', 'cast-video-btn');
+        }
+    };
+    
+    // Usuń stary listener, jeśli istnieje, i dodaj nowy
+    if (container.eventListener) {
+        container.removeEventListener('click', container.eventListener);
+    }
+    container.addEventListener('click', eventHandler);
+    container.eventListener = eventHandler;
+
     navigateTo('library');
 };
+
 
 export const renderPreTrainingScreen = (dayId) => {
     state.currentTrainingDayId = dayId;
@@ -499,6 +528,9 @@ export const renderPreTrainingScreen = (dayId) => {
 };
 
 export const renderSummaryScreen = () => {
+    if (getIsCasting()) {
+        sendShowIdle();
+    }
     const activePlan = state.trainingPlans[state.settings.activePlanId];
     if (!activePlan) return;
     const trainingDay = activePlan.Days.find(d => d.dayNumber === state.currentTrainingDayId);

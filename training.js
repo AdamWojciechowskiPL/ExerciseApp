@@ -314,18 +314,6 @@ export async function startModifiedTraining() {
         ...generateFlatExercises(modifiedDay)
     ];
     
-    if (getIsCasting()) {
-        const queueItemsForReceiver = state.flatExercises.map((exercise, index) => ({
-            id: `step-${index}`,
-            title: exercise.isWork ? `${exercise.name} (Seria ${exercise.currentSet}/${exercise.totalSets})` : exercise.name,
-            subtitle: exercise.isWork ? `Czas/Powt: ${exercise.reps_or_time}` : 'Przerwa'
-        }));
-
-        // POPRAWKA: Używamy publicznej funkcji sendSetupQueue, a nie wewnętrznej sendMessage
-        const { sendSetupQueue } = await import('./cast.js');
-        sendSetupQueue(queueItemsForReceiver);
-    }
-    
     navigateTo('training');
     startExercise(0);
 }

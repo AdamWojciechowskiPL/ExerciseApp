@@ -72,7 +72,6 @@ context.addCustomMessageListener(CUSTOM_NAMESPACE, (event) => {
 
         case 'STOP_VIDEO':
             stopVideo();
-            simulateMediaPlayback(); // Przywróć "fake queue"
             showScreen('training'); // Zazwyczaj wracamy do treningu
             break;
             
@@ -219,10 +218,9 @@ context.addEventListener(cast.framework.system.EventType.READY, () => {
 });
 
 context.addEventListener(cast.framework.system.EventType.SENDER_DISCONNECTED, (event) => {
-    // Jeśli nie ma już podłączonych nadawców, zamknij aplikację na TV
-    if (context.getSenders().length === 0) {
-        window.close();
-    }
+    console.log('[Receiver] Nadawca rozłączony. Oczekiwanie na ponowne połączenie lub timeout bezczynności.');
+    // NIE wywołuj window.close(). 
+    // Niech o zamknięciu decyduje 'maxInactivity' (które masz ustawione na 3600s).
 });
 
 // Konfiguracja i start

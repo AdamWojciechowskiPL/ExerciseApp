@@ -29,10 +29,20 @@ exports.handler = async (event) => {
     // To jest format, którego oczekuje frontend (identyczny jak w starym pliku exercise-library.js).
     const exercises = exercisesResult.rows.reduce((acc, exercise) => {
       acc[exercise.id] = {
+        // Stare pola
         name: exercise.name,
         description: exercise.description,
         equipment: exercise.equipment,
         youtube_url: exercise.youtube_url,
+        
+        // --- NOWE POLA (TASK-03 - EPIK 1) ---
+        categoryId: exercise.category_id,
+        difficultyLevel: exercise.difficulty_level,
+        maxDuration: exercise.max_recommended_duration,
+        maxReps: exercise.max_recommended_reps,
+        nextProgressionId: exercise.next_progression_id,
+        painReliefZones: exercise.pain_relief_zones || [] // Zwracamy pustą tablicę, jeśli null
+        // ------------------------------------
       };
       return acc;
     }, {});

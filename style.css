@@ -279,119 +279,165 @@ main {
 /* ============================================= */
 /* === 5. HERO DASHBOARD (GAMIFIKACJA) === */
 /* ============================================= */
+
 #hero-dashboard {
-    background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+    background: linear-gradient(160deg, #0f1c2e 0%, var(--primary-color) 100%);
     color: var(--light-text-color);
     border-radius: var(--radius-lg);
     padding: 1.5rem;
     margin-bottom: 2rem;
-    box-shadow: 0 8px 20px rgba(0, 95, 115, 0.25);
-    display: flex;
-    align-items: center;
-    gap: 1.5rem;
+    box-shadow: 0 10px 30px rgba(0, 95, 115, 0.3);
     position: relative;
     overflow: hidden;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 1.5rem;
+    align-items: center;
 }
 
+/* Efekt tła */
 #hero-dashboard::before {
     content: '';
     position: absolute;
-    top: -50%;
-    left: -50%;
-    width: 200%;
-    height: 200%;
-    background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 60%);
+    top: -50%; left: -10%;
+    width: 150%; height: 200%;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.05) 0%, transparent 60%);
     pointer-events: none;
 }
 
-.hero-avatar-container {
-    flex-shrink: 0;
-    width: 80px;
-    height: 80px;
-    background: rgba(255, 255, 255, 0.15);
-    border-radius: 50%;
-    padding: 6px;
+/* --- 1. LEWA STRONA: AWATAR Z PASKIEM POSTĘPU --- */
+.hero-avatar-wrapper {
+    position: relative;
+    width: 100px;
+    height: 100px;
     display: flex;
     justify-content: center;
     align-items: center;
-    border: 2px solid rgba(255, 255, 255, 0.4);
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+/* Okrągły pasek postępu (Progress Ring) */
+.progress-ring {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    border-radius: 50%;
+    /* Magia CSS: Tworzymy wykres kołowy */
+    background: conic-gradient(
+        var(--gold-color) var(--progress-deg, 0deg), 
+        rgba(255, 255, 255, 0.1) 0deg
+    );
+    /* Maska wycina środek, tworząc pierścień */
+    -webkit-mask: radial-gradient(transparent 55%, black 56%);
+    mask: radial-gradient(transparent 55%, black 56%);
+    box-shadow: 0 0 15px rgba(233, 196, 106, 0.3);
+    transition: --progress-deg 1s ease-out;
 }
 
 .hero-avatar {
-    width: 100%;
-    height: 100%;
-    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
-}
-
-.hero-stats {
-    flex-grow: 1;
+    width: 84%; /* Mniejszy niż ring, żeby pasował do środka */
+    height: 84%;
+    border-radius: 50%;
     z-index: 1;
+    border: 3px solid var(--primary-color); /* Odstęp od paska */
+    object-fit: cover;
 }
 
-.hero-header {
+/* Badge z poziomem na awatarze */
+.level-badge {
+    position: absolute;
+    bottom: -5px;
+    background: var(--gold-color);
+    color: #000;
+    font-size: 0.75rem;
+    font-weight: 800;
+    padding: 2px 8px;
+    border-radius: 10px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    z-index: 2;
+}
+
+/* --- 2. PRAWA STRONA: STATYSTYKI --- */
+.hero-content {
+    z-index: 1;
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.5rem;
+    flex-direction: column;
+    justify-content: center;
 }
 
-.hero-level {
-    font-size: 0.85rem;
+.hero-rank-title {
+    font-size: 1.4rem;
+    font-weight: 800;
+    margin: 0 0 0.5rem 0;
     text-transform: uppercase;
     letter-spacing: 1px;
-    opacity: 0.9;
-    font-weight: 700;
+    line-height: 1;
+    background: linear-gradient(90deg, #fff, #ccc);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
 }
 
-.hero-streak {
+/* Grid dla metryk (Streak & Shield) */
+.hero-metrics-grid {
+    display: flex;
+    gap: 1rem;
+}
+
+.metric-item {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 0.5rem 0.8rem;
+    border-radius: 8px;
     display: flex;
     align-items: center;
-    gap: 6px;
-    background: rgba(0, 0, 0, 0.25);
-    padding: 4px 10px;
-    border-radius: 20px;
-    font-size: 0.8rem;
-    font-weight: 600;
+    gap: 8px;
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.streak-icon {
-    width: 14px;
-    height: 14px;
+.metric-icon {
+    width: 20px;
+    height: 20px;
 }
 
-.hero-title {
-    font-size: 1.5rem;
-    font-weight: 800;
-    margin: 0 0 0.75rem 0;
+.metric-text {
+    display: flex;
+    flex-direction: column;
+}
+
+.metric-label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    opacity: 0.7;
+    letter-spacing: 0.5px;
+}
+
+.metric-value {
+    font-size: 0.95rem;
+    font-weight: 700;
     line-height: 1.1;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.xp-bar-container {
-    background: rgba(0, 0, 0, 0.3);
-    height: 8px;
-    border-radius: 4px;
-    width: 100%;
-    position: relative;
-    overflow: hidden;
+/* Kolory tarczy w zależności od stanu */
+.shield-score.strong { color: var(--success-color); }
+.shield-score.stable { color: var(--gold-color); }
+.shield-score.vulnerable { color: var(--danger-color); }
+.shield-score.critical { color: #ff4444; animation: pulse-text 2s infinite; }
+
+@keyframes pulse-text {
+    0% { opacity: 1; }
+    50% { opacity: 0.6; }
+    100% { opacity: 1; }
 }
 
-.xp-bar-fill {
-    height: 100%;
-    background: var(--gold-color);
-    width: 0%;
-    border-radius: 4px;
-    transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 0 10px rgba(233, 196, 106, 0.6);
-}
-
-.xp-text {
-    font-size: 0.75rem;
-    margin-top: 6px;
-    text-align: right;
-    opacity: 0.8;
+/* Mobile adjustments */
+@media (max-width: 480px) {
+    #hero-dashboard {
+        grid-template-columns: 1fr; /* Stack on mobile */
+        text-align: center;
+        justify-items: center;
+        gap: 1rem;
+    }
+    .hero-metrics-grid {
+        justify-content: center;
+    }
 }
 
 /* ============================================= */
@@ -1268,4 +1314,744 @@ input[type="range"] {
     .desktop-only {
         display: inline-block !important;
     }
+}
+
+/* Tło przyciemniające */
+.modal-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 2000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+    animation: fadeIn 0.2s forwards;
+    backdrop-filter: blur(2px);
+}
+
+/* Okno Modala */
+.swap-modal {
+    background: #fff;
+    width: 90%;
+    max-width: 500px;
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+    transform: translateY(20px);
+    animation: slideUp 0.2s forwards;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.swap-modal h3 {
+    margin-top: 0;
+    color: var(--primary-color);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.8rem;
+    margin-bottom: 1rem;
+}
+
+.swap-options-list {
+    overflow-y: auto;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+}
+
+/* Karta Alternatywy */
+.alt-exercise-card {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.alt-exercise-card:hover {
+    border-color: var(--secondary-color);
+    background: rgba(10, 147, 150, 0.05);
+}
+
+.alt-exercise-card.selected {
+    border-color: var(--primary-color);
+    background: rgba(0, 95, 115, 0.1);
+    border-width: 2px;
+}
+
+.alt-info h4 { margin: 0 0 0.3rem 0; font-size: 1rem; }
+.alt-info p { margin: 0; font-size: 0.8rem; color: var(--muted-text-color); }
+.alt-badge {
+    font-size: 0.7rem;
+    background: #eee;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-right: 5px;
+}
+
+/* Sekcja Akcji (Dół modala) */
+.swap-actions {
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+}
+
+.swap-type-toggle {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 0.5rem;
+}
+
+.toggle-btn {
+    flex: 1;
+    padding: 8px;
+    border: 1px solid var(--border-color);
+    background: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+.toggle-btn.active {
+    background: var(--primary-color);
+    color: #fff;
+    border-color: var(--primary-color);
+}
+
+@keyframes slideUp {
+    to { transform: translateY(0); }
+}
+
+
+.adjustment-panel {
+    background: #fff;
+    border: 1px solid var(--primary-color);
+    border-left: 5px solid var(--primary-color);
+    border-radius: var(--radius-md);
+    padding: 1rem 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+
+.adjustment-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.adjustment-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    color: var(--primary-color);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.time-factor-display {
+    font-weight: 800;
+    color: var(--text-color);
+    background: var(--background-color);
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+/* Modyfikacja nagłówka karty ćwiczenia dla przycisku Swap */
+.exercise-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.exercise-card-header h4 {
+    margin: 0;
+    flex-grow: 1;
+}
+
+.swap-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    color: var(--muted-text-color);
+    transition: color 0.2s, transform 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.swap-btn:hover {
+    color: var(--secondary-color);
+    background: rgba(10, 147, 150, 0.1);
+    border-radius: 50%;
+    transform: rotate(180deg);
+}
+
+.swap-icon {
+    width: 20px;
+    height: 20px;
+}
+
+/* Kontener na nagłówek sekcji "Dziś" */
+.section-title {
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--muted-text-color);
+    margin: 1.5rem 0 0.5rem 0;
+    font-weight: 700;
+}
+
+/* Karta Misji (Wyróżniona) */
+.mission-card {
+    background: #fff;
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    box-shadow: 0 8px 25px rgba(0, 95, 115, 0.15);
+    border: 2px solid var(--primary-color); /* Wyróżnienie */
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 2rem;
+}
+
+/* Ozdobny pasek na górze */
+.mission-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 6px;
+    background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+}
+
+.mission-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+}
+
+.mission-day-badge {
+    background: var(--primary-color);
+    color: #fff;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.mission-title {
+    font-size: 1.4rem;
+    margin: 0.5rem 0;
+    color: var(--text-color);
+}
+
+/* Wellness Check-in (Selektor Bólu) */
+.wellness-section {
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.wellness-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--muted-text-color);
+    margin-bottom: 0.8rem;
+    display: flex;
+    justify-content: space-between;
+}
+
+.pain-selector {
+    display: flex;
+    justify-content: space-between;
+    gap: 5px;
+    margin-bottom: 1rem;
+}
+
+.pain-option {
+    background: var(--background-color);
+    border: 2px solid transparent;
+    border-radius: 12px;
+    padding: 10px 5px;
+    flex: 1;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+    font-size: 1.5rem; /* Rozmiar emoji */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+}
+
+.pain-option span {
+    font-size: 0.6rem;
+    font-weight: 600;
+    color: var(--muted-text-color);
+}
+
+/* Stany aktywne selektora */
+.pain-option:hover { transform: translateY(-3px); }
+
+.pain-option.selected {
+    background: #fff;
+    border-color: var(--primary-color);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    transform: scale(1.05);
+}
+
+/* Kolorowanie w zależności od wyboru (JS doda klasy) */
+.pain-option[data-level="0"].selected { border-color: var(--success-color); background: #e6fffa; }
+.pain-option[data-level="3"].selected { border-color: #9acd32; background: #f0fff4; }
+.pain-option[data-level="5"].selected { border-color: var(--inprogress-color); background: #fffaf0; }
+.pain-option[data-level="7"].selected { border-color: #ff8c00; background: #fff5eb; }
+.pain-option[data-level="9"].selected { border-color: var(--danger-color); background: #fff5f5; }
+
+/* Estymowany czas (Dynamiczny) */
+.estimated-time-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--primary-color);
+    background: rgba(0, 95, 115, 0.1);
+    padding: 4px 10px;
+    border-radius: 20px;
+    transition: color 0.3s, background 0.3s;
+}
+
+/* Zmiana koloru czasu, gdy trening jest skrócony */
+.estimated-time-badge.reduced {
+    color: var(--danger-color);
+    background: rgba(231, 111, 81, 0.15);
+}
+
+/* Kontener na tagi */
+.library-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px; /* Odstęp od opisu */
+}
+
+/* Wspólny styl pigułki */
+.meta-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 6px; /* Modern "squircle" look */
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    line-height: 1;
+}
+
+/* 1. Styl Kategorii (Szary/Neutralny) */
+.badge-category {
+    background-color: #f1f5f9;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+}
+
+/* 2. Style Poziomów Trudności (Dynamiczne kolory) */
+.badge-lvl-1, .badge-lvl-2 {
+    background-color: rgba(42, 157, 143, 0.15); /* Success Light */
+    color: #264653;
+    border: 1px solid rgba(42, 157, 143, 0.3);
+}
+
+.badge-lvl-3 {
+    background-color: rgba(233, 196, 106, 0.2); /* Warning Light */
+    color: #b45309;
+    border: 1px solid rgba(233, 196, 106, 0.4);
+}
+
+.badge-lvl-4, .badge-lvl-5 {
+    background-color: rgba(231, 111, 81, 0.15); /* Danger Light */
+    color: #9f1239;
+    border: 1px solid rgba(231, 111, 81, 0.3);
+}
+
+/* 3. Sprzęt (Zamiast tekstu w stopce, dajemy jako tag) */
+.badge-equipment {
+    background-color: rgba(0, 95, 115, 0.08);
+    color: var(--primary-color);
+    border: 1px solid rgba(0, 95, 115, 0.2);
+}
+
+/* Poprawka dla stopki karty (usuwamy stary tekst sprzętu) */
+.library-card-footer {
+    margin-top: 1rem;
+    padding-top: 0.8rem;
+    border-top: 1px solid #eee;
+    display: flex;
+    justify-content: flex-end; /* Przyciski do prawej */
+}
+
+/* style.css - LIBRARY FILTERS */
+
+.filters-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+    margin-bottom: 1.5rem;
+    background: #fff;
+    padding: 10px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+}
+
+.filter-select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    background-color: var(--background-color);
+    color: var(--text-color);
+    cursor: pointer;
+    outline: none;
+}
+
+.filter-select:focus {
+    border-color: var(--primary-color);
+    background-color: #fff;
+}
+
+.filter-reset-btn {
+    background: none;
+    border: 1px solid var(--danger-color);
+    color: var(--danger-color);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+
+.filter-reset-btn:hover {
+    background: var(--danger-color);
+    color: #fff;
+}
+
+/* Mobile fix dla filtrów */
+@media (max-width: 600px) {
+    .filters-container {
+        grid-template-columns: 1fr 1fr; /* Dwie kolumny na telefonie */
+    }
+    .filter-reset-btn {
+        grid-column: span 2; /* Przycisk reset na całą szerokość */
+    }
+}
+
+/* style.css - TRAINING CARD REDESIGN */
+
+.training-card {
+    background: #fff;
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+    border: 1px solid var(--border-color);
+    transition: transform 0.2s, box-shadow 0.2s;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Kolorowy pasek z lewej strony (akcent) */
+.training-card::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 6px;
+    background: var(--secondary-color);
+}
+
+.training-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.8rem;
+    padding-left: 10px; /* Odstęp od paska */
+}
+
+.training-card-header h4 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: var(--text-color);
+    line-height: 1.3;
+    font-weight: 700;
+}
+
+/* Sekcja Metadanych (Tagi) */
+.training-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 1rem;
+    padding-left: 10px;
+}
+
+/* Sekcja Inputów (Grid 2 kolumny) */
+.training-inputs-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px dashed var(--border-color);
+}
+
+.input-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.input-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--muted-text-color);
+    letter-spacing: 0.5px;
+}
+
+/* Nowoczesny Input */
+.modern-input {
+    width: 100%;
+    padding: 12px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--primary-color);
+    background-color: #f8f9fa;
+    border: 2px solid transparent;
+    border-radius: 10px;
+    text-align: center;
+    transition: all 0.2s ease;
+    outline: none;
+}
+
+.modern-input:focus {
+    background-color: #fff;
+    border-color: var(--secondary-color);
+    box-shadow: 0 4px 12px rgba(10, 147, 150, 0.15);
+}
+
+/* Sekcja Footer (Tempo, Wideo) */
+.training-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1rem;
+    font-size: 0.85rem;
+    color: #666;
+    padding-left: 10px;
+}
+
+.tempo-badge {
+    background: rgba(0,0,0,0.05);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-family: monospace;
+}
+
+.video-link {
+    color: var(--secondary-color);
+    text-decoration: none;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.video-link:hover {
+    text-decoration: underline;
+}
+
+/* Ikona Swap (Dopasowanie do nowego nagłówka) */
+.swap-btn {
+    flex-shrink: 0;
+    background: #f1f5f9;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 10px;
+}
+.swap-btn:hover {
+    background: var(--primary-color);
+    color: #fff;
+}
+
+/* style.css - COMPLETED MISSION STATE */
+
+.mission-card.completed {
+    border-color: var(--success-color);
+    background: linear-gradient(165deg, #ffffff 60%, #f0fff4 100%);
+}
+
+.mission-card.completed::before {
+    background: var(--success-color);
+}
+
+.completed-header {
+    text-align: center;
+    padding: 1rem 0;
+    color: var(--success-color);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.completed-icon {
+    width: 48px;
+    height: 48px;
+    background: #dcfce7;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--success-color);
+    margin-bottom: 0.5rem;
+}
+
+.completed-title {
+    font-size: 1.5rem;
+    font-weight: 800;
+    margin: 0;
+    letter-spacing: -0.5px;
+    color: var(--text-color);
+}
+
+.completed-subtitle {
+    font-size: 0.9rem;
+    opacity: 0.7;
+    margin: 0;
+}
+
+.completed-stats {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    margin: 1.5rem 0;
+    padding: 1rem;
+    background: rgba(255,255,255,0.6);
+    border-radius: 12px;
+    border: 1px solid rgba(0,0,0,0.05);
+}
+
+.c-stat {
+    text-align: center;
+}
+.c-stat-val { font-weight: 800; font-size: 1.2rem; color: var(--primary-color); }
+.c-stat-label { font-size: 0.7rem; text-transform: uppercase; opacity: 0.6; letter-spacing: 1px; }
+
+.view-details-btn {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--muted-text-color);
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.view-details-btn:hover {
+    border-color: var(--success-color);
+    color: var(--success-color);
+    background: #fff;
+}
+
+/* style.css - POPRAWKA PRZYCISKÓW W MODALU SWAP */
+
+/* Wymuszamy identyczny wygląd dla obu przycisków w sekcji akcji modala */
+.swap-actions .nav-btn,
+.swap-actions .action-btn {
+    padding: 12px 16px;       /* Identyczny padding */
+    height: 48px;             /* Wymuszona, identyczna wysokość */
+    font-size: 1rem;          /* Identyczny rozmiar tekstu */
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;       /* Identyczne zaokrąglenie */
+    box-sizing: border-box;   /* Gwarancja, że border nie psuje wysokości */
+}
+
+/* Dodatkowe dopasowanie, aby 'Wymień' nie był zbyt dominujący */
+.swap-actions .action-btn {
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+/* Upewniamy się, że kontener przycisków ładnie je rozciąga */
+.swap-actions > div[style*="display:flex"] {
+    align-items: stretch; /* Rozciągnij do równej wysokości */
+}
+
+/* style.css - POPRAWKA GÓRNYCH PRZYCISKÓW (TOGGLE) */
+
+/* === OSTATECZNY FIX WYSOKOŚCI PRZYCISKÓW (MODAL) === */
+
+/* 1. Kontenery: Wymuszamy rozciąganie dzieci do równej wysokości */
+.swap-type-toggle,
+.swap-actions > div[style*="display:flex"] {
+    display: flex !important;
+    align-items: stretch !important; /* To klucz: przyciski muszą być równe */
+    gap: 10px !important;
+    margin-bottom: 10px;
+}
+
+/* 2. Wszystkie przyciski w modalu (Górne i Dolne) */
+.swap-modal .toggle-btn,
+.swap-modal .nav-btn,
+.swap-modal .action-btn {
+    /* Sztywna wysokość dla wszystkich */
+    height: 50px !important;
+    min-height: 50px !important;
+    max-height: 50px !important;
+    
+    /* Centrowanie zawartości */
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    
+    /* Resetowanie paddingów i marginesów */
+    padding: 0 10px !important;
+    margin: 0 !important;
+    
+    /* Tekst i Ramki */
+    font-size: 0.9rem !important;
+    line-height: 1 !important;
+    box-sizing: border-box !important;
+    border-width: 1px !important; /* Żeby border nie zmieniał wysokości */
+}
+
+/* 3. Poprawka dla Emoji i Ikon wewnątrz przycisków */
+/* Upewniamy się, że emoji nie rozpychają linii */
+.swap-modal button span,
+.swap-modal button svg,
+.swap-modal button img {
+    display: inline-flex !important;
+    vertical-align: middle !important;
+    line-height: 1 !important;
 }

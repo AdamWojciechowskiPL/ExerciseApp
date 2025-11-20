@@ -22,6 +22,7 @@ import { moveToNextExercise, moveToPreviousExercise } from './training.js';
 import { stopTimer, togglePauseTimer, stopStopwatch } from './timer.js';
 import { loadVoices } from './tts.js';
 import { initializeCastApi, getIsCasting, sendShowIdle } from './cast.js';
+import { assistant } from './assistantEngine.js';
 
 
 // === 2. GŁÓWNE FUNKCJE APLIKACJI ===
@@ -56,7 +57,6 @@ function initAppLogic() {
     document.getElementById('prev-month-btn').addEventListener('click', () => { state.currentCalendarView.setMonth(state.currentCalendarView.getMonth() - 1); renderHistoryScreen(); });
     document.getElementById('next-month-btn').addEventListener('click', () => { state.currentCalendarView.setMonth(state.currentCalendarView.getMonth() + 1); renderHistoryScreen(); });
     containers.calendarGrid.addEventListener('click', (e) => { const dayEl = e.target.closest('.calendar-day.has-entry'); if (dayEl && dayEl.dataset.date) { renderDayDetailsScreen(dayEl.dataset.date); } });
-    containers.days.addEventListener('click', (e) => { if (e.target.matches('.action-btn')) { renderPreTrainingScreen(parseInt(e.target.dataset.dayId, 10)); } });
     document.getElementById('library-search-input').addEventListener('input', (e) => { renderLibraryScreen(e.target.value); });
     document.getElementById('settings-form').addEventListener('submit', async (e) => { e.preventDefault(); state.settings.appStartDate = e.target['setting-start-date'].value; state.settings.progressionFactor = parseInt(e.target['setting-progression-factor'].value, 10); state.settings.activePlanId = e.target['setting-training-plan'].value; await dataStore.saveSettings(); alert('Ustawienia zostały zapisane.'); navigateTo('main'); renderMainScreen(); });
     document.getElementById('setting-progression-factor').addEventListener('input', (e) => { document.getElementById('progression-factor-value').textContent = `${e.target.value}%`; });

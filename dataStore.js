@@ -118,6 +118,8 @@ const dataStore = {
                 console.log('🏆 Statystyki użytkownika (Backend):', state.userStats);
             }
 
+            await dataStore.fetchBlacklist(); 
+
             return data;
         } catch (error) {
             console.error("Initialization failed:", error);
@@ -152,6 +154,47 @@ const dataStore = {
         } catch (error) {
             console.error("Failed to delete account:", error);
             throw new Error("Nie udało się usunąć konta. Spróbuj ponownie."); 
+        }
+    },
+
+    fetchBlacklist: async () => {
+        try {
+            const blacklistIds = await callAPI('manage-blacklist');
+            state.blacklist = blacklistIds || [];
+            console.log('🚫 Czarna lista pobrana:', state.blacklist);
+        } catch (error) {
+            console.error("Błąd pobierania czarnej listy:", error);
+            state.blacklist = [];
+        }
+    },
+
+    addToBlacklist: async (exerciseId, replacementId) => {
+        try {
+            await callAPI('manage-blacklist', {
+                method: 'POST',
+                body: { exerciseId, replacementId }
+            });
+            // Aktualizacja lokalnego stanu
+            if (!state.blacklist.includes(exerciseId)) {
+                state.blacklist.push(exerciseId);
+            }
+        } catch (error) {
+            console.error("Błąd dodawania do czarnej listy:", error);
+            alert("Nie udało się zapisać wykluczenia.");
+        }
+    },
+
+    removeFromBlacklist: async (exerciseId) => {
+        try {
+            await callAPI('manage-blacklist', {
+                method: 'DELETE',
+                body: { exerciseId }
+            });
+            // Aktualizacja lokalnego stanu
+            state.blacklist = state.blacklist.filter(id => id !== exerciseId);
+        } catch (error) {
+            console.error("Błąd usuwania z czarnej listy:", error);
+            alert("Nie udało się przywrócić ćwiczenia.");
         }
     },
 

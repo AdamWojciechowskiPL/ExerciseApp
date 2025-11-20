@@ -36,7 +36,8 @@ export const state = {
      * Struktura: { "planId": { name: "...", Days: [...] } }
      */
     trainingPlans: {},
-    // --- KONIEC NOWYCH WŁAŚCIWOŚCI ---
+
+    blacklist: [],
 
     stravaIntegration: {
         isConnected: false

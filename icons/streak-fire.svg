@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- Zewnętrzny płomień -->
+  <path d="M50 90 
+           Q25 80 25 55 
+           Q25 25 50 10 
+           Q75 25 75 55 
+           Q75 80 50 90 Z" 
+           fill="#e76f51"/>
+           
+  <!-- Środkowy płomień -->
+  <path d="M50 85 
+           Q35 75 35 60 
+           Q35 45 50 35 
+           Q65 45 65 60 
+           Q65 75 50 85 Z" 
+           fill="#e9c46a"/>
+           
+  <!-- Rdzeń (Błysk) -->
+  <path d="M50 75 
+           Q42 65 42 55 
+           Q42 50 50 45 
+           Q58 50 58 55 
+           Q58 65 50 75 Z" 
+           fill="#ffffff" opacity="0.8"/>
+</svg>

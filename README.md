@@ -1,136 +1,146 @@
-# Aplikacja Treningowa (Full-Stack PWA)
+# Aplikacja Treningowa (Full-Stack PWA + Gamification)
 
-W pełni funkcjonalna aplikacja PWA (Progressive Web App) do planowania i śledzenia treningów, zbudowana w architekturze full-stack. Umożliwia dynamiczne zarządzanie treścią, synchronizację danych w chmurze, bezpieczne uwierzytelnianie użytkowników oraz integrację z platformami zewnętrznymi, takimi jak Strava i Chromecast.
+Zaawansowana aplikacja PWA (Progressive Web App) do planowania i śledzenia treningów siłowych, zbudowana w architekturze serverless. Projekt ewoluował z prostego dziennika w **angażującą platformę treningową** z systemem grywalizacji, immersyjnym trybem "Focus" i integracją z dużym ekranem (Chromecast).
 
-## Cel Projektu
+## 🌟 Nowości w wersji 7.0
 
-Głównym celem aplikacji jest zapewnienie użytkownikom niezawodnego i spersonalizowanego narzędzia do realizacji planów treningowych. Dane każdego użytkownika, w tym historia i ustawienia, są bezpiecznie przechowywane w chmurze i powiązane z jego osobistym kontem, co gwarantuje prywatność i stały dostęp do postępów z dowolnego urządzenia.
+*   **Hero Dashboard (Grywalizacja):** System poziomów i rang. Użytkownik zdobywa doświadczenie za każdy trening.
+    *   **3 Rangi:** Początkujący (Kiełek), Adept (Hantle), Mistrz (Korona).
+    *   **Licznik Serii (Streak):** Ognista ikona śledzi dni treningowe z rzędu.
+*   **Nowoczesny UI/UX:**
+    *   **Header:** Nowoczesny pasek nawigacji typu "Single Row".
+    *   **Mobile-First:** Dedykowana dolna belka nawigacyjna z ikonami SVG na urządzeniach mobilnych.
+    *   **Karty Historii:** Przejrzysty układ z siatką statystyk i "zebrą" na liście ćwiczeń.
+*   **Ulepszony Tryb Focus:** Pełnoekranowy, minimalistyczny interfejs z ogromnym, czytelnym zegarem i ciemnym motywem, zapobiegający wygaszaniu ekranu.
 
 ## Kluczowe Funkcje
 
-*   **Konta Użytkowników i Synchronizacja Danych:** Pełna integracja z **Auth0** dla bezpiecznej rejestracji i logowania. Wszystkie postępy i ustawienia są automatycznie zapisywane w centralnej bazie danych i dostępne na każdym urządzeniu.
+### 1. Śledzenie i Planowanie
+*   **Dynamiczne Plany:** Obsługa złożonych planów treningowych (np. McGill L5-S1) z podziałem na rozgrzewkę, część główną i schłodzenie.
+*   **Historia:** Szczegółowy podgląd ukończonych sesji z czasem trwania, oceną bólu i notatkami.
+*   **Baza Ćwiczeń:** Biblioteka z opisami, wymaganym sprzętem i linkami do wideo (YouTube).
 
-*   **Pełnoprawna Aplikacja PWA (Progressive Web App):**
-    *   **Instalowalność:** Możliwość instalacji na ekranie głównym smartfonów i komputerów, co zapewnia szybki dostęp i natywne odczucia (uruchamianie w trybie pełnoekranowym).
-    *   **Działanie Offline:** Dostęp do kluczowych zasobów w trybie offline – użytkownik może przeglądać bibliotekę ćwiczeń i strukturę swojego planu treningowego nawet bez połączenia z internetem.
-    *   **Wydajność:** Błyskawiczne ładowanie dzięki zaawansowanym strategiom buforowania (cache) zasobów.
+### 2. Grywalizacja (The Path of Progress)
+System motywacyjny działający zarówno na telefonie, jak i na telewizorze.
+*   **Logika:** Obliczana po stronie backendu oraz frontendu (dla natychmiastowej reakcji).
+*   **Progi:**
+    *   **Początkujący:** Poziomy 1-9.
+    *   **Adept:** Poziomy 10-24.
+    *   **Mistrz:** Poziom 25+.
 
-*   **Dynamiczne Zarządzanie Treścią:** Definicje ćwiczeń i plany treningowe są ładowane dynamicznie z bazy danych, co pozwala na ich modyfikację i rozszerzanie bez potrzeby aktualizacji kodu aplikacji.
+### 3. Integracja z Chromecast (v3.0)
+Aplikacja posiada dedykowany odbiornik (Custom Receiver), który zmienia telewizor w dashboard treningowy.
+*   **Tryb Idle:** Wyświetla **Hero Dashboard** – wielki awatar rangi, poziom i licznik serii użytkownika.
+*   **Tryb Treningu:** Wyświetla aktualne ćwiczenie, ogromny licznik czasu (zmieniający kolor podczas przerwy) i następny krok.
+*   **Wideo:** Możliwość rzutowania filmów instruktażowych z bazy ćwiczeń.
 
-*   **Integracja z Chromecast (Wyświetlanie Jednokierunkowe):**
-    *   **Wyświetlanie sesji na dużym ekranie:** Przesyłaj aktywną sesję treningową na urządzenie Chromecast, aby wygodnie śledzić kluczowe informacje (aktualny timer, nazwa ćwiczenia, postęp) na ekranie telewizora.
-    *   **Rzutowanie wideo instruktażowych:** Odtwarzaj filmy instruktażowe z biblioteki ćwiczeń bezpośrednio na dużym ekranie.
+### 4. Integracje Zewnętrzne
+*   **Strava:** Pełna obsługa OAuth 2.0. Automatyczny upload ukończonego treningu jako aktywności z pełnym opisem wykonanych serii.
+*   **Auth0:** Bezpieczne logowanie i zarządzanie sesją użytkownika.
 
-*   **Integracja ze Strava:**
-    *   Możliwość bezpiecznego połączenia konta Strava poprzez protokół OAuth 2.0.
-    *   Automatyczne przesyłanie ukończonych treningów na Stravę jako nowa aktywność typu "Trening siłowy".
+## Architektura Techniczna
 
-*   **Zautomatyzowany Tryb Treningu ("Focus Mode"):** Inteligentny asystent treningowy z przewodnikiem głosowym (TTS), timerem, stoperem oraz blokadą wygaszania ekranu (Wake Lock API), prowadzący użytkownika krok po kroku przez sesję.
-
-*   **Historia i Zarządzanie Treningami:**
-    *   Przejrzysty widok kalendarza z historią wykonanych treningów.
-    *   Szczegółowy wgląd w każdą sesję, w tym czas rozpoczęcia, zakończenia, całkowity czas trwania i lista wykonanych ćwiczeń.
-    *   Możliwość trwałego usunięcia wybranej sesji treningowej z historii.
-
-*   **Personalizacja i Ustawienia:**
-    *   Użytkownicy mogą dostosować datę startu cyklu, przerwy między ćwiczeniami oraz globalny współczynnik progresji.
-    *   Zaimplementowano bezpieczny mechanizm trwałego usuwania konta i wszystkich powiązanych z nim danych.
-
-*   **Bezpieczny Backend Serverless:** Logika po stronie serwera jest zaimplementowana przy użyciu **Funkcji Serverless Netlify (Node.js)**. Wszystkie operacje na danych użytkownika są chronione i wymagają poprawnego tokena JWT. Tokeny do integracji ze Strava są bezpiecznie szyfrowane w bazie danych.
-
-## Architektura Systemu
-
-*   **Frontend:** Czysty (Vanilla) JavaScript z modułami ES6, HTML5, CSS3. Aplikacja zaimplementowana jako PWA z wykorzystaniem Service Workera oraz integracją z Google Cast Sender SDK.
-*   **Aplikacja Odbiorcy (Chromecast):** Dedykowana, lekka aplikacja webowa (HTML, CSS, JS) hostowana jako część głównego projektu, uruchamiana na urządzeniach Chromecast.
-*   **Backend:** **Funkcje Serverless Netlify** (środowisko Node.js) z wykorzystaniem `axios` do komunikacji z zewnętrznymi API.
-*   **Baza Danych:** **PostgreSQL** hostowana na platformie **Neon**.
-*   **Uwierzytelnianie:** Platforma **Auth0** jako dostawca tożsamości.
-*   **Bezpieczeństwo:** Weryfikacja tokenów JWT (`jsonwebtoken`, `jwks-rsa`), szyfrowanie tokenów integracji (`crypto`), ochrona przed CSRF w przepływie OAuth 2.0.
-
-## Struktura Bazy Danych
-
-Aplikacja opiera się na relacyjnym schemacie w bazie PostgreSQL, który zapewnia integralność danych. Kluczowe tabele:
-
-```sql
--- Główna tabela użytkowników (z Auth0)
-CREATE TABLE users ( id VARCHAR(255) PRIMARY KEY );
-
--- Ustawienia specyficzne dla użytkownika
-CREATE TABLE user_settings ( /* ... */ );
-
--- Przechowuje dane integracji, np. zaszyfrowane tokeny Strava
-CREATE TABLE user_integrations ( /* ... */ );
-
--- Historia wszystkich ukończonych sesji treningowych
-CREATE TABLE training_sessions ( /* ... */ );
-
--- Tabele przechowujące dynamiczną treść aplikacji
-CREATE TABLE exercises ( /* ... */ );
-CREATE TABLE training_plans ( /* ... */ );
-CREATE TABLE plan_days ( /* ... */ );
-CREATE TABLE day_exercises ( /* ... */ );
-```
+*   **Frontend:** Vanilla JS (ES Modules), CSS3 Variables, Flexbox/Grid. Brak frameworków – czysta wydajność.
+*   **Backend:** Netlify Functions (Node.js).
+*   **Baza Danych:** PostgreSQL (platforma Neon).
+*   **PWA:** Service Worker (`network-first` dla API, `stale-while-revalidate` dla assetów), `manifest.json`.
 
 ## Struktura Projektu
 
-```/aplikacja-treningowa
+```text
+/aplikacja-treningowa
 │
-├── netlify/
-│   └── functions/              # Logika backendu
+├── icons/                  # Ikony aplikacji, rangi (SVG) i logo
+│   ├── badge-level-1.svg
+│   ├── badge-level-2.svg
+│   ├── badge-level-3.svg
+│   ├── streak-fire.svg
+│   ├── logo.png
+│   └── ...
 │
-├── receiver/
-│   ├── index.html              # Aplikacja Odbiorcy Chromecast
-│   ├── style.css
-│   └── receiver.js
+├── netlify/functions/      # Backend Serverless
+│   ├── get-or-create-user-data.js  # Pobiera profil + oblicza statystyki grywalizacji
+│   ├── save-session.js
+│   ├── strava-*.js         # Logika integracji Strava
+│   ├── _auth-helper.js     # Weryfikacja JWT i połączenie z DB
+│   └── ...
 │
-├── index.html
-├── style.css
+├── receiver/               # Aplikacja Odbiorcy Chromecast
+│   ├── index.html
+│   ├── style.css           # Style dostosowane do TV (jednostki vh/vw)
+│   └── receiver.js         # Logika odbioru komunikatów
 │
-├── app.js                      # Główna logika i routing aplikacji
-├── auth.js                     # Moduł obsługi uwierzytelniania (Auth0)
-├── cast.js                     # Logika Nadawcy Chromecast
-├── dataStore.js                # Warstwa dostępu do danych (komunikacja z API)
-├── state.js                    # Centralny obiekt stanu aplikacji
-├── ui.js                       # Funkcje renderujące interfejs
-├── training.js                 # Logika sesji treningowej
-├── ...                         # Pozostałe moduły JS
+├── index.html              # Główny punkt wejścia PWA
+├── style.css               # Globalne style, zmienne, RWD
 │
-├── manifest.json               # Manifest aplikacji PWA
-├── service-worker.js           # Logika offline i cache PWA
+├── app.js                  # Główny kontroler aplikacji
+├── auth.js                 # Obsługa Auth0
+├── cast.js                 # Sender SDK (wysyłanie danych do TV)
+├── dataStore.js            # Warstwa danych (API, State)
+├── gamification.js         # Logika obliczania poziomów i serii
+├── state.js                # Globalny stan aplikacji
+├── training.js             # Logika silnika treningowego
+├── ui.js                   # Renderowanie interfejsu
+├── utils.js                # Funkcje pomocnicze
 │
-├── netlify.toml
-└── package.json
+├── manifest.json
+└── service-worker.js
 ```
 
-## Uruchomienie Lokalne
+## Uruchomienie i Konfiguracja
 
-1.  **Wymagania Wstępne:**
-    *   Zainstalowany [Node.js](https://nodejs.org/).
-    *   Zainstalowany [Netlify CLI](https://docs.netlify.com/cli/get-started/): `npm install -g netlify-cli`.
-    *   Skonfigurowane konta na **Auth0**, **Neon** (PostgreSQL), **Strava** oraz **Google Cast SDK** (dla deweloperów).
+### Wymagania
+*   Node.js & NPM
+*   Konto na Netlify (do hostingu i funkcji)
+*   Baza danych PostgreSQL (np. Neon)
+*   Konto Auth0
+*   Konto Google Cast SDK Developer (do rejestracji aplikacji Receivera)
 
-2.  **Instalacja:**
-    ```bash
-    git clone <adres-repozytorium>
-    cd aplikacja-treningowa
-    npm install
-    ```
+### Zmienne Środowiskowe (.env / Netlify Dashboard)
+Aby aplikacja działała, musisz skonfigurować następujące zmienne:
 
-3.  **Konfiguracja Zmiennych Środowiskowych:**
-    Stwórz plik `.env` i wypełnij go wymaganymi kluczami (baza danych, Auth0, Strava, klucz szyfrowania). Pamiętaj, aby te same zmienne skonfigurować w panelu Netlify.
+```env
+DATABASE_URL="postgres://user:pass@host/db?sslmode=require"
+AUTH0_DOMAIN="twoja-domena.us.auth0.com"
+AUTH0_AUDIENCE="https://twoja-aplikacja.netlify.app/"
+STRAVA_CLIENT_ID="..."
+STRAVA_CLIENT_SECRET="..."
+ENCRYPTION_SECRET_KEY="..." # Min. 32 znaki, do szyfrowania tokenów
+URL="https://twoja-aplikacja.netlify.app" # Adres produkcyjny
+```
 
-4.  **Konfiguracja Frontendu:**
-    *   W pliku `auth.js` wypełnij obiekt `AUTH_CONFIG` swoimi danymi z Auth0.
-    *   W pliku `cast.js` wstaw swój `APPLICATION_ID` z konsoli Google Cast.
+### Instalacja Lokalna
+1.  `npm install`
+2.  Skonfiguruj plik `.env`.
+3.  Uruchom serwer deweloperski: `netlify dev`.
 
-5.  **Uruchomienie Aplikacji:**
-    ```bash
-    netlify dev
-    ```
-    Aplikacja będzie dostępna pod adresem `http://localhost:8888`. Do testowania Chromecasta lokalnie zalecane jest użycie narzędzia `ngrok`.
+## Baza Danych (Schema)
 
-## Deployment
+Kluczowe tabele wymagane do działania systemu:
 
-1.  Wypchnij kod do repozytorium połączonego z Netlify.
-2.  Upewnij się, że wszystkie zmienne środowowiskowe są skonfigurowane w panelu Netlify.
-3.  Netlify automatycznie zbuduje i wdroży aplikację, funkcje serverless oraz pliki aplikacji Odbiorcy Chromecast.
+```sql
+-- Użytkownicy
+CREATE TABLE users (id VARCHAR(255) PRIMARY KEY, email VARCHAR(255));
+
+-- Ustawienia (JSONB)
+CREATE TABLE user_settings (user_id VARCHAR(255) PRIMARY KEY, settings JSONB);
+
+-- Sesje (Kluczowe dla historii i grywalizacji)
+CREATE TABLE training_sessions (
+    session_id VARCHAR(255) PRIMARY KEY,
+    user_id VARCHAR(255) REFERENCES users(id),
+    plan_id VARCHAR(255),
+    started_at TIMESTAMP WITH TIME ZONE,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    session_data JSONB
+);
+
+-- Integracje
+CREATE TABLE user_integrations (...);
+```
+
+## Licencja
+Projekt prywatny. Wszelkie prawa zastrzeżone.
+
+---
+&copy; 2025 Aplikacja Treningowa. Wersja 7.0.0

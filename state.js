@@ -20,7 +20,6 @@ export const state = {
      */
     settings: {
         appStartDate: null,
-        restBetweenExercises: 60,
         progressionFactor: 100,
         activePlanId: "l5s1-foundation"
     },
@@ -68,6 +67,10 @@ export const state = {
     /**
      * Stan timera używanego w trybie treningu.
      */
+    totalPausedTime: 0, // w milisekundach
+    lastPauseStartTime: null,
+    isPaused: false,
+    breakTimeoutId: null,
     timer: {
         interval: null,
         timeLeft: 0,

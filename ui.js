@@ -5,9 +5,12 @@ import { screens, containers, mainNav, initializeFocusElements } from './dom.js'
 import { getISODate, getTrainingDayForDate, applyProgression, getHydratedDay, getActiveTrainingPlan, getLocalISOString } from './utils.js';
 import { startModifiedTraining } from './training.js';
 import dataStore from './dataStore.js';
-import { sendPlayVideo, sendStopVideo, getIsCasting, sendShowIdle } from './cast.js';
+import { sendPlayVideo, sendStopVideo, getIsCasting, sendShowIdle, sendUserStats } from './cast.js';
+import { getGamificationState } from './gamification.js';
 
 const loadingOverlay = document.getElementById('loading-overlay');
+
+// --- Zarządzanie Loaderem ---
 
 export const showLoader = () => {
     if (!loadingOverlay) return;
@@ -20,6 +23,8 @@ export const hideLoader = () => {
     loadingOverlay.style.opacity = '0';
     setTimeout(() => { loadingOverlay.classList.add('hidden'); }, 300);
 };
+
+// --- Wake Lock API (Blokada wygaszania ekranu) ---
 
 export const wakeLockManager = {
     wakeLock: null,
@@ -44,6 +49,8 @@ export const wakeLockManager = {
     }
 };
 
+// --- Obsługa Formularzy ---
+
 export function handleSummarySubmit(e) {
     e.preventDefault();
     const dateKey = state.currentTrainingDate;
@@ -51,6 +58,14 @@ export function handleSummarySubmit(e) {
     const trainingDay = activePlan ? activePlan.Days.find(d => d.dayNumber === state.currentTrainingDayId) : null;
     
     const now = new Date();
+    const stravaCheckbox = document.getElementById('strava-sync-checkbox');
+
+    // 1. Obliczanie czasu netto (Czas całkowity - Czas pauzy)
+    const rawDuration = now - state.sessionStartTime;
+    // Zabezpieczenie przed ujemnym czasem (gdyby zegar systemowy szalał)
+    const netDuration = Math.max(0, rawDuration - (state.totalPausedTime || 0));
+    const durationSeconds = Math.round(netDuration / 1000);
+
     const sessionPayload = {
         sessionId: Date.now(),
         planId: state.settings.activePlanId,
@@ -61,31 +76,51 @@ export function handleSummarySubmit(e) {
         notes: document.getElementById('general-notes').value,
         startedAt: state.sessionStartTime.toISOString(), 
         completedAt: now.toISOString(),
-        
         sessionLog: state.sessionLog,
+        // Przekazujemy czas netto dla backendu i Stravy
+        netDurationSeconds: durationSeconds
     };
 
+    // 2. Zapisz do lokalnej historii (dla widoku Kalendarza/Historii)
     if (!state.userProgress[dateKey]) {
         state.userProgress[dateKey] = [];
     }
     state.userProgress[dateKey].push(sessionPayload);
     
+    // 3. FIX LICZNIKA NA DASHBOARDZIE
+    // Aktualizujemy "cache" statystyk z serwera.
+    // Dzięki temu funkcja gamifikacji zobaczy: "Lokalnie: 1, Serwer: StaraWartość + 1"
+    // i wybierze tę większą wartość.
+    if (!state.userStats) {
+        state.userStats = { totalSessions: 0, streak: 0 };
+    }
+    
+    // Rzutujemy na int (na wypadek gdyby przyszło jako string) i dodajemy 1
+    const currentTotal = parseInt(state.userStats.totalSessions) || 0;
+    state.userStats.totalSessions = currentTotal + 1;
+    
+    // 4. Zapisz w chmurze
     dataStore.saveSession(sessionPayload);
 
-    const stravaCheckbox = document.getElementById('strava-sync-checkbox');
+    // 5. Wyślij do Stravy (jeśli zaznaczono)
     if (stravaCheckbox && stravaCheckbox.checked) {
         dataStore.uploadToStrava(sessionPayload);
     }
     
+    // 6. Reset stanu sesji
     state.currentTrainingDate = null;
     state.currentTrainingDayId = null;
     state.sessionLog = [];
     state.sessionStartTime = null;
+    state.totalPausedTime = 0;
+    state.isPaused = false;
     
+    // 7. Powrót do ekranu głównego
     navigateTo('main');
     renderMainScreen();
 }
 
+// --- Nawigacja ---
 
 export const navigateTo = (screenName) => {
     if (screenName === 'training') {
@@ -96,15 +131,18 @@ export const navigateTo = (screenName) => {
 
     const bottomNav = document.getElementById('app-bottom-nav');
     const footer = document.getElementById('app-footer');
+    const header = document.querySelector('header');
 
     if (screenName === 'training') {
         screens.training.classList.add('active');
-        mainNav.style.display = 'none';
+        // Ukrywamy elementy zewnętrzne
+        if (header) header.style.display = 'none';
         if (bottomNav) bottomNav.style.display = 'none';
         if (footer) footer.style.display = 'none';
     } else {
         screens.training.classList.remove('active');
-        mainNav.style.display = '';
+        // Przywracamy elementy zewnętrzne
+        if (header) header.style.display = '';
         if (bottomNav) bottomNav.style.display = '';
         if (footer) footer.style.display = '';
         
@@ -124,6 +162,8 @@ export const navigateTo = (screenName) => {
     window.scrollTo(0, 0);
 };
 
+// --- Renderowanie Ekranów ---
+
 export const renderMainScreen = () => {
     const activePlan = getActiveTrainingPlan();
     if (!activePlan) {
@@ -131,39 +171,49 @@ export const renderMainScreen = () => {
         return;
     }
 
-    const mainScreenTitle = document.getElementById('main-screen-title');
-    if (mainScreenTitle) {
-        mainScreenTitle.textContent = activePlan.name || 'Mój Plan Treningowy';
+    // --- EPIK 1: Gamifikacja / Hero Dashboard ---
+    const heroContainer = document.getElementById('hero-dashboard');
+    if (heroContainer) {
+        const stats = getGamificationState(state.userProgress);
+        
+        if (getIsCasting()) {
+            sendUserStats(stats);
+        }
+
+        heroContainer.classList.remove('hidden');
+        heroContainer.innerHTML = generateHeroDashboardHTML(stats);
     }
+    // ---------------------------------------------
 
     containers.days.innerHTML = '';
     const today = new Date();
+    
     for (let i = 0; i < 7; i++) {
         const date = new Date(today);
         date.setDate(today.getDate() + i);
         const trainingDayData = getTrainingDayForDate(date);
+        
         if (!trainingDayData) continue;
+        
         const trainingDay = getHydratedDay(trainingDayData);
         if (!trainingDay) continue;
-        const equipmentSet = new Set();
-        const allExercises = [...(trainingDay.warmup || []), ...(trainingDay.main || []), ...(trainingDay.cooldown || [])];
-        allExercises.forEach(exercise => {
-            if (exercise.equipment && exercise.equipment.trim() !== '') {
-                exercise.equipment.split(',').map(item => item.trim()).forEach(item => equipmentSet.add(item));
-            }
-        });
-        let equipmentHtml = equipmentSet.size > 0
-            ? `<p class="day-card-equipment"><strong>Sprzęt:</strong> ${[...equipmentSet].join(', ')}</p>`
-            : `<p class="day-card-equipment"><strong>Sprzęt:</strong> Brak wymaganego sprzętu</p>`;
+        
         let dateLabel = date.toLocaleString('pl-PL', { day: 'numeric', month: 'short' });
-        if (i === 0) dateLabel = `Dzisiaj, ${dateLabel}`;
-        if (i === 1) dateLabel = `Jutro, ${dateLabel}`;
+        if (i === 0) dateLabel = `DZISIAJ, ${dateLabel}`;
+        if (i === 1) dateLabel = `JUTRO, ${dateLabel}`;
+        
+        const equipmentSet = new Set();
+        [...(trainingDay.warmup || []), ...(trainingDay.main || []), ...(trainingDay.cooldown || [])].forEach(ex => {
+            if (ex.equipment) ex.equipment.split(',').forEach(item => equipmentSet.add(item.trim()));
+        });
+        const equipmentText = equipmentSet.size > 0 ? [...equipmentSet].join(', ') : 'Brak wymaganego sprzętu';
+
         const card = document.createElement('div');
         card.className = 'day-card';
         card.innerHTML = `
             <p class="day-card-date">${dateLabel}</p>
             <div class="card-header"><h3>Dzień ${trainingDay.dayNumber}: ${trainingDay.title}</h3></div>
-            ${equipmentHtml}
+            <p class="day-card-equipment"><strong>Sprzęt:</strong> ${equipmentText}</p>
             <button class="action-btn" data-day-id="${trainingDay.dayNumber}">Start treningu (Dzień ${trainingDay.dayNumber})</button>
         `;
         containers.days.appendChild(card);
@@ -186,8 +236,8 @@ export const renderHistoryScreen = async () => {
         const grid = containers.calendarGrid;
         grid.innerHTML = '';
         
-        const firstDayOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
-        const lastDayOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+        const firstDayOfMonth = new Date(year, date.getMonth(), 1);
+        const lastDayOfMonth = new Date(year, date.getMonth() + 1, 0);
         let startDay = firstDayOfMonth.getDay();
         if (startDay === 0) startDay = 7; 
         
@@ -197,7 +247,7 @@ export const renderHistoryScreen = async () => {
         
         const todayISO = getISODate(new Date());
         for (let i = 1; i <= lastDayOfMonth.getDate(); i++) {
-            const currentDate = new Date(date.getFullYear(), date.getMonth(), i);
+            const currentDate = new Date(year, date.getMonth(), i);
             const isoDate = getISODate(currentDate);
             const dayEntries = state.userProgress[isoDate] || [];
             
@@ -237,70 +287,7 @@ export const renderDayDetailsScreen = (isoDate) => {
         return;
     }
     const date = new Date(isoDate);
-
-    let sessionsHtml = dayEntries.map(session => {
-        const planId = session.planId || 'l5s1-foundation';
-        const planForHistory = state.trainingPlans[planId];
-        const trainingDay = planForHistory ? planForHistory.Days.find(d => d.dayNumber === session.trainingDayId) : null;
-        const title = trainingDay ? trainingDay.title : 'Nieznany trening';
-        
-        let timeDetailsHtml = '';
-        if (session.startedAt && session.completedAt) {
-            const startTime = new Date(session.startedAt);
-            const endTime = new Date(session.completedAt);
-            const options = { hour: '2-digit', minute: '2-digit' };
-            const formattedStartTime = startTime.toLocaleTimeString('pl-PL', options);
-            const formattedEndTime = endTime.toLocaleTimeString('pl-PL', options);
-            const durationMs = endTime - startTime;
-            const totalMinutes = Math.floor(durationMs / 60000);
-            const totalSeconds = Math.floor((durationMs % 60000) / 1000);
-            const formattedDuration = `${totalMinutes} min ${totalSeconds} s`;
-
-            timeDetailsHtml = `
-                <p><strong>Czas rozpoczęcia:</strong> ${formattedStartTime}</p>
-                <p><strong>Czas zakończenia:</strong> ${formattedEndTime}</p>
-                <p><strong>Całkowity czas trwania:</strong> ${formattedDuration}</p>
-            `;
-        } else {
-            const completedTime = new Date(session.completedAt).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
-            timeDetailsHtml = `<p><strong>Czas ukończenia:</strong> ${completedTime}</p>`;
-        }
-
-        const exercisesHtml = session.sessionLog && session.sessionLog.length > 0 ? session.sessionLog.map(item => `
-            <div class="details-exercise-item">
-                <div class="details-exercise-info">
-                    <strong>${item.name} (Seria ${item.currentSet}/${item.totalSets})</strong>
-                    <span>${item.reps_or_time} | ${item.tempo_or_iso}</span>
-                </div>
-                <div class="details-exercise-status ${item.status === 'skipped' ? 'skipped' : 'completed'}">
-                    ${item.status === 'skipped' ? 'Pominięto' : 'Wykonano'}
-                </div>
-            </div>
-        `).join('') : '<p>Brak szczegółowego logu dla tej sesji.</p>';
-
-        return `
-            <details class="details-session-card" open>
-                <summary><span>${title}</span><span>${new Date(session.completedAt).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}</span></summary>
-                <div class="details-session-card-content">
-                    <div class="details-summary-card">
-                        <p><strong>Status:</strong> Ukończono</p>
-                        ${timeDetailsHtml} 
-                        <p><strong>Ocena bólu:</strong> ${session.pain_during || 'Brak oceny'}/10</p>
-                        ${session.notes ? `<div class="details-notes"><strong>Notatki:</strong><br>${session.notes}</div>` : ''}
-                    </div>
-                    <div class="details-exercise-list">
-                        <h4>Wykonane ćwiczenia:</h4>
-                        ${exercisesHtml}
-                    </div>
-                    <div class="session-actions" style="margin-top: 1rem; border-top: 1px solid var(--border-color); padding-top: 1rem; text-align: right;">
-                        <button class="nav-btn danger-btn delete-session-btn" data-session-id="${session.sessionId}">
-                            Usuń ten trening
-                        </button>
-                    </div>
-                </div>
-            </details>
-        `;
-    }).join('');
+    const sessionsHtml = dayEntries.map(generateSessionCardHTML).join('');
 
     screens.dayDetails.innerHTML = `
         <h2 id="details-day-title">${date.toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' })}</h2>
@@ -312,19 +299,16 @@ export const renderDayDetailsScreen = (isoDate) => {
     
     const contentContainer = screens.dayDetails.querySelector('#day-details-content');
     contentContainer.addEventListener('click', async (e) => {
-        if (e.target && e.target.classList.contains('delete-session-btn')) {
-            const sessionId = e.target.dataset.sessionId;
-            
-            if (!confirm('Czy na pewno chcesz trwale usunąć ten trening? Tej operacji nie można cofnąć.')) {
-                return;
-            }
+        // Obsługa kliknięcia w ikonę kosza (wyszukujemy w górę drzewa, bo to może być <path> wewnątrz <svg>)
+        const btn = e.target.closest('.delete-session-btn');
+        if (btn) {
+            const sessionId = btn.dataset.sessionId;
+            if (!confirm('Czy na pewno chcesz trwale usunąć ten trening?')) return;
 
             showLoader();
             try {
                 await dataStore.deleteSession(sessionId);
-                state.userProgress[isoDate] = state.userProgress[isoDate].filter(
-                    session => String(session.sessionId) !== String(sessionId)
-                );
+                state.userProgress[isoDate] = state.userProgress[isoDate].filter(s => String(s.sessionId) !== String(sessionId));
 
                 if (state.userProgress[isoDate].length > 0) {
                     renderDayDetailsScreen(isoDate);
@@ -332,7 +316,6 @@ export const renderDayDetailsScreen = (isoDate) => {
                     delete state.userProgress[isoDate];
                     renderHistoryScreen();
                 }
-
             } catch (error) {
                 console.error("Deletion failed:", error);
             } finally {
@@ -347,9 +330,9 @@ export const renderDayDetailsScreen = (isoDate) => {
 export const renderSettingsScreen = () => {
     const form = document.getElementById('settings-form');
     form['setting-start-date'].value = state.settings.appStartDate;
-    form['setting-rest-duration'].value = state.settings.restBetweenExercises;
     form['setting-progression-factor'].value = state.settings.progressionFactor;
     document.getElementById('progression-factor-value').textContent = `${state.settings.progressionFactor}%`;
+    
     const planSelector = document.getElementById('setting-training-plan');
     if (planSelector) {
         planSelector.innerHTML = '';
@@ -363,62 +346,53 @@ export const renderSettingsScreen = () => {
         });
     }
 
-    const dangerZone = document.getElementById('danger-zone');
-    if (dangerZone) {
-        const oldIntegrationSection = document.getElementById('integration-section');
-        if (oldIntegrationSection) {
-            oldIntegrationSection.remove();
-        }
-
-        const integrationSection = document.createElement('div');
-        integrationSection.id = 'integration-section';
-        integrationSection.className = 'settings-section';
-        
-        let content = '<h3>Integracje</h3>';
-        if (state.stravaIntegration.isConnected) {
-            content += `
-                <div class="integration-status">
-                    <p><strong>Strava:</strong> Połączono. Twoje przyszłe treningi będą automatycznie synchronizowane.</p>
-                    <button id="disconnect-strava-btn" class="nav-btn danger-btn">Rozłącz konto Strava</button>
-                </div>
-            `;
-        } else {
-            content += `
-                <div class="integration-status">
-                    <p>Połącz swoje konto, aby automatycznie przesyłać ukończone treningi na Stravę.</p>
-                    <button id="connect-strava-btn" class="nav-btn strava-btn">
-                        <span>Połącz ze Strava</span>
-                    </button>
-                </div>
-            `;
-        }
-        integrationSection.innerHTML = content;
-        dangerZone.parentNode.insertBefore(integrationSection, dangerZone);
-
-        if (state.stravaIntegration.isConnected) {
-            document.getElementById('disconnect-strava-btn').addEventListener('click', async () => {
-                if (confirm('Czy na pewno chcesz odłączyć swoje konto Strava?')) {
-                    showLoader();
-                    try {
-                        await dataStore.disconnectStrava();
-                        renderSettingsScreen();
-                    } finally {
-                        hideLoader();
-                    }
-                }
-            });
-        } else {
-            document.getElementById('connect-strava-btn').addEventListener('click', () => {
-                showLoader();
-                dataStore.startStravaAuth();
-            });
-        }
-    }
-    
+    renderIntegrationSection();
     navigateTo('settings');
 };
 
-// ZMODYFIKOWANA FUNKCJA RENDERLIBRARYSCREEN
+function renderIntegrationSection() {
+    const dangerZone = document.getElementById('danger-zone');
+    if (!dangerZone) return;
+    
+    const oldIntegrationSection = document.getElementById('integration-section');
+    if (oldIntegrationSection) oldIntegrationSection.remove();
+
+    const integrationSection = document.createElement('div');
+    integrationSection.id = 'integration-section';
+    integrationSection.className = 'settings-section';
+    
+    let content = '<h3>Integracje</h3>';
+    if (state.stravaIntegration.isConnected) {
+        content += `
+            <div class="integration-status">
+                <p><strong>Strava:</strong> Połączono.</p>
+                <button id="disconnect-strava-btn" class="nav-btn danger-btn">Rozłącz konto Strava</button>
+            </div>`;
+    } else {
+        content += `
+            <div class="integration-status">
+                <p>Połącz swoje konto, aby automatycznie przesyłać treningi.</p>
+                <button id="connect-strava-btn" class="nav-btn strava-btn"><span>Połącz ze Strava</span></button>
+            </div>`;
+    }
+    integrationSection.innerHTML = content;
+    dangerZone.parentNode.insertBefore(integrationSection, dangerZone);
+
+    if (state.stravaIntegration.isConnected) {
+        document.getElementById('disconnect-strava-btn').addEventListener('click', async () => {
+            if (confirm('Czy odłączyć konto Strava?')) {
+                showLoader();
+                try { await dataStore.disconnectStrava(); renderSettingsScreen(); } finally { hideLoader(); }
+            }
+        });
+    } else {
+        document.getElementById('connect-strava-btn').addEventListener('click', () => {
+            showLoader();
+            dataStore.startStravaAuth();
+        });
+    }
+}
+
 export const renderLibraryScreen = (searchTerm = '') => {
     const container = containers.exerciseLibrary;
     container.innerHTML = '';
@@ -432,6 +406,7 @@ export const renderLibraryScreen = (searchTerm = '') => {
         .forEach(exercise => {
             const card = document.createElement('div');
             card.className = 'library-card';
+            
             const youtubeIdMatch = exercise.youtube_url.match(/(?:v=|\/)([a-zA-Z0-9_-]{11})(?:\?|&|$)/);
             const youtubeId = youtubeIdMatch ? youtubeIdMatch[1] : null;
 
@@ -448,7 +423,6 @@ export const renderLibraryScreen = (searchTerm = '') => {
             container.appendChild(card);
         });
 
-    // Delegacja zdarzeń na kontenerze, aby uniknąć wielokrotnego dodawania listenerów
     const eventHandler = (e) => {
         if (e.target.classList.contains('cast-video-btn')) {
             const youtubeId = e.target.dataset.youtubeId;
@@ -457,7 +431,7 @@ export const renderLibraryScreen = (searchTerm = '') => {
                 e.target.textContent = "Zatrzymaj ⏹️";
                 e.target.classList.replace('cast-video-btn', 'stop-cast-video-btn');
             } else if (!getIsCasting()) {
-                alert("Najpierw połącz się z urządzeniem Chromecast, używając ikony w nagłówku.");
+                alert("Najpierw połącz się z urządzeniem Chromecast.");
             }
         } else if (e.target.classList.contains('stop-cast-video-btn')) {
             sendStopVideo();
@@ -466,16 +440,12 @@ export const renderLibraryScreen = (searchTerm = '') => {
         }
     };
     
-    // Usuń stary listener, jeśli istnieje, i dodaj nowy
-    if (container.eventListener) {
-        container.removeEventListener('click', container.eventListener);
-    }
+    if (container.eventListener) container.removeEventListener('click', container.eventListener);
     container.addEventListener('click', eventHandler);
     container.eventListener = eventHandler;
 
     navigateTo('library');
 };
-
 
 export const renderPreTrainingScreen = (dayId) => {
     state.currentTrainingDayId = dayId;
@@ -486,42 +456,34 @@ export const renderPreTrainingScreen = (dayId) => {
     if (!dayData) return;
     const trainingDay = getHydratedDay(dayData);
     if (!trainingDay) return;
-    const factor = state.settings.progressionFactor;
+    
     const screen = screens.preTraining;
-    screen.innerHTML = `<h2 id="pre-training-title">Podgląd: ${trainingDay.title}</h2><div id="pre-training-list"></div><div class="pre-training-nav"><button id="pre-training-back-btn" class="nav-btn">Wróć</button><button id="start-modified-training-btn" class="action-btn">Rozpocznij Trening</button></div>`;
+    screen.innerHTML = `
+        <h2 id="pre-training-title">Podgląd: ${trainingDay.title}</h2>
+        <div id="pre-training-list"></div>
+        <div class="pre-training-nav">
+            <button id="pre-training-back-btn" class="nav-btn">Wróć</button>
+            <button id="start-modified-training-btn" class="action-btn">Rozpocznij Trening</button>
+        </div>
+    `;
+    
     const listContainer = screen.querySelector('#pre-training-list');
     const sections = [{ name: 'Rozgrzewka', exercises: trainingDay.warmup || [] }, { name: 'Część główna', exercises: trainingDay.main || [] }, { name: 'Schłodzenie', exercises: trainingDay.cooldown || [] }];
     let exerciseCounter = 0;
+
     sections.forEach(section => {
         if (section.exercises.length === 0) return;
         const header = document.createElement('h3');
         header.className = 'pre-training-section-header';
         header.textContent = section.name;
         listContainer.appendChild(header);
+        
         section.exercises.forEach((ex) => {
-            const card = document.createElement('div');
-            card.className = 'pre-training-exercise-card';
-            const uniqueId = `ex-${exerciseCounter}`;
-            card.innerHTML = `
-                <h4>${ex.name}</h4>
-                <p class="pre-training-description">${ex.description || 'Brak opisu.'}</p>
-                <a href="${ex.youtube_url}" target="_blank" rel="noopener noreferrer">Obejrzyj wideo ↗</a>
-                <p class="details">Tempo: ${applyProgression(ex.tempo_or_iso, factor)} | Sprzęt: ${ex.equipment}</p>
-                <div class="pre-training-inputs">
-                    <div class="form-group">
-                        <label for="sets-${uniqueId}">Serie</label>
-                        <input type="text" id="sets-${uniqueId}" value="${ex.sets}" data-exercise-index="${exerciseCounter}">
-                    </div>
-                    <div class="form-group">
-                        <label for="reps-${uniqueId}">Powtórzenia/Czas</label>
-                        <input type="text" id="reps-${uniqueId}" value="${applyProgression(ex.reps_or_time, factor)}" data-exercise-index="${exerciseCounter}">
-                    </div>
-                </div>
-            `;
-            listContainer.appendChild(card);
+            listContainer.innerHTML += generatePreTrainingCardHTML(ex, exerciseCounter, state.settings.progressionFactor);
             exerciseCounter++;
         });
     });
+
     screen.querySelector('#pre-training-back-btn').addEventListener('click', () => { navigateTo('main'); renderMainScreen(); });
     screen.querySelector('#start-modified-training-btn').addEventListener('click', startModifiedTraining);
     navigateTo('preTraining');
@@ -575,8 +537,209 @@ export const renderSummaryScreen = () => {
     navigateTo('summary');
 };
 
-
 export const renderTrainingScreen = () => {
-    screens.training.innerHTML = `<div class="focus-view"><div class="focus-header"><p id="focus-section-name"></p><button id="exit-training-btn">Zakończ</button><p id="focus-progress"></p></div><div class="focus-timer-container"><p id="focus-timer-display"></p></div><div class="focus-exercise-info"><div class="exercise-title-container"><h2 id="focus-exercise-name"></h2><button id="tts-toggle-btn" class="tts-button"></button></div><p id="focus-exercise-details"></p></div><div id="focus-description" class="focus-description-container"></div><div class="focus-controls"><button id="prev-step-btn" class="control-btn">Cofnij</button><button id="pause-resume-btn" class="control-btn">Pauza</button><button id="rep-based-done-btn" class="control-btn action-btn hidden">GOTOWE</button><button id="skip-btn" class="control-btn">Pomiń</button></div><div class="focus-next-up"><p><strong>Następne:</strong> <span id="next-exercise-name"></span></p></div></div>`;
+    screens.training.innerHTML = `
+    <div class="focus-view">
+        <div class="focus-header">
+            <p id="focus-section-name"></p>
+            <button id="exit-training-btn">Zakończ</button>
+            <p id="focus-progress"></p>
+        </div>
+        
+        <div class="focus-timer-container">
+            <p id="focus-timer-display"></p>
+        </div>
+        
+        <div class="focus-exercise-info">
+            <div class="exercise-title-container">
+                <h2 id="focus-exercise-name"></h2>
+                <button id="tts-toggle-btn" class="tts-button">
+                    <img id="tts-icon" src="/icons/sound-on.svg" alt="Dźwięk">
+                </button>
+            </div>
+            <p id="focus-exercise-details"></p>
+        </div>
+        
+        <div id="focus-description" class="focus-description-container"></div>
+        
+        <!-- NOWY UKŁAD KONTROLEK -->
+        <div class="focus-controls-wrapper">
+            <!-- Rząd 1: Główna akcja (Duży przycisk) -->
+            <div class="focus-main-action">
+                <button id="rep-based-done-btn" class="control-btn action-btn hidden">GOTOWE</button>
+            </div>
+            
+            <!-- Rząd 2: Nawigacja i Pauza (Ikony) -->
+            <div class="focus-secondary-actions">
+                <button id="prev-step-btn" class="control-icon-btn" aria-label="Cofnij">
+                    <img src="/icons/control-back.svg">
+                </button>
+                
+                <button id="pause-resume-btn" class="control-icon-btn" aria-label="Pauza">
+                    <img src="/icons/control-pause.svg">
+                </button>
+                
+                <button id="skip-btn" class="control-icon-btn" aria-label="Pomiń">
+                    <img src="/icons/control-skip.svg">
+                </button>
+            </div>
+        </div>
+
+        <div class="focus-next-up">
+            <p><strong>Następne:</strong> <span id="next-exercise-name"></span></p>
+        </div>
+    </div>`;
     initializeFocusElements();
 };
+
+// ============================================================
+// FUNKCJE POMOCNICZE (HTML GENERATORS)
+// ============================================================
+
+function generateHeroDashboardHTML(stats) {
+    return `
+        <div class="hero-avatar-container">
+            <img src="${stats.iconPath}" class="hero-avatar" alt="Ranga">
+        </div>
+        <div class="hero-stats">
+            <div class="hero-header">
+                <span class="hero-level">Poziom ${stats.level}</span>
+                <div class="hero-streak">
+                    <img src="/icons/streak-fire.svg" class="streak-icon" alt="Ogień">
+                    <span>${stats.streak} dni z rzędu</span>
+                </div>
+            </div>
+            <h3 class="hero-title">${stats.tierName}</h3>
+            <div class="xp-bar-container">
+                <div class="xp-bar-fill" style="width: ${stats.progressPercent}%"></div>
+            </div>
+            <div class="xp-text">
+                ${stats.totalSessions} ukończonych treningów (Następny: ${stats.nextLevelThreshold})
+            </div>
+        </div>
+    `;
+}
+
+function generateSessionCardHTML(session) {
+    const planId = session.planId || 'l5s1-foundation';
+    const planForHistory = state.trainingPlans[planId];
+    const trainingDay = planForHistory ? planForHistory.Days.find(d => d.dayNumber === session.trainingDayId) : null;
+    const title = trainingDay ? trainingDay.title : (session.trainingTitle || 'Trening');
+    
+    const optionsTime = { hour: '2-digit', minute: '2-digit' };
+    
+    let statsHtml = '';
+    let completedTimeStr = '';
+    
+    if (session.completedAt) {
+        completedTimeStr = new Date(session.completedAt).toLocaleTimeString('pl-PL', optionsTime);
+    }
+
+    if (session.startedAt && session.completedAt) {
+        const startTime = new Date(session.startedAt);
+        const endTime = new Date(session.completedAt);
+        const durationMs = endTime - startTime;
+        
+        const totalMinutes = Math.floor(durationMs / 60000);
+        const totalSeconds = Math.floor((durationMs % 60000) / 1000);
+        const formattedDuration = `${totalMinutes}:${totalSeconds.toString().padStart(2, '0')}`;
+        
+        statsHtml = `
+            <div class="session-stats-grid">
+                <div class="stat-item">
+                    <span class="stat-label">Start</span>
+                    <span class="stat-value">${startTime.toLocaleTimeString('pl-PL', optionsTime)}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Koniec</span>
+                    <span class="stat-value">${endTime.toLocaleTimeString('pl-PL', optionsTime)}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Czas</span>
+                    <span class="stat-value">${formattedDuration}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Ból</span>
+                    <span class="stat-value">${session.pain_during || '-'}/10</span>
+                </div>
+            </div>
+        `;
+    } else {
+        statsHtml = `
+            <div class="session-stats-grid">
+                <div class="stat-item">
+                    <span class="stat-label">Zakończono</span>
+                    <span class="stat-value">${completedTimeStr}</span>
+                </div>
+            </div>`;
+    }
+
+    const exercisesHtml = session.sessionLog && session.sessionLog.length > 0 
+        ? session.sessionLog.map(item => {
+            const isSkipped = item.status === 'skipped';
+            const statusLabel = isSkipped ? 'Pominięto' : 'OK';
+            const statusClass = isSkipped ? 'skipped' : 'completed';
+            
+            return `
+            <div class="history-exercise-row ${statusClass}">
+                <div class="hex-main">
+                    <span class="hex-name">${item.name}</span>
+                    <span class="hex-details">Seria ${item.currentSet}/${item.totalSets} • ${item.reps_or_time}</span>
+                </div>
+                <div class="hex-status">
+                    <span class="status-badge ${statusClass}">${statusLabel}</span>
+                </div>
+            </div>`;
+        }).join('') 
+        : '<p class="no-data-msg">Brak szczegółowego logu.</p>';
+
+    return `
+        <details class="details-session-card" open>
+            <summary>
+                <div class="summary-content">
+                    <span class="summary-title">${title}</span>
+                    <button class="delete-session-btn icon-btn" data-session-id="${session.sessionId}" title="Usuń wpis">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                            <path d="M17 6H22V8H20V21C20 21.5523 19.5523 22 19 22H5C4.44772 22 4 21.5523 4 21V8H2V6H7V3C7 2.44772 7.44772 2 8 2H16C16.5523 2 17 2.44772 17 3V6ZM18 8H6V20H18V8ZM9 11H11V17H9V11ZM13 11H15V17H13V11ZM9 4V6H15V4H9Z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </summary>
+            
+            <div class="details-session-card-content">
+                ${statsHtml}
+                
+                ${session.notes ? `
+                <div class="session-notes">
+                    <strong>Notatki:</strong> ${session.notes}
+                </div>` : ''}
+
+                <div class="history-exercise-list">
+                    ${exercisesHtml}
+                </div>
+            </div>
+        </details>
+    `;
+}
+
+function generatePreTrainingCardHTML(ex, index, factor) {
+    const uniqueId = `ex-${index}`;
+    return `
+        <div class="pre-training-exercise-card">
+            <h4>${ex.name}</h4>
+            <p class="pre-training-description">${ex.description || 'Brak opisu.'}</p>
+            <a href="${ex.youtube_url}" target="_blank" rel="noopener noreferrer">Obejrzyj wideo ↗</a>
+            <p class="details">Tempo: ${applyProgression(ex.tempo_or_iso, factor)} | Sprzęt: ${ex.equipment}</p>
+            <div class="pre-training-inputs">
+                <div class="form-group">
+                    <label for="sets-${uniqueId}">Serie</label>
+                    <input type="text" id="sets-${uniqueId}" value="${ex.sets}" data-exercise-index="${index}">
+                </div>
+                <div class="form-group">
+                    <label for="reps-${uniqueId}">Powtórzenia/Czas</label>
+                    <input type="text" id="reps-${uniqueId}" value="${applyProgression(ex.reps_or_time, factor)}" data-exercise-index="${index}">
+                </div>
+            </div>
+        </div>
+    `;
+}

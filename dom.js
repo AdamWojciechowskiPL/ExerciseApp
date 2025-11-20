@@ -31,6 +31,7 @@ export function initializeFocusElements() {
         exerciseInfoContainer: screens.training.querySelector('.focus-exercise-info'),
         focusDescription: document.getElementById('focus-description'),
         ttsToggleBtn: document.getElementById('tts-toggle-btn'),
+        ttsIcon: document.getElementById('tts-icon'), 
         nextExerciseName: document.getElementById('next-exercise-name'),
         exitTrainingBtn: document.getElementById('exit-training-btn'),
         prevStepBtn: document.getElementById('prev-step-btn'),

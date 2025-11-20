@@ -58,7 +58,7 @@ function initAppLogic() {
     containers.calendarGrid.addEventListener('click', (e) => { const dayEl = e.target.closest('.calendar-day.has-entry'); if (dayEl && dayEl.dataset.date) { renderDayDetailsScreen(dayEl.dataset.date); } });
     containers.days.addEventListener('click', (e) => { if (e.target.matches('.action-btn')) { renderPreTrainingScreen(parseInt(e.target.dataset.dayId, 10)); } });
     document.getElementById('library-search-input').addEventListener('input', (e) => { renderLibraryScreen(e.target.value); });
-    document.getElementById('settings-form').addEventListener('submit', async (e) => { e.preventDefault(); state.settings.appStartDate = e.target['setting-start-date'].value; state.settings.restBetweenExercises = parseInt(e.target['setting-rest-duration'].value, 10); state.settings.progressionFactor = parseInt(e.target['setting-progression-factor'].value, 10); state.settings.activePlanId = e.target['setting-training-plan'].value; await dataStore.saveSettings(); alert('Ustawienia zostały zapisane.'); navigateTo('main'); renderMainScreen(); });
+    document.getElementById('settings-form').addEventListener('submit', async (e) => { e.preventDefault(); state.settings.appStartDate = e.target['setting-start-date'].value; state.settings.progressionFactor = parseInt(e.target['setting-progression-factor'].value, 10); state.settings.activePlanId = e.target['setting-training-plan'].value; await dataStore.saveSettings(); alert('Ustawienia zostały zapisane.'); navigateTo('main'); renderMainScreen(); });
     document.getElementById('setting-progression-factor').addEventListener('input', (e) => { document.getElementById('progression-factor-value').textContent = `${e.target.value}%`; });
 
     document.getElementById('delete-account-btn').addEventListener('click', async () => {
@@ -96,8 +96,18 @@ function initAppLogic() {
         }
     });
 
-    focus.ttsToggleBtn.addEventListener('click', () => { state.tts.isSoundOn = !state.tts.isSoundOn; focus.ttsToggleBtn.textContent = state.tts.isSoundOn ? '🔊' : '🔇'; if (!state.tts.isSoundOn && state.tts.isSupported) { state.tts.synth.cancel(); } });
-    focus.prevStepBtn.addEventListener('click', moveToPreviousExercise);
+    focus.ttsToggleBtn.addEventListener('click', () => {
+        state.tts.isSoundOn = !state.tts.isSoundOn;
+        
+        // --- ZMIANA: Podmieniamy src obrazka ---
+        if (focus.ttsIcon) {
+            focus.ttsIcon.src = state.tts.isSoundOn ? '/icons/sound-on.svg' : '/icons/sound-off.svg';
+        }
+        
+        if (!state.tts.isSoundOn && state.tts.isSupported) {
+            state.tts.synth.cancel();
+        }
+    });    focus.prevStepBtn.addEventListener('click', moveToPreviousExercise);
     focus.pauseResumeBtn.addEventListener('click', togglePauseTimer);
     focus.skipBtn.addEventListener('click', () => moveToNextExercise({ skipped: true }));
     focus.repBasedDoneBtn.addEventListener('click', () => moveToNextExercise({ skipped: false }));

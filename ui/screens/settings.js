@@ -23,6 +23,25 @@ export const renderSettingsScreen = () => {
     }
 
     renderIntegrationSection();
+    const aboutSection = document.createElement('div');
+    aboutSection.className = 'settings-section';
+    aboutSection.innerHTML = `
+        <h3>Informacje</h3>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+            <a href="/terms.html" class="nav-btn" style="text-align:center;">Regulamin Usługi</a>
+            <a href="/privacy.html" class="nav-btn" style="text-align:center;">Polityka Prywatności</a>
+        </div>
+    `;
+    
+    // Wstawiamy przed strefą niebezpieczną (dangerZone) lub na samym dole formularza
+    const formContainer = document.getElementById('settings-form').parentNode; // section#settings-screen
+    const dangerZone = document.getElementById('danger-zone');
+    
+    if (dangerZone) {
+        formContainer.insertBefore(aboutSection, dangerZone);
+    } else {
+        formContainer.appendChild(aboutSection);
+    }
     navigateTo('settings');
 };
 

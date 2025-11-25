@@ -1,4 +1,4 @@
-/* style.css - WERSJA KOMPLETNA (FULL) */
+/* style.css - WERSJA KOMPLETNA (FIXED HYBRID VISUAL CARD) */
 
 /* ============================================= */
 /* === 1. ZMIENNE GLOBALNE I RESET === */
@@ -136,9 +136,6 @@ header nav button:hover {
     white-space: nowrap;
 }
 
-/* Przycisk wylogowania - Mobile */
-/* style.css - Fragment w sekcji NAGŁÓWEK DESKTOP */
-
 /* Przycisk Wylogowania - Subtelny */
 #logout-btn {
     background: rgba(0, 0, 0, 0.2);
@@ -152,8 +149,6 @@ header nav button:hover {
     cursor: pointer;
     font-size: 0.85rem;
     transition: all 0.2s;
-
-    /* NOWOŚĆ: Zapobiega łamaniu tekstu "Wyloguj się" */
     white-space: nowrap;
     min-width: max-content;
 }
@@ -163,14 +158,12 @@ header nav button:hover {
     border-color: var(--danger-color);
 }
 
-/* Efekt kliknięcia na telefonie */
 #logout-btn:active {
     background-color: var(--danger-color);
     border-color: var(--danger-color);
     transform: scale(0.95);
 }
 
-/* Dopasowanie rozmiaru samej ikony wewnątrz */
 #logout-btn svg {
     width: 20px;
     height: 20px;
@@ -211,22 +204,13 @@ main {
     display: block;
 }
 
-.hidden {
-    display: none !important;
-}
-
 @keyframes fadeIn {
-    from {
-        opacity: 0;
-    }
-
-    to {
-        opacity: 1;
-    }
+    from { opacity: 0; }
+    to { opacity: 1; }
 }
 
 /* ============================================= */
-/* === 4. EKRAN POWITALNY (NAPRAWIONY) === */
+/* === 4. EKRAN POWITALNY === */
 /* ============================================= */
 #welcome-screen {
     min-height: calc(100vh - 140px);
@@ -280,6 +264,10 @@ main {
 /* === 5. HERO DASHBOARD (GAMIFIKACJA) === */
 /* ============================================= */
 
+/* ============================================= */
+/* === 5. HERO DASHBOARD (GAMIFIKACJA) - FIX === */
+/* ============================================= */
+
 #hero-dashboard {
     background: linear-gradient(160deg, #0f1c2e 0%, var(--primary-color) 100%);
     color: var(--light-text-color);
@@ -289,13 +277,14 @@ main {
     box-shadow: 0 10px 30px rgba(0, 95, 115, 0.3);
     position: relative;
     overflow: hidden;
+    
+    /* UKŁAD 3-KOLUMNOWY: Avatar | Info | Wykres */
     display: grid;
-    grid-template-columns: auto 1fr;
+    grid-template-columns: auto 1fr auto; 
     gap: 1.5rem;
     align-items: center;
 }
 
-/* Efekt tła */
 #hero-dashboard::before {
     content: '';
     position: absolute;
@@ -305,67 +294,64 @@ main {
     pointer-events: none;
 }
 
-/* --- 1. LEWA STRONA: AWATAR Z PASKIEM POSTĘPU --- */
+/* --- LEWA: AWATAR --- */
 .hero-avatar-wrapper {
     position: relative;
-    width: 100px;
-    height: 100px;
+    width: 80px; /* Zmniejszamy nieco dla lepszych proporcji */
+    height: 80px;
     display: flex;
     justify-content: center;
     align-items: center;
+    flex-shrink: 0;
 }
 
-/* Okrągły pasek postępu (Progress Ring) */
 .progress-ring {
     position: absolute;
     top: 0; left: 0;
     width: 100%; height: 100%;
     border-radius: 50%;
-    /* Magia CSS: Tworzymy wykres kołowy */
     background: conic-gradient(
         var(--gold-color) var(--progress-deg, 0deg), 
         rgba(255, 255, 255, 0.1) 0deg
     );
-    /* Maska wycina środek, tworząc pierścień */
     -webkit-mask: radial-gradient(transparent 55%, black 56%);
     mask: radial-gradient(transparent 55%, black 56%);
     box-shadow: 0 0 15px rgba(233, 196, 106, 0.3);
-    transition: --progress-deg 1s ease-out;
 }
 
 .hero-avatar {
-    width: 84%; /* Mniejszy niż ring, żeby pasował do środka */
+    width: 84%;
     height: 84%;
     border-radius: 50%;
     z-index: 1;
-    border: 3px solid var(--primary-color); /* Odstęp od paska */
+    border: 2px solid var(--primary-color);
     object-fit: cover;
 }
 
-/* Badge z poziomem na awatarze */
 .level-badge {
     position: absolute;
     bottom: -5px;
     background: var(--gold-color);
     color: #000;
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     font-weight: 800;
-    padding: 2px 8px;
+    padding: 2px 6px;
     border-radius: 10px;
     box-shadow: 0 2px 5px rgba(0,0,0,0.3);
     z-index: 2;
+    white-space: nowrap;
 }
 
-/* --- 2. PRAWA STRONA: STATYSTYKI --- */
+/* --- ŚRODEK: INFO I STATYSTYKI --- */
 .hero-content {
-    z-index: 1;
     display: flex;
     flex-direction: column;
     justify-content: center;
+    overflow: hidden; /* Zabezpieczenie przed rozpychaniem */
 }
 
 .hero-rank-title {
-    font-size: 1.4rem;
+    font-size: 1.2rem;
     font-weight: 800;
     margin: 0 0 0.5rem 0;
     text-transform: uppercase;
@@ -374,69 +360,245 @@ main {
     background: linear-gradient(90deg, #fff, #ccc);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
+    white-space: nowrap;
 }
 
-/* Grid dla metryk (Streak & Shield) */
+/* Kontener na kafelki statystyk (Seria, Tarcza) */
 .hero-metrics-grid {
     display: flex;
-    gap: 1rem;
+    gap: 10px;
+    flex-wrap: wrap;
 }
 
+/* Pojedynczy kafelek statystyki */
 .metric-item {
-    background: rgba(0, 0, 0, 0.3);
-    padding: 0.5rem 0.8rem;
+    background: rgba(0, 0, 0, 0.25);
+    padding: 6px 10px;
     border-radius: 8px;
     display: flex;
     align-items: center;
     gap: 8px;
     border: 1px solid rgba(255, 255, 255, 0.1);
+    flex-grow: 0;
+    min-width: max-content; /* Zapobiega ściskaniu tekstu */
 }
 
+/* KLUCZOWA POPRAWKA: Sztywna wielkość ikon */
 .metric-icon {
     width: 20px;
     height: 20px;
+    display: block; /* Fix dla SVG */
+    flex-shrink: 0;
 }
 
 .metric-text {
     display: flex;
     flex-direction: column;
+    line-height: 1.1;
 }
 
 .metric-label {
-    font-size: 0.65rem;
+    font-size: 0.6rem;
     text-transform: uppercase;
     opacity: 0.7;
     letter-spacing: 0.5px;
 }
 
 .metric-value {
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     font-weight: 700;
-    line-height: 1.1;
 }
 
-/* Kolory tarczy w zależności od stanu */
+/* Kolory statusów tarczy */
 .shield-score.strong { color: var(--success-color); }
 .shield-score.stable { color: var(--gold-color); }
 .shield-score.vulnerable { color: var(--danger-color); }
 .shield-score.critical { color: #ff4444; animation: pulse-text 2s infinite; }
 
-@keyframes pulse-text {
-    0% { opacity: 1; }
-    50% { opacity: 0.6; }
-    100% { opacity: 1; }
+/* --- PRAWA: RYTM TYGODNIOWY (HUD) --- */
+.hero-weekly-rhythm {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    border-left: 1px solid rgba(255,255,255,0.15);
+    padding-left: 1.5rem;
+    min-width: 140px;
+    flex-shrink: 0;
 }
 
-/* Mobile adjustments */
-@media (max-width: 480px) {
+.weekly-chart-label {
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    opacity: 0.6;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+    font-weight: 700;
+}
+
+.weekly-chart-grid {
+    display: flex;
+    gap: 5px;
+}
+
+.week-day-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+}
+
+.day-bar {
+    width: 6px;
+    height: 24px;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.1);
+    transition: all 0.3s;
+}
+
+.day-label {
+    font-size: 0.55rem;
+    opacity: 0.5;
+    font-weight: 600;
+}
+
+/* Stany wykresu */
+.day-bar.filled {
+    background: var(--gold-color);
+    box-shadow: 0 0 8px rgba(233, 196, 106, 0.5);
+    height: 24px;
+}
+
+.day-bar.current {
+    background: rgba(255,255,255,0.3);
+    border: 1px solid rgba(255,255,255,0.5);
+    animation: pulse-bar 2s infinite;
+}
+
+.day-bar.empty {
+    height: 12px;
+    margin-top: auto;
+}
+
+@keyframes pulse-text { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+@keyframes pulse-bar { 0% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4); } 70% { box-shadow: 0 0 0 4px rgba(255, 255, 255, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); } }
+
+/* --- RESPANSYWNOŚĆ (MOBILE OPTIMIZATION) --- */
+/* --- RESPANSYWNOŚĆ V2 (MOBILE OPTIMIZATION - COMPACT FULL) --- */
+@media (max-width: 700px) {
+    
+    /* 1. ZOPTYMALIZOWANY HERO DASHBOARD (Wszystko w jednej linii) */
     #hero-dashboard {
-        grid-template-columns: 1fr; /* Stack on mobile */
-        text-align: center;
-        justify-items: center;
-        gap: 1rem;
+        /* Grid 3-kolumnowy: Avatar | Info | Wykres */
+        display: grid;
+        grid-template-columns: auto 1fr auto; 
+        gap: 12px; /* Mniejszy odstęp między elementami */
+        
+        padding: 12px 16px; /* Kompaktowy padding */
+        margin-bottom: 1rem;
+        align-items: center; /* Wyrównanie w pionie */
+        
+        background: linear-gradient(160deg, #0f1c2e 0%, var(--primary-color) 90%);
     }
-    .hero-metrics-grid {
+
+    /* LEWA: AVATAR */
+    .hero-avatar-wrapper {
+        width: 54px;
+        height: 54px;
+        margin: 0;
+        flex-shrink: 0;
+    }
+    
+    .level-badge {
+        font-size: 0.55rem;
+        bottom: -4px;
+        padding: 1px 5px;
+    }
+
+    /* ŚRODEK: TYTUŁ I STATYSTYKI */
+    .hero-content {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start; /* Do lewej */
         justify-content: center;
+        min-width: 0; /* Zapobiega rozpychaniu grida */
+    }
+
+    .hero-rank-title {
+        font-size: 0.85rem; /* Mniejszy tytuł */
+        margin-bottom: 4px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        width: 100%;
+    }
+    
+    .hero-metrics-grid {
+        gap: 6px;
+    }
+    
+    .metric-item {
+        padding: 3px 6px;
+        background: rgba(0,0,0,0.3);
+        border-radius: 6px;
+    }
+    
+    .metric-icon {
+        width: 12px;
+        height: 12px;
+    }
+    
+    /* Ukrywamy etykiety tekstowe, zostawiamy tylko ikony i liczby */
+    .metric-label { display: none; }
+    .metric-value { font-size: 0.75rem; line-height: 1; }
+
+    /* PRAWA: PRZYWRACAMY WYKRES (Wersja Mini) */
+    .hero-weekly-rhythm {
+        display: flex; /* Pokaż! */
+        flex-direction: column;
+        align-items: flex-end;
+        border-left: 1px solid rgba(255,255,255,0.15);
+        padding-left: 10px;
+        padding-top: 0;
+        min-width: auto;
+        flex-shrink: 0;
+    }
+    
+    .weekly-chart-label {
+        font-size: 0.5rem; /* Mikroskopijny nagłówek */
+        margin-bottom: 3px;
+    }
+    
+    .weekly-chart-grid {
+        gap: 3px; /* Ciasno upakowane słupki */
+    }
+    
+    .day-bar {
+        width: 4px; /* Bardzo cienkie słupki */
+        height: 18px; /* Niskie */
+        border-radius: 2px;
+    }
+    
+    .day-bar.filled { height: 18px; }
+    .day-bar.empty { height: 6px; }
+    
+    .day-label {
+        font-size: 0.5rem;
+        margin-top: 2px;
+    }
+
+    /* 2. FIX DLA PRZYCISKU START (Zwiększamy miejsce na dole) */
+    /* Zwiększamy padding dolny kontenera głównego, 
+       żeby treść nie chowała się za nawigacją */
+    main {
+        padding-bottom: 160px !important; 
+    }
+    
+    .mission-card {
+        margin-bottom: 20px; /* Dodatkowy margines pod kartą misji */
+    }
+    
+    .section-title {
+        margin: 1.5rem 0 0.5rem 0;
     }
 }
 
@@ -593,6 +755,71 @@ input[type="range"] {
     min-width: 3ch;
     text-align: center;
 }
+
+/* Nowa klasa dla spójnych przycisków z ikonami */
+.btn-with-icon {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px; /* Odstęp między ikoną a tekstem */
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border-radius: var(--radius-md);
+    border: 1px solid; /* Kolor bordera dziedziczy lub jest nadpisywany */
+    background-color: transparent;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    line-height: 1;
+}
+
+.btn-with-icon img,
+.btn-with-icon svg {
+    width: 16px;
+    height: 16px;
+    display: block;
+    /* Ważne dla SVG wczytywanych jako img - nie zmienimy koloru przez CSS fill, 
+       ale nasze SVG mają stroke="currentColor", co zadziała dla inline SVG. 
+       Dla <img> musimy polegać na kolorze ikony lub filtrach, 
+       ale tutaj ikony są "outline", więc przyjmą kolor tekstu jeśli są inline, 
+       lub będą czarne/domyślne jeśli są img. 
+       W tym wypadku dla spójności użyjemy <img> i zaakceptujemy ich domyślny kolor 
+       lub użyjemy inline SVG w JS. */
+}
+
+.btn-with-icon:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+/* Kolory specyficzne */
+.btn-secondary {
+    color: var(--secondary-color);
+    border-color: var(--secondary-color);
+}
+.btn-secondary:hover {
+    background-color: var(--secondary-color);
+    color: #fff;
+}
+
+.btn-danger {
+    color: var(--danger-color);
+    border-color: var(--danger-color);
+}
+.btn-danger:hover {
+    background-color: var(--danger-color);
+    color: #fff;
+}
+
+.btn-primary {
+    color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+.btn-primary:hover {
+    background-color: var(--primary-color);
+    color: #fff;
+}
+
 
 /* ============================================= */
 /* === 7. HISTORIA I KALENDARZ === */
@@ -905,7 +1132,7 @@ input[type="range"] {
     100% { box-shadow: 0 0 0 0 rgba(233, 196, 106, 0); }
 }
 /* ============================================= */
-/* === 9. USTAWIENIA (PRZYWRÓCONE) === */
+/* === 9. USTAWIENIA === */
 /* ============================================= */
 .settings-section {
     margin-top: 3rem;
@@ -1009,6 +1236,8 @@ input[type="range"] {
     align-items: center;
     justify-content: center;
     min-height: 20vh;
+    /* DODANO: Odstęp od dołu, żeby nie kleił się do tytułu */
+    margin-bottom: 3rem; 
 }
 
 #focus-timer-display {
@@ -1073,17 +1302,7 @@ input[type="range"] {
     color: var(--gold-color);
 }
 
-#focus-description {
-    background: rgba(0, 0, 0, 0.2);
-    padding: 1rem;
-    border-radius: 8px;
-    margin-bottom: 1.5rem;
-    font-size: 1rem;
-    line-height: 1.6;
-    text-align: left;
-    max-height: 20vh;
-    overflow-y: auto;
-}
+/* Uwaga: Usunięto stary styl #focus-description */
 
 .focus-controls {
     display: flex;
@@ -1300,7 +1519,6 @@ input[type="range"] {
     .hero-header { justify-content: center; gap: 1rem; }
     .hero-stats { width: 100%; }
     
-    /* --- TUTAJ JEST KLUCZOWA ZMIANA --- */
     #app-footer {
         padding-bottom: 100px !important;
     }
@@ -1479,22 +1697,19 @@ input[type="range"] {
 }
 
 .swap-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 4px;
-    color: var(--muted-text-color);
-    transition: color 0.2s, transform 0.2s;
+    flex-shrink: 0;
+    background: #f1f5f9;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
     display: flex;
     align-items: center;
     justify-content: center;
+    margin-left: 10px;
 }
-
 .swap-btn:hover {
-    color: var(--secondary-color);
-    background: rgba(10, 147, 150, 0.1);
-    border-radius: 50%;
-    transform: rotate(180deg);
+    background: var(--primary-color);
+    color: #fff;
 }
 
 .swap-icon {
@@ -1630,6 +1845,8 @@ input[type="range"] {
     padding: 4px 10px;
     border-radius: 20px;
     transition: color 0.3s, background 0.3s;
+    white-space: nowrap;
+    flex-shrink: 0;  
 }
 
 /* Zmiana koloru czasu, gdy trening jest skrócony */
@@ -1882,23 +2099,6 @@ input[type="range"] {
     text-decoration: underline;
 }
 
-/* Ikona Swap (Dopasowanie do nowego nagłówka) */
-.swap-btn {
-    flex-shrink: 0;
-    background: #f1f5f9;
-    border-radius: 50%;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-left: 10px;
-}
-.swap-btn:hover {
-    background: var(--primary-color);
-    color: #fff;
-}
-
 /* style.css - COMPLETED MISSION STATE */
 
 .mission-card.completed {
@@ -1929,7 +2129,15 @@ input[type="range"] {
     align-items: center;
     justify-content: center;
     color: var(--success-color);
-    margin-bottom: 0.5rem;
+    margin: 0 auto 0.5rem auto; /* Auto margin centruje blokowo */
+}
+
+/* Zabezpieczenie, gdyby obrazek się nie załadował (tekst "Check") */
+.completed-icon img {
+    display: block;
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
 }
 
 .completed-title {
@@ -1946,22 +2154,52 @@ input[type="range"] {
     margin: 0;
 }
 
+/* --- POPRAWKA WYRÓWNANIA STATYSTYK --- */
+
 .completed-stats {
     display: flex;
     justify-content: center;
-    gap: 2rem;
+    gap: 1rem; /* Zmniejszamy nieco przerwę, żeby się ładnie mieściło */
     margin: 1.5rem 0;
     padding: 1rem;
     background: rgba(255,255,255,0.6);
     border-radius: 12px;
     border: 1px solid rgba(0,0,0,0.05);
+    /* Ważne: Wyrównujemy kolumny do góry, żeby labels były równo, 
+       ale zaraz to poprawimy wewnątrz .c-stat */
+    align-items: stretch; 
 }
 
 .c-stat {
     text-align: center;
+    flex: 1; /* Obie statystyki zajmują tyle samo miejsca */
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between; /* Rozpycha wartość i etykietę */
+    gap: 5px;
 }
-.c-stat-val { font-weight: 800; font-size: 1.2rem; color: var(--primary-color); }
-.c-stat-label { font-size: 0.7rem; text-transform: uppercase; opacity: 0.6; letter-spacing: 1px; }
+
+.c-stat-val {
+    font-weight: 800;
+    font-size: 1.1rem; /* Lekko mniejszy font, żeby dłuższe teksty weszły */
+    color: var(--primary-color);
+    
+    /* KLUCZOWA ZMIANA: Flexbox centrujący */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.5rem; /* Rezerwujemy stałą wysokość dla wiersza wartości */
+    line-height: 1.2;
+}
+
+.c-stat-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    opacity: 0.6;
+    letter-spacing: 1px;
+    margin-top: auto; /* Dopycha etykietę do dołu kontenera */
+}
+
 
 .view-details-btn {
     background: transparent;
@@ -1983,75 +2221,343 @@ input[type="range"] {
 
 /* style.css - POPRAWKA PRZYCISKÓW W MODALU SWAP */
 
-/* Wymuszamy identyczny wygląd dla obu przycisków w sekcji akcji modala */
 .swap-actions .nav-btn,
 .swap-actions .action-btn {
-    padding: 12px 16px;       /* Identyczny padding */
-    height: 48px;             /* Wymuszona, identyczna wysokość */
-    font-size: 1rem;          /* Identyczny rozmiar tekstu */
+    padding: 12px 16px;       
+    height: 48px;             
+    font-size: 1rem;          
     line-height: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 8px;       /* Identyczne zaokrąglenie */
-    box-sizing: border-box;   /* Gwarancja, że border nie psuje wysokości */
+    border-radius: 8px;       
+    box-sizing: border-box;   
 }
 
-/* Dodatkowe dopasowanie, aby 'Wymień' nie był zbyt dominujący */
 .swap-actions .action-btn {
     font-weight: 600;
     letter-spacing: 0.5px;
 }
 
-/* Upewniamy się, że kontener przycisków ładnie je rozciąga */
 .swap-actions > div[style*="display:flex"] {
-    align-items: stretch; /* Rozciągnij do równej wysokości */
+    align-items: stretch; 
 }
 
 /* style.css - POPRAWKA GÓRNYCH PRZYCISKÓW (TOGGLE) */
 
-/* === OSTATECZNY FIX WYSOKOŚCI PRZYCISKÓW (MODAL) === */
-
-/* 1. Kontenery: Wymuszamy rozciąganie dzieci do równej wysokości */
 .swap-type-toggle,
 .swap-actions > div[style*="display:flex"] {
     display: flex !important;
-    align-items: stretch !important; /* To klucz: przyciski muszą być równe */
+    align-items: stretch !important; 
     gap: 10px !important;
     margin-bottom: 10px;
 }
 
-/* 2. Wszystkie przyciski w modalu (Górne i Dolne) */
 .swap-modal .toggle-btn,
 .swap-modal .nav-btn,
 .swap-modal .action-btn {
-    /* Sztywna wysokość dla wszystkich */
     height: 50px !important;
     min-height: 50px !important;
     max-height: 50px !important;
-    
-    /* Centrowanie zawartości */
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    
-    /* Resetowanie paddingów i marginesów */
     padding: 0 10px !important;
     margin: 0 !important;
-    
-    /* Tekst i Ramki */
     font-size: 0.9rem !important;
     line-height: 1 !important;
     box-sizing: border-box !important;
-    border-width: 1px !important; /* Żeby border nie zmieniał wysokości */
+    border-width: 1px !important; 
 }
 
-/* 3. Poprawka dla Emoji i Ikon wewnątrz przycisków */
-/* Upewniamy się, że emoji nie rozpychają linii */
 .swap-modal button span,
 .swap-modal button svg,
 .swap-modal button img {
     display: inline-flex !important;
     vertical-align: middle !important;
     line-height: 1 !important;
+}
+
+
+/* --- VISUAL CARD (Wrapper) --- */
+.visual-card-wrapper {
+    /* WYSOKOŚĆ: Stała, zredukowana (ok. 20% niższa niż wcześniej) */
+    height: 25vh; 
+    min-height: 200px; /* Zabezpieczenie, żeby tekst się mieścił na małych ekranach */
+    
+    /* DOMYŚLNIE (ANIMACJA): KWAADRAT */
+    /* Szerokość dopasowana do wysokości (Square) */
+    width: 25vh; 
+    min-width: 200px;
+
+    /* CENTROWANIE I POZYCJONOWANIE */
+    margin: 0 auto 2rem auto;
+    position: relative;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    
+    /* PŁYNNA ANIMACJA ZMIANY KSZTAŁTU */
+    transition: width 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+/* --- STAN: OPIS WIDOCZNY (Rozszerzamy kartę) --- */
+/* Gdy animacja jest ukryta (czyli czytamy opis), karta robi się szeroka */
+.visual-card-wrapper:has(.focus-animation-container.hidden) {
+    /* SZEROKOŚĆ: 80% kontenera (Dokładnie tyle co przycisk GOTOWE) */
+    width: 80%; 
+    max-width: 600px; /* Limit na desktopie */
+}
+
+/* Wspólne style kontenerów wewnątrz */
+.visual-card-content {
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+    border-radius: 24px;
+    overflow: hidden;
+    transition: opacity 0.3s ease;
+}
+
+/* --- Stylizacja Opisu (Dark/Glass) --- */
+.focus-description-container {
+    background-color: rgba(0, 0, 0, 0.25) !important; 
+    color: #ffffff !important; 
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    
+    padding: 1.2rem 1.5rem;
+    font-size: 0.95rem; /* Lekko mniejszy font dla lepszego upakowania */
+    line-height: 1.5;
+    text-align: left;
+    
+    overflow-y: auto; /* Suwak, jeśli tekst jest bardzo długi */
+    
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    z-index: 10;
+}
+
+/* --- Stylizacja Animacji (Light Card) --- */
+.focus-animation-container {
+    background-color: #f8f9fa !important; 
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 0;
+    z-index: 10;
+}
+
+.focus-animation-container svg {
+    /* SVG wypełnia kwadrat w 100% */
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* Ikona info/obrotu */
+.flip-indicator {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    pointer-events: none;
+    z-index: 20;
+    transition: background 0.3s;
+}
+
+/* Kolory ikony zależne od tła */
+.focus-description-container:not(.hidden) ~ .flip-indicator {
+    background: rgba(255, 255, 255, 0.15);
+}
+.focus-description-container:not(.hidden) ~ .flip-indicator img {
+    filter: brightness(0) invert(1);
+}
+
+.focus-animation-container:not(.hidden) ~ .flip-indicator {
+    background: rgba(0, 95, 115, 0.1);
+}
+
+.flip-indicator img, 
+.flip-indicator svg {
+    width: 18px;
+    height: 18px;
+    opacity: 0.8;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* --- HYBRYDOWY FEEDBACK (Summary Screen) --- */
+
+.feedback-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+/* KARTY FEEDBACKU (Wspólne style) */
+.feedback-option {
+    background: #fff;
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 1.2rem;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.feedback-option:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+}
+
+.feedback-option.selected {
+    border-color: var(--primary-color);
+    background: #f0f9ff;
+    box-shadow: 0 0 0 4px rgba(0, 95, 115, 0.15);
+}
+
+.fb-icon {
+    font-size: 2rem;
+    line-height: 1;
+}
+
+.fb-text h4 { margin: 0; font-size: 1rem; color: var(--text-color); }
+.fb-text p { margin: 0.2rem 0 0 0; font-size: 0.8rem; opacity: 0.7; }
+
+/* --- WARIANT A: SYMPTOMY (Medyczny) --- */
+.feedback-option[data-type="symptom"][data-value="1"].selected { /* Ulga */
+    border-color: var(--success-color); background: #f0fff4;
+}
+.feedback-option[data-type="symptom"][data-value="-1"].selected { /* Gorzej */
+    border-color: var(--danger-color); background: #fff5f5;
+}
+
+/* --- WARIANT B: TENSION (Lina/Cięciwa) --- */
+.feedback-option[data-type="tension"] {
+    border-style: dashed; /* Styl techniczny */
+}
+
+/* Stan 1: Luźna Lina */
+.feedback-option[data-type="tension"][data-value="1"].selected {
+    border-color: #6c757d; border-style: solid; background: #f8f9fa;
+}
+
+/* Stan 2: Napięta (Sweet Spot) - ZŁOTA */
+.feedback-option[data-type="tension"][data-value="0"].selected {
+    border-color: var(--gold-color); border-style: solid;
+    background: linear-gradient(135deg, #fff 0%, #fffdf0 100%);
+    box-shadow: 0 0 20px rgba(233, 196, 106, 0.3);
+}
+
+/* Stan 3: Pękająca (Failure) */
+.feedback-option[data-type="tension"][data-value="-1"].selected {
+    border-color: var(--danger-color); border-style: solid; background: #fff5f5;
+}
+
+/* --- CEREMONIA EWOLUCJI (MODAL) --- */
+.evolution-modal {
+    background: linear-gradient(160deg, #0f1c2e 0%, #003d4d 100%);
+    color: #fff;
+    text-align: center;
+    padding: 2.5rem 1.5rem;
+    border-radius: 20px;
+    width: 90%;
+    max-width: 400px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    position: relative;
+    overflow: hidden;
+    animation: popIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Złote promienie w tle */
+.evolution-modal::before {
+    content: '';
+    position: absolute;
+    top: -50%; left: -50%;
+    width: 200%; height: 200%;
+    background: conic-gradient(from 0deg, transparent 0deg, rgba(233, 196, 106, 0.1) 60deg, transparent 120deg);
+    animation: rotateRay 10s linear infinite;
+    pointer-events: none;
+}
+
+@keyframes rotateRay { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+.evo-icon-wrapper {
+    position: relative;
+    width: 80px; height: 80px;
+    margin: 0 auto 1.5rem auto;
+    background: rgba(255,255,255,0.1);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid var(--gold-color);
+    box-shadow: 0 0 30px rgba(233, 196, 106, 0.4);
+}
+
+.evo-title {
+    font-size: 1.8rem;
+    font-weight: 800;
+    margin: 0 0 0.5rem 0;
+    color: var(--gold-color);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+.evo-desc { font-size: 0.95rem; opacity: 0.8; margin-bottom: 2rem; line-height: 1.5; }
+
+.change-box {
+    background: rgba(0,0,0,0.3);
+    border-radius: 10px;
+    padding: 1rem;
+    margin-bottom: 2rem;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+.change-arrow { font-size: 1.5rem; margin: 0.5rem 0; color: var(--gold-color); }
+.ex-name { font-weight: 700; font-size: 1.1rem; }
+
+/* style.css - Dodaj na końcu lub w sekcji FOOTER */
+
+.legal-links {
+    margin: 1rem 0;
+    font-size: 0.85rem;
+}
+
+.legal-links a {
+    color: var(--text-color);
+    opacity: 0.7;
+    text-decoration: none;
+    transition: opacity 0.2s;
+    border-bottom: 1px dotted var(--border-color);
+}
+
+.legal-links a:hover {
+    opacity: 1;
+    color: var(--primary-color);
+    border-bottom-style: solid;
+}
+
+.separator {
+    margin: 0 8px;
+    opacity: 0.4;
+}
+
+/* Poprawka dla stopki, aby pomieściła nowe elementy */
+#app-footer .disclaimer {
+    margin-bottom: 0.5rem; /* Zmniejszamy margines, bo doszły linki */
 }

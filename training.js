@@ -1,13 +1,14 @@
 // training.js
 
 import { state } from './state.js';
-import { focus, screens } from './dom.js';
+// ZMIANA: Dodano import initializeFocusElements
+import { focus, screens, initializeFocusElements } from './dom.js';
 import { speak } from './tts.js';
 import { startTimer, stopTimer, startStopwatch, stopStopwatch, updateTimerDisplay, updateStopwatchDisplay } from './timer.js';
 import { getExerciseDuration, parseSetCount, formatForTTS, getHydratedDay } from './utils.js';
-import { navigateTo, renderSummaryScreen } from './ui.js';
-// POPRAWKA: Usunięto 'sendMessage' z importu
-import { getIsCasting, sendTrainingStateUpdate, sendSetupQueue } from './cast.js';
+import { navigateTo} from './ui.js';
+import { renderSummaryScreen } from './ui/screens/summary.js';
+import { getIsCasting, sendTrainingStateUpdate } from './cast.js';
 
 /**
  * Synchronizacja z Chromecastem
@@ -32,7 +33,8 @@ function syncStateToChromecast() {
         exerciseName: exercise.isWork ? `${exercise.name} (Seria ${exercise.currentSet}/${exercise.totalSets})` : exercise.name,
         exerciseDetails: exercise.isWork ? `Czas/Powt: ${exercise.reps_or_time} | Tempo: ${exercise.tempo_or_iso}` : `Następne: ${(state.flatExercises[state.currentExerciseIndex + 1] || {}).name || ''}`,
         nextExercise: nextWorkExercise ? nextWorkExercise.name : 'Koniec',
-        isRest: !exercise.isWork
+        isRest: !exercise.isWork,
+        animationSvg: exercise.animationSvg || null
     };
 
     sendTrainingStateUpdate(payload);
@@ -81,7 +83,6 @@ export function moveToNextExercise(options = { skipped: false }) {
     
     stopTimer();
     
-    // Czyścimy ewentualny timeout przerwy "START..."
     if (state.breakTimeoutId) {
         clearTimeout(state.breakTimeoutId);
         state.breakTimeoutId = null;
@@ -114,19 +115,21 @@ export function startExercise(index) {
     state.currentExerciseIndex = index;
     const exercise = state.flatExercises[index];
     
-    // Aktualizacja ikony dźwięku
+    // 1. Aktualizacja UI ogólnego (Pasek postępu, Ikona TTS)
     if (focus.ttsIcon) {
         focus.ttsIcon.src = state.tts.isSoundOn ? '/icons/sound-on.svg' : '/icons/sound-off.svg';
     }
 
-    focus.prevStepBtn.disabled = (index === 0);
-    focus.progress.textContent = `${index + 1} / ${state.flatExercises.length}`;
+    if (focus.prevStepBtn) {
+        focus.prevStepBtn.disabled = (index === 0);
+    }
+    if (focus.progress) {
+        focus.progress.textContent = `${index + 1} / ${state.flatExercises.length}`;
+    }
 
-    // LOGIKA PAUZY PRZY NAWIGACJI
-    // Jeśli user był w trybie pauzy, zostajemy w nim, ale resetujemy licznik pauzy dla nowego kroku
+    // 2. Obsługa Stanu Pauzy (UI przycisków)
     if (state.isPaused) {
-        state.lastPauseStartTime = Date.now(); // Restartujemy liczenie czasu pauzy od teraz
-        // Ustawiamy ikonę Play (Wznów), bo jesteśmy zatrzymani
+        state.lastPauseStartTime = Date.now(); // Restart licznika pauzy
         if (focus.pauseResumeBtn) {
             focus.pauseResumeBtn.innerHTML = `<img src="/icons/control-play.svg" alt="Wznów">`;
             focus.pauseResumeBtn.classList.add('paused-state');
@@ -134,7 +137,6 @@ export function startExercise(index) {
         }
         if (focus.timerDisplay) focus.timerDisplay.style.opacity = '0.5';
     } else {
-        // Normalny stan - upewniamy się, że przycisk to Pauza
         if (focus.pauseResumeBtn) {
             focus.pauseResumeBtn.innerHTML = `<img src="/icons/control-pause.svg" alt="Pauza">`;
             focus.pauseResumeBtn.classList.remove('paused-state');
@@ -143,12 +145,42 @@ export function startExercise(index) {
         if (focus.timerDisplay) focus.timerDisplay.style.opacity = '1';
     }
 
+    // 3. Przygotowanie kontenerów Karty Wizualnej
+    const animContainer = document.getElementById('focus-animation-container');
+    const descContainer = document.getElementById('focus-description');
+    const flipIndicator = document.querySelector('.flip-indicator'); // Ikona "obrotu"
+
+    // Zawsze czyścimy kontener animacji przed załadowaniem nowej
+    if (animContainer) animContainer.innerHTML = '';
+
+    // ============================================================
+    // SCENARIUSZ A: ĆWICZENIE (WORK)
+    // ============================================================
     if (exercise.isWork) {
         focus.sectionName.textContent = exercise.sectionName;
         focus.exerciseName.textContent = `${exercise.name} (Seria ${exercise.currentSet} / ${exercise.totalSets})`;
         focus.exerciseDetails.textContent = `Czas/Powt: ${exercise.reps_or_time} | Tempo: ${exercise.tempo_or_iso}`;
         focus.focusDescription.textContent = exercise.description || '';
         
+        // --- LOGIKA KARTY WIZUALNEJ ---
+        if (exercise.animationSvg && animContainer && descContainer) {
+            // Mamy animację: Domyślnie pokaż animację, ukryj opis
+            animContainer.innerHTML = exercise.animationSvg;
+            animContainer.classList.remove('hidden');
+            descContainer.classList.add('hidden');
+            
+            // Pokaż wskaźnik, że można obrócić kartę
+            if (flipIndicator) flipIndicator.classList.remove('hidden');
+        } else if (animContainer && descContainer) {
+            // Brak animacji: Pokaż opis, ukryj kontener animacji
+            animContainer.classList.add('hidden');
+            descContainer.classList.remove('hidden');
+            
+            // Ukryj wskaźnik (nie ma do czego wracać)
+            if (flipIndicator) flipIndicator.classList.add('hidden');
+        }
+
+        // Ustalanie następnego ćwiczenia
         let nextWorkExercise = null;
         for (let i = index + 1; i < state.flatExercises.length; i++) {
             if (state.flatExercises[i].isWork) { nextWorkExercise = state.flatExercises[i]; break; }
@@ -163,10 +195,9 @@ export function startExercise(index) {
             focus.repBasedDoneBtn.classList.add('hidden');
             focus.pauseResumeBtn.classList.remove('hidden');
 
-            state.timer.timeLeft = duration; // Ustawiamy czas startowy
-            updateTimerDisplay(); // Wyświetlamy go
+            state.timer.timeLeft = duration; 
+            updateTimerDisplay(); 
 
-            // Uruchamiamy timer TYLKO jeśli nie ma pauzy
             if (!state.isPaused) {
                 startTimer(duration, () => moveToNextExercise({ skipped: false }), syncStateToChromecast);
             }
@@ -176,10 +207,9 @@ export function startExercise(index) {
             focus.repBasedDoneBtn.classList.remove('hidden');
             focus.pauseResumeBtn.classList.remove('hidden');
             
-            state.stopwatch.seconds = 0; // Zerujemy stoper
-            updateStopwatchDisplay(); // Wyświetlamy 00:00
+            state.stopwatch.seconds = 0; 
+            updateStopwatchDisplay(); 
 
-            // Uruchamiamy stoper TYLKO jeśli nie ma pauzy
             if (!state.isPaused) {
                 startStopwatch();
                 
@@ -189,8 +219,16 @@ export function startExercise(index) {
                 }
             }
         }
-    } else { 
-        // --- PRZERWA ---
+    } 
+    // ============================================================
+    // SCENARIUSZ B: PRZERWA (REST)
+    // ============================================================
+    else { 
+        // W przerwie zawsze pokazujemy opis (co nastąpi), ukrywamy animację poprzedniego
+        if (animContainer) animContainer.classList.add('hidden');
+        if (descContainer) descContainer.classList.remove('hidden');
+        if (flipIndicator) flipIndicator.classList.add('hidden'); // W przerwie raczej nie flipujemy
+
         const upcomingExercise = state.flatExercises[index + 1];
         if (!upcomingExercise) { moveToNextExercise({ skipped: false }); return; }
         
@@ -224,7 +262,6 @@ export function startExercise(index) {
             const startNextExercise = () => moveToNextExercise({ skipped: false });
             const restDuration = exercise.duration || 60;
             
-            // Ustawiamy czas wizualnie
             state.timer.timeLeft = restDuration > 5 ? restDuration : 5;
             updateTimerDisplay();
 
@@ -315,5 +352,9 @@ export async function startModifiedTraining() {
     ];
     
     navigateTo('training');
+    
+    // ZMIANA: KLUCZOWE - Odświeżamy referencje do elementów DOM po nawigacji
+    initializeFocusElements();
+
     startExercise(0);
 }

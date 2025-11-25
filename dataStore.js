@@ -94,39 +94,66 @@ const dataStore = {
      * Inicjalizuje profil użytkownika po zalogowaniu.
      * Pobiera ustawienia, stan integracji oraz STATYSTYKI GAMIFIKACJI.
      */
+
     initialize: async () => {
         try {
+            // 1. Pobieramy "Lekkie" dane
             const data = await callAPI('get-or-create-user-data');
             
-            // Reset lokalnego stanu postępu (zostanie wypełniony przez getHistory)
-            state.userProgress = {}; 
+            if (!state.userProgress) state.userProgress = {}; 
 
-            // 1. Ustawienia
-            if (data.settings) {
-                state.settings = { ...state.settings, ...data.settings };
+            if (data.settings) state.settings = { ...state.settings, ...data.settings };
+            if (data.integrations) state.stravaIntegration.isConnected = !!data.integrations.isStravaConnected;
+
+            // 2. Obsługa Statystyk (Cache + Placeholder)
+            // Najpierw sprawdzamy cache
+            const cachedStats = localStorage.getItem('cachedUserStats');
+            if (cachedStats) {
+                state.userStats = JSON.parse(cachedStats);
+                console.log("📊 Załadowano statystyki z cache lokalnego.");
+            } else {
+                // Jeśli brak cache i brak danych z serwera, ustawiamy domyślne
+                state.userStats = { totalSessions: 0, streak: 0, resilience: null }; 
+                // resilience: null oznacza "trwa ładowanie"
             }
 
-            // 2. Integracje
-            if (data.integrations) {
-                state.stravaIntegration.isConnected = !!data.integrations.isStravaConnected;
-            }
-
-            // 3. Gamifikacja (Backend Backup)
-            // Zapisujemy dane z serwera, które będą użyte w gamification.js jako fallback
-            if (data.stats) {
-                state.userStats = data.stats;
-                console.log('🏆 Statystyki użytkownika (Backend):', state.userStats);
+            // 3. Historia sesji (Recent)
+            if (data.recentSessions) {
+                data.recentSessions.forEach(session => {
+                    const dateKey = getISODate(new Date(session.completedAt));
+                    if (!state.userProgress[dateKey]) state.userProgress[dateKey] = [];
+                    const exists = state.userProgress[dateKey].find(s => String(s.sessionId) === String(session.sessionId));
+                    if (!exists) state.userProgress[dateKey].push(session);
+                });
             }
 
             await dataStore.fetchBlacklist(); 
-
             return data;
         } catch (error) {
             console.error("Initialization failed:", error);
-            alert("Nie udało się pobrać profilu użytkownika.");
             throw error;
         }
     },
+
+    fetchDetailedStats: async () => {
+        try {
+            console.log("🔄 Pobieranie szczegółowych statystyk w tle...");
+            const stats = await callAPI('get-user-stats');
+            
+            // Aktualizujemy stan
+            state.userStats = stats;
+            
+            // Aktualizujemy Cache
+            localStorage.setItem('cachedUserStats', JSON.stringify(stats));
+            
+            console.log("✅ Statystyki zaktualizowane:", stats);
+            return stats;
+        } catch (error) {
+            console.error("Błąd pobierania statystyk:", error);
+            return null;
+        }
+    },
+
 
     /**
      * Zapisuje zmienione ustawienia użytkownika.
@@ -206,62 +233,73 @@ const dataStore = {
      * Pobiera historię treningów dla danego miesiąca.
      * Mapuje dane z bazy do struktury: { "YYYY-MM-DD": [sessions] }
      */
-    getHistoryForMonth: async (year, month) => {
+    getHistoryForMonth: async (year, month, forceRefresh = false) => {
+        const cacheKey = `${year}-${month}`;
+
+        // 1. Sprawdź Cache (jeśli nie wymuszamy odświeżenia)
+        if (!forceRefresh && state.loadedMonths.has(cacheKey)) {
+            console.log(`⚡ Użyto cache dla: ${cacheKey}`);
+            return; // Kończymy, dane są już w state.userProgress
+        }
+
         try {
+            // 2. Pobierz z sieci
             const sessions = await callAPI('get-history-by-month', { 
                 params: { year, month } 
             });
 
-            // Transformacja tablicy w mapę dat
             const progressMap = {};
-            
             sessions.forEach(session => {
-                // Używamy daty zakończenia jako klucza. 
-                // getISODate wyciąga YYYY-MM-DD z obiektu Date.
                 const dateObj = new Date(session.completedAt);
                 const dateKey = getISODate(dateObj);
-
-                if (!progressMap[dateKey]) {
-                    progressMap[dateKey] = [];
-                }
+                if (!progressMap[dateKey]) progressMap[dateKey] = [];
                 progressMap[dateKey].push(session);
             });
 
-            // Aktualizacja stanu (merge z istniejącymi, aby nie nadpisywać innych miesięcy jeśli są w pamięci)
+            // 3. Aktualizuj stan i Cache
             state.userProgress = { ...state.userProgress, ...progressMap };
+            state.loadedMonths.add(cacheKey); // Oznaczamy miesiąc jako załadowany
             
-            console.log(`📅 Pobrano historię dla ${year}-${month}: ${sessions.length} sesji.`);
+            console.log(`📅 Pobrano historię dla ${cacheKey}`);
         } catch (error) {
             console.error(`Failed to fetch history for ${year}-${month}:`, error);
+            throw error; // Rzucamy błąd, żeby UI mógł zareagować (np. wyłączyć spinner)
         }
     },
     
-    /**
-     * Zapisuje nową sesję treningową.
-     */
+    // === MODYFIKACJA ZAPISU (INVALIDATION) ===
     saveSession: async (sessionData) => {
         try {
-            await callAPI('save-session', { 
+            // Wywołujemy API
+            const result = await callAPI('save-session', { 
                 method: 'POST', 
                 body: sessionData 
             });
-            console.log('✅ Sesja zapisana na serwerze.');
+            
+            // INVALIDATION: Dane się zmieniły, więc cache jest nieaktualny.
+            // Najprościej: czyścimy wszystko. Przy następnym wejściu w historię pobierze się nowa.
+            state.loadedMonths.clear();
+            console.log("🧹 Cache historii wyczyszczony po zapisie.");
+
+            return result;
         } catch (error) {
             console.error("Failed to save session:", error);
-            alert("Trening zapisany lokalnie, ale wystąpił błąd synchronizacji z chmurą.");
+            throw error;
         }
     },
 
-    /**
-     * Usuwa pojedynczą sesję.
-     */
+    // === MODYFIKACJA USUWANIA (INVALIDATION) ===
     deleteSession: async (sessionId) => {
         try {
             await callAPI('delete-session', { 
                 method: 'DELETE', 
                 params: { sessionId }
             });
-            console.log(`🗑️ Sesja ${sessionId} usunięta.`);
+            
+            // INVALIDATION: Usunięto wpis, cache jest nieaktualny.
+            state.loadedMonths.clear();
+            console.log("🧹 Cache historii wyczyszczony po usunięciu.");
+            
         } catch (error) {
             console.error(`Failed to delete session ${sessionId}:`, error);
             throw error;

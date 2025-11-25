@@ -21,47 +21,14 @@ export const assistant = {
     // [KOD POZOSTAJE BEZ ZMIAN - SKIPIUJĘ GO DLA CZYTELNOŚCI]
     // ============================================================
     calculateResilience: () => {
-        const HISTORY_WINDOW = 14; 
-        const TARGET_SESSIONS = 10; 
-        
-        const today = new Date();
-        let sessionCount = 0;
-        let lastTrainingDate = null;
-
-        for (let i = 0; i < HISTORY_WINDOW; i++) {
-            const checkDate = new Date(today);
-            checkDate.setDate(today.getDate() - i);
-            const isoDate = getISODate(checkDate);
-            const dayEntries = state.userProgress[isoDate];
-
-            if (dayEntries && dayEntries.length > 0) {
-                sessionCount++;
-                if (!lastTrainingDate) lastTrainingDate = checkDate;
-            }
+        // Jeśli serwer przysłał nam gotowe dane w state.userStats, używamy ich!
+        if (state.userStats && state.userStats.resilience) {
+            return state.userStats.resilience;
         }
 
-        let daysSinceLast = 0;
-        if (lastTrainingDate) {
-            const diffTime = Math.abs(today - lastTrainingDate);
-            daysSinceLast = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-        } else {
-            daysSinceLast = HISTORY_WINDOW;
-        }
-
-        let score = Math.min(100, Math.round((sessionCount / TARGET_SESSIONS) * 100));
-
-        if (daysSinceLast > 2) {
-            const penaltyDays = daysSinceLast - 2;
-            const penalty = penaltyDays * 10;
-            score = Math.max(0, score - penalty);
-        }
-
-        let status = 'Critical';
-        if (score >= 80) status = 'Strong';
-        else if (score >= 50) status = 'Stable';
-        else if (score >= 20) status = 'Vulnerable';
-
-        return { score, status, daysSinceLast, sessionCount };
+        // Fallback: Jeśli z jakiegoś powodu danych brak (np. błąd initu), zwracamy domyślne zero.
+        // Nie ma sensu liczyć tego lokalnie na niepełnych danych.
+        return { score: 0, status: 'Vulnerable', daysSinceLast: 0, sessionCount: 0 };
     },
 
     // ============================================================

@@ -1,12 +1,10 @@
 // service-worker.js
 
 // Definicja nazw i wersji pamięci podręcznej (cache).
-// Zmiana nazwy (np. na 'v2') automatycznie uruchomi proces aktualizacji i wyczyści stary cache.
 const STATIC_CACHE_NAME = 'static-assets-v1';
 const DYNAMIC_CACHE_NAME = 'dynamic-content-v1';
 
-// Lista kluczowych zasobów aplikacji (tzw. "App Shell"), które zostaną zapisane w cache podczas instalacji.
-// Zapewni to, że podstawowy interfejs aplikacji będzie zawsze dostępny, nawet offline.
+// Lista kluczowych zasobów aplikacji (tzw. "App Shell").
 const APP_SHELL_ASSETS = [
     '/',
     '/index.html',
@@ -24,13 +22,6 @@ const APP_SHELL_ASSETS = [
     '/icons/icon-512x512.png'
 ];
 
-/**
- * Krok 1: Instalacja Service Workera
- * 
- * To zdarzenie jest wywoływane jednorazowo podczas pierwszej rejestracji Service Workera.
- * Jego głównym zadaniem jest przygotowanie aplikacji do działania offline poprzez
- * zapisanie kluczowych zasobów (App Shell) w pamięci podręcznej.
- */
 self.addEventListener('install', (event) => {
     console.log('[Service Worker] Instalacja...');
     event.waitUntil(
@@ -41,14 +32,6 @@ self.addEventListener('install', (event) => {
     );
 });
 
-/**
- * Krok 2: Aktywacja Service Workera
- * 
- * To zdarzenie jest wywoływane po pomyślnej instalacji. Jest to idealne miejsce
- * do wykonania zadań porządkowych, takich jak usunięcie starych wersji cache,
- * które nie są już potrzebne. Zapewnia to, że użytkownik zawsze korzysta
- * z najnowszych zasobów po aktualizacji.
- */
 self.addEventListener('activate', (event) => {
     console.log('[Service Worker] Aktywacja...');
     event.waitUntil(
@@ -59,38 +42,45 @@ self.addEventListener('activate', (event) => {
             );
         })
     );
+    // Wymuszamy przejęcie kontroli przez nowego SW od razu
+    return self.clients.claim();
 });
-
 
 // * Krok 3: Przechwytywanie zapytań sieciowych (Fetch)
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
+
+    // --- NAPRAWA BŁĘDU FIREFOX / CDN ---
+    // Jeśli zapytanie idzie do innej domeny (np. cdn.jsdelivr.net, auth0.com),
+    // Service Worker NIE powinien go dotykać (nie używamy event.respondWith).
+    // Pozwalamy przeglądarce obsłużyć to standardowo.
+    if (url.origin !== self.location.origin) {
+        return;
+    }
 
     // Strategia dla zapytań do API Netlify Functions
     if (url.pathname.startsWith('/.netlify/functions/')) {
         // Obsługuj tylko zapytania, które modyfikują dane (POST, PUT, DELETE) strategią "tylko sieć"
         if (event.request.method !== 'GET') {
             event.respondWith(fetch(event.request));
-            return; // Zakończ, aby nie próbować buforować
+            return;
         }
-        
+
         // Dla zapytań GET użyj strategii Network First, Fallback to Cache
         event.respondWith(
             caches.open(DYNAMIC_CACHE_NAME).then((cache) => {
                 return fetch(event.request)
                     .then((networkResponse) => {
-                        // Poprawna obsługa: klonujemy i zapisujemy w cache tylko odpowiedzi GET
                         cache.put(event.request, networkResponse.clone());
                         return networkResponse;
                     })
                     .catch(() => {
-                        // Jeśli sieć zawiedzie, spróbuj znaleźć odpowiedź w cache
                         return cache.match(event.request);
                     });
             })
         );
-    } 
-    // Strategia dla wszystkich pozostałych zapytań (Cache First)
+    }
+    // Strategia dla wszystkich pozostałych zapytań lokalnych (Cache First)
     else {
         event.respondWith(
             caches.match(event.request).then((cachedResponse) => {
@@ -98,4 +88,7 @@ self.addEventListener('fetch', (event) => {
             })
         );
     }
+
+
+
 });

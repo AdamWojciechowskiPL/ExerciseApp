@@ -43,7 +43,7 @@ export const state = {
         isConnected: false
     },
     currentTrainingDate: null,
-
+    loadedMonths: new Set(),
     /**
      * Obiekt daty używany do nawigacji w widoku kalendarza.
      */
@@ -93,6 +93,13 @@ export const state = {
      */
     audioContext: null,
 
+    /**
+     * Parametry bieżącej sesji, ustalane na starcie (np. w pre-training).
+     */
+    sessionParams: {
+        initialPainLevel: 0,
+        timeFactor: 1.0
+    },
     /**
      * Funkcja generująca krótki dźwięk na zakończenie ćwiczenia/przerwy.
      */

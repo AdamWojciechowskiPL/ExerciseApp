@@ -1,4 +1,4 @@
-// app.js - WERSJA POPRAWIONA Z PEŁNĄ OBSŁUGĄ ZDARZEŃ OD PILOTA
+// app.js - WERSJA POPRAWIONA (FIX ReferenceError)
 
 // === 1. IMPORTY MODUŁÓW ===
 import { state } from './state.js';
@@ -8,21 +8,18 @@ import {
     renderMainScreen,
     renderHistoryScreen,
     renderSettingsScreen,
-    renderPreTrainingScreen,
-    renderTrainingScreen,
-    navigateTo,
     renderDayDetailsScreen,
     renderLibraryScreen,
+    renderTrainingScreen,
+    navigateTo,
     showLoader,
     hideLoader
 } from './ui.js';
-import { containers, mainNav, focus } from './dom.js';
-// Importujemy funkcje, które będą wywoływane przez listenery zdarzeń z pilota
-import { moveToNextExercise, moveToPreviousExercise } from './training.js';
+import { containers, mainNav, screens } from './dom.js';
+import { moveToPreviousExercise, moveToNextExercise } from './training.js';
 import { stopTimer, togglePauseTimer, stopStopwatch } from './timer.js';
 import { loadVoices } from './tts.js';
 import { initializeCastApi, getIsCasting, sendShowIdle } from './cast.js';
-import { assistant } from './assistantEngine.js';
 
 
 // === 2. GŁÓWNE FUNKCJE APLIKACJI ===
@@ -31,19 +28,25 @@ function initAppLogic() {
     renderTrainingScreen();
     renderMainScreen();
 
-    // Listener dla nawigacji desktopowej
-    mainNav.querySelector('#nav-main').addEventListener('click', () => { navigateTo('main'); renderMainScreen(); });
-    mainNav.querySelector('#nav-history').addEventListener('click', renderHistoryScreen);
-    mainNav.querySelector('#nav-library').addEventListener('click', () => renderLibraryScreen());
-    mainNav.querySelector('#nav-settings').addEventListener('click', renderSettingsScreen);
+    // --- NAWIGACJA DESKTOPOWA ---
+    if (mainNav) {
+        mainNav.querySelector('#nav-main').addEventListener('click', () => { navigateTo('main'); renderMainScreen(); });
+        mainNav.querySelector('#nav-history').addEventListener('click', renderHistoryScreen);
+        mainNav.querySelector('#nav-library').addEventListener('click', () => renderLibraryScreen());
+        mainNav.querySelector('#nav-settings').addEventListener('click', renderSettingsScreen);
+    }
     
-    // Listener dla nowej nawigacji mobilnej
+    // --- NAWIGACJA MOBILNA ---
     const bottomNav = document.getElementById('app-bottom-nav');
     if (bottomNav) {
         bottomNav.addEventListener('click', (e) => {
             const button = e.target.closest('.bottom-nav-btn');
             if (!button) return;
+            
             const screen = button.dataset.screen;
+            bottomNav.querySelectorAll('.bottom-nav-btn').forEach(btn => btn.classList.remove('active'));
+            button.classList.add('active');
+
             switch (screen) {
                 case 'main': renderMainScreen(); break;
                 case 'history': renderHistoryScreen(); break;
@@ -53,31 +56,62 @@ function initAppLogic() {
         });
     }
 
-    // Pozostałe listenery interfejsu
-    document.getElementById('prev-month-btn').addEventListener('click', () => { state.currentCalendarView.setMonth(state.currentCalendarView.getMonth() - 1); renderHistoryScreen(); });
-    document.getElementById('next-month-btn').addEventListener('click', () => { state.currentCalendarView.setMonth(state.currentCalendarView.getMonth() + 1); renderHistoryScreen(); });
-    containers.calendarGrid.addEventListener('click', (e) => { const dayEl = e.target.closest('.calendar-day.has-entry'); if (dayEl && dayEl.dataset.date) { renderDayDetailsScreen(dayEl.dataset.date); } });
-    document.getElementById('library-search-input').addEventListener('input', (e) => { renderLibraryScreen(e.target.value); });
-    document.getElementById('settings-form').addEventListener('submit', async (e) => { e.preventDefault(); state.settings.appStartDate = e.target['setting-start-date'].value; state.settings.progressionFactor = parseInt(e.target['setting-progression-factor'].value, 10); state.settings.activePlanId = e.target['setting-training-plan'].value; await dataStore.saveSettings(); alert('Ustawienia zostały zapisane.'); navigateTo('main'); renderMainScreen(); });
-    document.getElementById('setting-progression-factor').addEventListener('input', (e) => { document.getElementById('progression-factor-value').textContent = `${e.target.value}%`; });
+    // --- INNE LISTENERY ---
+    const prevMonthBtn = document.getElementById('prev-month-btn');
+    if(prevMonthBtn) prevMonthBtn.addEventListener('click', () => { 
+        state.currentCalendarView.setMonth(state.currentCalendarView.getMonth() - 1); 
+        renderHistoryScreen(); 
+    });
 
-    document.getElementById('delete-account-btn').addEventListener('click', async () => {
-        const confirmation1 = prompt("Czy na pewno chcesz usunąć swoje konto? To jest operacja nieodwracalna. Wpisz 'usuń moje konto' aby potwierdzić.");
-        if (confirmation1 !== 'usuń moje konto') {
-            alert("Anulowano. Tekst potwierdzający był nieprawidłowy.");
-            return;
-        }
-        const confirmation2 = confirm("OSTATECZNE POTWIERDZENIE:\nWszystkie Twoje dane zostaną trwale usunięte. Kontynuować?");
-        if (!confirmation2) {
-            alert("Anulowano usunięcie konta.");
-            return;
-        }
+    const nextMonthBtn = document.getElementById('next-month-btn');
+    if(nextMonthBtn) nextMonthBtn.addEventListener('click', () => { 
+        state.currentCalendarView.setMonth(state.currentCalendarView.getMonth() + 1); 
+        renderHistoryScreen(); 
+    });
+
+    if(containers.calendarGrid) {
+        containers.calendarGrid.addEventListener('click', (e) => { 
+            const dayEl = e.target.closest('.calendar-day.has-entry'); 
+            if (dayEl && dayEl.dataset.date) { 
+                renderDayDetailsScreen(dayEl.dataset.date); 
+            } 
+        });
+    }
+
+    const searchInput = document.getElementById('library-search-input');
+    if(searchInput) searchInput.addEventListener('input', (e) => { 
+        renderLibraryScreen(e.target.value); 
+    });
+
+    const settingsForm = document.getElementById('settings-form');
+    if(settingsForm) settingsForm.addEventListener('submit', async (e) => { 
+        e.preventDefault(); 
+        state.settings.appStartDate = e.target['setting-start-date'].value; 
+        state.settings.progressionFactor = parseInt(e.target['setting-progression-factor'].value, 10); 
+        state.settings.activePlanId = e.target['setting-training-plan'].value; 
+        
+        await dataStore.saveSettings(); 
+        alert('Ustawienia zostały zapisane.'); 
+        navigateTo('main'); 
+        renderMainScreen(); 
+    });
+    
+    const progressionSlider = document.getElementById('setting-progression-factor');
+    if(progressionSlider) progressionSlider.addEventListener('input', (e) => { 
+        document.getElementById('progression-factor-value').textContent = `${e.target.value}%`; 
+    });
+
+    const deleteAccountBtn = document.getElementById('delete-account-btn');
+    if(deleteAccountBtn) deleteAccountBtn.addEventListener('click', async () => {
+        const confirmation1 = prompt("Czy na pewno chcesz usunąć swoje konto? Wpisz 'usuń moje konto' aby potwierdzić.");
+        if (confirmation1 !== 'usuń moje konto') return;
+        if (!confirm("OSTATECZNE POTWIERDZENIE: Dane zostaną trwale usunięte.")) return;
 
         showLoader();
         try {
             await dataStore.deleteAccount();
             hideLoader();
-            alert("Twoje konto i wszystkie dane zostały pomyślnie usunięte. Zostaniesz teraz wylogowany.");
+            alert("Konto usunięte.");
             logout();
         } catch (error) {
             hideLoader();
@@ -85,158 +119,186 @@ function initAppLogic() {
         }
     });
 
-    focus.exitTrainingBtn.addEventListener('click', () => {
-        if (confirm('Czy na pewno chcesz przerwać trening? Postęp tej sesji nie zostanie zapisany.')) {
-            stopTimer();
-            stopStopwatch();
-            if (state.tts.isSupported) state.tts.synth.cancel();
-            if (getIsCasting()) sendShowIdle();
-            navigateTo('main');
-            renderMainScreen();
-        }
-    });
+    // Delegacja zdarzeń treningu
+    if (screens.training) {
+        screens.training.addEventListener('click', (e) => {
+            const target = e.target;
+            if (target.closest('#exit-training-btn')) {
+                if (confirm('Przerwać trening?')) {
+                    stopTimer();
+                    stopStopwatch();
+                    if (state.tts.isSupported) state.tts.synth.cancel();
+                    if (getIsCasting()) sendShowIdle();
+                    state.currentTrainingDate = null;
+                    state.sessionLog = [];
+                    state.isPaused = false;
+                    navigateTo('main');
+                    renderMainScreen();
+                }
+                return;
+            }
+            if (target.closest('#tts-toggle-btn')) {
+                state.tts.isSoundOn = !state.tts.isSoundOn;
+                const icon = document.getElementById('tts-icon');
+                if (icon) icon.src = state.tts.isSoundOn ? '/icons/sound-on.svg' : '/icons/sound-off.svg';
+                if (!state.tts.isSoundOn && state.tts.isSupported) state.tts.synth.cancel();
+                return;
+            }
+            if (target.closest('#prev-step-btn')) { moveToPreviousExercise(); return; }
+            if (target.closest('#pause-resume-btn')) { togglePauseTimer(); return; }
+            if (target.closest('#skip-btn')) { moveToNextExercise({ skipped: true }); return; }
+            if (target.closest('#rep-based-done-btn')) { moveToNextExercise({ skipped: false }); return; }
+        });
+    }
 
-    focus.ttsToggleBtn.addEventListener('click', () => {
-        state.tts.isSoundOn = !state.tts.isSoundOn;
-        
-        // --- ZMIANA: Podmieniamy src obrazka ---
-        if (focus.ttsIcon) {
-            focus.ttsIcon.src = state.tts.isSoundOn ? '/icons/sound-on.svg' : '/icons/sound-off.svg';
-        }
-        
-        if (!state.tts.isSoundOn && state.tts.isSupported) {
-            state.tts.synth.cancel();
-        }
-    });    focus.prevStepBtn.addEventListener('click', moveToPreviousExercise);
-    focus.pauseResumeBtn.addEventListener('click', togglePauseTimer);
-    focus.skipBtn.addEventListener('click', () => moveToNextExercise({ skipped: true }));
-    focus.repBasedDoneBtn.addEventListener('click', () => moveToNextExercise({ skipped: false }));
-    if (state.tts.isSupported) { loadVoices(); if (speechSynthesis.onvoiceschanged !== undefined) { speechSynthesis.onvoiceschanged = loadVoices; } }
-    document.getElementById('current-year').textContent = new Date().getFullYear();
+    if (state.tts.isSupported) { 
+        loadVoices(); 
+        if (speechSynthesis.onvoiceschanged !== undefined) speechSynthesis.onvoiceschanged = loadVoices; 
+    }
+    
+    const yearEl = document.getElementById('current-year');
+    if(yearEl) yearEl.textContent = new Date().getFullYear();
+}
+
+function checkAndMigrateLocalData() {
+    const localProgressRaw = localStorage.getItem('trainingAppProgress');
+    if (localProgressRaw && Object.keys(JSON.parse(localProgressRaw)).length > 0) {
+        setTimeout(() => {
+            if (confirm("Wykryliśmy dane lokalne. Przenieść na konto?")) {
+                showLoader();
+                dataStore.migrateData(JSON.parse(localProgressRaw))
+                    .then(() => {
+                        localStorage.removeItem('trainingAppProgress');
+                        localStorage.removeItem('trainingAppSettings');
+                        alert("Zmigrowano! Przeładowanie...");
+                        window.location.reload();
+                    })
+                    .catch(e => {
+                        hideLoader();
+                        alert("Błąd migracji: " + e.message);
+                    });
+            }
+        }, 1000);
+    }
 }
 
 /**
- * Główny punkt wejścia aplikacji.
- * Ta funkcja pozostała bez zmian.
+ * Główny punkt wejścia.
  */
 export async function main() {
     showLoader();
-    await configureClient();
-    initializeCastApi(); 
-
-    try {
-        await dataStore.loadAppContent();
-    } catch (error) {
-        console.error("Błąd krytyczny podczas ładowania danych aplikacji:", error);
-        hideLoader();
-        return;
-    }
-
+    
+    // --- KLUCZOWA POPRAWKA: DEFINIUJEMY ELEMENTY DOM NA GÓRZE ---
     const loginBtn = document.getElementById('login-btn');
     const logoutBtn = document.getElementById('logout-btn');
     const userInfoContainer = document.getElementById('user-info-container');
     const bottomNav = document.getElementById('app-bottom-nav');
-    
-    if (loginBtn && !loginBtn.dataset.listenerAttached) {
-        loginBtn.addEventListener('click', login);
-        loginBtn.dataset.listenerAttached = 'true';
-    }
-    
-    if (logoutBtn && !logoutBtn.dataset.listenerAttached) {
-        logoutBtn.addEventListener('click', logout);
-        logoutBtn.dataset.listenerAttached = 'true';
-    }
+    // ------------------------------------------------------------
 
-    const query = window.location.search;
-    const shouldHandleRedirect = query.includes("code=") && query.includes("state=");
-    const urlParams = new URLSearchParams(query);
-    const isReturningFromStrava = urlParams.has('strava_status');
-    if (isReturningFromStrava) {
-        const status = urlParams.get('strava_status');
-        if (status === 'success') {
-            alert('Twoje konto Strava zostało pomyślnie połączone!');
-        } else if (status === 'cancelled') {
-            alert('Proces łączenia z kontem Strava został anulowany.');
-        } else {
-            const message = urlParams.get('message') || 'Nieznany błąd.';
-            alert(`Wystąpił błąd podczas łączenia z kontem Strava: ${message}`);
+    await configureClient();
+    initializeCastApi(); 
+
+    try {
+        const resourcesPromise = dataStore.loadAppContent();
+        
+        // Listenery logowania
+        if (loginBtn && !loginBtn.dataset.listenerAttached) {
+            loginBtn.addEventListener('click', login);
+            loginBtn.dataset.listenerAttached = 'true';
         }
-        window.history.replaceState({}, document.title, window.location.pathname + "#settings");
-    }
-    if (shouldHandleRedirect && !isReturningFromStrava) {
-        try {
-            await handleRedirectCallback();
-        } catch (error) {
-            console.error("Błąd krytyczny podczas handleRedirectCallback:", error);
+        if (logoutBtn && !logoutBtn.dataset.listenerAttached) {
+            logoutBtn.addEventListener('click', logout);
+            logoutBtn.dataset.listenerAttached = 'true';
         }
-        window.history.replaceState({}, document.title, "/");
-    }
 
-    const isAuth = await isAuthenticated();
-
-    if (isAuth) {
-        document.getElementById('welcome-screen').classList.add('hidden');
-        document.querySelector('main').classList.remove('hidden');
-        userInfoContainer.classList.remove('hidden');
-        mainNav.classList.remove('hidden');
-        bottomNav.classList.remove('hidden');
-        showLoader();
-        try {
-            await getToken();
-            const profile = getUserProfile();
-            document.getElementById('user-display-name').textContent = profile.name || profile.email || 'Użytkownik';
-            await dataStore.initialize();
-            if (isReturningFromStrava) {
-                const status = urlParams.get('strava_status');
-                if (status === 'success') {
-                    await dataStore.initialize(); 
-                    renderSettingsScreen(); 
-                }
+        // Obsługa redirectów
+        const query = window.location.search;
+        const isReturningFromStrava = new URLSearchParams(query).has('strava_status');
+        
+        if (query.includes("code=") && query.includes("state=") && !isReturningFromStrava) {
+            try {
+                await handleRedirectCallback();
+            } catch (error) {
+                console.error("Błąd redirectu:", error);
             }
-            const localProgressRaw = localStorage.getItem('trainingAppProgress');
-            if (localProgressRaw && Object.keys(JSON.parse(localProgressRaw)).length > 0) {
-                if (confirm("Wykryliśmy niezsynchronizowane dane. Czy chcesz je teraz przenieść na swoje konto?")) {
-                    try {
-                        await dataStore.migrateData(JSON.parse(localProgressRaw));
-                        localStorage.removeItem('trainingAppProgress');
-                        localStorage.removeItem('trainingAppSettings');
-                        alert("Dane zmigrowane! Aplikacja zostanie przeładowana.");
-                        window.location.reload(); 
-                        return;
-                    } catch (e) {
-                        alert("Migracja nie powiodła się. Dane pozostaną na tym urządzeniu.");
+            window.history.replaceState({}, document.title, "/");
+        }
+
+        const isAuth = await isAuthenticated();
+
+        if (isAuth) {
+            // --- ZALOGOWANY ---
+            // Teraz userInfoContainer jest już zdefiniowany, więc to zadziała:
+            document.getElementById('welcome-screen').classList.add('hidden');
+            document.querySelector('main').classList.remove('hidden');
+            if (userInfoContainer) userInfoContainer.classList.remove('hidden');
+            if (mainNav) mainNav.classList.remove('hidden');
+            if (bottomNav) bottomNav.classList.remove('hidden');
+
+            await getToken(); 
+            const profile = getUserProfile();
+            const nameEl = document.getElementById('user-display-name');
+            if(nameEl) nameEl.textContent = profile.name || profile.email || 'Użytkownik';
+
+            await resourcesPromise;
+
+            // START UI (Szybki)
+            console.log("🚀 Start UI");
+            initAppLogic();
+            hideLoader();
+
+            // DOŁADOWANIE DANYCH W TLE
+            dataStore.initialize().then(() => {
+                console.log("🔄 Profil załadowany.");
+                
+                if (isReturningFromStrava) {
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const status = urlParams.get('strava_status');
+                    if (status === 'success') alert('Strava połączona!');
+                    else if (status === 'error') alert('Błąd Stravy: ' + urlParams.get('message'));
+                    renderSettingsScreen();
+                    window.history.replaceState({}, document.title, window.location.pathname + "#settings");
+                } else {
+                    // Odświeżamy dashboard, jeśli jesteśmy na nim (żeby pokazać "Misja Wykonana")
+                    const hero = document.getElementById('hero-dashboard');
+                    if (hero && !hero.closest('.screen').classList.contains('hidden')) {
+                        renderMainScreen();
                     }
                 }
-            }
-            
-            initAppLogic();
-        } catch (error) {
-            console.error("Błąd krytyczny podczas inicjalizacji aplikacji:", error);
-        } finally {
+                checkAndMigrateLocalData();
+            });
+
+            dataStore.fetchDetailedStats().then((newStats) => {
+                if (newStats) {
+                    const hero = document.getElementById('hero-dashboard');
+                    if (hero && !hero.closest('.screen').classList.contains('hidden')) {
+                        renderMainScreen(); 
+                    }
+                }
+            });
+
+        } else {
+            // --- NIEZALOGOWANY ---
+            await resourcesPromise;
+            document.getElementById('welcome-screen').classList.remove('hidden');
+            document.querySelector('main').classList.add('hidden');
+            if (userInfoContainer) userInfoContainer.classList.add('hidden');
+            if (mainNav) mainNav.classList.add('hidden');
+            if (bottomNav) bottomNav.classList.add('hidden');
             hideLoader();
         }
-    } else {
-        document.getElementById('welcome-screen').classList.remove('hidden');
-        document.querySelector('main').classList.add('hidden');
-        userInfoContainer.classList.add('hidden');
-        mainNav.classList.add('hidden');
-        bottomNav.classList.add('hidden');
+    } catch (error) {
+        console.error("Błąd startu:", error);
         hideLoader();
     }
 }
 
-// === URUCHOMIENIE APLIKACJI ===
 window.addEventListener('DOMContentLoaded', main);
 
-// === REJESTRACJA SERVICE WORKERA ===
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/service-worker.js')
-      .then(registration => {
-        console.log('Service Worker zarejestrowany pomyślnie. Zakres:', registration.scope);
-      })
-      .catch(error => {
-        console.error('Rejestracja Service Workera nie powiodła się:', error);
-      });
+      .then(registration => console.log('SW OK:', registration.scope))
+      .catch(err => console.error('SW Fail:', err));
   });
 }

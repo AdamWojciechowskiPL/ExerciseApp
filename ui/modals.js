@@ -137,3 +137,100 @@ export function renderSwapModal(currentExercise, onConfirm) {
         }
     });
 }
+
+// Przykład prostego modala (można dodać do ui/modals.js)
+export function renderPreviewModal(svgContent, title) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+        <div class="swap-modal" style="align-items: center; text-align: center;">
+            <h3>${title}</h3>
+            <div style="width: 100%; max-width: 300px; margin: 1rem 0;">
+                ${svgContent}
+            </div>
+            <button id="close-preview" class="nav-btn" style="width: 100%">Zamknij</button>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#close-preview').addEventListener('click', () => overlay.remove());
+}
+
+// W preTraining lub Library nasłuchuj kliknięć:
+document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.preview-anim-btn');
+    if (btn) {
+        const exId = btn.dataset.exerciseId;
+        const ex = state.exerciseLibrary[exId]; // Pobierz z globalnego stanu
+        if (ex && ex.animationSvg) {
+            renderPreviewModal(ex.animationSvg, ex.name);
+        }
+    }
+});
+
+export function renderEvolutionModal(adaptation, onCheck) {
+    // adaptation: { original: string, type: 'evolution'|'devolution', newId: string, newName: string }
+    
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    
+    const isEvo = adaptation.type === 'evolution';
+    
+    // Konfiguracja treści zależna od typu zmiany
+    const config = isEvo ? {
+        title: "Ewolucja!",
+        desc: "Twoja stabilność osiągnęła 100%. System odblokował trudniejszy wariant, aby utrzymać progresję.",
+        icon: "🏆",
+        color: "var(--gold-color)",
+        btnText: "Przyjmuję Wyzwanie"
+    } : {
+        title: "Korekta",
+        desc: "Wykryto przeciążenie. System tymczasowo cofa trudność tego ćwiczenia, abyś mógł odzyskać pełną kontrolę.",
+        icon: "🛡️",
+        color: "var(--secondary-color)", // Turkus/Mint
+        btnText: "Zrozumiałem"
+    };
+
+    // Jeśli backend nie zwrócił nazwy nowego ćwiczenia (bo np. robił tylko ID),
+    // możemy spróbować pobrać ją ze stanu, ale dla bezpieczeństwa użyjmy ogólnej nazwy.
+    const newName = adaptation.newName || "Nowy Wariant";
+
+    overlay.innerHTML = `
+        <div class="evolution-modal" style="--glow-color: ${config.color}">
+            <div class="evo-icon-wrapper">
+                <span style="font-size: 3rem;">${config.icon}</span>
+            </div>
+            
+            <h2 class="evo-title">${config.title}</h2>
+            <p class="evo-desc">${config.desc}</p>
+            
+            <div class="change-box">
+                <div class="ex-name" style="opacity: 0.7; text-decoration: line-through;">${adaptation.original}</div>
+                <div class="change-arrow">⬇</div>
+                <div class="ex-name" style="color: ${config.color}">${newName}</div>
+            </div>
+
+            <button id="close-evo" class="action-btn" style="background: ${config.color}; color: #000; border: none;">
+                ${config.btnText}
+            </button>
+        </div>
+    `;
+    
+    document.body.appendChild(overlay);
+    
+    // Dźwięk sukcesu (jeśli mamy audioContext w state)
+    if (state.completionSound && isEvo) {
+        state.finalCompletionSound(); 
+    }
+
+    const closeBtn = overlay.querySelector('#close-evo');
+    closeBtn.onclick = () => {
+        // Animacja wyjścia
+        const modal = overlay.querySelector('.evolution-modal');
+        modal.style.transform = 'scale(0.8)';
+        modal.style.opacity = '0';
+        setTimeout(() => {
+            overlay.remove();
+            if (onCheck) onCheck();
+        }, 200);
+    };
+}

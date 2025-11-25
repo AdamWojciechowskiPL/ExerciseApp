@@ -23,9 +23,21 @@ export const renderMainScreen = () => {
     const heroContainer = document.getElementById('hero-dashboard');
     if (heroContainer) {
         try {
-            const gamificationStats = getGamificationState(state.userProgress);
-            const resilienceStats = assistant.calculateResilience();
-            const combinedStats = { ...gamificationStats, resilience: resilienceStats };
+            // Używamy helpera z gamification, ale Tarcze bierzemy bezpośrednio ze stanu
+            // (bo assistant.calculateResilience w nowej wersji tylko zwraca state.userStats.resilience)
+            
+            const stats = state.userStats || {};
+            
+            // Jeśli mamy dane o Tarczy (z cache lub serwera), używamy ich
+            // Jeśli nie, template obsłuży to jako "Ładowanie..."
+            
+            const combinedStats = {
+                ...getGamificationState(state.userProgress), // To wylicza progressPercent i Tier lokalnie
+                resilience: stats.resilience, // To może być null na początku
+                streak: stats.streak,         // To bierzemy z serwera (pewniejsze)
+                totalSessions: stats.totalSessions,
+                level: stats.level
+            };
 
             if (getIsCasting()) sendUserStats(combinedStats);
             heroContainer.classList.remove('hidden');
@@ -63,7 +75,11 @@ export const renderMainScreen = () => {
             const detailsBtn = missionCardContainer.querySelector('.view-details-btn');
             if (detailsBtn) {
                 detailsBtn.addEventListener('click', () => {
-                    renderDayDetailsScreen(todayISO);
+                    // ZMIANA: Przekazujemy callback, który wraca do Dashboardu
+                    renderDayDetailsScreen(todayISO, () => {
+                        navigateTo('main');
+                        renderMainScreen();
+                    });
                 });
             }
 

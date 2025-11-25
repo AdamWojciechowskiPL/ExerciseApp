@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polityka Prywatności - Aplikacja Treningowa</title>
+    
+    <!-- Import stylów aplikacji dla zachowania spójności wizualnej -->
+    <link rel="stylesheet" href="style.css">
+    
+    <style>
+        /* Style specyficzne dla dokumentu tekstowego */
+        body {
+            background-color: var(--background-color);
+            color: var(--text-color);
+            padding: 1rem;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+        }
+
+        .legal-page-wrapper {
+            max-width: 800px;
+            margin: 0 auto;
+            padding-bottom: 4rem;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            color: var(--secondary-color);
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 1rem;
+            transition: opacity 0.2s;
+        }
+
+        .back-link:hover {
+            opacity: 0.8;
+            text-decoration: underline;
+        }
+
+        .legal-container {
+            background: #fff;
+            padding: 2.5rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+            border: 1px solid var(--border-color);
+        }
+
+        h1 {
+            color: var(--primary-color);
+            margin-top: 0;
+            font-size: 2rem;
+            border-bottom: 2px solid var(--secondary-color);
+            padding-bottom: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        h2 {
+            color: var(--primary-color);
+            font-size: 1.3rem;
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        p, li {
+            margin-bottom: 0.8rem;
+            color: #444;
+        }
+
+        ul, ol {
+            padding-left: 1.5rem;
+        }
+
+        strong {
+            color: var(--text-color);
+        }
+
+        /* Responsywność */
+        @media (max-width: 600px) {
+            .legal-container {
+                padding: 1.5rem;
+            }
+            h1 { font-size: 1.5rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="legal-page-wrapper">
+        <!-- Link powrotu do głównej aplikacji -->
+        <a href="/" class="back-link">← Wróć do Aplikacji</a>
+
+        <div class="legal-container">
+            <h1>Polityka Prywatności</h1>
+            <p>Ostatnia aktualizacja: <strong>25.11.2025</strong></p>
+
+            <p>Szanujemy Twoją prywatność. Niniejsza Polityka Prywatności wyjaśnia, w jaki sposób zbieramy, wykorzystujemy i chronimy Twoje dane w związku z korzystaniem z Aplikacji Treningowej (Smart Rehab PWA), zgodnie z Rozporządzeniem o Ochronie Danych Osobowych (RODO).</p>
+
+            <h2>§ 1. Administrator Danych</h2>
+            <p>Administratorem Twoich danych osobowych jest:</p>
+            <p>
+                <strong>Adam Wojciechowski</strong><br>
+                Kontakt e-mail: <a href="mailto:ad.wojciechowski@gmail.com">ad.wojciechowski@gmail.com</a>
+            </p>
+
+            <h2>§ 2. Jakie dane zbieramy?</h2>
+            <ol>
+                <li><strong>Dane Konta:</strong> Podczas logowania za pośrednictwem usługi Auth0 otrzymujemy Twój identyfikator użytkownika (User ID) oraz adres e-mail. Nie przechowujemy Twoich haseł (zarządza nimi dostawca tożsamości).</li>
+                <li><strong>Dane Treningowe (w tym dane o zdrowiu):</strong>
+                    <ul>
+                        <li>Historia wykonywanych ćwiczeń (serie, powtórzenia).</li>
+                        <li><strong>Subiektywna ocena bólu</strong> ("Wellness Check-in") oraz samopoczucia – są to dane szczególnej kategorii (dotyczące zdrowia), które przetwarzamy wyłącznie na podstawie Twojej wyraźnej zgody (aktywne korzystanie z funkcji Asystenta) w celu dostosowania planu treningowego.</li>
+                    </ul>
+                </li>
+                <li><strong>Dane Techniczne:</strong> Logi serwera, adres IP, informacje o przeglądarce i urządzeniu, niezbędne do zapewnienia bezpieczeństwa i stabilności usługi.</li>
+            </ol>
+
+            <h2>§ 3. Cel i podstawa przetwarzania</h2>
+            <p>Przetwarzamy Twoje dane w następujących celach:</p>
+            <ul>
+                <li><strong>Świadczenie Usługi (Art. 6 ust. 1 lit. b RODO):</strong> Umożliwienie dostępu do konta, zapisywanie historii treningów, synchronizacja danych między urządzeniami.</li>
+                <li><strong>Adaptacja Planu (Art. 9 ust. 2 lit. a RODO):</strong> Przetwarzanie danych o poziomie bólu w celu automatycznego dostosowania obciążenia treningowego (funkcja "Tarcza Resilience" i "Smart Swap").</li>
+                <li><strong>Prawnie Uzasadniony Interes (Art. 6 ust. 1 lit. f RODO):</strong> Wykrywanie nadużyć, statystyki w celu ulepszania aplikacji, obrona przed roszczeniami.</li>
+            </ul>
+
+            <h2>§ 4. Odbiorcy Danych (Procesorzy)</h2>
+            <p>Twoje dane są powierzane zaufanym partnerom technologicznym, którzy zapewniają infrastrukturę Aplikacji:</p>
+            <ul>
+                <li><strong>Netlify (USA/Global):</strong> Hosting aplikacji i funkcji serwerowych (Serverless Functions).</li>
+                <li><strong>Neon (USA/Global):</strong> Dostawca bazy danych PostgreSQL, gdzie szyfrowane są Twoje dane.</li>
+                <li><strong>Auth0 by Okta (USA/Global):</strong> Obsługa bezpiecznego logowania i uwierzytelniania.</li>
+                <li><strong>Strava (USA):</strong> Wyłącznie w przypadku, gdy dobrowolnie połączysz swoje konto. Przesyłamy tam podsumowania Twoich treningów.</li>
+            </ul>
+            <p>Wszyscy dostawcy spoza EOG gwarantują odpowiedni poziom ochrony danych poprzez stosowanie Standardowych Klauzul Umownych (SCC) lub uczestnictwo w programach Data Privacy Framework.</p>
+
+            <h2>§ 5. Twoje Prawa</h2>
+            <p>Przysługują Ci następujące prawa:</p>
+            <ul>
+                <li>Prawo dostępu do swoich danych i otrzymania ich kopii.</li>
+                <li>Prawo do sprostowania (poprawiania) danych.</li>
+                <li><strong>Prawo do usunięcia danych ("Prawo do bycia zapomnianym"):</strong> Możesz w każdej chwili trwale usunąć swoje konto i wszystkie dane, korzystając z przycisku "Usuń konto" w zakładce Ustawienia. Jest to proces automatyczny i nieodwracalny.</li>
+                <li>Prawo do ograniczenia przetwarzania.</li>
+                <li>Prawo do przenoszenia danych.</li>
+                <li>Prawo wniesienia skargi do organu nadzorczego (w Polsce: Prezes Urzędu Ochrony Danych Osobowych).</li>
+            </ul>
+
+            <h2>§ 6. Pliki Cookies i Local Storage</h2>
+            <p>Aplikacja nie wykorzystuje reklamowych plików cookies osób trzecich. Używamy technologii <strong>Local Storage</strong> oraz niezbędnych plików cookies wyłącznie w celu:</p>
+            <ul>
+                <li>Utrzymania sesji zalogowanego użytkownika (tokeny bezpieczeństwa).</li>
+                <li>Zapamiętywania ustawień interfejsu (np. motyw, cache statystyk dla szybszego działania).</li>
+            </ul>
+            <p>Są to dane techniczne niezbędne do prawidłowego działania Aplikacji (zgodnie z art. 173 Prawa telekomunikacyjnego).</p>
+
+            <h2>§ 7. Kontakt</h2>
+            <p>W sprawach dotyczących ochrony danych osobowych możesz skontaktować się z Administratorem pod adresem e-mail podanym w § 1.</p>
+        </div>
+    </div>
+
+</body>
+</html>

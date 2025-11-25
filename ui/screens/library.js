@@ -34,22 +34,18 @@ export const renderLibraryScreen = (searchTerm = '') => {
     container.innerHTML = '';
 
     // ============================================================
-    // 1. PRZYGOTOWANIE DANYCH (Wyciągnięcie unikalnych opcji)
+    // 1. PRZYGOTOWANIE DANYCH
     // ============================================================
     const allExercises = Object.values(state.exerciseLibrary);
     
     const uniqueCategories = [...new Set(allExercises.map(ex => ex.categoryId).filter(Boolean))].sort();
     const uniqueLevels = [...new Set(allExercises.map(ex => ex.difficultyLevel || 1))].sort((a,b) => a - b);
-    
-    // Sprzęt: upraszczamy (bierzemy pełne stringi, w przyszłości można rozbijać po przecinku)
     const uniqueEquipment = [...new Set(allExercises.map(ex => ex.equipment || 'Brak sprzętu'))].sort();
 
-
     // ============================================================
-    // 2. GENEROWANIE HTML NAGŁÓWKA (Tabs + Filtry)
+    // 2. GENEROWANIE HTML NAGŁÓWKA
     // ============================================================
     
-    // Generowanie opcji do selectów
     const categoryOptions = uniqueCategories.map(cat => 
         `<option value="${cat}" ${activeFilters.category === cat ? 'selected' : ''}>${formatCategoryName(cat)}</option>`
     ).join('');
@@ -63,7 +59,6 @@ export const renderLibraryScreen = (searchTerm = '') => {
     ).join('');
 
     const headerHTML = `
-        <!-- ZAKŁADKI -->
         <div class="library-tabs" style="display:flex; gap:10px; margin-bottom:1rem;">
             <button id="tab-all" class="toggle-btn ${currentTab === 'all' ? 'active' : ''}" style="flex:1; padding:10px;">Baza Ćwiczeń</button>
             <button id="tab-blacklist" class="toggle-btn ${currentTab === 'blacklist' ? 'active' : ''}" style="flex:1; padding:10px;">
@@ -71,7 +66,6 @@ export const renderLibraryScreen = (searchTerm = '') => {
             </button>
         </div>
 
-        <!-- FILTRY (NOWOŚĆ) -->
         <div class="filters-container">
             <select id="filter-category" class="filter-select">
                 <option value="all">Wszystkie kategorie</option>
@@ -96,7 +90,6 @@ export const renderLibraryScreen = (searchTerm = '') => {
     wrapper.innerHTML = headerHTML;
     container.appendChild(wrapper);
 
-
     // ============================================================
     // 3. FILTROWANIE LISTY
     // ============================================================
@@ -107,12 +100,10 @@ export const renderLibraryScreen = (searchTerm = '') => {
         ...data
     }));
 
-    // Filtr 1: Zakładka (Czarna Lista vs Reszta)
     if (currentTab === 'blacklist') {
         exercisesToShow = exercisesToShow.filter(ex => state.blacklist.includes(ex.id));
     } 
 
-    // Filtr 2: Wyszukiwarka tekstowa
     if (lowerCaseSearchTerm) {
         exercisesToShow = exercisesToShow.filter(ex => 
             ex.name.toLowerCase().includes(lowerCaseSearchTerm) || 
@@ -120,18 +111,15 @@ export const renderLibraryScreen = (searchTerm = '') => {
         );
     }
 
-    // Filtr 3: Dropdowny (NOWOŚĆ)
     if (activeFilters.category !== 'all') {
         exercisesToShow = exercisesToShow.filter(ex => ex.categoryId === activeFilters.category);
     }
     if (activeFilters.level !== 'all') {
-        // Porównanie luźne (string vs number)
         exercisesToShow = exercisesToShow.filter(ex => (ex.difficultyLevel || 1) == activeFilters.level);
     }
     if (activeFilters.equipment !== 'all') {
         exercisesToShow = exercisesToShow.filter(ex => (ex.equipment || 'Brak sprzętu') === activeFilters.equipment);
     }
-
 
     // ============================================================
     // 4. RENDEROWANIE KART
@@ -168,18 +156,60 @@ export const renderLibraryScreen = (searchTerm = '') => {
                 </div>
             `;
 
-            let actionButtons = '';
+             let actionButtons = '';
+            
             if (currentTab === 'blacklist') {
-                actionButtons = `<button class="nav-btn restore-btn" data-id="${exercise.id}" style="border-color:var(--success-color); color:var(--success-color);">Przywróć ♻️</button>`;
+                // Przycisk przywracania (Czarna lista)
+                actionButtons = `
+                    <button class="btn-with-icon btn-danger restore-btn" data-id="${exercise.id}" style="border-color: var(--success-color); color: var(--success-color);">
+                        <span>♻️ Przywróć</span>
+                    </button>`;
             } else {
+                // 1. PODGLĄD ANIMACJI
+                if (exercise.animationSvg) {
+                    actionButtons += `
+                    <button class="btn-with-icon btn-secondary preview-anim-btn" 
+                            data-exercise-id="${exercise.id}" 
+                            title="Podgląd animacji">
+                        <img src="/icons/eye.svg" alt="">
+                        <span>Podgląd</span>
+                    </button>`;
+                }
+
+                // 2. RZUTOWANIE (Tylko gdy połączono)
                 if (getIsCasting()) {
-                    actionButtons += `<button class="nav-btn cast-video-btn" data-youtube-id="${youtubeId}" ${!youtubeId ? 'disabled' : ''}>Rzutuj 📺</button>`;
+                    // Używamy cast-video-btn do logiki, ale btn-with-icon do wyglądu
+                    const youtubeId = youtubeIdMatch ? youtubeIdMatch[1] : null;
+                    actionButtons += `
+                    <button class="btn-with-icon btn-primary cast-video-btn" 
+                            data-youtube-id="${youtubeId || ''}" 
+                            ${!youtubeId ? 'disabled' : ''}
+                            title="Rzutuj wideo na TV">
+                        <img src="/icons/cast.svg" alt="">
+                        <span>Rzutuj</span>
+                    </button>`;
                 }
+
+                // 3. WIDEO (Link zewnętrzny)
                 if (exercise.youtube_url) {
-                    actionButtons += `<a href="${exercise.youtube_url}" target="_blank" rel="noopener noreferrer" class="nav-btn">Wideo ↗</a>`;
+                    actionButtons += `
+                    <a href="${exercise.youtube_url}" target="_blank" rel="noopener noreferrer" 
+                       class="btn-with-icon btn-secondary"
+                       title="Otwórz w YouTube">
+                        <img src="/icons/external-link.svg" alt="">
+                        <span>Wideo</span>
+                    </a>`;
                 }
+
+                // 4. BLOKOWANIE
                 if (!isBlocked) {
-                    actionButtons += `<button class="nav-btn block-btn" data-id="${exercise.id}" style="border-color:var(--danger-color); color:var(--danger-color); margin-left: 5px;">Blokuj 🚫</button>`;
+                    actionButtons += `
+                    <button class="btn-with-icon btn-danger block-btn" 
+                            data-id="${exercise.id}"
+                            title="Dodaj do czarnej listy">
+                        <img src="/icons/ban.svg" alt="">
+                        <span>Blokuj</span>
+                    </button>`;
                 }
             }
 
@@ -199,51 +229,67 @@ export const renderLibraryScreen = (searchTerm = '') => {
         });
     }
 
-
     // ============================================================
     // 5. OBSŁUGA ZDARZEŃ
     // ============================================================
     const searchInput = document.getElementById('library-search-input');
 
-    // Tabs
-    wrapper.querySelector('#tab-all').addEventListener('click', () => {
-        currentTab = 'all';
-        // Przy zmianie taba resetujemy filtry dla wygody, czy zostawiamy? Zostawmy.
-        renderLibraryScreen(searchInput.value);
-    });
-    wrapper.querySelector('#tab-blacklist').addEventListener('click', () => {
-        currentTab = 'blacklist';
-        renderLibraryScreen(searchInput.value);
-    });
-
-    // Filtry - Event Listeners
-    wrapper.querySelector('#filter-category').addEventListener('change', (e) => {
-        activeFilters.category = e.target.value;
-        renderLibraryScreen(searchInput.value);
-    });
-    wrapper.querySelector('#filter-level').addEventListener('change', (e) => {
-        activeFilters.level = e.target.value;
-        renderLibraryScreen(searchInput.value);
-    });
-    wrapper.querySelector('#filter-equipment').addEventListener('change', (e) => {
-        activeFilters.equipment = e.target.value;
-        renderLibraryScreen(searchInput.value);
-    });
+    // Tabs & Filtry
+    wrapper.querySelector('#tab-all').addEventListener('click', () => { currentTab = 'all'; renderLibraryScreen(searchInput.value); });
+    wrapper.querySelector('#tab-blacklist').addEventListener('click', () => { currentTab = 'blacklist'; renderLibraryScreen(searchInput.value); });
+    
+    wrapper.querySelector('#filter-category').addEventListener('change', (e) => { activeFilters.category = e.target.value; renderLibraryScreen(searchInput.value); });
+    wrapper.querySelector('#filter-level').addEventListener('change', (e) => { activeFilters.level = e.target.value; renderLibraryScreen(searchInput.value); });
+    wrapper.querySelector('#filter-equipment').addEventListener('change', (e) => { activeFilters.equipment = e.target.value; renderLibraryScreen(searchInput.value); });
+    
     wrapper.querySelector('#filter-reset').addEventListener('click', () => {
         activeFilters = { category: 'all', level: 'all', equipment: 'all' };
-        if (searchInput) searchInput.value = ''; // Opcjonalnie czyść też szukajkę
-        renderLibraryScreen('');
+        renderLibraryScreen(searchInput.value); // zachowujemy wpisany tekst szukania
     });
 
-    // Handler Kart
+    // Handler Kart (Delegacja)
     const handleContainerClick = async (e) => {
+        // --- MODAL PODGLĄDU (NOWOŚĆ) ---
+        const previewBtn = e.target.closest('.preview-anim-btn');
+        if (previewBtn) {
+            e.stopPropagation();
+            const exId = previewBtn.dataset.exerciseId;
+            const ex = state.exerciseLibrary[exId];
+            
+            if (ex && ex.animationSvg) {
+                const overlay = document.createElement('div');
+                overlay.className = 'modal-overlay';
+                overlay.innerHTML = `
+                    <div class="swap-modal" style="align-items: center; text-align: center;">
+                        <h3>${ex.name}</h3>
+                        <div style="width: 100%; max-width: 300px; margin: 1rem 0;">
+                            ${ex.animationSvg}
+                        </div>
+                        <button type="button" id="close-preview" class="nav-btn" style="width: 100%">Zamknij</button>
+                    </div>
+                `;
+                document.body.appendChild(overlay);
+
+                const closeBtn = overlay.querySelector('#close-preview');
+                closeBtn.onclick = (evt) => {
+                    evt.preventDefault();
+                    evt.stopPropagation();
+                    overlay.remove();
+                };
+                overlay.onclick = (evt) => {
+                    if (evt.target === overlay) overlay.remove();
+                };
+            }
+            return;
+        }
+
         const target = e.target;
         const currentSearch = searchInput.value;
 
         if (target.classList.contains('restore-btn')) {
             const id = target.dataset.id;
             e.stopPropagation(); 
-            if (confirm('Czy na pewno chcesz przywrócić to ćwiczenie do planów treningowych?')) {
+            if (confirm('Czy na pewno chcesz przywrócić to ćwiczenie?')) {
                 await dataStore.removeFromBlacklist(id);
                 renderLibraryScreen(currentSearch); 
             }

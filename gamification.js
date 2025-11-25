@@ -14,16 +14,29 @@ const TIERS = [
     { minLevel: 25, maxLevel: 999, icon: '/icons/badge-level-3.svg', name: 'Mistrz' }
 ];
 
+// Helper do pobierania daty lokalnej w formacie YYYY-MM-DD
+// Naprawia błąd strefy czasowej (toISOString zwracało UTC, co psuło streak po północy)
+function getLocalISODate(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 function calculateStreak(userProgress) {
     const dates = Object.keys(userProgress).sort((a, b) => new Date(b) - new Date(a));
     if (dates.length === 0) return 0;
 
     const now = new Date();
-    const today = now.toISOString().split('T')[0];
+    
+    // POPRAWKA: Używamy czasu lokalnego zamiast UTC
+    const today = getLocalISODate(now);
+    
     const yesterdayDate = new Date(now);
     yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-    const yesterday = yesterdayDate.toISOString().split('T')[0];
+    const yesterday = getLocalISODate(yesterdayDate);
 
+    // Jeśli ostatni trening nie był dzisiaj ani wczoraj, seria przepada
     if (dates[0] !== today && dates[0] !== yesterday) {
         return 0;
     }
@@ -35,15 +48,17 @@ function calculateStreak(userProgress) {
         const prevDateStr = dates[i];
         const curr = new Date(currentDateStr);
         const prev = new Date(prevDateStr);
+        
+        // Obliczamy różnicę w dniach
         const diffDays = Math.round(Math.abs(curr - prev) / (1000 * 60 * 60 * 24)); 
 
         if (diffDays === 1) {
             streak++;
             currentDateStr = prevDateStr;
         } else if (diffDays === 0) {
-            continue; 
+            continue; // Ten sam dzień (np. dwa treningi jednego dnia), ignorujemy
         } else {
-            break; 
+            break; // Przerwa w serii
         }
     }
     return streak;
@@ -63,22 +78,17 @@ export function getGamificationState(userProgress) {
         localStreak = calculateStreak(userProgress);
     }
 
-    // 2. INTELLIGENT MERGE (POPRAWKA)
-    // Wybieramy większą wartość, co zabezpiecza nas przed sytuacją, 
-    // gdy lokalnie mamy tylko 1 trening (dzisiejszy), a na serwerze 100.
-    
-    // Konwertujemy na int, bo z bazy/json mogą przyjść stringi
+    // 2. INTELLIGENT MERGE
+    // Wybieramy większą wartość
     serverTotalSessions = parseInt(serverTotalSessions) || 0;
-    
     const totalSessions = Math.max(localTotalSessions, serverTotalSessions);
     
-    // Streak jest trudniejszy - jeśli lokalny jest > 0 (czyli user ćwiczył dziś),
-    // to jest bardziej aktualny niż serwerowy (który może być z wczoraj).
-    // Jeśli lokalny to 0, bierzemy serwerowy.
+    // Streak: lokalny jest liczony wg czasu urządzenia (poprawnie po północy), 
+    // serwerowy może być liczony w UTC (jeszcze "wczoraj").
+    // Dlatego jeśli lokalny > 0, ufamy mu bardziej.
     const streak = localStreak > 0 ? Math.max(localStreak, serverStreak) : serverStreak;
 
-
-    // --- Obliczanie Poziomu (Reszta bez zmian) ---
+    // --- Obliczanie Poziomu ---
     let currentLevel = 1;
     let nextLevelThreshold = LEVEL_THRESHOLDS[1];
     let currentLevelThreshold = LEVEL_THRESHOLDS[0];

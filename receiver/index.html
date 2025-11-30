@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="pl">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Aplikacja Treningowa - Receiver</title>
+
+    <!-- Cache Busting dla CSS -->
+    <link rel="stylesheet" type="text/css" href="style.css?v=3.3">
+
+    <script type="text/javascript"
+        src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+</head>
+
+<body>
+
+    <div id="cast-container">
+
+        <!-- ========================================== -->
+        <!-- HACK: SILENT AUDIO LOOP (Anti-Idle)        -->
+        <!-- ========================================== -->
+        <!-- 1 sekunda ciszy w pętli. Wymusza na TV traktowanie aplikacji jako aktywnego odtwarzacza. -->
+        <audio id="keepAliveAudio" loop style="position: absolute; top: -1000px; left: -1000px; opacity: 0.01;">
+            <source
+                src="data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6enp6enp6enp6enp6enp6enp6enp6enp//OEAAAAAAAAAAAAAAAAAAAAAAAAMiLjbJ1K3AAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAAMiLjbJ1K3AAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAAMiLjbJ1K3AAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAAMiLjbJ1K3AAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAAMiLjbJ1K3AAAAAAAAAAAAAA"
+                type="audio/mpeg">
+        </audio>
+
+        <!-- ========================================== -->
+        <!-- EKRAN 1: DASHBOARD / IDLE                  -->
+        <!-- ========================================== -->
+        <div id="idle-screen" class="screen active">
+            <div class="idle-content">
+                <div id="default-logo-container">
+                    <img src="../icons/icon-512x512.png" alt="Logo Aplikacji" class="logo pulsate">
+                    <h1>Aplikacja Treningowa</h1>
+                    <p>Gotowy do połączenia...</p>
+                </div>
+
+                <div id="user-stats-container" class="hidden">
+                    <div class="stats-avatar-wrapper">
+                        <img id="tv-hero-icon" src="" alt="Ikona Rangi">
+                    </div>
+                    <div class="stats-info">
+                        <h2 id="tv-hero-level">POZIOM 1</h2>
+                        <h1 id="tv-hero-title">POCZĄTKUJĄCY</h1>
+                        <div class="tv-streak-badge">
+                            <span id="tv-streak-fire">🔥</span>
+                            <span id="tv-streak-count">0 Dni z rzędu</span>
+                        </div>
+                        <p class="tv-total-sessions">
+                            Łącznie ukończonych treningów: <span id="tv-session-count">0</span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- EKRAN 2: TRENING (Focus Mode)              -->
+        <!-- ========================================== -->
+        <div id="training-screen" class="screen">
+            <div class="header">
+                <p id="section-name">Rozgrzewka</p>
+            </div>
+
+            <div class="timer-container">
+                <div class="timer-display">
+                    <h1 id="timer">00:00</h1>
+                </div>
+            </div>
+
+            <div class="content-wrapper">
+                <div id="tv-animation-container" class="hidden">
+                    <!-- SVG injection here -->
+                </div>
+
+                <div class="exercise-info">
+                    <h2 id="exercise-name">Przygotuj się</h2>
+                    <p id="exercise-details">Oczekiwanie na start...</p>
+                </div>
+            </div>
+
+            <div class="footer">
+                <p>Następne: <span id="next-exercise">-</span></p>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- EKRAN 3: WIDEO (YouTube)                   -->
+        <!-- ========================================== -->
+        <div id="video-screen" class="screen">
+            <iframe id="youtube-player" frameborder="0" allowfullscreen></iframe>
+        </div>
+
+    </div>
+
+    <div id="version-display">v3.7 (Anti-Idle Audio)</div>
+
+    <script type="text/javascript" src="receiver.js"></script>
+</body>
+
+</html>

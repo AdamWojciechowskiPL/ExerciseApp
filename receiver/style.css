@@ -1,0 +1,338 @@
+/* receiver/style.css - v3.3 (Fix Warning & Font Size) */
+
+/* ============================================= */
+/* === 1. ZMIENNE I RESET === */
+/* ============================================= */
+:root {
+    /* Paleta kolorów zgodna z aplikacją sender */
+    --primary-color: #005f73;
+    --secondary-color: #0a9396;
+    --gold-color: #e9c46a;
+    --danger-color: #e76f51;
+    --text-white: #ffffff;
+    
+    /* Tła specyficzne dla TV */
+    --bg-gradient: linear-gradient(135deg, #0f1c2e 0%, #004e60 100%);
+    --bg-black: #000000;
+}
+
+body, html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background-color: var(--bg-black);
+    color: var(--text-white);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+}
+
+#cast-container {
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    background: var(--bg-gradient);
+}
+
+/* Zarządzanie widocznością ekranów */
+.screen { 
+    display: none; 
+    width: 100%; 
+    height: 100%;
+    position: absolute;
+    top: 0; left: 0;
+}
+
+.screen.active { 
+    display: flex; 
+    flex-direction: column; 
+    justify-content: center; 
+    align-items: center; 
+}
+
+.hidden { display: none !important; }
+
+/* ============================================= */
+/* === 2. EKRAN OCZEKIWANIA (IDLE / HERO) === */
+/* ============================================= */
+#idle-screen {
+    text-align: center;
+}
+
+.idle-content {
+    width: 80%;
+    max-width: 1200px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+/* --- Stan Domyślny (Logo) --- */
+#default-logo-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+#default-logo-container img.logo {
+    width: 25vh;
+    height: auto;
+    margin-bottom: 4vh;
+    filter: drop-shadow(0 0 30px rgba(0, 95, 115, 0.8));
+    border-radius: 4vh;
+}
+
+#default-logo-container h1 {
+    font-size: 6vh;
+    margin: 0;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--text-white);
+    text-shadow: 0 4px 10px rgba(0,0,0,0.5);
+}
+
+#default-logo-container p {
+    font-size: 2.5vh;
+    opacity: 0.7;
+    margin-top: 2vh;
+    font-weight: 300;
+}
+
+.pulsate {
+    animation: pulse-logo 3s infinite ease-in-out;
+}
+
+@keyframes pulse-logo {
+    0% { transform: scale(1); opacity: 0.9; }
+    50% { transform: scale(1.05); opacity: 1; }
+    100% { transform: scale(1); opacity: 0.9; }
+}
+
+/* --- Stan Statystyk (Hero Dashboard) --- */
+#user-stats-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    animation: fade-in-up 1s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.stats-avatar-wrapper {
+    width: 28vh;
+    height: 28vh;
+    margin-bottom: 4vh;
+    position: relative;
+}
+
+.stats-avatar-wrapper::before {
+    content: '';
+    position: absolute;
+    top: -10%; left: -10%;
+    width: 120%; height: 120%;
+    background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 70%);
+    z-index: -1;
+}
+
+#tv-hero-icon {
+    width: 100%;
+    height: 100%;
+    filter: drop-shadow(0 10px 30px rgba(0,0,0,0.6));
+}
+
+#tv-hero-level {
+    font-size: 3vh;
+    letter-spacing: 0.6vw;
+    color: var(--secondary-color);
+    margin: 0;
+    text-transform: uppercase;
+    font-weight: 700;
+}
+
+#tv-hero-title {
+    font-size: 9vh;
+    font-weight: 900;
+    margin: 1vh 0 4vh 0;
+    line-height: 1;
+    text-transform: uppercase;
+    background: -webkit-linear-gradient(top, #ffffff 0%, #e0e0e0 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 4px 10px rgba(0,0,0,0.4));
+}
+
+.tv-streak-badge {
+    background: rgba(255,255,255,0.1);
+    padding: 1.5vh 5vh;
+    border-radius: 10vh;
+    display: inline-flex;
+    align-items: center;
+    gap: 2vh;
+    border: 2px solid rgba(255,255,255,0.15);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+    margin-bottom: 3vh;
+}
+
+#tv-streak-fire {
+    font-size: 5vh;
+    filter: drop-shadow(0 0 15px var(--danger-color));
+}
+
+#tv-streak-count {
+    font-size: 3.5vh;
+    font-weight: 700;
+}
+
+.tv-total-sessions {
+    font-size: 2.2vh;
+    color: #aaa;
+    margin-top: 2vh;
+    font-weight: 300;
+}
+
+#tv-session-count {
+    color: #fff;
+    font-weight: bold;
+}
+
+@keyframes fade-in-up {
+    from { opacity: 0; transform: translateY(40px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================= */
+/* === 3. EKRAN TRENINGU === */
+/* ============================================= */
+#training-screen {
+    justify-content: space-between;
+    padding: 5vh 5vw;
+    box-sizing: border-box;
+    background-color: #000;
+}
+
+.content-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex-grow: 1;
+    width: 100%;
+}
+
+/* --- ANIMACJA SVG NA TV --- */
+#tv-animation-container {
+    width: 45vh;
+    height: 45vh;
+    background: #ffffff;
+    border-radius: 3vh;
+    padding: 2vh;
+    box-shadow: 0 0 50px rgba(0, 95, 115, 0.3);
+    margin-bottom: 4vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#tv-animation-container svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.header, .footer {
+    width: 100%;
+    text-align: center;
+    opacity: 0.7;
+    z-index: 10;
+}
+
+.header p { 
+    font-size: 3.5vh; 
+    text-transform: uppercase; 
+    letter-spacing: 3px; 
+    color: var(--secondary-color);
+    margin: 0;
+}
+
+.footer p { 
+    font-size: 3vh; 
+    margin: 0;
+}
+
+.timer-container {
+    margin: 2vh 0;
+}
+
+.timer-display h1 {
+    font-size: 20vh;
+    font-weight: 700;
+    margin: 0;
+    font-family: 'Monaco', 'Consolas', monospace;
+    line-height: 1;
+    color: var(--text-white);
+    text-shadow: 0 0 20px rgba(0,0,0,0.5);
+}
+
+.timer-display.rest h1 {
+    color: #6aade4;
+}
+
+.exercise-info {
+    text-align: center;
+    max-width: 90%;
+}
+
+/* --- POPRAWKA DŁUGICH NAZW I BŁĘDU CSS --- */
+.exercise-info h2 {
+    font-size: clamp(3vh, 5vh, 48px); /* Mniejsza czcionka dla długich nazw */
+    font-weight: 600;
+    margin: 0;
+    line-height: 1.3;
+    color: var(--text-white);
+    
+    /* Ograniczenie do 2 linii */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.exercise-info p {
+    font-size: 3.5vh;
+    opacity: 0.8;
+    margin-top: 1.5vh;
+    color: var(--gold-color);
+}
+
+/* ============================================= */
+/* === 4. EKRAN WIDEO === */
+/* ============================================= */
+#video-screen {
+    background: black;
+}
+
+#youtube-player {
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+
+/* ============================================= */
+/* === 5. DEBUG / WERSJA === */
+/* ============================================= */
+#version-display {
+    position: fixed;
+    bottom: 2vh;
+    right: 2vw;
+    color: rgba(255,255,255,0.2);
+    font-size: 2vh;
+    font-family: monospace;
+    z-index: 9999;
+}

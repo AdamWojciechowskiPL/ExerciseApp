@@ -38,14 +38,30 @@ export const getTrainingDayForDate = (date) => {
 export const getHydratedDay = (dayData) => {
     if (!dayData) return null;
     
+    // Głęboka kopia struktury dnia
     const hydratedDay = JSON.parse(JSON.stringify(dayData));
 
     ['warmup', 'main', 'cooldown'].forEach(section => {
         if (hydratedDay[section]) {
             hydratedDay[section] = hydratedDay[section].map(exerciseRef => {
-                // Zmieniono EXERCISE_LIBRARY na state.exerciseLibrary
-                const libraryDetails = state.exerciseLibrary[exerciseRef.exerciseId] || {};
-                return { ...libraryDetails, ...exerciseRef };
+                // Pobieramy pełne dane z biblioteki na podstawie ID
+                const libraryDetails = state.exerciseLibrary[exerciseRef.exerciseId];
+
+                if (!libraryDetails) {
+                    console.warn(`⚠️ Ostrzeżenie: Ćwiczenie ${exerciseRef.exerciseId} jest w planie, ale brak go w bibliotece.`);
+                    return exerciseRef;
+                }
+
+                // Łączymy dane (Merge):
+                // 1. libraryDetails daje: name, categoryId, difficultyLevel, youtube_url
+                // 2. exerciseRef daje: sets, reps_or_time (nadpisuje domyślne jeśli są)
+                return {
+                    ...libraryDetails, 
+                    ...exerciseRef,
+                    // Upewniamy się, że categoryId jest przekazane jawnie
+                    categoryId: libraryDetails.categoryId,
+                    difficultyLevel: libraryDetails.difficultyLevel
+                };
             });
         }
     });

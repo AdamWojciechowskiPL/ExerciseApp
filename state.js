@@ -20,7 +20,6 @@ export const state = {
      */
     settings: {
         appStartDate: null,
-        restBetweenExercises: 60,
         progressionFactor: 100,
         activePlanId: "l5s1-foundation"
     },
@@ -37,13 +36,14 @@ export const state = {
      * Struktura: { "planId": { name: "...", Days: [...] } }
      */
     trainingPlans: {},
-    // --- KONIEC NOWYCH WŁAŚCIWOŚCI ---
+
+    blacklist: [],
 
     stravaIntegration: {
         isConnected: false
     },
     currentTrainingDate: null,
-
+    loadedMonths: new Set(),
     /**
      * Obiekt daty używany do nawigacji w widoku kalendarza.
      */
@@ -68,6 +68,10 @@ export const state = {
     /**
      * Stan timera używanego w trybie treningu.
      */
+    totalPausedTime: 0, // w milisekundach
+    lastPauseStartTime: null,
+    isPaused: false,
+    breakTimeoutId: null,
     timer: {
         interval: null,
         timeLeft: 0,
@@ -89,6 +93,13 @@ export const state = {
      */
     audioContext: null,
 
+    /**
+     * Parametry bieżącej sesji, ustalane na starcie (np. w pre-training).
+     */
+    sessionParams: {
+        initialPainLevel: 0,
+        timeFactor: 1.0
+    },
     /**
      * Funkcja generująca krótki dźwięk na zakończenie ćwiczenia/przerwy.
      */

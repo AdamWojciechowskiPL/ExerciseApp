@@ -1,84 +1,132 @@
 <!DOCTYPE html>
 <html lang="pl">
+
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Aplikacja Treningowa</title>
+
+    <!-- Style i Manifest -->
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="/manifest.json">
+
+    <!-- Meta dla PWA i Mobile -->
     <meta name="theme-color" content="#005f73">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <!-- Skrypt Auth0 SPA SDK - kluczowy dla uwierzytelniania -->
+    <meta name="description" content="Twój osobisty asystent treningowy z obsługą Chromecast i gamifikacją.">
+
+    <!-- Google Cast Sender SDK -->
+    <script type="text/javascript"
+        src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
+    <script>
+        window.addEventListener('message', event => {
+            if (event.source === window && event.data &&
+                event.data.source === 'CastApi' &&
+                event.data.event === 'api_init_failure') {
+                console.error('KRYTYCZNY BŁĄD INICJALIZACJI CAST API:', event.data.error);
+            }
+        });
+    </script>
+
+    <!-- Auth0 SPA SDK -->
     <script src="https://cdn.auth0.com/js/auth0-spa-js/2.1/auth0-spa-js.production.js"></script>
 </head>
+
 <body>
 
+    <!-- NAGŁÓWEK I GÓRNA NAWIGACJA (DESKTOP) -->
     <header>
-        <h1>Aplikacja Treningowa</h1>
-        
-        <div id="user-info-container" class="hidden">
-            <span id="user-display-name" class="desktop-only"></span>
-            <button id="logout-btn" class="nav-btn danger-btn">
-                <span class="desktop-only">Wyloguj się</span>
-                <!-- ZMIANA: Zamiast emoji, używamy niezawodnej ikony SVG -->
-                <svg class="mobile-only" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M16 17v-3H9v-4h7V7l5 5-5 5M14 2a2 2 0 0 1 2 2v2h-2V4H5v16h9v-2h2v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9z"></path>
-                </svg>
-            </button>
+        <!-- 1. LEWA: Logo -->
+        <div class="brand-container">
+            <img src="icons/icon-192x192.png" alt="Logo" class="app-logo-small">
+            <h1>Aplikacja Treningowa</h1>
         </div>
         
-        <nav id="main-nav" class="hidden">
+        <!-- 2. ŚRODEK: Nawigacja (Przesunięta tutaj!) -->
+        <nav id="main-nav" class="hidden" aria-label="Główna nawigacja">
             <button id="nav-main">Ekran Główny</button>
             <button id="nav-history">Historia</button>
             <button id="nav-library">Baza Ćwiczeń</button>
             <button id="nav-settings">Ustawienia</button>
         </nav>
+
+        <!-- 3. PRAWA: Użytkownik i Akcje (Przesunięte na koniec!) -->
+        <div id="user-info-container" class="hidden">
+            <google-cast-launcher id="cast-button"></google-cast-launcher>
+            
+            <span id="user-display-name" class="desktop-only"></span>
+            
+            <button id="logout-btn" class="nav-btn danger-btn" aria-label="Wyloguj się">
+                <span class="desktop-only">Wyloguj się</span>
+                <!-- Ikona mobilna -->
+                <svg class="mobile-only" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                </svg>
+            </button>
+        </div>
     </header>
 
-    <!-- Ekran powitalny/logowania, widoczny na starcie -->
+    <!-- EKRAN POWITALNY / LOGOWANIE -->
     <section id="welcome-screen" class="screen active">
         <div class="welcome-content">
+            <!-- ZMIANA: Dodano logo -->
+            <img src="icons/logo.png" alt="Aplikacja Treningowa" class="welcome-logo">
+
             <h2>Witaj w Aplikacji Treningowej</h2>
-            <p>Zaloguj się, aby rozpocząć śledzenie swoich postępów, synchronizować dane między urządzeniami i bezpiecznie przechowywać swoją historię.</p>
+            <p>Zaloguj się, aby rozpocząć śledzenie swoich postępów...</p>
             <button id="login-btn" class="action-btn">Zaloguj się / Zarejestruj</button>
         </div>
     </section>
 
-    <!-- Główna treść aplikacji, domyślnie ukryta -->
+    <!-- GŁÓWNA TREŚĆ APLIKACJI -->
     <main class="hidden">
-        <!-- Ekran Główny -->
+
+        <!-- EKRAN GŁÓWNY -->
         <section id="main-screen" class="screen active">
+            <!-- NOWOŚĆ: HERO DASHBOARD (GAMIFIKACJA) -->
+            <!-- Treść wstrzykiwana przez ui.js -->
+            <div id="hero-dashboard" class="hidden"></div>
+
             <h2 id="main-screen-title">Plan na najbliższe 7 dni</h2>
             <div id="days-container"></div>
         </section>
 
-        <!-- EKRAN HISTORII Z KALENDARZEM -->
+        <!-- EKRAN HISTORII -->
         <section id="history-screen" class="screen">
             <h2>Historia Treningów</h2>
             <div class="calendar-container">
                 <div class="calendar-header">
-                    <button id="prev-month-btn">&lt;</button>
+                    <button id="prev-month-btn" aria-label="Poprzedni miesiąc">&lt;</button>
                     <h3 id="month-year-header"></h3>
-                    <button id="next-month-btn">&gt;</button>
+                    <button id="next-month-btn" aria-label="Następny miesiąc">&gt;</button>
                 </div>
                 <div class="calendar-weekdays">
-                    <div>Pn</div><div>Wt</div><div>Śr</div><div>Cz</div><div>Pt</div><div>So</div><div>Nd</div>
+                    <div>Pn</div>
+                    <div>Wt</div>
+                    <div>Śr</div>
+                    <div>Cz</div>
+                    <div>Pt</div>
+                    <div>So</div>
+                    <div>Nd</div>
                 </div>
                 <div class="calendar-grid" id="calendar-grid"></div>
             </div>
         </section>
-        
+
         <!-- EKRAN BAZY ĆWICZEŃ -->
         <section id="library-screen" class="screen">
             <h2>Baza Ćwiczeń</h2>
             <div class="search-container" style="margin-bottom: 1.5rem;">
-                <input type="text" id="library-search-input" placeholder="Szukaj ćwiczeń po nazwie..." style="width: 100%; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 5px; font-size: 1rem; box-sizing: border-box;">
+                <input type="text" id="library-search-input" placeholder="Szukaj ćwiczeń po nazwie..."
+                    aria-label="Szukaj ćwiczeń">
             </div>
             <div id="exercise-library-container"></div>
         </section>
 
-        <!-- EKRAN SZCZEGÓŁÓW DNIA -->
+        <!-- EKRAN SZCZEGÓŁÓW DNIA (HISTORIA) -->
         <section id="day-details-screen" class="screen">
             <h2 id="details-day-title">Szczegóły Dnia</h2>
             <div id="day-details-content"></div>
@@ -93,47 +141,35 @@
                     <label for="setting-start-date">Data rozpoczęcia cyklu treningowego</label>
                     <input type="date" id="setting-start-date" required>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="setting-training-plan">Aktywny plan treningowy</label>
-                    <select id="setting-training-plan" style="padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 5px; font-size: 1rem; background-color: var(--card-background); width: 100%;"></select>
+                    <select id="setting-training-plan"></select>
                 </div>
 
                 <div class="form-group">
-                    <label for="setting-rest-duration">Długość przerwy między ćwiczeniami (w sekundach)</label>
-                    <input type="number" id="setting-rest-duration" min="0" step="5" required>
-                </div>
-                <div class="form-group">
-                    <label for="setting-progression-factor">Współczynnik progresji (długość / powtórzenia)</label>
+                    <label for="setting-progression-factor">Współczynnik progresji (%)</label>
                     <div class="slider-container">
                         <input type="range" id="setting-progression-factor" min="50" max="200" step="5">
-                        <span class="slider-value" id="progression-factor-value"></span>
+                        <span class="slider-value" id="progression-factor-value">100%</span>
                     </div>
                 </div>
                 <button type="submit" class="action-btn">Zapisz ustawienia</button>
             </form>
-            <div class="settings-section">
-                <h3>Backup i Przywracanie Danych (Lokalne)</h3>
-                <p>Zapisz swoje postępy i ustawienia do pliku, aby móc je przywrócić później lub przenieść na inne urządzenie. Funkcja ta działa lokalnie i nie jest synchronizowana z kontem.</p>
-                <button id="backup-btn" class="nav-btn backup-btn">Utwórz backup (pobierz plik)</button>
-                <div class="restore-container">
-                    <p>Wybierz plik z kopią zapasową, aby przywrócić dane.</p>
-                    <input type="file" id="restore-input" accept=".json" class="hidden">
-                    <button id="restore-btn" class="nav-btn restore-btn">Przywróć z pliku</button>
-                </div>
-            </div>
 
+            <!-- Sekcja usuwania konta -->
             <div id="danger-zone" class="settings-section">
                 <h3>Strefa Niebezpieczna</h3>
                 <p>
                     Usunięcie konta jest operacją <strong>nieodwracalną</strong>.
-                    Wszystkie Twoje dane, w tym historia treningów i ustawienia, zostaną trwale usunięte z naszych serwerów.
+                    Wszystkie Twoje dane, odznaki i historia zostaną trwale usunięte.
                 </p>
-                <button id="delete-account-btn" class="nav-btn danger-btn" style="width: 100%;">Usuń konto na stałe</button>
+                <button id="delete-account-btn" class="nav-btn danger-btn" style="width: 100%;">Usuń konto na
+                    stałe</button>
             </div>
         </section>
 
-        <!-- EKRANY DYNAMICZNE (wypełniane przez JavaScript) -->
+        <!-- EKRANY DYNAMICZNE (Wypełniane przez JS) -->
         <section id="pre-training-screen" class="screen"></section>
         <section id="training-screen" class="screen"></section>
         <section id="summary-screen" class="screen"></section>
@@ -142,41 +178,79 @@
     <footer id="app-footer">
         <div class="footer-content">
             <p class="disclaimer">
-                <strong>Zastrzeżenie:</strong> Ta aplikacja ma charakter wyłącznie informacyjny i nie zastępuje profesjonalnej porady medycznej. Zawsze konsultuj się z lekarzem lub fizjoterapeutą przed rozpoczęciem lub modyfikacją programu ćwiczeń.
+                <strong>Zastrzeżenie:</strong> Aplikacja ma charakter informacyjny. Przed rozpoczęciem ćwiczeń skonsultuj się z lekarzem.
             </p>
+            
+            <!-- NOWE LINKI PRAWNE -->
+            <div class="legal-links">
+                <a href="/terms.html">Regulamin</a>
+                <span class="separator">•</span>
+                <a href="/privacy.html">Polityka Prywatności</a>
+            </div>
+
             <p class="copyright">
-                &copy; <span id="current-year"></span> Aplikacja Treningowa. Wersja 5.0.0
+                &copy; <span id="current-year"></span> Aplikacja Treningowa. Wersja 7.0.0
             </p>
         </div>
     </footer>
-    
-    <!-- NOWOŚĆ: Dolna nawigacja mobilna, domyślnie ukryta -->
+
+    <!-- DOLNA NAWIGACJA (MOBILE ONLY) -->
     <nav id="app-bottom-nav" class="hidden">
-        <button data-screen="main" class="bottom-nav-btn active">
-            <span class="icon">🏠</span>
+        <button data-screen="main" class="bottom-nav-btn active" aria-label="Ekran Główny">
+            <!-- Ikona Domu -->
+            <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+            </svg>
             <span class="label">Główny</span>
         </button>
-        <button data-screen="history" class="bottom-nav-btn">
-            <span class="icon">🗓️</span>
+
+        <button data-screen="history" class="bottom-nav-btn" aria-label="Historia">
+            <!-- Ikona Kalendarza -->
+            <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+            </svg>
             <span class="label">Historia</span>
         </button>
-        <button data-screen="library" class="bottom-nav-btn">
-            <span class="icon">📚</span>
+
+        <button data-screen="library" class="bottom-nav-btn" aria-label="Baza Ćwiczeń">
+            <!-- Ikona Hantla / Biblioteki -->
+            <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6.5 6.5h11"></path>
+                <path d="M6 20v-2a6 6 0 1 1 12 0v2"></path>
+                <rect x="4" y="4" width="16" height="4" rx="1"></rect>
+            </svg>
             <span class="label">Ćwiczenia</span>
         </button>
-        <button data-screen="settings" class="bottom-nav-btn">
-            <span class="icon">⚙️</span>
+
+        <button data-screen="settings" class="bottom-nav-btn" aria-label="Ustawienia">
+            <!-- Ikona Ustawień -->
+            <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path
+                    d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
+                </path>
+            </svg>
             <span class="label">Ustawienia</span>
         </button>
     </nav>
 
-    <!-- Główny skrypt aplikacji ładowany na końcu -->
+    <!-- GŁÓWNY SKRYPT -->
     <script type="module" src="app.js"></script>
 
-    <!-- Wskaźnik ładowania danych -->
+    <!-- WSKAŹNIK ŁADOWANIA -->
     <div id="loading-overlay" class="hidden">
-        <div class="spinner"></div>
+        <!-- ZMIANA: Zamiast <div class="spinner"> używamy logo -->
+        <img src="icons/logo.png" alt="Ładowanie..." class="loader-logo pulsate-slow">
     </div>
 
 </body>
+
 </html>

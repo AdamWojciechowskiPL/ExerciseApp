@@ -1,79 +1,70 @@
 // netlify/functions/get-or-create-user-data.js
-
 const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
 
 exports.handler = async (event) => {
-  if (event.httpMethod !== 'GET') {
-    return { statusCode: 405, body: 'Method Not Allowed' };
-  }
+  if (event.httpMethod !== 'GET') return { statusCode: 405, body: 'Method Not Allowed' };
 
   try {
-    // Krok 1: Bezpiecznie uzyskaj ID użytkownika z tokena JWT
     const userId = await getUserIdFromEvent(event);
     const client = await pool.connect();
 
     try {
-      // Rozpocznij transakcję, aby zapewnić spójność danych
       await client.query('BEGIN');
-
-      // Krok 2: Sprawdź, czy użytkownik ma już zapisane ustawienia
+      
+      // 1. Ensure User & Settings
+      await client.query('INSERT INTO users (id) VALUES ($1) ON CONFLICT (id) DO NOTHING', [userId]);
+      
       let settingsResult = await client.query('SELECT settings FROM user_settings WHERE user_id = $1', [userId]);
       let userSettings;
-
-      // Krok 3: Jeśli użytkownik nie ma ustawień (jest to jego pierwsza wizyta),
-      // utwórz dla niego domyślny profil.
+      
       if (settingsResult.rows.length === 0) {
-        const userInsertQuery = 'INSERT INTO users (id) VALUES ($1) ON CONFLICT (id) DO NOTHING';
-        await client.query(userInsertQuery, [userId]);
-
-        const defaultSettings = {
-          appStartDate: new Date().toISOString().split('T')[0],
-          restBetweenExercises: 60,
-          progressionFactor: 100,
-          activePlanId: "l5s1-foundation"
-        };
-
-        const settingsInsertQuery = 'INSERT INTO user_settings (user_id, settings) VALUES ($1, $2)';
-        await client.query(settingsInsertQuery, [userId, JSON.stringify(defaultSettings)]);
-        
+        const defaultSettings = { appStartDate: new Date().toISOString().split('T')[0], progressionFactor: 100, activePlanId: "l5s1-foundation" };
+        await client.query('INSERT INTO user_settings (user_id, settings) VALUES ($1, $2)', [userId, JSON.stringify(defaultSettings)]);
         userSettings = defaultSettings;
       } else {
         userSettings = settingsResult.rows[0].settings;
       }
 
-      // --- POCZĄTEK KLUCZOWEJ ZMIANY ---
-      // Krok 4: Sprawdź, czy istnieje aktywna integracja ze Stravą
-      const integrationQuery = "SELECT 1 FROM user_integrations WHERE user_id = $1 AND provider = 'strava' LIMIT 1";
-      const integrationResult = await client.query(integrationQuery, [userId]);
+      // 2. Integrations
+      const integrationResult = await client.query("SELECT 1 FROM user_integrations WHERE user_id = $1 AND provider = 'strava' LIMIT 1", [userId]);
       
-      // `integrationResult.rowCount` będzie równe 1, jeśli wpis istnieje, lub 0, jeśli nie.
-      const isStravaConnected = integrationResult.rowCount > 0;
-      // --- KONIEC KLUCZOWEJ ZMIANY ---
+      // 3. LIGHTWEIGHT Session Check (Tylko 3 ostatnie, bez liczenia statystyk)
+      // To jest błyskawiczne zapytanie, które pozwala Dashboardowi działać
+      const recentQuery = `
+        SELECT session_id, plan_id, started_at, completed_at, session_data 
+        FROM training_sessions 
+        WHERE user_id = $1 
+        ORDER BY completed_at DESC 
+        LIMIT 3
+      `;
+      const recentResult = await client.query(recentQuery, [userId]);
+      
+      const recentSessions = recentResult.rows.map(row => ({
+          ...row.session_data,
+          sessionId: row.session_id,
+          planId: row.plan_id,
+          startedAt: row.started_at,
+          completedAt: row.completed_at
+      }));
 
-      // Krok 5: Skonstruuj obiekt odpowiedzi, który zawiera teraz obie informacje
+      // Zwracamy null dla stats - frontend doładuje je w tle
       const dataToReturn = {
         settings: userSettings,
-        integrations: {
-          isStravaConnected: isStravaConnected,
-        }
+        integrations: { isStravaConnected: integrationResult.rowCount > 0 },
+        stats: null, // <--- Tu jest zmiana. Nie liczymy tego teraz.
+        recentSessions: recentSessions
       };
       
-      // Zatwierdź transakcję, jeśli wszystko przebiegło pomyślnie
       await client.query('COMMIT');
-      
       return { statusCode: 200, body: JSON.stringify(dataToReturn) };
 
     } catch (dbError) {
-      // W przypadku jakiegokolwiek błędu, wycofaj wszystkie zmiany w transakcji
       await client.query('ROLLBACK');
-      console.error('Database transaction failed, rolled back.', dbError);
       throw dbError;
     } finally {
-      // Zawsze zwalniaj połączenie z bazą danych
       client.release();
     }
   } catch (error) {
-    console.error('Error in get-or-create-user-data handler:', error.message);
     return { statusCode: 500, body: `Server error: ${error.message}` };
   }
 };

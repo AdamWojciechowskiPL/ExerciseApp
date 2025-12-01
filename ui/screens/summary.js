@@ -1,13 +1,14 @@
 // js/ui/screens/summary.js
 import { state } from '../../state.js';
-import { screens, containers } from '../../dom.js'; // Dodano containers jeśli potrzebne, ale tu screens.summary wystarczy
+import { screens } from '../../dom.js'; 
 import { navigateTo, showLoader, hideLoader } from '../core.js';
 import dataStore from '../../dataStore.js';
 import { renderEvolutionModal } from '../modals.js';
-import { renderMainScreen } from './dashboard.js';
+// USUWAMY STATYCZNY IMPORT, ŻEBY PRZERWAĆ PĘTLĘ:
+// import { renderMainScreen } from './dashboard.js'; 
 import { getIsCasting, sendShowIdle } from '../../cast.js';
 
-let selectedFeedback = { type: null, value: 0 }; // Domyślnie neutralnie
+let selectedFeedback = { type: null, value: 0 };
 
 export const renderSummaryScreen = () => {
     if (getIsCasting()) sendShowIdle();
@@ -17,19 +18,16 @@ export const renderSummaryScreen = () => {
     const trainingDay = activePlan.Days.find(d => d.dayNumber === state.currentTrainingDayId);
     if (!trainingDay) return;
     
-    // 1. DECYZJA: Którą ścieżkę wybrać? (Symptom vs Tension)
     const initialPain = state.sessionParams.initialPainLevel || 0;
-    const isSafetyMode = initialPain > 3; // Próg 3/10
+    const isSafetyMode = initialPain > 3;
     
     const summaryScreen = screens.summary;
-    summaryScreen.innerHTML = ''; // Czyścimy
+    summaryScreen.innerHTML = '';
 
-    // 2. GENEROWANIE OPCJI FEEDBACKU
     let feedbackHtml = '';
     let questionTitle = '';
     
     if (isSafetyMode) {
-        // ŚCIEŻKA A: SYMPTOMY
         questionTitle = "Zaczynaliśmy z bólem. Jak czujesz się teraz?";
         selectedFeedback.type = 'symptom';
         feedbackHtml = `
@@ -47,10 +45,8 @@ export const renderSummaryScreen = () => {
             </div>
         `;
     } else {
-        // ŚCIEŻKA B: TENSION (LINA)
         questionTitle = "Jak oceniasz trudność (Stabilność)?";
         selectedFeedback.type = 'tension';
-        // Domyślna wartość to 0 (Sweet Spot)
         feedbackHtml = `
             <div class="feedback-option" data-type="tension" data-value="1">
                 <div class="fb-icon">🥱</div>
@@ -67,7 +63,6 @@ export const renderSummaryScreen = () => {
         `;
     }
 
-    // 3. RENDEROWANIE CAŁEGO EKRANU
     let stravaHtml = '';
     if (state.stravaIntegration.isConnected) {
         stravaHtml = `
@@ -85,7 +80,6 @@ export const renderSummaryScreen = () => {
         <p style="opacity:0.7; margin-bottom:1.5rem">Trening: ${trainingDay.title}</p>
         
         <form id="summary-form">
-            <!-- SEKCJA INTELIGENTNEGO FEEDBACKU -->
             <div class="form-group">
                 <label style="display:block; margin-bottom:10px; font-weight:700;">${questionTitle}</label>
                 <div class="feedback-container">
@@ -93,7 +87,6 @@ export const renderSummaryScreen = () => {
                 </div>
             </div>
 
-            <!-- NOTATKI (OPCJONALNE) -->
             <div class="form-group" style="margin-top:2rem;">
                 <label for="general-notes">Notatki (opcjonalne):</label>
                 <textarea id="general-notes" rows="3" placeholder="Coś jeszcze chcesz dodać?"></textarea>
@@ -105,7 +98,6 @@ export const renderSummaryScreen = () => {
         </form>
     `;
 
-    // 4. LOGIKA WYBORU KART
     const options = summaryScreen.querySelectorAll('.feedback-option');
     options.forEach(opt => {
         opt.addEventListener('click', () => {
@@ -122,11 +114,17 @@ export const renderSummaryScreen = () => {
 
 export async function handleSummarySubmit(e) {
     e.preventDefault();
+    
+    // 1. BLOKADA PRZYCISKU (Anti-Double-Click)
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Zapisywanie...";
+    }
+
     showLoader();
 
     const dateKey = state.currentTrainingDate || new Date().toISOString().split('T')[0];
-    const activePlan = state.trainingPlans[state.settings.activePlanId];
-    const trainingDay = activePlan ? activePlan.Days.find(d => d.dayNumber === state.currentTrainingDayId) : null;
     
     const now = new Date();
     const stravaCheckbox = document.getElementById('strava-sync-checkbox');
@@ -134,18 +132,21 @@ export async function handleSummarySubmit(e) {
     const rawDuration = now - state.sessionStartTime;
     const netDuration = Math.max(0, rawDuration - (state.totalPausedTime || 0));
     const durationSeconds = Math.round(netDuration / 1000);
+    
+    const activePlan = state.trainingPlans[state.settings.activePlanId];
+    // Zabezpieczenie: jeśli plan nie istnieje, użyj stringa "Unknown"
+    const trainingTitle = activePlan 
+        ? (activePlan.Days.find(d => d.dayNumber === state.currentTrainingDayId)?.title || "Trening")
+        : "Trening";
 
     const sessionPayload = {
         sessionId: Date.now(),
         planId: state.settings.activePlanId,
         trainingDayId: state.currentTrainingDayId,
-        trainingTitle: trainingDay ? trainingDay.title : "Trening",
+        trainingTitle: trainingTitle,
         status: 'completed',
-        // --- NOWE POLA ---
-        feedback: selectedFeedback, // { type: 'tension', value: 1 }
-        // Zachowujemy pole pain_during dla kompatybilności wstecznej (mapujemy z feedbacku lub 0)
+        feedback: selectedFeedback, 
         pain_during: selectedFeedback.type === 'symptom' && selectedFeedback.value === -1 ? 5 : 0, 
-        // -----------------
         notes: document.getElementById('general-notes').value,
         startedAt: state.sessionStartTime ? state.sessionStartTime.toISOString() : now.toISOString(),
         completedAt: now.toISOString(),
@@ -154,25 +155,22 @@ export async function handleSummarySubmit(e) {
     };
 
     try {
-        // 1. Zapisz sesję i odbierz ewentualną adaptację
-        // UWAGA: dataStore.saveSession musi teraz zwracać wynik z backendu!
-        // Zakładamy, że zaktualizowałeś dataStore.js aby zwracał response.json()
         const response = await dataStore.saveSession(sessionPayload); 
         
-        // Aktualizacja stanu lokalnego (dla widoku kalendarza)
-        if (!state.userProgress[dateKey]) {
-            state.userProgress[dateKey] = [];
-        }
+        if (!state.userProgress[dateKey]) state.userProgress[dateKey] = [];
         state.userProgress[dateKey].push(sessionPayload);
         
-        if (!state.userStats) state.userStats = { totalSessions: 0, streak: 0 };
-        state.userStats.totalSessions = (parseInt(state.userStats.totalSessions) || 0) + 1;
+        if (response && response.newStats) {
+            state.userStats = { ...state.userStats, ...response.newStats };
+        } else {
+            if (!state.userStats) state.userStats = { totalSessions: 0, streak: 0 };
+            state.userStats.totalSessions = (parseInt(state.userStats.totalSessions) || 0) + 1;
+        }
 
         if (stravaCheckbox && stravaCheckbox.checked) {
-            dataStore.uploadToStrava(sessionPayload); // To działa w tle
+            dataStore.uploadToStrava(sessionPayload);
         }
         
-        // Reset stanu sesji
         state.currentTrainingDate = null;
         state.currentTrainingDayId = null;
         state.sessionLog = [];
@@ -182,26 +180,29 @@ export async function handleSummarySubmit(e) {
 
         hideLoader();
 
-        // 2. CZY BYŁA EWOLUCJA?
-        // response.adaptation pochodzi z backendu (save-session.js)
-        if (response && response.newStats) {
-            // Nadpisujemy lokalny stan tym, co wyliczył serwer (pewne dane)
-            state.userStats = {
-                ...state.userStats,
-                ...response.newStats
-            };
-            console.log("📊 Zaktualizowano statystyki (Streak/Tarcza) z serwera:", state.userStats);
+        // 2. DYNAMICZNY IMPORT (Rozwiązuje Circular Dependency!)
+        // Importujemy dashboard.js dopiero teraz, co przerywa pętlę zależności.
+        const { renderMainScreen } = await import('./dashboard.js');
+
+        if (response && response.adaptation) {
+            renderEvolutionModal(response.adaptation, () => {
+                navigateTo('main');
+                renderMainScreen();
+            });
         } else {
-            // Fallback (stara logika inkrementacji)
-            if (!state.userStats) state.userStats = { totalSessions: 0, streak: 0 };
-            state.userStats.totalSessions = (parseInt(state.userStats.totalSessions) || 0) + 1;
+            navigateTo('main');
+            renderMainScreen();
         }
 
     } catch (error) {
         console.error("Błąd zapisu sesji:", error);
         hideLoader();
-        alert("Błąd zapisu. Trening zapisany lokalnie.");
-        navigateTo('main');
-        renderMainScreen();
+        alert("Błąd zapisu. Sprawdź połączenie.");
+        
+        // Odblokuj przycisk w razie błędu
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Spróbuj ponownie";
+        }
     }
 }

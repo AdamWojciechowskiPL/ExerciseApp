@@ -188,12 +188,10 @@ function checkAndMigrateLocalData() {
 export async function main() {
     showLoader();
     
-    // --- KLUCZOWA POPRAWKA: DEFINIUJEMY ELEMENTY DOM NA GÓRZE ---
     const loginBtn = document.getElementById('login-btn');
     const logoutBtn = document.getElementById('logout-btn');
     const userInfoContainer = document.getElementById('user-info-container');
     const bottomNav = document.getElementById('app-bottom-nav');
-    // ------------------------------------------------------------
 
     await configureClient();
     initializeCastApi(); 
@@ -201,7 +199,6 @@ export async function main() {
     try {
         const resourcesPromise = dataStore.loadAppContent();
         
-        // Listenery logowania
         if (loginBtn && !loginBtn.dataset.listenerAttached) {
             loginBtn.addEventListener('click', login);
             loginBtn.dataset.listenerAttached = 'true';
@@ -211,7 +208,6 @@ export async function main() {
             logoutBtn.dataset.listenerAttached = 'true';
         }
 
-        // Obsługa redirectów
         const query = window.location.search;
         const isReturningFromStrava = new URLSearchParams(query).has('strava_status');
         
@@ -228,7 +224,6 @@ export async function main() {
 
         if (isAuth) {
             // --- ZALOGOWANY ---
-            // Teraz userInfoContainer jest już zdefiniowany, więc to zadziała:
             document.getElementById('welcome-screen').classList.add('hidden');
             document.querySelector('main').classList.remove('hidden');
             if (userInfoContainer) userInfoContainer.classList.remove('hidden');
@@ -240,9 +235,17 @@ export async function main() {
             const nameEl = document.getElementById('user-display-name');
             if(nameEl) nameEl.textContent = profile.name || profile.email || 'Użytkownik';
 
-            await resourcesPromise;
+            // --- KLUCZOWA ZMIANA ---
+            // 1. Czekamy na pierwsze (anonimowe) ładowanie, żeby nie było błędów...
+            await resourcesPromise; 
+            
+            // 2. ...ale natychmiast wymuszamy odświeżenie danych PERSONALIZOWANYCH (z tokenem)
+            // Dzięki temu backend zobaczy UserID i wytnie ćwiczenia z Czarnej Listy.
+            console.log("🔄 Odświeżanie planu pod kątem czarnej listy...");
+            await dataStore.loadAppContent(); 
+            // -----------------------
 
-            // START UI (Szybki)
+            // START UI
             console.log("🚀 Start UI");
             initAppLogic();
             hideLoader();
@@ -259,9 +262,10 @@ export async function main() {
                     renderSettingsScreen();
                     window.history.replaceState({}, document.title, window.location.pathname + "#settings");
                 } else {
-                    // Odświeżamy dashboard, jeśli jesteśmy na nim (żeby pokazać "Misja Wykonana")
+                    // --- FIX 1: Sprawdzamy klasę .active zamiast braku .hidden ---
                     const hero = document.getElementById('hero-dashboard');
-                    if (hero && !hero.closest('.screen').classList.contains('hidden')) {
+                    // Odświeżamy TYLKO jeśli użytkownik faktycznie patrzy na ekran główny
+                    if (hero && hero.closest('.screen').classList.contains('active')) {
                         renderMainScreen();
                     }
                 }
@@ -271,7 +275,9 @@ export async function main() {
             dataStore.fetchDetailedStats().then((newStats) => {
                 if (newStats) {
                     const hero = document.getElementById('hero-dashboard');
-                    if (hero && !hero.closest('.screen').classList.contains('hidden')) {
+                    // --- FIX 2: Sprawdzamy klasę .active zamiast braku .hidden ---
+                    // Jeśli użytkownik przeszedł do historii, to warunek będzie false i nie przerzucimy go siłą
+                    if (hero && hero.closest('.screen').classList.contains('active')) {
                         renderMainScreen(); 
                     }
                 }

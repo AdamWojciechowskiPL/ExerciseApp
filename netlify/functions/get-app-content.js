@@ -11,15 +11,8 @@ exports.handler = async (event) => {
   const client = await pool.connect();
 
   try {
-    // 0. Sprawdź, czy user jest zalogowany (Opcjonalne, ale potrzebne do personalizacji)
-    // Jeśli to zapytanie publiczne (bez tokena), zwracamy standardowy plan.
-    // Jeśli z tokenem, nakładamy overrides.
     let userId = null;
     try {
-        // Próbujemy wyciągnąć ID usera, ale nie blokujemy, jeśli go nie ma
-        // (W Twoim kodzie get-app-content było publiczne, ale teraz dodajemy logikę per-user)
-        // Jeśli frontend nie wysyła tokena do tego endpointu, trzeba to zmienić w dataStore.js!
-        // Zakładam, że dataStore.js doda Authorization header.
         if (event.headers.authorization) {
             userId = await getUserIdFromEvent(event);
         }
@@ -39,16 +32,19 @@ exports.handler = async (event) => {
         difficultyLevel: ex.difficulty_level,
         maxDuration: ex.max_recommended_duration,
         maxReps: ex.max_recommended_reps,
-        nextProgressionId: ex.next_progression_id, // Ważne dla progresji
+        nextProgressionId: ex.next_progression_id,
         painReliefZones: ex.pain_relief_zones || [],
         animationSvg: ex.animation_svg || null
       };
       return acc;
     }, {});
 
-    // 2. Pobierz Overrides (Jeśli mamy usera)
+    // 2. Pobierz Personalizację (Overrides + Blacklist)
     let overrides = {};
+    let blockedIds = new Set(); // Zbiór zablokowanych ćwiczeń
+
     if (userId) {
+        // A. Pobierz Ewolucje (Overrides)
         const overridesResult = await client.query(
             'SELECT original_exercise_id, replacement_exercise_id FROM user_plan_overrides WHERE user_id = $1',
             [userId]
@@ -56,9 +52,24 @@ exports.handler = async (event) => {
         overridesResult.rows.forEach(row => {
             overrides[row.original_exercise_id] = row.replacement_exercise_id;
         });
+
+        // B. Pobierz Czarną Listę
+        const blacklistResult = await client.query(
+            'SELECT exercise_id, preferred_replacement_id FROM user_exercise_blacklist WHERE user_id = $1',
+            [userId]
+        );
+        blacklistResult.rows.forEach(row => {
+            if (row.preferred_replacement_id) {
+                // Jeśli jest zamiennik, traktujemy to jak override
+                overrides[row.exercise_id] = row.preferred_replacement_id;
+            } else {
+                // Jeśli nie ma zamiennika, blokujemy całkowicie
+                blockedIds.add(row.exercise_id);
+            }
+        });
     }
 
-    // 3. Pobierz Plany (i podmień w locie)
+    // 3. Pobierz i Zbuduj Plan
     const plansQuery = `
       SELECT
         tp.id as plan_id, tp.name as plan_name, tp.description as plan_description, tp.global_rules,
@@ -92,14 +103,19 @@ exports.handler = async (event) => {
         }
 
         if (row.exercise_id && day[row.section]) {
-            // --- LOGIKA PODMIANY (SMART SWAP) ---
-            // Sprawdzamy, czy dla tego ćwiczenia istnieje override
             let finalExerciseId = row.exercise_id;
             let isOverridden = false;
 
+            // KROK 1: Sprawdź czy jest nadpisanie (Ewolucja LUB Zamiennik z Czarnej Listy)
             if (overrides[finalExerciseId]) {
                 finalExerciseId = overrides[finalExerciseId];
                 isOverridden = true;
+            }
+
+            // KROK 2: Sprawdź czy ćwiczenie (oryginalne lub podmienione) jest zablokowane
+            // Jeśli ID jest w blockedIds I NIE zostało podmienione na coś innego (czyli nadal jest tym znienawidzonym), pomiń je.
+            if (blockedIds.has(finalExerciseId)) {
+                return acc; // SKIP! Nie dodajemy tego ćwiczenia do tablicy.
             }
 
             const exerciseRef = {
@@ -107,7 +123,7 @@ exports.handler = async (event) => {
                 sets: row.sets,
                 reps_or_time: row.reps_or_time,
                 tempo_or_iso: row.tempo_or_iso,
-                isPersonalized: isOverridden // Flaga dla Frontendu (można pokazać ikonkę!)
+                isPersonalized: isOverridden
             };
             day[row.section].push(exerciseRef);
         }

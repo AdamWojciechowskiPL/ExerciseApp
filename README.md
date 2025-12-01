@@ -144,68 +144,239 @@ Projekt zorganizowany jest modułowo w oparciu o **Vanilla JS + ES Modules**.
 
 ## 🗄 Struktura Bazy Danych (PostgreSQL)
 
-Kluczowe tabele i kolumny (Schema v7.0):
+### 1. Specyfikacja Tabeli: `exercises`
 
-```sql
--- 1. ĆWICZENIA (Baza wiedzy + Drzewo Ewolucji)
-CREATE TABLE exercises (
-    id VARCHAR(255) PRIMARY KEY,
-    name VARCHAR(255),
-    description TEXT,
-    next_progression_id VARCHAR(255),    -- Wskaźnik na trudniejszą wersję (Ewolucja)
-    category_id VARCHAR(50),
-    difficulty_level INTEGER,
-    animation_svg TEXT,
-    youtube_url VARCHAR(255),
-    max_recommended_duration INTEGER,
-    max_recommended_reps INTEGER,
-    equipment VARCHAR(255)
-);
+Tabela `exercises` stanowi centralny katalog (Bazę Wiedzy) aplikacji. Przechowuje definicje wszystkich dostępnych ćwiczeń, ich parametry, media instruktażowe oraz relacje logiczne (progresje, strefy bólu).
 
--- 2. NADPISANIA PLANU (Personalizacja / Ewolucja)
-CREATE TABLE user_plan_overrides (
-    user_id VARCHAR(255) NOT NULL,
-    original_exercise_id VARCHAR(255) NOT NULL,
-    replacement_exercise_id VARCHAR(255) NOT NULL, -- Np. Plank -> Weighted Plank
-    adjustment_type VARCHAR(50),         -- 'evolution' / 'devolution'
-    reason VARCHAR(255),                 -- Np. "Monotony detected"
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (user_id, original_exercise_id)
-);
+#### Lista Kolumn
 
--- 3. SESJE TRENINGOWE (Z nowym formatem feedbacku)
-CREATE TABLE training_sessions (
-    session_id SERIAL PRIMARY KEY,
-    user_id VARCHAR(255),
-    plan_id VARCHAR(255),
-    session_data JSONB,                  -- Zawiera teraz obiekt feedback { type: 'tension', value: 1 }
-    started_at TIMESTAMP,
-    completed_at TIMESTAMP
-);
+##### 1. `id`
+*   **Typ danych:** `VARCHAR(255)`
+*   **Ograniczenia:** `PRIMARY KEY`, `NOT NULL`, `UNIQUE`
+*   **Opis techniczny:** Klucz główny tabeli. Jest to ciąg znaków, nie liczba (np. auto-increment). Zalecana konwencja to *camelCase* (np. `birdDog`, `boxSquatNeutralSpine`).
+*   **Opis biznesowy:** Unikalny identyfikator ćwiczenia używany przez system w kodzie. Służy do wiązania ćwiczeń w plany treningowe, logowania historii oraz definiowania progresji. Nie powinien być zmieniany po utworzeniu.
 
--- 4. PREFERENCJE (Czarna lista)
-CREATE TABLE user_exercise_blacklist (
-    user_id VARCHAR(255),
-    exercise_id VARCHAR(255),
-    preferred_replacement_id VARCHAR(255),
-    PRIMARY KEY (user_id, exercise_id)
-);
+##### 2. `name`
+*   **Typ danych:** `VARCHAR(255)`
+*   **Ograniczenia:** `NOT NULL`
+*   **Opis techniczny:** Standardowy ciąg tekstowy o ograniczonej długości.
+*   **Opis biznesowy:** Wyświetlana nazwa ćwiczenia widoczna dla użytkownika (np. "Deska na przedramionach"). Powinna być zrozumiała i jednoznaczna.
 
--- 5. USTAWIENIA
-CREATE TABLE user_settings (
-    user_id VARCHAR(255) PRIMARY KEY,
-    settings JSONB                       -- Start daty, plan, mnożnik progresji
-);
+##### 3. `description`
+*   **Typ danych:** `TEXT`
+*   **Ograniczenia:** Brak limitu znaków (w praktyce limit silnika DB).
+*   **Opis techniczny:** Pole tekstowe o dużej pojemności.
+*   **Opis biznesowy:** Pełna instrukcja wykonania ćwiczenia. Zawiera opis pozycji wyjściowej, ruchu, kluczowych punktów technicznych ("Cueing") oraz błędów, których należy unikać. Używana w widoku szczegółów ćwiczenia oraz na odwrocie "Karty Wizualnej".
 
--- 6. INTEGRACJE
-CREATE TABLE user_integrations (
-    user_id VARCHAR(255),
-    provider VARCHAR(50),
-    access_token TEXT,                   -- Szyfrowane
-    refresh_token TEXT,                  -- Szyfrowane
-    expires_at BIGINT
-);
-```
+##### 4. `equipment`
+*   **Typ danych:** `VARCHAR(255)`
+*   **Ograniczenia:** `NULL` (dopuszczalne, choć rzadkie).
+*   **Opis techniczny:** Ciąg tekstowy. Może zawierać pojedyncze słowo lub listę oddzieloną przecinkami.
+*   **Opis biznesowy:** Lista sprzętu wymaganego do wykonania ćwiczenia (np. "Mata", "Taśma", "Stopień/Schodek"). Informacja ta pozwala użytkownikowi przygotować się do sesji lub filtrować ćwiczenia, jeśli nie posiada danego sprzętu.
+
+##### 5. `youtube_url`
+*   **Typ danych:** `VARCHAR(255)`
+*   **Ograniczenia:** `NULL` (opcjonalne).
+*   **Opis techniczny:** Przechowuje pełny adres URL (np. `https://www.youtube.com/shorts/...`).
+*   **Opis biznesowy:** Link do zewnętrznego materiału wideo prezentującego poprawne wykonanie ćwiczenia. System wykorzystuje to pole do osadzania wideo (embed) lub otwierania linku w nowym oknie.
+
+##### 6. `created_at`
+*   **Typ danych:** `TIMESTAMP WITH TIME ZONE`
+*   **Ograniczenia:** `DEFAULT CURRENT_TIMESTAMP`, `NOT NULL`.
+*   **Opis techniczny:** Znacznik czasu utworzenia rekordu, automatycznie ustawiany przez bazę danych w momencie INSERT.
+*   **Opis biznesowy:** Informacja audytowa – kiedy ćwiczenie zostało dodane do systemu. Przydatne przy sortowaniu nowości lub synchronizacji danych.
+
+##### 7. `category_id`
+*   **Typ danych:** `VARCHAR(50)`
+*   **Ograniczenia:** Zalecana spójność z systemem kategorii (np. `core_anti_extension`, `hip_mobility`).
+*   **Opis techniczny:** Krótki identyfikator tekstowy (tzw. slug). Może pełnić rolę klucza obcego (Foreign Key) do tabeli kategorii, jeśli taka istnieje.
+*   **Opis biznesowy:** Kategoria biomechaniczna ćwiczenia. Jest kluczowa dla algorytmu **Smart Swap** – system pozwala wymieniać ćwiczenia tylko w obrębie tej samej kategorii (np. zamiana jednego ćwiczenia na anty-rotację na inne z tej samej grupy).
+
+##### 8. `difficulty_level`
+*   **Typ danych:** `INTEGER`
+*   **Ograniczenia:** `CHECK (difficulty_level >= 1 AND difficulty_level <= 5)`
+*   **Opis techniczny:** Liczba całkowita. Ograniczenie (`CONSTRAINT`) na poziomie bazy danych wymusza zakres od 1 do 5.
+*   **Opis biznesowy:** Poziom trudności ćwiczenia.
+    *   1: Rehabilitacja / Bardzo łatwe.
+    *   3: Średniozaawansowane.
+    *   5: Elita / Bardzo trudne.
+    Używane do filtrowania i sugerowania progresji.
+
+##### 9. `max_recommended_duration`
+*   **Typ danych:** `INTEGER`
+*   **Ograniczenia:** `NULL` (opcjonalne).
+*   **Opis techniczny:** Wartość w sekundach.
+*   **Opis biznesowy:** Domyślny czas trwania jednej serii dla ćwiczeń izometrycznych (na czas) lub rozciągających (np. 10s dla Bird-dog, 300s dla oddychania). Jeśli pole jest wypełnione, ćwiczenie jest traktowane jako "Time-based".
+
+##### 10. `max_recommended_reps`
+*   **Typ danych:** `INTEGER`
+*   **Ograniczenia:** `NULL` (opcjonalne).
+*   **Opis techniczny:** Liczba powtórzeń.
+*   **Opis biznesowy:** Domyślna liczba powtórzeń dla ćwiczeń dynamicznych (np. 12 przysiadów). Jeśli pole jest wypełnione, a `duration` puste, ćwiczenie jest traktowane jako "Rep-based".
+
+##### 11. `next_progression_id`
+*   **Typ danych:** `VARCHAR(255)`
+*   **Ograniczenia:** `NULL` (opcjonalne). Powinno wskazywać na istniejące `id` w tej samej tabeli (Self-Referencing Foreign Key).
+*   **Opis techniczny:** Klucz obcy wskazujący na inne ćwiczenie w tabeli.
+*   **Opis biznesowy:** Wskaźnik do logicznej "Ewolucji" ćwiczenia. Jeśli użytkownik zgłosi "nudę/zbyt łatwo" przy obecnym ćwiczeniu, system automatycznie podmieni je na to wskazane w tym polu (np. `deadBugBasic` -> `birdDog`). Jeśli `NULL`, ćwiczenie jest na szczycie drabiny progresji.
+
+##### 12. `pain_relief_zones`
+*   **Typ danych:** `TEXT[]` (Tablica tekstowa w PostgreSQL)
+*   **Ograniczenia:** `NULL` (opcjonalne).
+*   **Opis techniczny:** Tablica stringów, np. `["lumbar_general", "si_joint"]`.
+*   **Opis biznesowy:** Tagi medyczne/rehabilitacyjne. Określają, przy jakich dolegliwościach dane ćwiczenie jest zalecane lub bezpieczne. System używa tego do personalizacji planu pod kątem zgłoszonych dolegliwości użytkownika (np. "Jeśli boli odcinek lędźwiowy, priorytetyzuj ćwiczenia z tagiem `lumbar_general`").
+
+##### 13. `animation_svg`
+*   **Typ danych:** `TEXT`
+*   **Ograniczenia:** `NULL` (opcjonalne).
+*   **Opis techniczny:** Pole przechowujące surowy kod XML/SVG. Może być bardzo długi (kilka-kilkanaście KB tekstu).
+*   **Opis biznesowy:** Wektorowa animacja instruktażowa. Jest renderowana bezpośrednio w kodzie strony (inline SVG) oraz wysyłana do urządzenia Chromecast. Pozwala na animowanie elementów (np. ruch ręki, zmiana koloru przy wdechu) bez konieczności ładowania zewnętrznych plików wideo.
+
+### 2. Specyfikacja Tabeli: `training_plans`
+
+Tabela nadrzędna (korzeń hierarchii). Definiuje dostępne w aplikacji plany treningowe jako całość (np. "Plan Podstawowy", "Joga przeciwbólowa").
+
+#### Lista Kolumn
+
+##### 1. `id`
+*   **Typ danych:** `VARCHAR(255)`
+*   **Ograniczenia:** `PRIMARY KEY`, `NOT NULL`, `UNIQUE`
+*   **Opis techniczny:** Unikalny identyfikator tekstowy (tzw. slug). Zalecany format *kebab-case* (np. `l5s1-foundation`, `yoga-l5s1-pain-relief`).
+*   **Opis biznesowy:** Identyfikator używany w kodzie aplikacji i URL-ach do wyboru aktywnego planu. Musi być stały, ponieważ użytkownicy zapisują swoje postępy w powiązaniu z tym ID.
+
+##### 2. `name`
+*   **Typ danych:** `VARCHAR(255)`
+*   **Ograniczenia:** `NOT NULL`
+*   **Opis techniczny:** Nazwa wyświetlana.
+*   **Opis biznesowy:** Pełna, marketingowa nazwa planu widoczna dla użytkownika w interfejsie wyboru planu oraz w nagłówku aplikacji (np. "Plan Podstawowy L5-S1 (McGill)").
+
+##### 3. `description`
+*   **Typ danych:** `TEXT`
+*   **Ograniczenia:** Brak.
+*   **Opis techniczny:** Pole tekstowe o dużej pojemności.
+*   **Opis biznesowy:** Szczegółowy opis celu planu, grupy docelowej oraz przeciwwskazań. Informuje użytkownika, dla kogo przeznaczony jest dany cykl (np. "7-dniowy cykl stabilizacyjny", "uwzględnia haluks").
+
+##### 4. `global_rules`
+*   **Typ danych:** `JSONB`
+*   **Ograniczenia:** Poprawny format JSON.
+*   **Opis techniczny:** Binarny format JSON pozwalający na przechowywanie elastycznej konfiguracji.
+*   **Opis biznesowy:** Zbiór globalnych zasad i ustawień dla całego planu. Przechowuje parametry takie jak:
+    *   `defaultRestSecondsBetweenSets`: Domyślny czas przerwy między seriami.
+    *   `defaultRestSecondsBetweenExercises`: Domyślny czas przerwy przy zmianie ćwiczenia.
+    *   `lumbarRange`: Wytyczne bezpieczeństwa dla kręgosłupa (np. "Zakres środkowy").
+    *   `tempoGuideline`: Ogólna instrukcja tempa (np. "Powoli 2–3 s").
+    Dzięki temu aplikacja (Timer, Asystent) wie, jak sterować przebiegiem treningu.
+
+##### 5. `created_at`
+*   **Typ danych:** `TIMESTAMP WITH TIME ZONE`
+*   **Ograniczenia:** `DEFAULT CURRENT_TIMESTAMP`.
+*   **Opis techniczny:** Data utworzenia rekordu.
+*   **Opis biznesowy:** Informacja audytowa.
+
+### 3. Specyfikacja Tabeli: `plan_days`
+
+Tabela pośrednia. Definiuje strukturę czasową planu (kolejne dni treningowe). Łączy plan (`training_plans`) z konkretnymi zestawami ćwiczeń (`day_exercises`).
+
+#### Lista Kolumn
+
+##### 1. `id`
+*   **Typ danych:** `SERIAL` (Auto-increment Integer)
+*   **Ograniczenia:** `PRIMARY KEY`.
+*   **Opis techniczny:** Unikalny numer identyfikacyjny wiersza (sztuczny klucz).
+*   **Opis biznesowy:** Wewnętrzny identyfikator dnia. Służy do łączenia ćwiczeń z konkretnym dniem.
+
+##### 2. `plan_id`
+*   **Typ danych:** `VARCHAR(255)`
+*   **Ograniczenia:** `NOT NULL`, `FOREIGN KEY` do `training_plans(id)`.
+*   **Opis techniczny:** Klucz obcy wskazujący, do którego planu należy ten dzień.
+*   **Opis biznesowy:** Grupuje dni w ramach jednego planu treningowego.
+
+##### 3. `day_number`
+*   **Typ danych:** `INTEGER`
+*   **Ograniczenia:** `NOT NULL`.
+*   **Opis techniczny:** Liczba całkowita.
+*   **Opis biznesowy:** Logiczny numer dnia w cyklu (np. Dzień 1, Dzień 2). Aplikacja używa tego pola do sortowania dni oraz do określania, jaki trening przypada na "dzisiaj" na podstawie daty rozpoczęcia planu przez użytkownika.
+
+##### 4. `title`
+*   **Typ danych:** `VARCHAR(255)`
+*   **Ograniczenia:** `NOT NULL`.
+*   **Opis techniczny:** Krótki opis tekstowy.
+*   **Opis biznesowy:** Temat przewodni danego dnia (np. "Stabilizacja bazowa", "Anty-rotacja"). Wyświetlany na karcie dnia ("Day Card") oraz w nagłówku podczas treningu ("Mission Title").
+
+#### Unikalność (Unique Constraint)
+*   `UNIQUE(plan_id, day_number)`: Zapewnia, że w ramach jednego planu nie mogą istnieć dwa dni o tym samym numerze (np. nie może być dwóch "Dni 1" w planie "l5s1-foundation").
+
+### 4. Specyfikacja Tabeli: `day_exercises`
+
+Tabela najniższego poziomu. To "przepis" na trening. Określa, jakie ćwiczenie, w jakiej ilości i w jaki sposób ma zostać wykonane w konkretnym dniu.
+
+#### Lista Kolumn
+
+##### 1. `id`
+*   **Typ danych:** `SERIAL`
+*   **Ograniczenia:** `PRIMARY KEY`.
+*   **Opis techniczny:** Unikalny identyfikator wiersza.
+*   **Opis biznesowy:** Identyfikator konkretnego wystąpienia ćwiczenia w planie.
+
+##### 2. `day_id`
+*   **Typ danych:** `INTEGER`
+*   **Ograniczenia:** `NOT NULL`, `FOREIGN KEY` do `plan_days(id)`.
+*   **Opis techniczny:** Klucz obcy wiążący ćwiczenie z konkretnym dniem planu.
+*   **Opis biznesowy:** Określa, w którym dniu użytkownik ma wykonać to ćwiczenie.
+
+##### 3. `exercise_id`
+*   **Typ danych:** `VARCHAR(255)`
+*   **Ograniczenia:** `NOT NULL`, `FOREIGN KEY` do `exercises(id)`.
+*   **Opis techniczny:** Klucz obcy wskazujący na definicję ćwiczenia w Bazie Wiedzy.
+*   **Opis biznesowy:** Wskazuje, *co* użytkownik ma robić (np. "birdDog"). System pobiera stąd nazwę, wideo i opis techniczny.
+
+##### 4. `section`
+*   **Typ danych:** `VARCHAR(50)`
+*   **Ograniczenia:** `NOT NULL`. Wartości biznesowe: `warmup`, `main`, `cooldown`.
+*   **Opis techniczny:** Kategoria logiczna wewnątrz dnia.
+*   **Opis biznesowy:** Dzieli trening na fazy:
+    *   `warmup`: Rozgrzewka/Mobilizacja.
+    *   `main`: Część główna (siła/stabilizacja).
+    *   `cooldown`: Wyciszenie/Rozciąganie.
+    Aplikacja używa tego do grupowania kart na ekranie podglądu.
+
+##### 5. `order_in_section`
+*   **Typ danych:** `INTEGER`
+*   **Ograniczenia:** `NOT NULL`.
+*   **Opis techniczny:** Liczba porządkowa.
+*   **Opis biznesowy:** Kolejność wykonywania ćwiczeń w ramach jednej sekcji. Decyduje o tym, co wyświetli się jako pierwsze, drugie itd.
+
+##### 6. `sets`
+*   **Typ danych:** `VARCHAR(50)`
+*   **Ograniczenia:** Brak (ciąg znaków).
+*   **Opis techniczny:** Przechowuje liczbę serii jako tekst (np. "3", "2-3").
+*   **Opis biznesowy:** Ilość serii do wykonania. Jest to string, aby umożliwić zapisy zakresów ("2-3") dla bardziej zaawansowanych użytkowników, choć zazwyczaj jest to pojedyncza cyfra. System parsuje to pole, aby wygenerować odpowiednią liczbę "okienek" w pętli treningowej.
+
+##### 7. `reps_or_time`
+*   **Typ danych:** `VARCHAR(100)`
+*   **Ograniczenia:** Brak.
+*   **Opis techniczny:** Ciąg znaków (np. "10", "30 s", "5 breaths", "10/str.").
+*   **Opis biznesowy:** "Dawkowanie" ćwiczenia w pojedynczej serii.
+    *   Jeśli zawiera "s" lub "min" -> Timer (czas).
+    *   Jeśli sama liczba -> Licznik powtórzeń.
+    *   Może zawierać modyfikatory jak "/str." (na stronę).
+    System TTS czyta to pole użytkownikowi.
+
+##### 8. `tempo_or_iso`
+*   **Typ danych:** `VARCHAR(255)`
+*   **Ograniczenia:** `NULL` (opcjonalne).
+*   **Opis techniczny:** Tekst instruktażowy.
+*   **Opis biznesowy:** Szczegółowe instrukcje dotyczące tempa ruchu lub czasu utrzymania napięcia (izometrii) dla *tego konkretnego dnia*. Nadpisuje lub uzupełnia ogólny opis ćwiczenia (np. "pauza 2s na wydechu", "izometria 10s"). Kluczowe dla jakości wykonania ("Quality over Quantity").
+
+---
+
+### Inne Tabele (Skrót)
+
+*   `user_plan_overrides`: Przechowuje indywidualne zmiany planu (ewolucje).
+*   `training_sessions`: Historia wykonanych treningów z pełnym logiem JSONB.
+*   `user_exercise_blacklist`: Lista ćwiczeń blokowanych przez użytkownika.
+*   `user_settings`: Ustawienia globalne (data startu, mnożnik progresji).
+*   `user_integrations`: Tokeny OAuth dla usług zewnętrznych (Strava).
 
 ## 🚀 Instrukcja Uruchomienia
 

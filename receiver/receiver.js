@@ -1,23 +1,24 @@
-// receiver/receiver.js - v4.0 (Video Loop Anti-Idle)
+// receiver/receiver.js - v4.1 (Overlay + TouchOptimized)
 
 const context = cast.framework.CastReceiverContext.getInstance();
 const CUSTOM_NAMESPACE = 'urn:x-cast:com.trening.app';
-const IDLE_TIMEOUT = 14400; // 4 godziny
+// Ustawiamy maksymalny dozwolony czas bezczynności (4 godziny)
+const IDLE_TIMEOUT = 14400; 
 
 let lastRenderedSvg = null;
 
-// --- SYSTEM UTRZYMANIA SESJI (ANTI-IDLE VIDEO HACK) ---
+// --- HACK WIDEO ---
 const keepAliveVideo = document.getElementById('keepAliveVideo');
 
 function startKeepAlive() {
     if (keepAliveVideo) {
-        // Kluczowe dla polityki autoplay:
         keepAliveVideo.muted = true;
         keepAliveVideo.loop = true;
         
+        // Wymuszamy odtworzenie, jeśli nie gra
         if (keepAliveVideo.paused) {
             keepAliveVideo.play()
-                .then(() => console.log('[Receiver] Video loop started (Anti-Idle active).'))
+                .then(() => console.log('[Receiver] Video loop active.'))
                 .catch(e => console.warn("[Receiver] Autoplay blocked:", e));
         }
     }
@@ -64,9 +65,7 @@ const UI = {
 
 context.addCustomMessageListener(CUSTOM_NAMESPACE, (event) => {
     const message = event.data;
-    
-    // Próbujemy uruchomić wideo przy każdej wiadomości (interakcji użytkownika)
-    startKeepAlive();
+    startKeepAlive(); // "Budzimy" wideo przy każdej interakcji
 
     switch (message.type) {
         case 'UPDATE_USER_STATS':
@@ -78,8 +77,6 @@ context.addCustomMessageListener(CUSTOM_NAMESPACE, (event) => {
         case 'UPDATE_STATE':
             updateTrainingUI(message.payload);
             showScreen('training');
-            
-            // To również pomaga zresetować idle timer
             if (message.payload.exerciseName) {
                 context.setApplicationState(`Trening: ${message.payload.exerciseName}`);
             }
@@ -92,8 +89,7 @@ context.addCustomMessageListener(CUSTOM_NAMESPACE, (event) => {
             break;
 
         case 'PLAY_VIDEO':
-            // Przy YouTube pauzujemy naszego hacka
-            stopKeepAlive(); 
+            stopKeepAlive(); // Pauzujemy hacka przy YouTube
             playVideo(message.payload.youtubeId);
             showScreen('video');
             context.setApplicationState("Odtwarzanie wideo");
@@ -101,7 +97,7 @@ context.addCustomMessageListener(CUSTOM_NAMESPACE, (event) => {
 
         case 'STOP_VIDEO':
             stopVideo();
-            startKeepAlive(); // Wznawiamy hack po powrocie
+            startKeepAlive();
             showScreen('training');
             break;
 
@@ -110,7 +106,7 @@ context.addCustomMessageListener(CUSTOM_NAMESPACE, (event) => {
     }
 });
 
-// --- 3. UI ---
+// --- 3. UI HELPERS ---
 
 function showScreen(screenName) {
     Object.values(UI.screens).forEach(el => el.classList.remove('active'));
@@ -127,7 +123,6 @@ function updateUserStats(stats) {
     if (stats.level) UI.idle.heroLevel.textContent = `POZIOM ${stats.level}`;
     if (stats.tierName) UI.idle.heroTitle.textContent = stats.tierName;
     if (stats.totalSessions) UI.idle.sessionCount.textContent = stats.totalSessions;
-    
     if (stats.streak !== undefined) {
         UI.idle.streakCount.textContent = `${stats.streak} Dni z rzędu`;
         UI.idle.streakFire.style.opacity = stats.streak > 0 ? '1' : '0.3';
@@ -150,7 +145,6 @@ function updateTrainingUI(data) {
     }
 
     const isFullUpdate = data.exerciseName !== undefined;
-
     if (isFullUpdate) {
         const newSvg = data.animationSvg;
         if (newSvg) {
@@ -167,8 +161,6 @@ function updateTrainingUI(data) {
     }
 }
 
-// --- 4. WIDEO (YouTube) ---
-
 function playVideo(youtubeId) {
     if (youtubeId) {
         UI.video.iframe.src = `https://www.youtube.com/embed/${youtubeId}?autoplay=1&controls=0&modestbranding=1`;
@@ -179,24 +171,26 @@ function stopVideo() {
     UI.video.iframe.src = '';
 }
 
-// --- 5. START ---
+// --- 4. START I KONFIGURACJA ---
 
 context.addEventListener(cast.framework.system.EventType.READY, () => {
-    console.log('[Receiver] Gotowy. Próba startu wideo...');
+    console.log('[Receiver] Gotowy. Uruchamiam dummy video.');
     startKeepAlive();
 });
 
-context.addEventListener(cast.framework.system.EventType.SENDER_DISCONNECTED, (event) => {
-    console.log('[Receiver] Nadawca rozłączony.');
-    // Nie zamykamy, pozwalamy działać wideo
-});
-
 const options = new cast.framework.CastReceiverOptions();
+
 options.customNamespaces = {
     [CUSTOM_NAMESPACE]: cast.framework.system.MessageType.JSON
 };
-// WAŻNE: Wyłączamy domyślny timeout
+
+// === KLUCZOWE KONFIGURACJE ANTI-IDLE ===
+// 1. Wyłączamy standardowy timeout braku aktywności
 options.disableIdleTimeout = true; 
 options.maxInactivity = IDLE_TIMEOUT;
+
+// 2. Mówimy systemowi, że to aplikacja "dotykowa" (gra/dashboard), 
+//    co zapobiega włączaniu Ambient Mode, gdy nie ma "aktywnego strumienia wideo"
+options.touchScreenOptimizedApp = true; 
 
 context.start(options);

@@ -71,18 +71,36 @@ const dataStore = {
      */
     loadAppContent: async () => {
         try {
-            const response = await fetch('/.netlify/functions/get-app-content');
+            // Próbujemy pobrać token (może być null, jeśli user niezalogowany)
+            const token = await getToken();
+            
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
+            // Wysyłamy żądanie (z tokenem lub bez)
+            const response = await fetch('/.netlify/functions/get-app-content', { headers });
+            
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             
             const data = await response.json();
+            
+            // Aktualizujemy stan
             state.exerciseLibrary = data.exercises || {};
             state.trainingPlans = data.training_plans || {};
             
-            console.log('📦 Zasoby aplikacji załadowane pomyślnie.');
+            console.log(token 
+                ? '📦 Zasoby PERSONALIZOWANE załadowane (z uwzględnieniem czarnej listy).' 
+                : '📦 Zasoby PUBLICZNE załadowane (anonimowe).'
+            );
+            
         } catch (error) {
             console.error("Critical: Failed to load app content:", error);
-            alert("Błąd krytyczny: Nie udało się pobrać planów treningowych. Sprawdź połączenie.");
-            throw error;
+            // Nie rzucamy błędu krytycznego dla anonimowych, żeby aplikacja wstała offline
+            if (navigator.onLine) {
+                 alert("Błąd pobierania planów. Sprawdź połączenie.");
+            }
         }
     },
 

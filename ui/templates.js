@@ -1,4 +1,4 @@
-// js/ui/templates.js
+// /ui/templates.js
 import { state } from '../state.js';
 
 // ============================================================
@@ -20,7 +20,7 @@ const getLevelLabel = (lvl) => {
 };
 
 /**
- * NOWOŚĆ: Helper do formatowania Hybrydowego Feedbacku w historii.
+ * Helper do formatowania Hybrydowego Feedbacku w historii.
  * Zwraca obiekt { label: "Tekst", class: "klasa-css" }
  */
 const formatFeedback = (session) => {
@@ -41,7 +41,6 @@ const formatFeedback = (session) => {
     }
 
     // 2. Stary System (Legacy - Ból 0-10)
-    // Jeśli nie ma feedbacku, sprawdzamy stare pole pain_during
     if (session.pain_during !== undefined && session.pain_during !== null) {
         return { label: `Ból: ${session.pain_during}/10`, class: 'neutral' };
     }
@@ -49,13 +48,6 @@ const formatFeedback = (session) => {
     // 3. Brak danych
     return { label: '-', class: '' };
 };
-
-// ============================================================
-// GENERATORY HTML
-// ============================================================
-
-// 1. HERO DASHBOARD
-// ui/templates.js
 
 // Helper do pobierania dat z bieżącego tygodnia (Poniedziałek - Niedziela)
 function getCurrentWeekDays() {
@@ -73,7 +65,7 @@ function getCurrentWeekDays() {
     return weekDays;
 }
 
-// Helper formatujący datę do klucza (taki sam jak w utils.js, ale inline dla templates)
+// Helper formatujący datę do klucza
 function getIsoDateKey(date) {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -81,8 +73,12 @@ function getIsoDateKey(date) {
     return `${year}-${month}-${day}`;
 }
 
+// ============================================================
+// GENERATORY HTML
+// ============================================================
+
+// 1. HERO DASHBOARD
 export function generateHeroDashboardHTML(stats) {
-    // ... (stara logika zabezpieczeń isLoading bez zmian) ...
     const isLoading = !stats.resilience;
     const resilienceScore = isLoading ? '--' : stats.resilience.score;
     const shieldClass = isLoading ? 'loading' : stats.resilience.status.toLowerCase();
@@ -90,25 +86,13 @@ export function generateHeroDashboardHTML(stats) {
     const progressDegrees = Math.round((progressPercent / 100) * 360);
     const loadingClass = isLoading ? 'skeleton-pulse' : '';
 
-    // --- NOWOŚĆ: Generowanie Wykresu Tygodniowego ---
+    // Generowanie Wykresu Tygodniowego
     const weekDays = getCurrentWeekDays();
     const todayKey = getIsoDateKey(new Date());
     
-    // Zakładamy, że userProgress jest dostępny w 'state' globalnym, 
-    // ale templates.js nie powinien importować state bezpośrednio jeśli to możliwe.
-    // Jednak dla uproszczenia w tym miejscu: 
-    // W dashboard.js przekazujemy 'stats', ale potrzebujemy też 'userProgress' do wykresu.
-    // Modyfikacja: Zamiast zmieniać sygnaturę funkcji we wszystkich plikach, 
-    // pobierzemy historię ze `stats.recentHistory` (jeśli dodamy to w dashboard.js) 
-    // LUB prościej: zaimportujemy state tutaj (co już robisz na górze pliku).
-    
-    // UWAGA: Upewnij się, że importujesz 'state' na górze pliku templates.js:
-    // import { state } from '../state.js';
-
-    // Budowanie HTML dla 7 dni
     const weeklyBarsHTML = weekDays.map(date => {
         const dateKey = getIsoDateKey(date);
-        const dayName = date.toLocaleDateString('pl-PL', { weekday: 'short' }).charAt(0); // P, W, Ś...
+        const dayName = date.toLocaleDateString('pl-PL', { weekday: 'short' }).charAt(0);
         const isToday = dateKey === todayKey;
         
         // Sprawdzamy czy w tym dniu był trening (w userProgress)
@@ -116,7 +100,7 @@ export function generateHeroDashboardHTML(stats) {
         
         let statusClass = 'empty';
         if (hasWorkout) statusClass = 'filled';
-        else if (isToday) statusClass = 'current'; // Pulsujący "Dziś"
+        else if (isToday) statusClass = 'current';
 
         return `
             <div class="week-day-col">
@@ -125,7 +109,6 @@ export function generateHeroDashboardHTML(stats) {
             </div>
         `;
     }).join('');
-    // ------------------------------------------------
 
     return `
         <!-- LEWA: AVATAR -->
@@ -160,7 +143,7 @@ export function generateHeroDashboardHTML(stats) {
             </div>
         </div>
 
-        <!-- PRAWA: HUD TYGODNIOWY (NOWOŚĆ) -->
+        <!-- PRAWA: HUD TYGODNIOWY -->
         <div class="hero-weekly-rhythm">
             <div class="weekly-chart-label">TWÓJ TYDZIEŃ</div>
             <div class="weekly-chart-grid">
@@ -222,7 +205,7 @@ export function generateMissionCardHTML(dayData, estimatedMinutes) {
     `;
 }
 
-// 3. KARTA PODGLĄDU TRENINGU (Pre-Training)
+// 3. KARTA PODGLĄDU TRENINGU (Pre-Training) - ZAKTUALIZOWANA DLA DBM
 export function generatePreTrainingCardHTML(ex, index) {
     const uniqueId = `ex-${index}`;
     const exerciseId = ex.id || ex.exerciseId; 
@@ -241,9 +224,26 @@ export function generatePreTrainingCardHTML(ex, index) {
            </button>`
         : '';
 
-    // Ikona "Szyte na miarę" jeśli ćwiczenie pochodzi z ewolucji (isPersonalized)
-    const personalizedBadge = ex.isPersonalized 
-        ? `<span class="meta-badge" style="background:var(--gold-color); color:#000; border:none;">✨ Personalizacja</span>` 
+    // --- LOGIKA BADGE DLA EFEKTU WOW ---
+    let badgeHTML = '';
+    
+    if (ex.isPersonalized) {
+        // Ewolucja z backendu (na podstawie feedbacku z poprzednich treningów)
+        badgeHTML = `<span class="meta-badge" style="background:var(--gold-color); color:#000; border:none;">✨ Personalizacja</span>`;
+    } else if (ex.isDynamicSwap) {
+        // Dynamiczna podmiana przez WorkoutMixer (Freshness Index)
+        badgeHTML = `<span class="meta-badge" style="background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd;">🎲 Mix</span>`;
+    } else if (ex.isSwapped) {
+        // Ręczny Swap wykonany przez użytkownika przed chwilą
+        badgeHTML = `<span class="meta-badge" style="background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0;">🔄 Wybór</span>`;
+    }
+
+    // --- FIX: Ukryj "Zamiast...", jeśli nazwa jest taka sama ---
+    // Czasami algorytm zwraca to samo ćwiczenie (jako "najlepsze"),
+    // w takim przypadku nie chcemy pokazywać, że to zamiana.
+    const showOriginalInfo = ex.originalName && ex.originalName !== ex.name;
+    const originalInfo = showOriginalInfo 
+        ? `<div style="font-size:0.75rem; color:#999; margin-top:-5px; margin-bottom:5px;">Zamiast: ${ex.originalName}</div>` 
         : '';
 
     return `
@@ -251,6 +251,7 @@ export function generatePreTrainingCardHTML(ex, index) {
             <div class="training-card-header">
                 <div style="flex-grow: 1; padding-right: 10px;">
                     <h4>${ex.name}</h4>
+                    ${originalInfo}
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
                     ${previewBtnHTML}
@@ -261,7 +262,7 @@ export function generatePreTrainingCardHTML(ex, index) {
             </div>
             
             <div class="training-meta">
-                ${personalizedBadge}
+                ${badgeHTML}
                 <span class="meta-badge badge-lvl-${lvl}">⚡ ${getLevelLabel(lvl)}</span>
                 <span class="meta-badge badge-category">📂 ${categoryName}</span>
                 <span class="meta-badge badge-equipment">🏋️ ${equipment}</span>
@@ -292,7 +293,7 @@ export function generatePreTrainingCardHTML(ex, index) {
     `;
 }
 
-// 4. KARTA SESJI (HISTORIA) - ZAKTUALIZOWANA
+// 4. KARTA SESJI (HISTORIA)
 export function generateSessionCardHTML(session) {
     const planId = session.planId || 'l5s1-foundation';
     const planForHistory = state.trainingPlans[planId];
@@ -300,14 +301,12 @@ export function generateSessionCardHTML(session) {
     const title = trainingDay ? trainingDay.title : (session.trainingTitle || 'Trening');
     const optionsTime = { hour: '2-digit', minute: '2-digit' };
     
-    // --- NOWA LOGIKA FEEDBACKU ---
+    // Obsługa feedbacku
     const feedbackInfo = formatFeedback(session);
-    // Kolorowanie wartości w statystykach
     let feedbackStyle = '';
     if (feedbackInfo.class === 'success') feedbackStyle = 'color: var(--success-color);';
     if (feedbackInfo.class === 'warning') feedbackStyle = 'color: #e67e22;'; // orange
     if (feedbackInfo.class === 'danger') feedbackStyle = 'color: var(--danger-color);';
-    // -----------------------------
 
     let statsHtml = '';
     let completedTimeStr = '';
@@ -389,14 +388,12 @@ export function generateSessionCardHTML(session) {
     `;
 }
 
-// 5. KARTA UKOŃCZONEJ MISJI (DASHBOARD) - ZAKTUALIZOWANA
+// 5. KARTA UKOŃCZONEJ MISJI (DASHBOARD)
 export function generateCompletedMissionCardHTML(session) {
     const durationSeconds = session.netDurationSeconds || 0;
     const minutes = Math.floor(durationSeconds / 60);
     
-    // --- UŻYCIE HELPERA FEEDBACKU ---
     const feedbackInfo = formatFeedback(session);
-    // --------------------------------
 
     return `
     <div class="mission-card completed">

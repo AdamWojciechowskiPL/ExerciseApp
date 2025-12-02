@@ -47,6 +47,8 @@ function logCurrentStep(status) {
     
     const newLogEntry = {
         name: exercise.name,
+        // Zapisujemy ID, aby system Ewolucji wiedział co dokładnie robiliśmy (ważne przy podmianach!)
+        exerciseId: exercise.id || exercise.exerciseId, 
         currentSet: exercise.currentSet,
         totalSets: exercise.totalSets,
         reps_or_time: exercise.reps_or_time,
@@ -312,16 +314,32 @@ export async function startModifiedTraining() {
     state.isPaused = false;
     state.lastPauseStartTime = null;
 
-    const activePlan = state.trainingPlans[state.settings.activePlanId];
-    if (!activePlan) {
-        console.error("No active training plan found in state!");
-        return;
+    // --- FIX: DECYZJA O ŹRÓDLE PLANU ---
+    // Sprawdzamy, czy istnieje wygenerowany plan dynamiczny dla tego dnia
+    let sourcePlan;
+    
+    if (state.todaysDynamicPlan && state.todaysDynamicPlan.dayNumber === state.currentTrainingDayId) {
+        console.log("🚀 Start treningu: Używam DYNAMICZNEGO planu (Mixer)");
+        sourcePlan = state.todaysDynamicPlan;
+    } else {
+        console.log("ℹ️ Start treningu: Używam STATYCZNEGO planu (Fallback)");
+        const activePlan = state.trainingPlans[state.settings.activePlanId];
+        if (!activePlan) {
+            console.error("No active training plan found in state!");
+            return;
+        }
+        const dayDataRaw = activePlan.Days.find(d => d.dayNumber === state.currentTrainingDayId);
+        sourcePlan = getHydratedDay(dayDataRaw);
     }
-    const dayDataRaw = activePlan.Days.find(d => d.dayNumber === state.currentTrainingDayId);
-    const hydratedDay = getHydratedDay(dayDataRaw);
-    const modifiedDay = JSON.parse(JSON.stringify(hydratedDay));
+    
+    // Tworzymy kopię roboczą
+    const modifiedDay = JSON.parse(JSON.stringify(sourcePlan));
+    
+    // --- AKTUALIZACJA Z INPUTÓW (TIME SLIDER) ---
+    // Pobieramy wartości z inputów, które użytkownik mógł zmienić (czas, serie)
     const allExercises = [...(modifiedDay.warmup || []), ...(modifiedDay.main || []), ...(modifiedDay.cooldown || [])];
     const allInputs = screens.preTraining.querySelectorAll('input[data-exercise-index]');
+    
     allInputs.forEach(input => {
         const index = parseInt(input.dataset.exerciseIndex, 10);
         const targetExercise = allExercises[index];
@@ -333,6 +351,8 @@ export async function startModifiedTraining() {
             }
         }
     });
+
+    // --- REKONSTRUKCJA SEKCJI PO ZMIANACH ---
     let currentIndex = 0;
     if (modifiedDay.warmup) {
         modifiedDay.warmup = allExercises.slice(currentIndex, currentIndex + modifiedDay.warmup.length);
@@ -345,6 +365,7 @@ export async function startModifiedTraining() {
     if (modifiedDay.cooldown) {
         modifiedDay.cooldown = allExercises.slice(currentIndex, currentIndex + modifiedDay.cooldown.length);
     }
+
     state.sessionLog = [];
     state.flatExercises = [
         { name: "Przygotuj się", isRest: true, isWork: false, duration: 5, sectionName: "Start" },

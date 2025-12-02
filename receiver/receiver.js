@@ -1,13 +1,12 @@
-// receiver/receiver.js - v4.1 (Overlay + TouchOptimized)
+// receiver/receiver.js - v5.0 (Game Loop Anti-Idle)
 
 const context = cast.framework.CastReceiverContext.getInstance();
 const CUSTOM_NAMESPACE = 'urn:x-cast:com.trening.app';
-// Ustawiamy maksymalny dozwolony czas bezczynności (4 godziny)
-const IDLE_TIMEOUT = 14400; 
+const IDLE_TIMEOUT = 14400; // 4 godziny
 
 let lastRenderedSvg = null;
 
-// --- HACK WIDEO ---
+// --- HACK 1: VIDEO LOOP ---
 const keepAliveVideo = document.getElementById('keepAliveVideo');
 
 function startKeepAlive() {
@@ -15,11 +14,10 @@ function startKeepAlive() {
         keepAliveVideo.muted = true;
         keepAliveVideo.loop = true;
         
-        // Wymuszamy odtworzenie, jeśli nie gra
         if (keepAliveVideo.paused) {
             keepAliveVideo.play()
-                .then(() => console.log('[Receiver] Video loop active.'))
-                .catch(e => console.warn("[Receiver] Autoplay blocked:", e));
+                .then(() => console.log('[Receiver] Background video running.'))
+                .catch(e => console.warn("[Receiver] Video Autoplay blocked:", e));
         }
     }
 }
@@ -28,6 +26,25 @@ function stopKeepAlive() {
     if (keepAliveVideo && !keepAliveVideo.paused) {
         keepAliveVideo.pause();
     }
+}
+
+// --- HACK 2: GAME LOOP (Active GPU) ---
+// Wymuszamy na przeglądarce ciągłe przerysowywanie klatki
+const gpuActivator = document.getElementById('gpu-activator');
+let frameCount = 0;
+
+function startGameLoop() {
+    function step() {
+        frameCount++;
+        if (gpuActivator) {
+            // Zmieniamy opacity minimalnie co klatkę, żeby wymusić redraw
+            // Wartość oscyluje między 0.01 a 0.02 - niewidoczne dla oka, istotne dla GPU
+            const opacity = 0.01 + (Math.sin(frameCount * 0.1) * 0.01);
+            gpuActivator.style.opacity = opacity;
+        }
+        requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
 }
 
 // --- 1. CACHE DOM ---
@@ -65,7 +82,7 @@ const UI = {
 
 context.addCustomMessageListener(CUSTOM_NAMESPACE, (event) => {
     const message = event.data;
-    startKeepAlive(); // "Budzimy" wideo przy każdej interakcji
+    startKeepAlive(); // Upewniamy się, że wideo gra
 
     switch (message.type) {
         case 'UPDATE_USER_STATS':
@@ -83,13 +100,14 @@ context.addCustomMessageListener(CUSTOM_NAMESPACE, (event) => {
             break;
 
         case 'SHOW_IDLE':
-            stopVideo();
+            stopVideo(); // Zatrzymujemy YouTube (jeśli grał)
+            startKeepAlive(); // Wracamy do naszego wideo tła
             showScreen('idle');
             context.setApplicationState("Gotowy");
             break;
 
         case 'PLAY_VIDEO':
-            stopKeepAlive(); // Pauzujemy hacka przy YouTube
+            stopKeepAlive(); // YouTube przejmuje kontrolę
             playVideo(message.payload.youtubeId);
             showScreen('video');
             context.setApplicationState("Odtwarzanie wideo");
@@ -97,7 +115,7 @@ context.addCustomMessageListener(CUSTOM_NAMESPACE, (event) => {
 
         case 'STOP_VIDEO':
             stopVideo();
-            startKeepAlive();
+            startKeepAlive(); // Wznawiamy hack
             showScreen('training');
             break;
 
@@ -171,26 +189,20 @@ function stopVideo() {
     UI.video.iframe.src = '';
 }
 
-// --- 4. START I KONFIGURACJA ---
+// --- 4. START ---
 
 context.addEventListener(cast.framework.system.EventType.READY, () => {
-    console.log('[Receiver] Gotowy. Uruchamiam dummy video.');
-    startKeepAlive();
+    console.log('[Receiver] Gotowy.');
+    startKeepAlive(); // Uruchom wideo tła
+    startGameLoop();  // Uruchom aktywność GPU
 });
 
 const options = new cast.framework.CastReceiverOptions();
-
 options.customNamespaces = {
     [CUSTOM_NAMESPACE]: cast.framework.system.MessageType.JSON
 };
-
-// === KLUCZOWE KONFIGURACJE ANTI-IDLE ===
-// 1. Wyłączamy standardowy timeout braku aktywności
 options.disableIdleTimeout = true; 
 options.maxInactivity = IDLE_TIMEOUT;
-
-// 2. Mówimy systemowi, że to aplikacja "dotykowa" (gra/dashboard), 
-//    co zapobiega włączaniu Ambient Mode, gdy nie ma "aktywnego strumienia wideo"
-options.touchScreenOptimizedApp = true; 
+options.touchScreenOptimizedApp = true; // Ważne dla Game Loopa
 
 context.start(options);

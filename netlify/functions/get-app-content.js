@@ -20,7 +20,7 @@ exports.handler = async (event) => {
         console.warn("Public access to app content (no personalization)");
     }
 
-    // 1. Pobierz Ćwiczenia
+    // 1. Pobierz Ćwiczenia (Dodano default_tempo oraz is_unilateral)
     const exercisesResult = await client.query('SELECT * FROM exercises;');
     const exercises = exercisesResult.rows.reduce((acc, ex) => {
       acc[ex.id] = {
@@ -34,17 +34,18 @@ exports.handler = async (event) => {
         maxReps: ex.max_recommended_reps,
         nextProgressionId: ex.next_progression_id,
         painReliefZones: ex.pain_relief_zones || [],
-        animationSvg: ex.animation_svg || null
+        animationSvg: ex.animation_svg || null,
+        defaultTempo: ex.default_tempo || null,
+        isUnilateral: ex.is_unilateral || false // NOWE POLE
       };
       return acc;
     }, {});
 
     // 2. Pobierz Personalizację (Overrides + Blacklist)
     let overrides = {};
-    let blockedIds = new Set(); // Zbiór zablokowanych ćwiczeń
+    let blockedIds = new Set();
 
     if (userId) {
-        // A. Pobierz Ewolucje (Overrides)
         const overridesResult = await client.query(
             'SELECT original_exercise_id, replacement_exercise_id FROM user_plan_overrides WHERE user_id = $1',
             [userId]
@@ -53,17 +54,14 @@ exports.handler = async (event) => {
             overrides[row.original_exercise_id] = row.replacement_exercise_id;
         });
 
-        // B. Pobierz Czarną Listę
         const blacklistResult = await client.query(
             'SELECT exercise_id, preferred_replacement_id FROM user_exercise_blacklist WHERE user_id = $1',
             [userId]
         );
         blacklistResult.rows.forEach(row => {
             if (row.preferred_replacement_id) {
-                // Jeśli jest zamiennik, traktujemy to jak override
                 overrides[row.exercise_id] = row.preferred_replacement_id;
             } else {
-                // Jeśli nie ma zamiennika, blokujemy całkowicie
                 blockedIds.add(row.exercise_id);
             }
         });
@@ -106,16 +104,13 @@ exports.handler = async (event) => {
             let finalExerciseId = row.exercise_id;
             let isOverridden = false;
 
-            // KROK 1: Sprawdź czy jest nadpisanie (Ewolucja LUB Zamiennik z Czarnej Listy)
             if (overrides[finalExerciseId]) {
                 finalExerciseId = overrides[finalExerciseId];
                 isOverridden = true;
             }
 
-            // KROK 2: Sprawdź czy ćwiczenie (oryginalne lub podmienione) jest zablokowane
-            // Jeśli ID jest w blockedIds I NIE zostało podmienione na coś innego (czyli nadal jest tym znienawidzonym), pomiń je.
             if (blockedIds.has(finalExerciseId)) {
-                return acc; // SKIP! Nie dodajemy tego ćwiczenia do tablicy.
+                return acc; 
             }
 
             const exerciseRef = {

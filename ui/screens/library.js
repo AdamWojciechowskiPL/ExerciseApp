@@ -121,6 +121,9 @@ export const renderLibraryScreen = (searchTerm = '') => {
         exercisesToShow = exercisesToShow.filter(ex => (ex.equipment || 'Brak sprzętu') === activeFilters.equipment);
     }
 
+    // --- NOWOŚĆ: SORTOWANIE ALFABETYCZNE (PL) ---
+    exercisesToShow.sort((a, b) => a.name.localeCompare(b.name, 'pl'));
+
     // ============================================================
     // 4. RENDEROWANIE KART
     // ============================================================
@@ -178,7 +181,6 @@ export const renderLibraryScreen = (searchTerm = '') => {
 
                 // 2. RZUTOWANIE (Tylko gdy połączono)
                 if (getIsCasting()) {
-                    // Używamy cast-video-btn do logiki, ale btn-with-icon do wyglądu
                     const youtubeId = youtubeIdMatch ? youtubeIdMatch[1] : null;
                     actionButtons += `
                     <button class="btn-with-icon btn-primary cast-video-btn" 
@@ -230,7 +232,7 @@ export const renderLibraryScreen = (searchTerm = '') => {
     }
 
     // ============================================================
-    // 5. OBSŁUGA ZDARZEŃ
+    // 5. OBSŁUGA ZDARZEŃ (FIX: Delegacja z .closest())
     // ============================================================
     const searchInput = document.getElementById('library-search-input');
 
@@ -244,12 +246,13 @@ export const renderLibraryScreen = (searchTerm = '') => {
     
     wrapper.querySelector('#filter-reset').addEventListener('click', () => {
         activeFilters = { category: 'all', level: 'all', equipment: 'all' };
-        renderLibraryScreen(searchInput.value); // zachowujemy wpisany tekst szukania
+        renderLibraryScreen(searchInput.value); 
     });
 
-    // Handler Kart (Delegacja)
+    // Handler Kart
     const handleContainerClick = async (e) => {
-        // --- MODAL PODGLĄDU (NOWOŚĆ) ---
+        
+        // --- PODGLĄD (MODAL) ---
         const previewBtn = e.target.closest('.preview-anim-btn');
         if (previewBtn) {
             e.stopPropagation();
@@ -283,40 +286,52 @@ export const renderLibraryScreen = (searchTerm = '') => {
             return;
         }
 
-        const target = e.target;
-        const currentSearch = searchInput.value;
-
-        if (target.classList.contains('restore-btn')) {
-            const id = target.dataset.id;
+        // --- PRZYWRACANIE ---
+        const restoreBtn = e.target.closest('.restore-btn');
+        if (restoreBtn) {
+            const id = restoreBtn.dataset.id;
             e.stopPropagation(); 
             if (confirm('Czy na pewno chcesz przywrócić to ćwiczenie?')) {
                 await dataStore.removeFromBlacklist(id);
-                renderLibraryScreen(currentSearch); 
+                renderLibraryScreen(searchInput.value); 
             }
+            return;
         }
 
-        if (target.classList.contains('block-btn')) {
-            const id = target.dataset.id;
+        // --- BLOKOWANIE (FIXED CLICK AREA) ---
+        const blockBtn = e.target.closest('.block-btn');
+        if (blockBtn) {
+            const id = blockBtn.dataset.id;
             e.stopPropagation();
             if (confirm('Czy na pewno chcesz dodać to ćwiczenie do Czarnej Listy?')) {
                 await dataStore.addToBlacklist(id, null);
-                renderLibraryScreen(currentSearch);
+                renderLibraryScreen(searchInput.value);
             }
+            return;
         }
 
-        if (target.classList.contains('cast-video-btn')) {
-            const youtubeId = target.dataset.youtubeId;
+        // --- CAST VIDEO START ---
+        const castBtn = e.target.closest('.cast-video-btn');
+        if (castBtn) {
+            const youtubeId = castBtn.dataset.youtubeId;
             if (youtubeId && getIsCasting()) {
                 sendPlayVideo(youtubeId);
-                target.textContent = "Zatrzymaj ⏹️";
-                target.classList.replace('cast-video-btn', 'stop-cast-video-btn');
+                // Mały trick UI: zamień przycisk na Stop w tym miejscu (chociaż odświeżenie może to zresetować)
+                castBtn.querySelector('span').textContent = "Zatrzymaj";
+                castBtn.classList.replace('cast-video-btn', 'stop-cast-video-btn');
             } else if (!getIsCasting()) {
                 alert("Najpierw połącz się z urządzeniem Chromecast.");
             }
-        } else if (target.classList.contains('stop-cast-video-btn')) {
+            return;
+        } 
+        
+        // --- CAST VIDEO STOP ---
+        const stopCastBtn = e.target.closest('.stop-cast-video-btn');
+        if (stopCastBtn) {
             sendStopVideo();
-            target.textContent = "Rzutuj 📺";
-            target.classList.replace('stop-cast-video-btn', 'cast-video-btn');
+            stopCastBtn.querySelector('span').textContent = "Rzutuj";
+            stopCastBtn.classList.replace('stop-cast-video-btn', 'cast-video-btn');
+            return;
         }
     };
 

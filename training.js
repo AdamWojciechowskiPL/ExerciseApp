@@ -1,7 +1,6 @@
 // training.js
 
 import { state } from './state.js';
-// ZMIANA: Dodano import initializeFocusElements
 import { focus, screens, initializeFocusElements } from './dom.js';
 import { speak } from './tts.js';
 import { startTimer, stopTimer, startStopwatch, stopStopwatch, updateTimerDisplay, updateStopwatchDisplay } from './timer.js';
@@ -31,7 +30,7 @@ function syncStateToChromecast() {
         sectionName: exercise.sectionName || '',
         timerValue: focus.timerDisplay.textContent,
         exerciseName: exercise.isWork ? `${exercise.name} (Seria ${exercise.currentSet}/${exercise.totalSets})` : exercise.name,
-        exerciseDetails: exercise.isWork ? `Czas/Powt: ${exercise.reps_or_time} | Tempo: ${exercise.tempo_or_iso}` : `Następne: ${(state.flatExercises[state.currentExerciseIndex + 1] || {}).name || ''}`,
+        exerciseDetails: exercise.isWork ? `Cel: ${exercise.reps_or_time} | Tempo: ${exercise.tempo_or_iso}` : `Następne: ${(state.flatExercises[state.currentExerciseIndex + 1] || {}).name || ''}`,
         nextExercise: nextWorkExercise ? nextWorkExercise.name : 'Koniec',
         isRest: !exercise.isWork,
         animationSvg: exercise.animationSvg || null
@@ -43,11 +42,11 @@ function syncStateToChromecast() {
 function logCurrentStep(status) {
     const exercise = state.flatExercises[state.currentExerciseIndex];
     if (!exercise || !exercise.isWork) return;
-    let duration = (status === 'rep-based' && state.stopwatch.seconds > 0) ? state.stopwatch.seconds : 0;
+    
+    let duration = state.stopwatch.seconds > 0 ? state.stopwatch.seconds : 0;
     
     const newLogEntry = {
         name: exercise.name,
-        // Zapisujemy ID, aby system Ewolucji wiedział co dokładnie robiliśmy (ważne przy podmianach!)
         exerciseId: exercise.id || exercise.exerciseId, 
         currentSet: exercise.currentSet,
         totalSets: exercise.totalSets,
@@ -70,20 +69,15 @@ function logCurrentStep(status) {
 
 export function moveToNextExercise(options = { skipped: false }) {
     stopStopwatch();
-    if (state.tts.isSupported) state.tts.synth.cancel();
+    stopTimer();
     
-    const exercise = state.flatExercises[state.currentExerciseIndex];
-    const duration = getExerciseDuration(exercise);
+    if (state.tts.isSupported) state.tts.synth.cancel();
     
     if (options.skipped) { 
         logCurrentStep('skipped'); 
-    } else if (duration === null) { 
-        logCurrentStep('rep-based'); 
     } else { 
         logCurrentStep('completed'); 
     }
-    
-    stopTimer();
     
     if (state.breakTimeoutId) {
         clearTimeout(state.breakTimeoutId);
@@ -101,6 +95,8 @@ export function moveToNextExercise(options = { skipped: false }) {
 
 export function moveToPreviousExercise() {
     stopStopwatch();
+    stopTimer();
+    
     if (state.breakTimeoutId) {
         clearTimeout(state.breakTimeoutId);
         state.breakTimeoutId = null;
@@ -108,7 +104,6 @@ export function moveToPreviousExercise() {
     
     if (state.currentExerciseIndex > 0) {
         if (state.tts.isSupported) state.tts.synth.cancel();
-        stopTimer();
         startExercise(state.currentExerciseIndex - 1);
     }
 }
@@ -117,7 +112,7 @@ export function startExercise(index) {
     state.currentExerciseIndex = index;
     const exercise = state.flatExercises[index];
     
-    // 1. Aktualizacja UI ogólnego (Pasek postępu, Ikona TTS)
+    // 1. Aktualizacja UI ogólnego
     if (focus.ttsIcon) {
         focus.ttsIcon.src = state.tts.isSoundOn ? '/icons/sound-on.svg' : '/icons/sound-off.svg';
     }
@@ -129,9 +124,9 @@ export function startExercise(index) {
         focus.progress.textContent = `${index + 1} / ${state.flatExercises.length}`;
     }
 
-    // 2. Obsługa Stanu Pauzy (UI przycisków)
+    // 2. Obsługa Stanu Pauzy
     if (state.isPaused) {
-        state.lastPauseStartTime = Date.now(); // Restart licznika pauzy
+        state.lastPauseStartTime = Date.now();
         if (focus.pauseResumeBtn) {
             focus.pauseResumeBtn.innerHTML = `<img src="/icons/control-play.svg" alt="Wznów">`;
             focus.pauseResumeBtn.classList.add('paused-state');
@@ -147,89 +142,63 @@ export function startExercise(index) {
         if (focus.timerDisplay) focus.timerDisplay.style.opacity = '1';
     }
 
-    // 3. Przygotowanie kontenerów Karty Wizualnej
     const animContainer = document.getElementById('focus-animation-container');
     const descContainer = document.getElementById('focus-description');
-    const flipIndicator = document.querySelector('.flip-indicator'); // Ikona "obrotu"
+    const flipIndicator = document.querySelector('.flip-indicator');
 
-    // Zawsze czyścimy kontener animacji przed załadowaniem nowej
     if (animContainer) animContainer.innerHTML = '';
 
     // ============================================================
-    // SCENARIUSZ A: ĆWICZENIE (WORK)
+    // SCENARIUSZ A: ĆWICZENIE (WORK) - ZAWSZE STOPER
     // ============================================================
     if (exercise.isWork) {
         focus.sectionName.textContent = exercise.sectionName;
         focus.exerciseName.textContent = `${exercise.name} (Seria ${exercise.currentSet} / ${exercise.totalSets})`;
-        focus.exerciseDetails.textContent = `Czas/Powt: ${exercise.reps_or_time} | Tempo: ${exercise.tempo_or_iso}`;
+        focus.exerciseDetails.textContent = `Cel: ${exercise.reps_or_time} | Tempo: ${exercise.tempo_or_iso}`;
         focus.focusDescription.textContent = exercise.description || '';
         
-        // --- LOGIKA KARTY WIZUALNEJ ---
         if (exercise.animationSvg && animContainer && descContainer) {
-            // Mamy animację: Domyślnie pokaż animację, ukryj opis
             animContainer.innerHTML = exercise.animationSvg;
             animContainer.classList.remove('hidden');
             descContainer.classList.add('hidden');
-            
-            // Pokaż wskaźnik, że można obrócić kartę
             if (flipIndicator) flipIndicator.classList.remove('hidden');
         } else if (animContainer && descContainer) {
-            // Brak animacji: Pokaż opis, ukryj kontener animacji
             animContainer.classList.add('hidden');
             descContainer.classList.remove('hidden');
-            
-            // Ukryj wskaźnik (nie ma do czego wracać)
             if (flipIndicator) flipIndicator.classList.add('hidden');
         }
 
-        // Ustalanie następnego ćwiczenia
         let nextWorkExercise = null;
         for (let i = index + 1; i < state.flatExercises.length; i++) {
             if (state.flatExercises[i].isWork) { nextWorkExercise = state.flatExercises[i]; break; }
         }
         focus.nextExerciseName.textContent = nextWorkExercise ? nextWorkExercise.name : "Koniec treningu";
         
-        const duration = getExerciseDuration(exercise);
+        stopTimer(); 
         
-        if (duration !== null) {
-            // --- ĆWICZENIE NA CZAS ---
-            focus.timerDisplay.classList.remove('rep-based-text');
-            focus.repBasedDoneBtn.classList.add('hidden');
-            focus.pauseResumeBtn.classList.remove('hidden');
+        focus.repBasedDoneBtn.classList.remove('hidden');
+        focus.pauseResumeBtn.classList.remove('hidden');
+        focus.timerDisplay.classList.remove('rep-based-text');
 
-            state.timer.timeLeft = duration; 
-            updateTimerDisplay(); 
+        state.stopwatch.seconds = 0; 
+        updateStopwatchDisplay(); 
 
-            if (!state.isPaused) {
-                startTimer(duration, () => moveToNextExercise({ skipped: false }), syncStateToChromecast);
-            }
-        } else {
-            // --- ĆWICZENIE NA POWTÓRZENIA ---
-            stopTimer();
-            focus.repBasedDoneBtn.classList.remove('hidden');
-            focus.pauseResumeBtn.classList.remove('hidden');
+        if (!state.isPaused) {
+            startStopwatch();
             
-            state.stopwatch.seconds = 0; 
-            updateStopwatchDisplay(); 
-
-            if (!state.isPaused) {
-                startStopwatch();
-                
-                if (state.tts.isSoundOn) {
-                    let announcement = `Wykonaj: ${exercise.name}, seria ${exercise.currentSet} z ${exercise.totalSets}. ${formatForTTS(exercise.reps_or_time)}.`;
-                    speak(announcement, true, () => { speak(formatForTTS(exercise.description), false); });
-                }
+            if (state.tts.isSoundOn) {
+                let announcement = `Wykonaj: ${exercise.name}, seria ${exercise.currentSet} z ${exercise.totalSets}. Cel: ${formatForTTS(exercise.reps_or_time)}.`;
+                speak(announcement, true, () => { speak(formatForTTS(exercise.description), false); });
             }
         }
     } 
     // ============================================================
-    // SCENARIUSZ B: PRZERWA (REST)
+    // SCENARIUSZ B: PRZERWA (REST) - ZAWSZE TIMER (Odliczanie)
     // ============================================================
     else { 
-        // W przerwie zawsze pokazujemy opis (co nastąpi), ukrywamy animację poprzedniego
         if (animContainer) animContainer.classList.add('hidden');
         if (descContainer) descContainer.classList.remove('hidden');
-        if (flipIndicator) flipIndicator.classList.add('hidden'); // W przerwie raczej nie flipujemy
+        if (flipIndicator) flipIndicator.classList.add('hidden');
 
         const upcomingExercise = state.flatExercises[index + 1];
         if (!upcomingExercise) { moveToNextExercise({ skipped: false }); return; }
@@ -237,45 +206,35 @@ export function startExercise(index) {
         focus.repBasedDoneBtn.classList.add('hidden');
         focus.pauseResumeBtn.classList.remove('hidden');
         
-        const isNextRepBased = getExerciseDuration(upcomingExercise) === null;
         let afterUpcomingExercise = null;
         for (let i = index + 2; i < state.flatExercises.length; i++) {
             if (state.flatExercises[i].isWork) { afterUpcomingExercise = state.flatExercises[i]; break; }
         }
         
-        focus.sectionName.textContent = "PRZYGOTUJ SIĘ";
+        focus.sectionName.textContent = (exercise.sectionName || "PRZERWA").toUpperCase();
+        
         focus.exerciseName.textContent = `Następne: ${upcomingExercise.name}`;
-        focus.exerciseDetails.textContent = `Seria ${upcomingExercise.currentSet}/${upcomingExercise.totalSets} | Czas/Powt: ${upcomingExercise.reps_or_time} | Tempo: ${upcomingExercise.tempo_or_iso}`;
+        focus.exerciseDetails.textContent = `Seria ${upcomingExercise.currentSet}/${upcomingExercise.totalSets} | Cel: ${upcomingExercise.reps_or_time} | Tempo: ${upcomingExercise.tempo_or_iso}`;
         focus.focusDescription.textContent = upcomingExercise.description || 'Brak opisu.';
         focus.nextExerciseName.textContent = afterUpcomingExercise ? afterUpcomingExercise.name : "Koniec treningu";
 
-        if (isNextRepBased) {
-             focus.timerDisplay.classList.add('rep-based-text');
-             focus.timerDisplay.textContent = "START...";
-             
-             if (!state.isPaused) {
-                 state.breakTimeoutId = setTimeout(() => { 
-                     state.breakTimeoutId = null;
-                     if (state.currentExerciseIndex === index) { moveToNextExercise({ skipped: false }); } 
-                 }, 2000);
-             }
-        } else {
-            focus.timerDisplay.classList.remove('rep-based-text');
-            const startNextExercise = () => moveToNextExercise({ skipped: false });
-            const restDuration = exercise.duration || 60;
-            
-            state.timer.timeLeft = restDuration > 5 ? restDuration : 5;
-            updateTimerDisplay();
+        focus.timerDisplay.classList.remove('rep-based-text');
+        
+        const startNextExercise = () => moveToNextExercise({ skipped: false });
+        
+        // ZMIANA: Sztywne 5 sekund, niezależnie od tego co przyszło z generatora (fallback)
+        const restDuration = 5; 
+        
+        state.timer.timeLeft = restDuration;
+        updateTimerDisplay();
 
-            if (!state.isPaused) {
-                if (state.tts.isSoundOn) {
-                    focus.timerDisplay.classList.add('rep-based-text');
-                    focus.timerDisplay.textContent = "SŁUCHAJ";
-                    let announcement = `Przygotuj się. Następne ćwiczenie: ${upcomingExercise.name}, seria ${upcomingExercise.currentSet} z ${upcomingExercise.totalSets}. Wykonaj ${formatForTTS(upcomingExercise.reps_or_time)}.`;
-                    speak(announcement, true, () => { speak(formatForTTS(upcomingExercise.description), false, startNextExercise); });
-                } else {
-                    startTimer(state.timer.timeLeft, startNextExercise, syncStateToChromecast);
-                }
+        if (!state.isPaused) {
+            if (state.tts.isSoundOn) {
+                let announcement = `Odpocznij. Następnie: ${upcomingExercise.name}, seria ${upcomingExercise.currentSet}. Cel: ${formatForTTS(exercise.reps_or_time)}.`;
+                speak(announcement, true);
+                startTimer(state.timer.timeLeft, startNextExercise, syncStateToChromecast);
+            } else {
+                startTimer(state.timer.timeLeft, startNextExercise, syncStateToChromecast);
             }
         }
     }
@@ -285,11 +244,10 @@ export function startExercise(index) {
 
 export function generateFlatExercises(dayData) {
     const plan = [];
-    const activePlan = state.trainingPlans[state.settings.activePlanId];
-    if (!activePlan) return [];
     
-    const defaultRest = activePlan.GlobalRules.defaultRestSecondsBetweenExercises;
-    const restBetweenSets = activePlan.GlobalRules.defaultRestSecondsBetweenSets;
+    // ZMIANA: Usunięto logikę pobierania czasów z planu.
+    // Zdefiniowano stałą wartość przerwy.
+    const FIXED_REST_DURATION = 5;
 
     const sections = [{ name: 'Rozgrzewka', exercises: dayData.warmup || [] }, { name: 'Część główna', exercises: dayData.main || [] }, { name: 'Schłodzenie', exercises: dayData.cooldown || [] }];
     sections.forEach(section => {
@@ -297,9 +255,28 @@ export function generateFlatExercises(dayData) {
             const setCount = parseSetCount(exercise.sets);
             for (let i = 1; i <= setCount; i++) {
                 plan.push({ ...exercise, isWork: true, sectionName: section.name, currentSet: i, totalSets: setCount });
-                if (i < setCount) { plan.push({ name: 'Odpoczynek', isRest: true, isWork: false, duration: restBetweenSets, sectionName: 'Przerwa między seriami' }); }
+                
+                // PRZERWA MIĘDZY SERIAMI - ZAWSZE 5 SEKUND
+                if (i < setCount) { 
+                    plan.push({ 
+                        name: 'Odpoczynek', 
+                        isRest: true, 
+                        isWork: false, 
+                        duration: FIXED_REST_DURATION, 
+                        sectionName: 'Przerwa między seriami' 
+                    }); 
+                }
             }
-            if (exerciseIndex < section.exercises.length - 1) { plan.push({ name: 'Przerwa', isRest: true, isWork: false, duration: defaultRest, sectionName: 'Przerwa' }); }
+            // PRZERWA MIĘDZY ĆWICZENIAMI - ZAWSZE 5 SEKUND
+            if (exerciseIndex < section.exercises.length - 1) { 
+                plan.push({ 
+                    name: 'Przerwa', 
+                    isRest: true, 
+                    isWork: false, 
+                    duration: FIXED_REST_DURATION, 
+                    sectionName: 'Przerwa' 
+                }); 
+            }
         });
     });
     if (plan.length > 0 && plan[plan.length - 1].isRest) {
@@ -314,8 +291,6 @@ export async function startModifiedTraining() {
     state.isPaused = false;
     state.lastPauseStartTime = null;
 
-    // --- FIX: DECYZJA O ŹRÓDLE PLANU ---
-    // Sprawdzamy, czy istnieje wygenerowany plan dynamiczny dla tego dnia
     let sourcePlan;
     
     if (state.todaysDynamicPlan && state.todaysDynamicPlan.dayNumber === state.currentTrainingDayId) {
@@ -332,11 +307,8 @@ export async function startModifiedTraining() {
         sourcePlan = getHydratedDay(dayDataRaw);
     }
     
-    // Tworzymy kopię roboczą
     const modifiedDay = JSON.parse(JSON.stringify(sourcePlan));
     
-    // --- AKTUALIZACJA Z INPUTÓW (TIME SLIDER) ---
-    // Pobieramy wartości z inputów, które użytkownik mógł zmienić (czas, serie)
     const allExercises = [...(modifiedDay.warmup || []), ...(modifiedDay.main || []), ...(modifiedDay.cooldown || [])];
     const allInputs = screens.preTraining.querySelectorAll('input[data-exercise-index]');
     
@@ -352,7 +324,6 @@ export async function startModifiedTraining() {
         }
     });
 
-    // --- REKONSTRUKCJA SEKCJI PO ZMIANACH ---
     let currentIndex = 0;
     if (modifiedDay.warmup) {
         modifiedDay.warmup = allExercises.slice(currentIndex, currentIndex + modifiedDay.warmup.length);
@@ -367,14 +338,14 @@ export async function startModifiedTraining() {
     }
 
     state.sessionLog = [];
+    
+    // START TRENINGU - ZAWSZE 5 SEKUND
     state.flatExercises = [
         { name: "Przygotuj się", isRest: true, isWork: false, duration: 5, sectionName: "Start" },
         ...generateFlatExercises(modifiedDay)
     ];
     
     navigateTo('training');
-    
-    // ZMIANA: KLUCZOWE - Odświeżamy referencje do elementów DOM po nawigacji
     initializeFocusElements();
 
     startExercise(0);

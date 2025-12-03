@@ -1,22 +1,48 @@
-// receiver/receiver.js - v5.0 (Game Loop Anti-Idle)
+// receiver/receiver.js - v5.1 (Silent Audio + Heartbeat Fix)
 
 const context = cast.framework.CastReceiverContext.getInstance();
 const CUSTOM_NAMESPACE = 'urn:x-cast:com.trening.app';
+// Zwiększamy limit do maksimum, ale polegamy na Audio Loop
 const IDLE_TIMEOUT = 14400; // 4 godziny
 
 let lastRenderedSvg = null;
 
-// --- HACK 1: VIDEO LOOP ---
+// --- HACK 1: SILENT AUDIO LOOP (NAJSKUTECZNIEJSZY) ---
+// Base64 krótkiego pliku MP3 z ciszą
+const SILENT_MP3 = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//oeAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////wAAAD9MYXZjNTguNTQuMTAwAAAAAAAAAAAA//oeAAAAAAABMgAAASAAKtDxAAAAAAAAAAAAAAAAAAAAAAAAAAAA//oeZAAAAAAAASAAAAEAAACqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//oeZAAAAAAAASAAAAEAAACqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq';
+
+let silentAudioPlayer = null;
+
+function startSilentAudio() {
+    if (!silentAudioPlayer) {
+        silentAudioPlayer = new Audio(SILENT_MP3);
+        silentAudioPlayer.loop = true;
+        silentAudioPlayer.volume = 0.01; // Minimalna głośność, nie 0, żeby system myślał że gra
+    }
+    
+    // Tylko odtwarzaj, jeśli nie gra
+    if (silentAudioPlayer.paused) {
+        silentAudioPlayer.play().then(() => {
+            console.log('[Receiver] 🔇 Silent Audio Loop Started (Anti-Idle)');
+        }).catch(e => {
+            console.warn('[Receiver] Silent Audio Autoplay blocked:', e);
+        });
+    }
+}
+
+// --- HACK 2: VIDEO LOOP (Jako backup) ---
 const keepAliveVideo = document.getElementById('keepAliveVideo');
 
 function startKeepAlive() {
     if (keepAliveVideo) {
         keepAliveVideo.muted = true;
         keepAliveVideo.loop = true;
+        // ZMIANA: Zresetuj czas, aby wymusić "aktywność"
+        keepAliveVideo.currentTime = 0;
         
         if (keepAliveVideo.paused) {
             keepAliveVideo.play()
-                .then(() => console.log('[Receiver] Background video running.'))
+                .then(() => console.log('[Receiver] 🎬 Background video running.'))
                 .catch(e => console.warn("[Receiver] Video Autoplay blocked:", e));
         }
     }
@@ -26,10 +52,10 @@ function stopKeepAlive() {
     if (keepAliveVideo && !keepAliveVideo.paused) {
         keepAliveVideo.pause();
     }
+    // Nie zatrzymujemy Silent Audio, chyba że wchodzi YouTube
 }
 
-// --- HACK 2: GAME LOOP (Active GPU) ---
-// Wymuszamy na przeglądarce ciągłe przerysowywanie klatki
+// --- HACK 3: GAME LOOP (Active GPU) ---
 const gpuActivator = document.getElementById('gpu-activator');
 let frameCount = 0;
 
@@ -37,8 +63,6 @@ function startGameLoop() {
     function step() {
         frameCount++;
         if (gpuActivator) {
-            // Zmieniamy opacity minimalnie co klatkę, żeby wymusić redraw
-            // Wartość oscyluje między 0.01 a 0.02 - niewidoczne dla oka, istotne dla GPU
             const opacity = 0.01 + (Math.sin(frameCount * 0.1) * 0.01);
             gpuActivator.style.opacity = opacity;
         }
@@ -82,9 +106,19 @@ const UI = {
 
 context.addCustomMessageListener(CUSTOM_NAMESPACE, (event) => {
     const message = event.data;
-    startKeepAlive(); // Upewniamy się, że wideo gra
+    
+    // Każda wiadomość odnawia nasze "życie"
+    startSilentAudio();
+    startKeepAlive();
 
     switch (message.type) {
+        // --- NOWOŚĆ: OBSŁUGA PING ---
+        case 'PING':
+            console.log('[Receiver] 💓 Heartbeat received.');
+            // Opcjonalnie: możemy odesłać PONG, ale tutaj wystarczy sam fakt odebrania,
+            // który resetuje wewnętrzny timer Cast SDK.
+            break;
+
         case 'UPDATE_USER_STATS':
             updateUserStats(message.payload);
             showScreen('idle');
@@ -100,14 +134,16 @@ context.addCustomMessageListener(CUSTOM_NAMESPACE, (event) => {
             break;
 
         case 'SHOW_IDLE':
-            stopVideo(); // Zatrzymujemy YouTube (jeśli grał)
-            startKeepAlive(); // Wracamy do naszego wideo tła
+            stopVideo(); // Zatrzymujemy YouTube
             showScreen('idle');
             context.setApplicationState("Gotowy");
             break;
 
         case 'PLAY_VIDEO':
-            stopKeepAlive(); // YouTube przejmuje kontrolę
+            stopKeepAlive(); 
+            // Przy YouTube możemy zatrzymać nasze ciche audio, żeby nie kolidowało
+            if (silentAudioPlayer) silentAudioPlayer.pause();
+            
             playVideo(message.payload.youtubeId);
             showScreen('video');
             context.setApplicationState("Odtwarzanie wideo");
@@ -115,7 +151,8 @@ context.addCustomMessageListener(CUSTOM_NAMESPACE, (event) => {
 
         case 'STOP_VIDEO':
             stopVideo();
-            startKeepAlive(); // Wznawiamy hack
+            startSilentAudio(); // Wznawiamy ochronę
+            startKeepAlive();
             showScreen('training');
             break;
 
@@ -193,8 +230,9 @@ function stopVideo() {
 
 context.addEventListener(cast.framework.system.EventType.READY, () => {
     console.log('[Receiver] Gotowy.');
-    startKeepAlive(); // Uruchom wideo tła
-    startGameLoop();  // Uruchom aktywność GPU
+    startSilentAudio(); // START AUDIO HACK
+    startKeepAlive();   // START VIDEO HACK
+    startGameLoop();    // START GPU HACK
 });
 
 const options = new cast.framework.CastReceiverOptions();
@@ -203,6 +241,6 @@ options.customNamespaces = {
 };
 options.disableIdleTimeout = true; 
 options.maxInactivity = IDLE_TIMEOUT;
-options.touchScreenOptimizedApp = true; // Ważne dla Game Loopa
+options.touchScreenOptimizedApp = true;
 
 context.start(options);

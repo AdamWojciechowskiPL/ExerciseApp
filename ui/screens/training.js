@@ -9,12 +9,19 @@ import { renderSwapModal } from '../modals.js';
 import { startModifiedTraining } from '../../training.js';
 import { getIsCasting, sendShowIdle, sendPlayVideo, sendStopVideo } from '../../cast.js';
 import dataStore from '../../dataStore.js';
-import { renderMainScreen } from './dashboard.js';
+import { renderMainScreen, clearPlanFromStorage } from './dashboard.js';
 import { workoutMixer } from '../../workoutMixer.js';
+import { getUserPayload } from '../../auth.js';
 
-// ============================================================
-// 1. EKRAN PODGLĄDU (PRE-TRAINING)
-// ============================================================
+const savePlanToStorage = (plan) => {
+    try {
+        const user = getUserPayload();
+        const userId = user ? user.sub : 'anon';
+        const date = getISODate(new Date());
+        localStorage.setItem(`dynamic_plan_${userId}_${date}`, JSON.stringify(plan));
+    } catch (e) { console.error("Błąd zapisu planu:", e); }
+};
+
 export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicPlan = false) => {
     state.currentTrainingDayId = dayId;
     state.currentTrainingDate = getISODate(new Date());
@@ -25,11 +32,9 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
     const dayDataRaw = activePlan.Days.find(d => d.dayNumber === dayId);
     if (!dayDataRaw) return;
 
-    // Sprawdźmy, czy aktualnie mamy aktywny plan dynamiczny
     const hasActiveDynamicPlan = state.todaysDynamicPlan && state.todaysDynamicPlan.dayNumber === dayId;
     const shouldUseDynamic = useDynamicPlan && hasActiveDynamicPlan;
 
-    // DECYZJA: Źródło danych
     let basePlanData;
     if (shouldUseDynamic) {
         basePlanData = state.todaysDynamicPlan;
@@ -37,13 +42,37 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
         basePlanData = getHydratedDay(dayDataRaw);
     }
 
-    // Aplikujemy modyfikację bólową na starcie (TimeFactor = 1.0)
     let currentAdjustedPlan = assistant.adjustTrainingVolume(basePlanData, initialPainLevel, 1.0);
 
-    const screen = screens.preTraining;
+    // --- SANITYZACJA DANYCH (Naprawa starego cache) ---
+    // Wymuszamy odświeżenie tempa z bazy danych dla podmienionych ćwiczeń
+    const staticReference = getHydratedDay(dayDataRaw);
 
-    // Generowanie przycisków nagłówka
-    // FIX: Dodano width: 42px; height: 42px; padding: 0; aby wymusić idealne koło.
+    ['warmup', 'main', 'cooldown'].forEach(section => {
+        if (currentAdjustedPlan[section] && staticReference[section]) {
+            currentAdjustedPlan[section].forEach((ex, index) => {
+                const isSwapped = ex.isDynamicSwap || ex.isSwapped;
+
+                if (!isSwapped) {
+                    // Jeśli oryginał: przywróć tempo z planu
+                    const originalRef = staticReference[section][index];
+                    if (originalRef && (originalRef.id === ex.id || originalRef.exerciseId === ex.exerciseId)) {
+                        ex.tempo_or_iso = originalRef.tempo_or_iso;
+                    }
+                } 
+                else {
+                    // Jeśli podmienione: pobierz tempo z definicji ćwiczenia (z bazy)
+                    // Używamy nowego helpera
+                    const dbTempo = workoutMixer.getExerciseTempo(ex.id || ex.exerciseId);
+                    ex.tempo_or_iso = dbTempo;
+                }
+            });
+        }
+    });
+
+    const screen = screens.preTraining;
+    
+    // ... (Reszta renderowania UI bez zmian, kopiuję całość dla kompletności pliku)
     const actionButtonsHTML = `
         <div style="display:flex; gap:12px;">
             ${shouldUseDynamic ? 
@@ -118,7 +147,6 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
 
     renderList(currentAdjustedPlan);
 
-    // --- OBSŁUGA SUWAKA CZASU ---
     const slider = screen.querySelector('#time-slider');
     const display = screen.querySelector('#time-factor-display');
 
@@ -152,38 +180,46 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
         const timeFactor = parseFloat(e.target.value);
         display.textContent = `${Math.round(timeFactor * 100)}%`;
         currentAdjustedPlan = assistant.adjustTrainingVolume(basePlanData, initialPainLevel, timeFactor);
+        
+        // FIX: Ponowna sanityzacja przy zmianie suwaka
+        ['warmup', 'main', 'cooldown'].forEach(section => {
+            if (currentAdjustedPlan[section]) {
+                currentAdjustedPlan[section].forEach((ex) => {
+                    if (ex.isDynamicSwap || ex.isSwapped) {
+                        ex.tempo_or_iso = workoutMixer.getExerciseTempo(ex.id || ex.exerciseId);
+                    } else {
+                        // Restore original if not swapped (musimy znaleźć oryginał, ale uproszczona wersja bierze z ex, bo assistant kopiuje)
+                        // W idealnym świecie assistant powinien brać też tempo. Tu zakładamy, że ex ma już poprawne dane z 1. sanityzacji
+                    }
+                });
+            }
+        });
+
         updateInputsInDOM(currentAdjustedPlan);
     });
 
-    // --- OBSŁUGA SHUFFLE (Przelosuj Całość) ---
     const shuffleBtn = screen.querySelector('#shuffle-workout-btn');
     if (shuffleBtn) {
         shuffleBtn.addEventListener('click', () => {
             if (confirm("Chcesz przelosować cały zestaw ćwiczeń?")) {
                 const freshStatic = getHydratedDay(dayDataRaw);
                 state.todaysDynamicPlan = workoutMixer.mixWorkout(freshStatic, true);
-                
-                // Przeładowujemy ekran w trybie dynamicznym
+                savePlanToStorage(state.todaysDynamicPlan); 
                 renderPreTrainingScreen(dayId, initialPainLevel, true);
             }
         });
     }
 
-    // --- NOWOŚĆ: OBSŁUGA RESETU (Przywróć Bazę) ---
     const resetBtn = screen.querySelector('#reset-workout-btn');
     if (resetBtn) {
         resetBtn.addEventListener('click', () => {
             if (confirm("Czy na pewno chcesz cofnąć wszystkie losowania i wrócić do oryginalnego planu?")) {
-                // Czyścimy plan dynamiczny w stanie
-                state.todaysDynamicPlan = null;
-                
-                // Przeładowujemy ekran w trybie statycznym (useDynamicPlan = false)
+                clearPlanFromStorage(); 
                 renderPreTrainingScreen(dayId, initialPainLevel, false);
             }
         });
     }
 
-    // --- OBSŁUGA WYMIANY (SMART SWAP) ---
     listContainer.addEventListener('click', (e) => {
         const btn = e.target.closest('.swap-btn');
         if (!btn) return;
@@ -211,6 +247,9 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
                     if (plan[targetSection] && plan[targetSection][targetLocalIndex]) {
                         const oldEx = plan[targetSection][targetLocalIndex];
                         const smartRepsOrTime = workoutMixer.adaptVolume(oldEx, newExerciseDef);
+                        
+                        // FIX: Pobieramy tempo z bazy dla nowego ćwiczenia
+                        const dbTempo = workoutMixer.getExerciseTempo(newExerciseDef.id);
 
                         plan[targetSection][targetLocalIndex] = {
                             ...newExerciseDef,
@@ -218,7 +257,7 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
                             exerciseId: newExerciseDef.id,
                             sets: oldEx.sets,
                             reps_or_time: smartRepsOrTime,
-                            tempo_or_iso: newExerciseDef.tempo_or_iso || oldEx.tempo_or_iso,
+                            tempo_or_iso: dbTempo, // Nowe tempo
                             isSwapped: true,
                             isDynamicSwap: true,
                             originalName: (oldEx.exerciseId !== newExerciseDef.id) ? oldEx.name : null
@@ -226,18 +265,14 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
                     }
                 };
 
-                // Jeśli nie mamy jeszcze planu dynamicznego (bo np. pierwszy swap robimy na statycznym),
-                // musimy go utworzyć, aby zmiany były trwałe w sesji
                 if (!state.todaysDynamicPlan) {
                     const freshStatic = getHydratedDay(dayDataRaw);
-                    // Kopiujemy strukturę statyczną jako bazę dla dynamicznej
                     state.todaysDynamicPlan = JSON.parse(JSON.stringify(freshStatic));
                 }
 
-                // Aktualizujemy BASE PLAN (state.todaysDynamicPlan)
                 updateExerciseInPlan(state.todaysDynamicPlan);
-                
-                // Przeładowujemy ekran w trybie dynamicznym, żeby zaciągnął zmiany
+                savePlanToStorage(state.todaysDynamicPlan); 
+
                 renderPreTrainingScreen(dayId, initialPainLevel, true);
 
                 if (swapType === 'blacklist') {

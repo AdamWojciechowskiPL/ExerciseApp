@@ -1,382 +1,184 @@
-# Aplikacja Treningowa (Smart Rehab PWA)
+# Aplikacja Treningowa (Smart Rehab PWA) v8.0.0
 
 Zaawansowana aplikacja PWA (Progressive Web App) do treningu siłowego i rehabilitacyjnego, oparta na metodyce McGill L5-S1. System wykorzystuje architekturę Serverless, autorski silnik decyzyjny ("Asystent") oraz integrację z Google Cast.
 
-Wersja **7.0** wprowadza fundamentalną zmianę w logice aplikacji: **Model Hybrydowy** oraz **Automatyczną Ewolucję**. Aplikacja przestaje być pasywnym dziennikiem, a staje się aktywnym trenerem, który modyfikuje plan w czasie rzeczywistym na podstawie biomechanicznego feedbacku użytkownika.
+---
 
-## 🌟 Kluczowe Funkcjonalności
+## 🚀 Funkcjonalności
 
-### 1. Inteligentny Asystent & Bio-Feedback
-*   **Wellness Check-in:** Przed każdym treningiem użytkownik określa poziom bólu (0-10).
-    *   **Ból > 3 (Safety Mode):** System aktywuje protokół ochronny, redukując objętość treningu (serie/czas).
-    *   **Ból 0-3 (Performance Mode):** System przechodzi w tryb budowania stabilności.
-*   **Hybrid Feedback Loop (Nowość):** Ekran podsumowania dostosowuje się do kontekstu sesji:
-    *   **Ścieżka A (Symptomy):** Jeśli start był z bólem, pytamy o reakcję (Ulga / Stabilnie / Podrażnienie).
-    *   **Ścieżka B (Tension Meter):** Jeśli start był bez bólu, użytkownik ocenia jakość napięcia mięśniowego ("Lina"):
-        *   *Luźna Lina:* Nuda/Zbyt łatwo.
-        *   *Napięta Cięciwa:* Idealna kontrola (Sweet Spot).
-        *   *Strzępiąca się Lina:* Utrata techniki/Drżenie.
-*   **Auto-Ewolucja Planu (Smart Progression):**
-    *   Zgłoszenie "Luźnej Liny" (Nuda) powoduje, że backend automatycznie i trwale podmienia ćwiczenie na trudniejszy wariant (np. *Plank* -> *Weighted Plank*) w planie użytkownika.
-    *   Zgłoszenie "Podrażnienia" lub "Strzępiącej się Liny" powoduje regresję do bezpieczniejszego wariantu.
-*   **Time Slider:** Możliwość skrócenia lub wydłużenia treningu w locie (50% - 120%) z automatycznym przeliczaniem parametrów.
+### Dashboard & Gamifikacja
+*   **Weekly Rhythm HUD:** Wizualizacja ciągłości treningów w bieżącym tygodniu.
+*   **Resilience Shield ("Tarcza"):** Algorytm analizujący historię i obliczający stabilność nawyku oraz ryzyko nawrotu bólu.
+*   **Smart Refresh:** Mechanizm odświeżania danych w tle bez blokowania interfejsu ("Render First, Fetch Later").
 
-### 2. Dashboard & Gamifikacja
-*   **Weekly Rhythm HUD:** Wizualizacja ostatnich 7 dni na ekranie głównym. Dni treningowe podświetlają się na złoto, dzisiejszy dzień (przed treningiem) pulsuje, motywując do domknięcia cyklu.
-*   **Resilience Shield ("Tarcza"):** Algorytm analizujący historię z 14 dni, obliczający stabilność nawyku i ryzyko nawrotu bólu (liczony po stronie serwera).
-*   **System Rang:** Początkujący, Adept, Mistrz (zależne od liczby sesji).
-*   **Smart Streak:** Licznik serii uwzględniający strefy czasowe użytkownika.
+### Tryb Treningowy (Focus Mode)
+*   **Visual Card (Flip):** Interaktywna karta – kliknięcie przełącza między animacją SVG a opisem technicznym.
+*   **Wellness Check-in:** Przed startem użytkownik określa poziom bólu (0-10). Silnik automatycznie skaluje objętość treningu w zależności od samopoczucia.
+*   **Manual Shuffle:** Możliwość ręcznego przelosowania całego treningu przyciskiem "Shuffle" lub pojedynczego ćwiczenia przyciskiem "Mix".
 
-### 3. Wydajność (Performance)
-*   **Lazy Loading & Caching:** Strategia "Render First, Fetch Later".
-    *   UI ładuje się natychmiast (<200ms) korzystając z cache'owanych danych.
-    *   Ciężkie statystyki (pełna historia) są dociągane w tle i "wstrzykiwane" do widoku, gdy są gotowe.
-*   **Server-Side Calc:** Złożona matematyka (Tarcza, Streak) przeniesiona do funkcji serverless, aby odciążyć telefon.
+### Integracja z Google Cast (TV)
+*   **Custom Receiver v5.0:** Dedykowana aplikacja na telewizor.
+*   **Anti-Idle Protection:** Mechanizm zapobiegający wygaszaniu ekranu TV (pętla wideo w tle + wymuszanie klatek GPU).
+*   **Real-time Sync:** Synchronizacja timera, nazwy ćwiczenia i animacji SVG między telefonem a TV.
 
-### 4. Warstwa Wizualna (Focus Mode)
-*   **SVG Animations (SMIL):** Lekkie, wektorowe animacje instruktażowe.
-*   **Visual Card (Flip):** Interaktywna karta w trybie treningu. Kliknięcie obraca widok między animacją a opisem.
-*   **Dark Mode / High Contrast:** UI zoptymalizowane pod kątem czytelności i oszczędzania baterii (OLED).
-
-### 5. Integracja z Google Cast (TV)
-*   **Custom Receiver v3.8:** Dedykowana aplikacja na telewizor.
-*   **Anti-Idle Protection:** Zaimplementowany mechanizm "Silent Audio Loop", który zapobiega włączaniu się wygaszacza ekranu na telewizorze podczas statycznych ćwiczeń.
-*   **Real-time Sync:** Synchronizacja timera, nazwy ćwiczenia i animacji między telefonem a TV.
-
-### 6. Integracje i Prawo
+### Integracje Zewnętrzne
 *   **Strava:** Automatyczny upload ukończonych treningów z sformatowanym opisem.
-*   **Dokumentacja Prawna:** Wbudowane podstrony Regulaminu i Polityki Prywatności (zgodność z RODO).
+
+### Smart Onboarding Wizard (Bio-Skaner)
+Proces kalibracji użytkownika uruchamiany przy starcie lub na żądanie:
+*   **Mapa Bólu (Bio-Skaner):** Interaktywny model SVG kręgosłupa pozwala zaznaczyć strefy wymagające naprawy (Szyja, Piersiowy, Lędźwia, Miednica). System automatycznie wstrzykuje ćwiczenia naprawcze ("Pre-hab") do rozgrzewki każdej sesji.
+*   **Zbrojownia (Equipment Selector):** Dynamiczna lista sprzętu pobierana z bazy. System filtruje ćwiczenia, których użytkownik nie jest w stanie wykonać (np. brak drążka) i szuka zamienników.
+*   **Chrono-Architekt:** Użytkownik definiuje dostępne okna czasowe dla każdego dnia tygodnia oraz dni wolne.
+
+### Dynamic Biomechanical Matrix (Workout Mixer)
+Silnik `workoutMixer.js` generuje unikalne zestawy treningowe w czasie rzeczywistym:
+*   **Freshness Index:** Algorytm analizuje historię treningów (do 90 dni wstecz) i priorytetyzuje ćwiczenia, których użytkownik dawno nie wykonywał, aby uniknąć monotonii.
+*   **Smart Swap:** Jeśli użytkownik nie posiada wymaganego sprzętu, silnik automatycznie podmienia ćwiczenie na biomechaniczny odpowiednik z tej samej kategorii.
+*   **Inteligentna Konwersja:** Przy zamianie ćwiczeń system przelicza parametry (np. zamieniając 60s Planka na 15 powtórzeń Dead Bug), respektując limity (`maxDuration`, `maxReps`) z bazy danych.
+*   **Time Compression:** Jeśli plan przewiduje 45 min, a użytkownik ma tylko 20 min (wg ustawień Wizarda), system automatycznie kompresuje trening (redukcja serii), zachowując kluczowe bodźce.
+
+### Płynna Kolejka (Liquid Queue)
+*   **Logika kolejkowania:** System nie przypisuje treningów do dat kalendarzowych. Zamiast tego wylicza kolejny logiczny krok na podstawie liczby *ukończonych* sesji. Pominięcie treningu nie psuje planu – kolejka po prostu czeka.
+*   **Dni Regeneracji:** Jeśli w harmonogramie użytkownik oznaczył dzień jako wolny, Dashboard automatycznie przechodzi w tryb "Regeneracji".
+
+---
 
 ## 📂 Struktura Plików
 
-Projekt zorganizowany jest modułowo w oparciu o **Vanilla JS + ES Modules**.
+Projekt zorganizowany jest w płaskiej strukturze modułowej (ES Modules), co ułatwia importowanie zależności bez skomplikowanych ścieżek.
 
 ```text
 /aplikacja-treningowa
 │
-├── index.html                  # Główny plik aplikacji (SPA)
-├── style.css                   # Globalne style CSS (Grid, Flex, Dark Mode)
-├── app.js                      # Główny punkt wejścia (Init, Lazy Loading, Event Delegation)
-├── manifest.json               # Konfiguracja PWA
-├── service-worker.js           # Obsługa Offline, Caching
-├── package.json                # Zależności Node.js (dla Netlify Functions)
-├── README.md                   # Dokumentacja projektu
-├── privacy.html                # Podstrona Polityki Prywatności (RODO)
-├── terms.html                  # Podstrona Regulaminu
+├── index.html                  # Główny plik aplikacji (SPA Container + Nawigacja)
+├── style.css                   # Globalne style (CSS Variables, Dark Mode, Layout)
+├── app.js                      # Punkt wejścia (Router, Init, Event Listeners)
+├── service-worker.js           # Obsługa PWA (Cache, Offline mode)
+├── manifest.json               # Konfiguracja instalacji PWA
 │
-├── icons/                      # Ikony SVG
-│   ├── icon-192x192.png
-│   ├── icon-512x512.png
-│   ├── logo.png
-│   ├── check-circle.svg        # Ikona "Misja Wykonana"
-│   ├── refresh-cw.svg          # Ikona odświeżania historii
-│   ├── badge-level-1.svg
-│   ├── badge-level-2.svg
-│   ├── badge-level-3.svg
-│   ├── streak-fire.svg
-│   ├── shield-check.svg
-│   ├── control-play.svg
-│   ├── control-pause.svg
-│   ├── control-skip.svg
-│   ├── control-back.svg
-│   ├── sound-on.svg
-│   ├── sound-off.svg
-│   ├── clock.svg
-│   ├── trash.svg
-│   ├── swap.svg
-│   ├── eye.svg
-│   ├── cast.svg
-│   ├── external-link.svg
-│   ├── info.svg
-│   └── ban.svg
-│
-├── ui/                         # WARSTWA PREZENTACJI (Frontend UI)
-│   ├── ui.js                   # Eksporter modułów UI (agregator)
-│   ├── core.js                 # Logika nawigacji, Loadera, WakeLock
-│   ├── templates.js            # Generatory HTML (Karty, Hero Dashboard, Wykresy)
+├── ui/                         # WARSTWA PREZENTACJI (Podkatalog)
+│   ├── ui.js                   # Główny eksporter modułów UI
+│   ├── core.js                 # Narzędzia UI (Loader, WakeLock, Nawigacja)
+│   ├── templates.js            # Generatory HTML (Karty ćwiczeń, Hero Dashboard)
 │   ├── modals.js               # Okna dialogowe (Swap, Ewolucja, Preview)
-│   └── screens/                # Logika poszczególnych ekranów
-│       ├── dashboard.js        # Ekran Główny (Hero, Misja, Rhythm HUD)
-│       ├── training.js         # Ekran Treningu (Widok Focus)
-│       ├── summary.js          # Ekran Podsumowania (Hybrydowy Feedback)
-│       ├── history.js          # Kalendarz i Szczegóły dnia
-│       ├── library.js          # Baza ćwiczeń + Czarna lista
-│       └── settings.js         # Ustawienia i Integracje
+│   ├── wizard.js               # Kreator konfiguracji (SVG Body Map, Sprzęt)
+│   └── screens/                # Logika renderowania poszczególnych ekranów
+│       ├── dashboard.js        # Ekran Główny
+│       ├── training.js         # Ekran Treningu (Widok)
+│       ├── history.js          # Kalendarz i Historia
+│       ├── library.js          # Baza ćwiczeń i Filtry
+│       ├── settings.js         # Ustawienia i Integracje
+│       ├── summary.js          # Podsumowanie i Feedback
+│       └── help.js             # Centrum Wiedzy (Pomoc)
 │
-├── netlify/                    # BACKEND (Serverless Functions)
-│   └── functions/
-│       ├── _auth-helper.js         # Współdzielone: Połączenie z DB, Weryfikacja JWT
-│       ├── _crypto-helper.js       # Współdzielone: Szyfrowanie tokenów (AES-256)
-│       ├── _stats-helper.js        # Współdzielone: Logika Tarczy i Streaka
-│       ├── get-app-content.js      # Pobieranie planów + Overrides (Personalizacja)
-│       ├── get-or-create-user-data.js # Init usera + Szybkie sesje (Lightweight)
-│       ├── get-user-stats.js       # Pełne przeliczenie statystyk (Heavyweight)
-│       ├── get-history-by-month.js # Pobieranie historii do kalendarza
-│       ├── save-session.js         # Zapis treningu + Logika Ewolucji Planu
-│       ├── save-settings.js        # Zapis ustawień
-│       ├── delete-session.js       # Usuwanie pojedynczego treningu
-│       ├── delete-user-data.js     # Usuwanie konta (RODO)
-│       ├── migrate-data.js         # Migracja z localStorage
-│       ├── manage-blacklist.js     # Zarządzanie czarną listą ćwiczeń
-│       ├── strava-auth-start.js    # OAuth Strava (Start)
-│       ├── strava-auth-callback.js # OAuth Strava (Callback + Szyfrowanie)
-│       ├── strava-upload-activity.js # Upload do Strava
-│       └── strava-disconnect.js    # Rozłączanie Strava
+├── PLIKI GŁÓWNE (LOGIKA, DANE I NARZĘDZIA W KORZENIU):
+│   ├── workoutMixer.js         # SILNIK AI: Dobór ćwiczeń, Freshness Index, Smart Swap
+│   ├── assistantEngine.js      # SILNIK ZASAD: Skalowanie objętości (Ból/Czas)
+│   ├── training.js             # KONTROLER: Logika przepływu treningu (Next/Prev step)
+│   ├── dataStore.js            # API Wrapper (Fetch, Cache, Sync z backendem)
+│   ├── state.js                # Globalny, reaktywny stan aplikacji
+│   ├── auth.js                 # Obsługa Auth0 (Logowanie, Tokeny JWT)
+│   ├── utils.js                # Helpery (Daty, Parsowanie, Kolejkowanie planu)
+│   ├── gamification.js         # Obliczanie poziomów, serii i rang
+│   ├── cast.js                 # Sender dla Google Cast (Komunikacja z TV)
+│   ├── timer.js                # Obsługa czasu (Stoper i Timer)
+│   ├── tts.js                  # Text-to-Speech (Synteza mowy)
+│   └── dom.js                  # Cache referencji do elementów DOM
 │
-├── receiver/                   # APLIKACJA TV (Chromecast Custom Receiver)
-│   ├── index.html              # Struktura widoku TV (Audio Loop Hack)
-│   ├── style.css               # Style TV (Duża typografia, Ciemne tło)
-│   └── receiver.js             # Logika Cast SDK (Anti-Idle, Sync)
+├── netlify/functions/          # BACKEND (Serverless Functions)
+│   ├── get-app-content.js      # Pobieranie bazy wiedzy + personalizacja
+│   ├── save-session.js         # Zapis treningu + Logika Ewolucji Planu
+│   ├── get-user-stats.js       # Obliczanie statystyk (Streak, Resilience)
+│   ├── manage-blacklist.js     # Zarządzanie czarną listą ćwiczeń
+│   ├── strava-*.js             # Zestaw funkcji do integracji ze Strava API
+│   ├── _auth-helper.js         # Weryfikacja tokenów JWT (współdzielony)
+│   └── _stats-helper.js        # Logika statystyk (współdzielona)
 │
-└── (Moduły logiczne w głównym katalogu)
-    ├── auth.js                 # Wrapper na Auth0 SDK
-    ├── cast.js                 # Google Cast Sender SDK (Telefon)
-    ├── dataStore.js            # Komunikacja z API, Cache, Inwalidacja
-    ├── state.js                # Globalny stan aplikacji (Reactive Store)
-    ├── dom.js                  # Cache referencji do elementów DOM
-    ├── utils.js                # Helpery (Daty, Parsowanie)
-    ├── timer.js                # Obsługa czasu (Timer/Stoper)
-    ├── tts.js                  # Syntezator mowy (Text-to-Speech)
-    ├── training.js             # Silnik treningowy (Sekwenser)
-    ├── gamification.js         # Logika poziomów i rang (Client-side fallback)
-    └── assistantEngine.js      # Silnik adaptacji (Pain/Time logic)
+└── receiver/                   # APLIKACJA TV (Custom Cast Receiver)
+    ├── index.html              # Widok na telewizorze
+    ├── style.css               # Style dedykowane dla TV
+    └── receiver.js             # Logika odbiornika (Anti-Idle Hacks, Sync)    
 ```
+---
 
 ## 🗄 Struktura Bazy Danych (PostgreSQL)
 
-### 1. Specyfikacja Tabeli: `exercises`
+System opiera się na relacyjnej bazie danych PostgreSQL (hosting Neon). Poniżej znajduje się szczegółowa specyfikacja kluczowych tabel.
 
-Tabela `exercises` stanowi centralny katalog (Bazę Wiedzy) aplikacji. Przechowuje definicje wszystkich dostępnych ćwiczeń, ich parametry, media instruktażowe oraz relacje logiczne (progresje, strefy bólu).
+### 1. Tabela: `exercises`
+Centralny katalog (Baza Wiedzy). Przechowuje definicje ćwiczeń używane przez Mixer.
 
-#### Lista Kolumn
+*   **`id`** (PK, VARCHAR): Unikalny identyfikator (np. `birdDog`, `deadBug`).
+*   **`name`** (VARCHAR): Nazwa wyświetlana dla użytkownika.
+*   **`description`** (TEXT): Instrukcja wykonania, "Cueing" i błędy.
+*   **`equipment`** (VARCHAR): Wymagany sprzęt (np. "mata, hantle"). Kluczowe dla filtra w Wizardzie.
+*   **`category_id`** (VARCHAR): Kategoria biomechaniczna (np. `core_anti_extension`). `workoutMixer` wymienia ćwiczenia tylko w obrębie tej samej kategorii.
+*   **`difficulty_level`** (INT): Poziom trudności (1-5). Mixer stara się dobierać ćwiczenia +/- 1 poziom od celu.
+*   **`max_recommended_duration`** (INT): Limit czasu dla izometrii (używane przy konwersji Reps -> Time).
+*   **`max_recommended_reps`** (INT): Limit powtórzeń dla dynamiki (używane przy konwersji Time -> Reps).
+*   **`pain_relief_zones`** (TEXT[]): Tagi medyczne (np. `["lumbar", "si_joint"]`). Jeśli użytkownik zaznaczy te strefy w Wizardzie, te ćwiczenia trafią do "Pre-hab".
+*   **`animation_svg`** (TEXT): Kod SVG animacji instruktażowej.
+*   **`default_tempo`** (VARCHAR): Domyślne tempo wykonywania ćwiczenia.
+*   **`is_unilateral`** (BOOLEAN): Informuje, czy dane ćwiczenie jest wykonywane z każdej strony ciała (prawa, lewa) osobno - true.
 
-##### 1. `id`
-*   **Typ danych:** `VARCHAR(255)`
-*   **Ograniczenia:** `PRIMARY KEY`, `NOT NULL`, `UNIQUE`
-*   **Opis techniczny:** Klucz główny tabeli. Jest to ciąg znaków, nie liczba (np. auto-increment). Zalecana konwencja to *camelCase* (np. `birdDog`, `boxSquatNeutralSpine`).
-*   **Opis biznesowy:** Unikalny identyfikator ćwiczenia używany przez system w kodzie. Służy do wiązania ćwiczeń w plany treningowe, logowania historii oraz definiowania progresji. Nie powinien być zmieniany po utworzeniu.
+### 2. Tabela: `training_plans`
+Definicje planów treningowych (szablony).
 
-##### 2. `name`
-*   **Typ danych:** `VARCHAR(255)`
-*   **Ograniczenia:** `NOT NULL`
-*   **Opis techniczny:** Standardowy ciąg tekstowy o ograniczonej długości.
-*   **Opis biznesowy:** Wyświetlana nazwa ćwiczenia widoczna dla użytkownika (np. "Deska na przedramionach"). Powinna być zrozumiała i jednoznaczna.
+*   **`id`** (PK, VARCHAR): Slug planu (np. `l5s1-foundation`).
+*   **`name`** (VARCHAR): Nazwa wyświetlana.
+*   **`global_rules`** (JSONB): Konfiguracja przerw i tempa.
+    *   `defaultRestSecondsBetweenSets`: int
+    *   `defaultRestSecondsBetweenExercises`: int
 
-##### 3. `description`
-*   **Typ danych:** `TEXT`
-*   **Ograniczenia:** Brak limitu znaków (w praktyce limit silnika DB).
-*   **Opis techniczny:** Pole tekstowe o dużej pojemności.
-*   **Opis biznesowy:** Pełna instrukcja wykonania ćwiczenia. Zawiera opis pozycji wyjściowej, ruchu, kluczowych punktów technicznych ("Cueing") oraz błędów, których należy unikać. Używana w widoku szczegółów ćwiczenia oraz na odwrocie "Karty Wizualnej".
+### 3. Tabela: `plan_days` & `day_exercises`
+Struktura "Szkieletu" planu. Definiuje intencję treningową, którą Mixer wypełnia treścią.
 
-##### 4. `equipment`
-*   **Typ danych:** `VARCHAR(255)`
-*   **Ograniczenia:** `NULL` (dopuszczalne, choć rzadkie).
-*   **Opis techniczny:** Ciąg tekstowy. Może zawierać pojedyncze słowo lub listę oddzieloną przecinkami.
-*   **Opis biznesowy:** Lista sprzętu wymaganego do wykonania ćwiczenia (np. "Mata", "Taśma", "Stopień/Schodek"). Informacja ta pozwala użytkownikowi przygotować się do sesji lub filtrować ćwiczenia, jeśli nie posiada danego sprzętu.
+*   **`plan_days`**:
+    *   `id` (PK, SERIAL)
+    *   `plan_id` (FK)
+    *   `day_number` (INT): Numer logiczny dnia w cyklu.
+    *   `title` (VARCHAR): Temat dnia (np. "Stabilizacja Rotacyjna").
 
-##### 5. `youtube_url`
-*   **Typ danych:** `VARCHAR(255)`
-*   **Ograniczenia:** `NULL` (opcjonalne).
-*   **Opis techniczny:** Przechowuje pełny adres URL (np. `https://www.youtube.com/shorts/...`).
-*   **Opis biznesowy:** Link do zewnętrznego materiału wideo prezentującego poprawne wykonanie ćwiczenia. System wykorzystuje to pole do osadzania wideo (embed) lub otwierania linku w nowym oknie.
+*   **`day_exercises`**:
+    *   `day_id` (FK)
+    *   `exercise_id` (FK): Ćwiczenie bazowe (domyślne).
+    *   `section` (VARCHAR): `warmup`, `main`, `cooldown`.
+    *   `sets` (VARCHAR): Liczba serii (np. "3").
+    *   `reps_or_time` (VARCHAR): Domyślna objętość (np. "10", "30 s").
 
-##### 6. `created_at`
-*   **Typ danych:** `TIMESTAMP WITH TIME ZONE`
-*   **Ograniczenia:** `DEFAULT CURRENT_TIMESTAMP`, `NOT NULL`.
-*   **Opis techniczny:** Znacznik czasu utworzenia rekordu, automatycznie ustawiany przez bazę danych w momencie INSERT.
-*   **Opis biznesowy:** Informacja audytowa – kiedy ćwiczenie zostało dodane do systemu. Przydatne przy sortowaniu nowości lub synchronizacji danych.
+### 4. Tabela: `user_settings`
+Przechowuje profil "Cyborga" wygenerowany przez Wizard. Kolumna `settings` to typ JSONB.
 
-##### 7. `category_id`
-*   **Typ danych:** `VARCHAR(50)`
-*   **Ograniczenia:** Zalecana spójność z systemem kategorii (np. `core_anti_extension`, `hip_mobility`).
-*   **Opis techniczny:** Krótki identyfikator tekstowy (tzw. slug). Może pełnić rolę klucza obcego (Foreign Key) do tabeli kategorii, jeśli taka istnieje.
-*   **Opis biznesowy:** Kategoria biomechaniczna ćwiczenia. Jest kluczowa dla algorytmu **Smart Swap** – system pozwala wymieniać ćwiczenia tylko w obrębie tej samej kategorii (np. zamiana jednego ćwiczenia na anty-rotację na inne z tej samej grupy).
+**Struktura JSON w kolumnie `settings`:**
+```json
+{
+  "appStartDate": "2024-01-01",
+  "progressionFactor": 100,
+  "activePlanId": "l5s1-foundation",
+  
+  // Dane z Wizarda:
+  "onboardingCompleted": true,
+  "painZones": ["lumbar", "neck"],          // Strefy do naprawy
+  "equipment": ["Mata", "Hantle", "Drążek"], // Dostępny sprzęt
+  "schedule": {                             // Harmonogram
+    "0": { "active": true, "minutes": 45 }, // Poniedziałek
+    "1": { "active": false, "minutes": 0 }, // Wtorek (Rest)
+    "2": { "active": true, "minutes": 30 }, // Środa (Krótki trening - kompresja)
+    ...
+  }
+}
+```
 
-##### 8. `difficulty_level`
-*   **Typ danych:** `INTEGER`
-*   **Ograniczenia:** `CHECK (difficulty_level >= 1 AND difficulty_level <= 5)`
-*   **Opis techniczny:** Liczba całkowita. Ograniczenie (`CONSTRAINT`) na poziomie bazy danych wymusza zakres od 1 do 5.
-*   **Opis biznesowy:** Poziom trudności ćwiczenia.
-    *   1: Rehabilitacja / Bardzo łatwe.
-    *   3: Średniozaawansowane.
-    *   5: Elita / Bardzo trudne.
-    Używane do filtrowania i sugerowania progresji.
+### 5. Tabela: `training_sessions`
+Historia treningów. Służy do obliczania Freshness Index i kolejki.
 
-##### 9. `max_recommended_duration`
-*   **Typ danych:** `INTEGER`
-*   **Ograniczenia:** `NULL` (opcjonalne).
-*   **Opis techniczny:** Wartość w sekundach.
-*   **Opis biznesowy:** Domyślny czas trwania jednej serii dla ćwiczeń izometrycznych (na czas) lub rozciągających (np. 10s dla Bird-dog, 300s dla oddychania). Jeśli pole jest wypełnione, ćwiczenie jest traktowane jako "Time-based".
-
-##### 10. `max_recommended_reps`
-*   **Typ danych:** `INTEGER`
-*   **Ograniczenia:** `NULL` (opcjonalne).
-*   **Opis techniczny:** Liczba powtórzeń.
-*   **Opis biznesowy:** Domyślna liczba powtórzeń dla ćwiczeń dynamicznych (np. 12 przysiadów). Jeśli pole jest wypełnione, a `duration` puste, ćwiczenie jest traktowane jako "Rep-based".
-
-##### 11. `next_progression_id`
-*   **Typ danych:** `VARCHAR(255)`
-*   **Ograniczenia:** `NULL` (opcjonalne). Powinno wskazywać na istniejące `id` w tej samej tabeli (Self-Referencing Foreign Key).
-*   **Opis techniczny:** Klucz obcy wskazujący na inne ćwiczenie w tabeli.
-*   **Opis biznesowy:** Wskaźnik do logicznej "Ewolucji" ćwiczenia. Jeśli użytkownik zgłosi "nudę/zbyt łatwo" przy obecnym ćwiczeniu, system automatycznie podmieni je na to wskazane w tym polu (np. `deadBugBasic` -> `birdDog`). Jeśli `NULL`, ćwiczenie jest na szczycie drabiny progresji.
-
-##### 12. `pain_relief_zones`
-*   **Typ danych:** `TEXT[]` (Tablica tekstowa w PostgreSQL)
-*   **Ograniczenia:** `NULL` (opcjonalne).
-*   **Opis techniczny:** Tablica stringów, np. `["lumbar_general", "si_joint"]`.
-*   **Opis biznesowy:** Tagi medyczne/rehabilitacyjne. Określają, przy jakich dolegliwościach dane ćwiczenie jest zalecane lub bezpieczne. System używa tego do personalizacji planu pod kątem zgłoszonych dolegliwości użytkownika (np. "Jeśli boli odcinek lędźwiowy, priorytetyzuj ćwiczenia z tagiem `lumbar_general`").
-
-##### 13. `animation_svg`
-*   **Typ danych:** `TEXT`
-*   **Ograniczenia:** `NULL` (opcjonalne).
-*   **Opis techniczny:** Pole przechowujące surowy kod XML/SVG. Może być bardzo długi (kilka-kilkanaście KB tekstu).
-*   **Opis biznesowy:** Wektorowa animacja instruktażowa. Jest renderowana bezpośrednio w kodzie strony (inline SVG) oraz wysyłana do urządzenia Chromecast. Pozwala na animowanie elementów (np. ruch ręki, zmiana koloru przy wdechu) bez konieczności ładowania zewnętrznych plików wideo.
-
-### 2. Specyfikacja Tabeli: `training_plans`
-
-Tabela nadrzędna (korzeń hierarchii). Definiuje dostępne w aplikacji plany treningowe jako całość (np. "Plan Podstawowy", "Joga przeciwbólowa").
-
-#### Lista Kolumn
-
-##### 1. `id`
-*   **Typ danych:** `VARCHAR(255)`
-*   **Ograniczenia:** `PRIMARY KEY`, `NOT NULL`, `UNIQUE`
-*   **Opis techniczny:** Unikalny identyfikator tekstowy (tzw. slug). Zalecany format *kebab-case* (np. `l5s1-foundation`, `yoga-l5s1-pain-relief`).
-*   **Opis biznesowy:** Identyfikator używany w kodzie aplikacji i URL-ach do wyboru aktywnego planu. Musi być stały, ponieważ użytkownicy zapisują swoje postępy w powiązaniu z tym ID.
-
-##### 2. `name`
-*   **Typ danych:** `VARCHAR(255)`
-*   **Ograniczenia:** `NOT NULL`
-*   **Opis techniczny:** Nazwa wyświetlana.
-*   **Opis biznesowy:** Pełna, marketingowa nazwa planu widoczna dla użytkownika w interfejsie wyboru planu oraz w nagłówku aplikacji (np. "Plan Podstawowy L5-S1 (McGill)").
-
-##### 3. `description`
-*   **Typ danych:** `TEXT`
-*   **Ograniczenia:** Brak.
-*   **Opis techniczny:** Pole tekstowe o dużej pojemności.
-*   **Opis biznesowy:** Szczegółowy opis celu planu, grupy docelowej oraz przeciwwskazań. Informuje użytkownika, dla kogo przeznaczony jest dany cykl (np. "7-dniowy cykl stabilizacyjny", "uwzględnia haluks").
-
-##### 4. `global_rules`
-*   **Typ danych:** `JSONB`
-*   **Ograniczenia:** Poprawny format JSON.
-*   **Opis techniczny:** Binarny format JSON pozwalający na przechowywanie elastycznej konfiguracji.
-*   **Opis biznesowy:** Zbiór globalnych zasad i ustawień dla całego planu. Przechowuje parametry takie jak:
-    *   `defaultRestSecondsBetweenSets`: Domyślny czas przerwy między seriami.
-    *   `defaultRestSecondsBetweenExercises`: Domyślny czas przerwy przy zmianie ćwiczenia.
-    *   `lumbarRange`: Wytyczne bezpieczeństwa dla kręgosłupa (np. "Zakres środkowy").
-    *   `tempoGuideline`: Ogólna instrukcja tempa (np. "Powoli 2–3 s").
-    Dzięki temu aplikacja (Timer, Asystent) wie, jak sterować przebiegiem treningu.
-
-##### 5. `created_at`
-*   **Typ danych:** `TIMESTAMP WITH TIME ZONE`
-*   **Ograniczenia:** `DEFAULT CURRENT_TIMESTAMP`.
-*   **Opis techniczny:** Data utworzenia rekordu.
-*   **Opis biznesowy:** Informacja audytowa.
-
-### 3. Specyfikacja Tabeli: `plan_days`
-
-Tabela pośrednia. Definiuje strukturę czasową planu (kolejne dni treningowe). Łączy plan (`training_plans`) z konkretnymi zestawami ćwiczeń (`day_exercises`).
-
-#### Lista Kolumn
-
-##### 1. `id`
-*   **Typ danych:** `SERIAL` (Auto-increment Integer)
-*   **Ograniczenia:** `PRIMARY KEY`.
-*   **Opis techniczny:** Unikalny numer identyfikacyjny wiersza (sztuczny klucz).
-*   **Opis biznesowy:** Wewnętrzny identyfikator dnia. Służy do łączenia ćwiczeń z konkretnym dniem.
-
-##### 2. `plan_id`
-*   **Typ danych:** `VARCHAR(255)`
-*   **Ograniczenia:** `NOT NULL`, `FOREIGN KEY` do `training_plans(id)`.
-*   **Opis techniczny:** Klucz obcy wskazujący, do którego planu należy ten dzień.
-*   **Opis biznesowy:** Grupuje dni w ramach jednego planu treningowego.
-
-##### 3. `day_number`
-*   **Typ danych:** `INTEGER`
-*   **Ograniczenia:** `NOT NULL`.
-*   **Opis techniczny:** Liczba całkowita.
-*   **Opis biznesowy:** Logiczny numer dnia w cyklu (np. Dzień 1, Dzień 2). Aplikacja używa tego pola do sortowania dni oraz do określania, jaki trening przypada na "dzisiaj" na podstawie daty rozpoczęcia planu przez użytkownika.
-
-##### 4. `title`
-*   **Typ danych:** `VARCHAR(255)`
-*   **Ograniczenia:** `NOT NULL`.
-*   **Opis techniczny:** Krótki opis tekstowy.
-*   **Opis biznesowy:** Temat przewodni danego dnia (np. "Stabilizacja bazowa", "Anty-rotacja"). Wyświetlany na karcie dnia ("Day Card") oraz w nagłówku podczas treningu ("Mission Title").
-
-#### Unikalność (Unique Constraint)
-*   `UNIQUE(plan_id, day_number)`: Zapewnia, że w ramach jednego planu nie mogą istnieć dwa dni o tym samym numerze (np. nie może być dwóch "Dni 1" w planie "l5s1-foundation").
-
-### 4. Specyfikacja Tabeli: `day_exercises`
-
-Tabela najniższego poziomu. To "przepis" na trening. Określa, jakie ćwiczenie, w jakiej ilości i w jaki sposób ma zostać wykonane w konkretnym dniu.
-
-#### Lista Kolumn
-
-##### 1. `id`
-*   **Typ danych:** `SERIAL`
-*   **Ograniczenia:** `PRIMARY KEY`.
-*   **Opis techniczny:** Unikalny identyfikator wiersza.
-*   **Opis biznesowy:** Identyfikator konkretnego wystąpienia ćwiczenia w planie.
-
-##### 2. `day_id`
-*   **Typ danych:** `INTEGER`
-*   **Ograniczenia:** `NOT NULL`, `FOREIGN KEY` do `plan_days(id)`.
-*   **Opis techniczny:** Klucz obcy wiążący ćwiczenie z konkretnym dniem planu.
-*   **Opis biznesowy:** Określa, w którym dniu użytkownik ma wykonać to ćwiczenie.
-
-##### 3. `exercise_id`
-*   **Typ danych:** `VARCHAR(255)`
-*   **Ograniczenia:** `NOT NULL`, `FOREIGN KEY` do `exercises(id)`.
-*   **Opis techniczny:** Klucz obcy wskazujący na definicję ćwiczenia w Bazie Wiedzy.
-*   **Opis biznesowy:** Wskazuje, *co* użytkownik ma robić (np. "birdDog"). System pobiera stąd nazwę, wideo i opis techniczny.
-
-##### 4. `section`
-*   **Typ danych:** `VARCHAR(50)`
-*   **Ograniczenia:** `NOT NULL`. Wartości biznesowe: `warmup`, `main`, `cooldown`.
-*   **Opis techniczny:** Kategoria logiczna wewnątrz dnia.
-*   **Opis biznesowy:** Dzieli trening na fazy:
-    *   `warmup`: Rozgrzewka/Mobilizacja.
-    *   `main`: Część główna (siła/stabilizacja).
-    *   `cooldown`: Wyciszenie/Rozciąganie.
-    Aplikacja używa tego do grupowania kart na ekranie podglądu.
-
-##### 5. `order_in_section`
-*   **Typ danych:** `INTEGER`
-*   **Ograniczenia:** `NOT NULL`.
-*   **Opis techniczny:** Liczba porządkowa.
-*   **Opis biznesowy:** Kolejność wykonywania ćwiczeń w ramach jednej sekcji. Decyduje o tym, co wyświetli się jako pierwsze, drugie itd.
-
-##### 6. `sets`
-*   **Typ danych:** `VARCHAR(50)`
-*   **Ograniczenia:** Brak (ciąg znaków).
-*   **Opis techniczny:** Przechowuje liczbę serii jako tekst (np. "3", "2-3").
-*   **Opis biznesowy:** Ilość serii do wykonania. Jest to string, aby umożliwić zapisy zakresów ("2-3") dla bardziej zaawansowanych użytkowników, choć zazwyczaj jest to pojedyncza cyfra. System parsuje to pole, aby wygenerować odpowiednią liczbę "okienek" w pętli treningowej.
-
-##### 7. `reps_or_time`
-*   **Typ danych:** `VARCHAR(100)`
-*   **Ograniczenia:** Brak.
-*   **Opis techniczny:** Ciąg znaków (np. "10", "30 s", "5 breaths", "10/str.").
-*   **Opis biznesowy:** "Dawkowanie" ćwiczenia w pojedynczej serii.
-    *   Jeśli zawiera "s" lub "min" -> Timer (czas).
-    *   Jeśli sama liczba -> Licznik powtórzeń.
-    *   Może zawierać modyfikatory jak "/str." (na stronę).
-    System TTS czyta to pole użytkownikowi.
-
-##### 8. `tempo_or_iso`
-*   **Typ danych:** `VARCHAR(255)`
-*   **Ograniczenia:** `NULL` (opcjonalne).
-*   **Opis techniczny:** Tekst instruktażowy.
-*   **Opis biznesowy:** Szczegółowe instrukcje dotyczące tempa ruchu lub czasu utrzymania napięcia (izometrii) dla *tego konkretnego dnia*. Nadpisuje lub uzupełnia ogólny opis ćwiczenia (np. "pauza 2s na wydechu", "izometria 10s"). Kluczowe dla jakości wykonania ("Quality over Quantity").
-
----
-
-### Inne Tabele (Skrót)
-
-*   `user_plan_overrides`: Przechowuje indywidualne zmiany planu (ewolucje).
-*   `training_sessions`: Historia wykonanych treningów z pełnym logiem JSONB.
-*   `user_exercise_blacklist`: Lista ćwiczeń blokowanych przez użytkownika.
-*   `user_settings`: Ustawienia globalne (data startu, mnożnik progresji).
-*   `user_integrations`: Tokeny OAuth dla usług zewnętrznych (Strava).
+*   **`session_id`** (PK, BIGINT): Timestamp.
+*   **`user_id`** (FK, VARCHAR).
+*   **`plan_id`** (VARCHAR).
+*   **`started_at`** (TIMESTAMP).
+*   **`completed_at`** (TIMESTAMP).
+*   **`session_data`** (JSONB): Pełny log wykonanych ćwiczeń (z uwzględnieniem podmian).
+    *   Ważne: W logu zapisywane jest `exerciseId`. To na jego podstawie Mixer sprawdza, kiedy ostatnio robiono dany ruch.
 
 ## 🚀 Instrukcja Uruchomienia
 

@@ -1,4 +1,4 @@
-/* style.css - WERSJA KOMPLETNA (FIXED HYBRID VISUAL CARD) */
+/* style.css - WERSJA KOMPLETNA (Z ZAKŁADKĄ POMOCY) */
 
 /* ============================================= */
 /* === 1. ZMIENNE GLOBALNE I RESET === */
@@ -73,6 +73,12 @@ header {
     align-items: center;
     gap: 12px;
     text-decoration: none;
+    cursor: pointer; /* Wskazuje, że element jest klikalny */
+    transition: opacity 0.2s;
+}
+
+.brand-container:hover {
+    opacity: 0.9;
 }
 
 .app-logo-small {
@@ -264,10 +270,6 @@ main {
 /* === 5. HERO DASHBOARD (GAMIFIKACJA) === */
 /* ============================================= */
 
-/* ============================================= */
-/* === 5. HERO DASHBOARD (GAMIFIKACJA) - FIX === */
-/* ============================================= */
-
 #hero-dashboard {
     background: linear-gradient(160deg, #0f1c2e 0%, var(--primary-color) 100%);
     color: var(--light-text-color);
@@ -297,7 +299,7 @@ main {
 /* --- LEWA: AWATAR --- */
 .hero-avatar-wrapper {
     position: relative;
-    width: 80px; /* Zmniejszamy nieco dla lepszych proporcji */
+    width: 80px;
     height: 80px;
     display: flex;
     justify-content: center;
@@ -347,7 +349,7 @@ main {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    overflow: hidden; /* Zabezpieczenie przed rozpychaniem */
+    overflow: hidden;
 }
 
 .hero-rank-title {
@@ -380,14 +382,13 @@ main {
     gap: 8px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     flex-grow: 0;
-    min-width: max-content; /* Zapobiega ściskaniu tekstu */
+    min-width: max-content;
 }
 
-/* KLUCZOWA POPRAWKA: Sztywna wielkość ikon */
 .metric-icon {
     width: 20px;
     height: 20px;
-    display: block; /* Fix dla SVG */
+    display: block;
     flex-shrink: 0;
 }
 
@@ -483,24 +484,18 @@ main {
 @keyframes pulse-bar { 0% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4); } 70% { box-shadow: 0 0 0 4px rgba(255, 255, 255, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); } }
 
 /* --- RESPANSYWNOŚĆ (MOBILE OPTIMIZATION) --- */
-/* --- RESPANSYWNOŚĆ V2 (MOBILE OPTIMIZATION - COMPACT FULL) --- */
 @media (max-width: 700px) {
     
-    /* 1. ZOPTYMALIZOWANY HERO DASHBOARD (Wszystko w jednej linii) */
     #hero-dashboard {
-        /* Grid 3-kolumnowy: Avatar | Info | Wykres */
         display: grid;
         grid-template-columns: auto 1fr auto; 
-        gap: 12px; /* Mniejszy odstęp między elementami */
-        
-        padding: 12px 16px; /* Kompaktowy padding */
+        gap: 12px;
+        padding: 12px 16px;
         margin-bottom: 1rem;
-        align-items: center; /* Wyrównanie w pionie */
-        
+        align-items: center;
         background: linear-gradient(160deg, #0f1c2e 0%, var(--primary-color) 90%);
     }
 
-    /* LEWA: AVATAR */
     .hero-avatar-wrapper {
         width: 54px;
         height: 54px;
@@ -514,17 +509,16 @@ main {
         padding: 1px 5px;
     }
 
-    /* ŚRODEK: TYTUŁ I STATYSTYKI */
     .hero-content {
         display: flex;
         flex-direction: column;
-        align-items: flex-start; /* Do lewej */
+        align-items: flex-start;
         justify-content: center;
-        min-width: 0; /* Zapobiega rozpychaniu grida */
+        min-width: 0;
     }
 
     .hero-rank-title {
-        font-size: 0.85rem; /* Mniejszy tytuł */
+        font-size: 0.85rem;
         margin-bottom: 4px;
         white-space: nowrap;
         overflow: hidden;
@@ -547,13 +541,11 @@ main {
         height: 12px;
     }
     
-    /* Ukrywamy etykiety tekstowe, zostawiamy tylko ikony i liczby */
     .metric-label { display: none; }
     .metric-value { font-size: 0.75rem; line-height: 1; }
 
-    /* PRAWA: PRZYWRACAMY WYKRES (Wersja Mini) */
     .hero-weekly-rhythm {
-        display: flex; /* Pokaż! */
+        display: flex;
         flex-direction: column;
         align-items: flex-end;
         border-left: 1px solid rgba(255,255,255,0.15);
@@ -564,17 +556,17 @@ main {
     }
     
     .weekly-chart-label {
-        font-size: 0.5rem; /* Mikroskopijny nagłówek */
+        font-size: 0.5rem;
         margin-bottom: 3px;
     }
     
     .weekly-chart-grid {
-        gap: 3px; /* Ciasno upakowane słupki */
+        gap: 3px;
     }
     
     .day-bar {
-        width: 4px; /* Bardzo cienkie słupki */
-        height: 18px; /* Niskie */
+        width: 4px;
+        height: 18px;
         border-radius: 2px;
     }
     
@@ -586,15 +578,12 @@ main {
         margin-top: 2px;
     }
 
-    /* 2. FIX DLA PRZYCISKU START (Zwiększamy miejsce na dole) */
-    /* Zwiększamy padding dolny kontenera głównego, 
-       żeby treść nie chowała się za nawigacją */
     main {
         padding-bottom: 160px !important; 
     }
     
     .mission-card {
-        margin-bottom: 20px; /* Dodatkowy margines pod kartą misji */
+        margin-bottom: 20px;
     }
     
     .section-title {
@@ -765,7 +754,7 @@ input[type="range"] {
     font-size: 0.85rem;
     font-weight: 600;
     border-radius: var(--radius-md);
-    border: 1px solid; /* Kolor bordera dziedziczy lub jest nadpisywany */
+    border: 1px solid;
     background-color: transparent;
     text-decoration: none;
     cursor: pointer;
@@ -778,13 +767,6 @@ input[type="range"] {
     width: 16px;
     height: 16px;
     display: block;
-    /* Ważne dla SVG wczytywanych jako img - nie zmienimy koloru przez CSS fill, 
-       ale nasze SVG mają stroke="currentColor", co zadziała dla inline SVG. 
-       Dla <img> musimy polegać na kolorze ikony lub filtrach, 
-       ale tutaj ikony są "outline", więc przyjmą kolor tekstu jeśli są inline, 
-       lub będą czarne/domyślne jeśli są img. 
-       W tym wypadku dla spójności użyjemy <img> i zaakceptujemy ich domyślny kolor 
-       lub użyjemy inline SVG w JS. */
 }
 
 .btn-with-icon:hover {
@@ -1236,7 +1218,6 @@ input[type="range"] {
     align-items: center;
     justify-content: center;
     min-height: 20vh;
-    /* DODANO: Odstęp od dołu, żeby nie kleił się do tytułu */
     margin-bottom: 3rem; 
 }
 
@@ -1301,8 +1282,6 @@ input[type="range"] {
     font-weight: 500;
     color: var(--gold-color);
 }
-
-/* Uwaga: Usunięto stary styl #focus-description */
 
 .focus-controls {
     display: flex;
@@ -2560,4 +2539,435 @@ input[type="range"] {
 /* Poprawka dla stopki, aby pomieściła nowe elementy */
 #app-footer .disclaimer {
     margin-bottom: 0.5rem; /* Zmniejszamy margines, bo doszły linki */
+}
+
+/* ============================================= */
+/* === 13. WIZARD / KREATOR KONFIGURACJI === */
+/* ============================================= */
+
+#wizard-screen {
+    background-color: var(--primary-color);
+    color: #fff;
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    z-index: 2000;
+    display: none; 
+    flex-direction: column;
+    padding: 0;
+}
+
+#wizard-screen.active {
+    display: flex;
+}
+
+#wizard-container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom)) 20px;
+    max-width: 600px;
+    margin: 0 auto;
+    box-sizing: border-box;
+    position: relative; 
+}
+
+/* FIX: Przycisk ZAMKNIJ - Spójny styl */
+.wizard-close-btn {
+    position: absolute;
+    top: max(20px, env(safe-area-inset-top));
+    right: 20px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1); /* Delikatne tło */
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 2001;
+    transition: all 0.2s ease;
+    padding: 0;
+}
+
+.wizard-close-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+    transform: scale(1.05);
+}
+
+.wizard-close-btn img {
+    display: block;
+    width: 20px;
+    height: 20px;
+}
+
+.wizard-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%; 
+    animation: fadeIn 0.4s ease;
+    padding-top: 30px; /* Miejsce na przycisk X */
+}
+
+.wizard-step-title {
+    font-size: 1.8rem;
+    font-weight: 800;
+    margin: 0 0 0.5rem 0;
+    color: var(--gold-color);
+    text-align: center;
+    flex-shrink: 0; 
+}
+
+.wizard-step-desc {
+    font-size: 1rem;
+    opacity: 0.9;
+    margin: 0 0 1.5rem 0;
+    line-height: 1.4;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+#step-body {
+    flex-grow: 1;
+    overflow-y: auto;
+    margin-bottom: 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    width: 100%;
+}
+
+/* Body Map (SVG) */
+.body-map-container {
+    width: 100%;
+    max-width: 280px; 
+    height: auto;
+    flex-grow: 1; 
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.body-map-container svg {
+    height: 100%;
+    max-height: 50vh; 
+    width: auto;
+    display: block;
+}
+
+/* Equipment Grid */
+.equipment-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 12px;
+    width: 100%;
+    padding-bottom: 10px;
+}
+
+.eq-card {
+    background: rgba(0,0,0,0.2);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 12px;
+    padding: 1.2rem 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    min-height: 60px;
+}
+
+.eq-card:hover { background: rgba(255,255,255,0.1); }
+.eq-card.selected {
+    background: rgba(10, 147, 150, 0.4);
+    border-color: var(--secondary-color);
+    box-shadow: 0 0 15px rgba(10, 147, 150, 0.4);
+    font-weight: 700;
+}
+
+.eq-name { 
+    font-size: 0.95rem;
+    font-weight: 500; 
+    text-transform: capitalize; 
+    line-height: 1.2;
+}
+
+/* Schedule Sliders */
+.schedule-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: rgba(0,0,0,0.2);
+    padding: 15px;
+    border-radius: 15px;
+    width: 100%;
+}
+
+.schedule-row { display: flex; align-items: center; gap: 12px; }
+
+.day-toggle {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.1);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: bold; font-size: 0.8rem;
+    cursor: pointer; transition: all 0.3s;
+    flex-shrink: 0;
+}
+.day-toggle.active { background: var(--gold-color); color: #000; }
+
+.time-slider-wrapper {
+    flex-grow: 1; display: flex; flex-direction: column;
+    transition: opacity 0.3s;
+}
+
+.time-val {
+    font-size: 0.75rem; font-weight: bold; color: var(--secondary-color);
+    text-align: right;
+}
+
+/* Console Loader */
+.console-log {
+    font-family: monospace; text-align: left;
+    background: rgba(0,0,0,0.5);
+    padding: 1rem; border-radius: 8px;
+    height: 200px; width: 100%;
+    overflow: hidden; color: var(--success-color);
+    font-size: 0.9rem;
+}
+.log-line { margin: 5px 0; opacity: 0; animation: typeIn 0.3s forwards; }
+@keyframes typeIn { to { opacity: 1; } }
+
+/* NAV: FIX WYSOKOŚCI I GRID */
+.wizard-nav {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    margin-top: auto; 
+    padding-top: 1rem;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    flex-shrink: 0;
+}
+
+.wizard-nav.single-btn {
+    grid-template-columns: 1fr;
+}
+
+/* FIX: Sztywna wysokość dla spójności */
+.wizard-nav button {
+    width: 100%;
+    height: 52px; /* Wymuszona wysokość dla obu przycisków */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0; /* Usuń domyślne marginesy */
+    box-sizing: border-box; /* Gwarancja, że padding/border nie zmienią wysokości */
+}
+/* ============================================= */
+/* === 14. AI LOADING STATE (Dashboard) === */
+/* ============================================= */
+
+/* Kontener karty misji musi mieć position relative dla overlay */
+.mission-card-wrapper {
+    position: relative;
+    width: 100%;
+    margin-bottom: 2rem;
+}
+
+/* Styl dla rozmytej karty */
+.ai-blur {
+    filter: blur(4px) grayscale(80%);
+    opacity: 0.7;
+    pointer-events: none; /* Blokujemy klikanie podczas ładowania */
+    transition: filter 0.3s ease, opacity 0.3s ease;
+}
+
+/* Nakładka z komunikatem */
+.ai-processing-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    animation: fadeIn 0.3s ease;
+}
+
+.ai-badge {
+    background: rgba(0, 0, 0, 0.85);
+    color: var(--gold-color);
+    padding: 10px 20px;
+    border-radius: 30px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid rgba(233, 196, 106, 0.3);
+}
+
+.ai-badge .spinner-dots {
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--gold-color);
+    border-radius: 50%;
+    border-top-color: transparent;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin { 100% { transform: rotate(360deg); } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* ============================================= */
+/* === 15. EKRAN POMOCY (HELP SCREEN) === */
+/* ============================================= */
+
+.help-container {
+    padding-bottom: 2rem;
+}
+
+.help-card {
+    background: #fff;
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: var(--shadow-card);
+    border: 1px solid var(--border-color);
+}
+
+.help-card.highlight {
+    border-left: 5px solid var(--secondary-color);
+    background: linear-gradient(145deg, #ffffff 0%, #f4faff 100%);
+}
+
+.help-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.help-header h3 {
+    margin: 0;
+    color: var(--primary-color);
+}
+
+.logic-block {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(0,0,0,0.05);
+}
+
+.logic-block h4 {
+    margin: 0 0 0.5rem 0;
+    color: var(--text-color);
+}
+
+.logic-block p {
+    font-size: 0.9rem;
+    opacity: 0.8;
+    margin: 0;
+    line-height: 1.5;
+}
+
+/* Legenda Ikon */
+.icon-legend, .controls-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.legend-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+}
+
+.icon-box {
+    width: 40px;
+    height: 40px;
+    background: rgba(0, 95, 115, 0.05);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.icon-box img {
+    width: 24px;
+    height: 24px;
+}
+
+.legend-desc {
+    flex-grow: 1;
+}
+
+.legend-desc strong {
+    display: block;
+    font-size: 0.95rem;
+    margin-bottom: 0.2rem;
+    color: var(--primary-color);
+}
+
+.legend-desc p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--muted-text-color);
+    line-height: 1.4;
+}
+
+.control-pair {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    font-size: 0.9rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.control-pair:last-child {
+    border-bottom: none;
+}
+
+.control-pair img {
+    width: 24px;
+    height: 24px;
+    opacity: 0.8;
+}
+
+/* ============================================= */
+/* === 16. PRE-TRAINING NAVIGATION (FIXED LAYOUT) === */
+/* ============================================= */
+.pre-training-nav {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.pre-training-nav .nav-btn {
+    flex: 1; /* 1/3 szerokości */
+    text-align: center;
+    justify-content: center;
+    height: 52px; 
+    display: flex;
+    align-items: center;
+}
+
+.pre-training-nav .action-btn {
+    flex: 2; /* 2/3 szerokości - większy priorytet */
+    margin-top: 0 !important; /* Nadpisanie domyślnego marginesu */
+    height: 52px;
 }

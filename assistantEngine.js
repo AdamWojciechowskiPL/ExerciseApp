@@ -1,7 +1,7 @@
 // assistantEngine.js
 
 import { state } from './state.js';
-import { getISODate, parseSetCount, getExerciseDuration, applyProgression } from './utils.js';
+import { getISODate, parseSetCount, getExerciseDuration} from './utils.js';
 
 /**
  * MÓZG SYSTEMU (ASSISTANT ENGINE)

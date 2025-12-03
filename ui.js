@@ -7,3 +7,5 @@ export * from './ui/screens/training.js';
 export * from './ui/screens/library.js';
 export * from './ui/screens/settings.js';
 export * from './ui/screens/summary.js';
+export * from './ui/screens/help.js';
+export * from './ui/wizard.js';

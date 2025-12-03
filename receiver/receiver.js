@@ -1,25 +1,49 @@
-// receiver/receiver.js - v4.1 (Overlay + TouchOptimized)
+// receiver/receiver.js - v5.1 (Silent Audio + Heartbeat Fix)
 
 const context = cast.framework.CastReceiverContext.getInstance();
 const CUSTOM_NAMESPACE = 'urn:x-cast:com.trening.app';
-// Ustawiamy maksymalny dozwolony czas bezczynności (4 godziny)
-const IDLE_TIMEOUT = 14400; 
+// Zwiększamy limit do maksimum, ale polegamy na Audio Loop
+const IDLE_TIMEOUT = 14400; // 4 godziny
 
 let lastRenderedSvg = null;
 
-// --- HACK WIDEO ---
+// --- HACK 1: SILENT AUDIO LOOP (NAJSKUTECZNIEJSZY) ---
+// Base64 krótkiego pliku MP3 z ciszą
+const SILENT_MP3 = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//oeAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////wAAAD9MYXZjNTguNTQuMTAwAAAAAAAAAAAA//oeAAAAAAABMgAAASAAKtDxAAAAAAAAAAAAAAAAAAAAAAAAAAAA//oeZAAAAAAAASAAAAEAAACqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//oeZAAAAAAAASAAAAEAAACqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq';
+
+let silentAudioPlayer = null;
+
+function startSilentAudio() {
+    if (!silentAudioPlayer) {
+        silentAudioPlayer = new Audio(SILENT_MP3);
+        silentAudioPlayer.loop = true;
+        silentAudioPlayer.volume = 0.01; // Minimalna głośność, nie 0, żeby system myślał że gra
+    }
+    
+    // Tylko odtwarzaj, jeśli nie gra
+    if (silentAudioPlayer.paused) {
+        silentAudioPlayer.play().then(() => {
+            console.log('[Receiver] 🔇 Silent Audio Loop Started (Anti-Idle)');
+        }).catch(e => {
+            console.warn('[Receiver] Silent Audio Autoplay blocked:', e);
+        });
+    }
+}
+
+// --- HACK 2: VIDEO LOOP (Jako backup) ---
 const keepAliveVideo = document.getElementById('keepAliveVideo');
 
 function startKeepAlive() {
     if (keepAliveVideo) {
         keepAliveVideo.muted = true;
         keepAliveVideo.loop = true;
+        // ZMIANA: Zresetuj czas, aby wymusić "aktywność"
+        keepAliveVideo.currentTime = 0;
         
-        // Wymuszamy odtworzenie, jeśli nie gra
         if (keepAliveVideo.paused) {
             keepAliveVideo.play()
-                .then(() => console.log('[Receiver] Video loop active.'))
-                .catch(e => console.warn("[Receiver] Autoplay blocked:", e));
+                .then(() => console.log('[Receiver] 🎬 Background video running.'))
+                .catch(e => console.warn("[Receiver] Video Autoplay blocked:", e));
         }
     }
 }
@@ -28,6 +52,23 @@ function stopKeepAlive() {
     if (keepAliveVideo && !keepAliveVideo.paused) {
         keepAliveVideo.pause();
     }
+    // Nie zatrzymujemy Silent Audio, chyba że wchodzi YouTube
+}
+
+// --- HACK 3: GAME LOOP (Active GPU) ---
+const gpuActivator = document.getElementById('gpu-activator');
+let frameCount = 0;
+
+function startGameLoop() {
+    function step() {
+        frameCount++;
+        if (gpuActivator) {
+            const opacity = 0.01 + (Math.sin(frameCount * 0.1) * 0.01);
+            gpuActivator.style.opacity = opacity;
+        }
+        requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
 }
 
 // --- 1. CACHE DOM ---
@@ -65,9 +106,19 @@ const UI = {
 
 context.addCustomMessageListener(CUSTOM_NAMESPACE, (event) => {
     const message = event.data;
-    startKeepAlive(); // "Budzimy" wideo przy każdej interakcji
+    
+    // Każda wiadomość odnawia nasze "życie"
+    startSilentAudio();
+    startKeepAlive();
 
     switch (message.type) {
+        // --- NOWOŚĆ: OBSŁUGA PING ---
+        case 'PING':
+            console.log('[Receiver] 💓 Heartbeat received.');
+            // Opcjonalnie: możemy odesłać PONG, ale tutaj wystarczy sam fakt odebrania,
+            // który resetuje wewnętrzny timer Cast SDK.
+            break;
+
         case 'UPDATE_USER_STATS':
             updateUserStats(message.payload);
             showScreen('idle');
@@ -83,13 +134,16 @@ context.addCustomMessageListener(CUSTOM_NAMESPACE, (event) => {
             break;
 
         case 'SHOW_IDLE':
-            stopVideo();
+            stopVideo(); // Zatrzymujemy YouTube
             showScreen('idle');
             context.setApplicationState("Gotowy");
             break;
 
         case 'PLAY_VIDEO':
-            stopKeepAlive(); // Pauzujemy hacka przy YouTube
+            stopKeepAlive(); 
+            // Przy YouTube możemy zatrzymać nasze ciche audio, żeby nie kolidowało
+            if (silentAudioPlayer) silentAudioPlayer.pause();
+            
             playVideo(message.payload.youtubeId);
             showScreen('video');
             context.setApplicationState("Odtwarzanie wideo");
@@ -97,6 +151,7 @@ context.addCustomMessageListener(CUSTOM_NAMESPACE, (event) => {
 
         case 'STOP_VIDEO':
             stopVideo();
+            startSilentAudio(); // Wznawiamy ochronę
             startKeepAlive();
             showScreen('training');
             break;
@@ -171,26 +226,21 @@ function stopVideo() {
     UI.video.iframe.src = '';
 }
 
-// --- 4. START I KONFIGURACJA ---
+// --- 4. START ---
 
 context.addEventListener(cast.framework.system.EventType.READY, () => {
-    console.log('[Receiver] Gotowy. Uruchamiam dummy video.');
-    startKeepAlive();
+    console.log('[Receiver] Gotowy.');
+    startSilentAudio(); // START AUDIO HACK
+    startKeepAlive();   // START VIDEO HACK
+    startGameLoop();    // START GPU HACK
 });
 
 const options = new cast.framework.CastReceiverOptions();
-
 options.customNamespaces = {
     [CUSTOM_NAMESPACE]: cast.framework.system.MessageType.JSON
 };
-
-// === KLUCZOWE KONFIGURACJE ANTI-IDLE ===
-// 1. Wyłączamy standardowy timeout braku aktywności
 options.disableIdleTimeout = true; 
 options.maxInactivity = IDLE_TIMEOUT;
-
-// 2. Mówimy systemowi, że to aplikacja "dotykowa" (gra/dashboard), 
-//    co zapobiega włączaniu Ambient Mode, gdy nie ma "aktywnego strumienia wideo"
-options.touchScreenOptimizedApp = true; 
+options.touchScreenOptimizedApp = true;
 
 context.start(options);

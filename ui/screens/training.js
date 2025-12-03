@@ -1,4 +1,4 @@
-// js/ui/screens/training.js
+// ui/screens/training.js
 import { state } from '../../state.js';
 import { screens, initializeFocusElements } from '../../dom.js';
 import { getActiveTrainingPlan, getHydratedDay, getISODate } from '../../utils.js';
@@ -7,14 +7,22 @@ import { navigateTo, showLoader, hideLoader } from '../core.js';
 import { generatePreTrainingCardHTML } from '../templates.js';
 import { renderSwapModal } from '../modals.js';
 import { startModifiedTraining } from '../../training.js';
-import { getIsCasting, sendShowIdle } from '../../cast.js';
+import { getIsCasting, sendShowIdle, sendPlayVideo, sendStopVideo } from '../../cast.js';
 import dataStore from '../../dataStore.js';
-import { renderMainScreen } from './dashboard.js';
+import { renderMainScreen, clearPlanFromStorage } from './dashboard.js';
+import { workoutMixer } from '../../workoutMixer.js';
+import { getUserPayload } from '../../auth.js';
 
-// ============================================================
-// 1. EKRAN PODGLĄDU (PRE-TRAINING)
-// ============================================================
-export const renderPreTrainingScreen = (dayId, initialPainLevel = 0) => {
+const savePlanToStorage = (plan) => {
+    try {
+        const user = getUserPayload();
+        const userId = user ? user.sub : 'anon';
+        const date = getISODate(new Date());
+        localStorage.setItem(`dynamic_plan_${userId}_${date}`, JSON.stringify(plan));
+    } catch (e) { console.error("Błąd zapisu planu:", e); }
+};
+
+export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicPlan = false) => {
     state.currentTrainingDayId = dayId;
     state.currentTrainingDate = getISODate(new Date());
 
@@ -24,15 +32,72 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0) => {
     const dayDataRaw = activePlan.Days.find(d => d.dayNumber === dayId);
     if (!dayDataRaw) return;
 
-    const originalDayData = getHydratedDay(dayDataRaw);
+    const hasActiveDynamicPlan = state.todaysDynamicPlan && state.todaysDynamicPlan.dayNumber === dayId;
+    const shouldUseDynamic = useDynamicPlan && hasActiveDynamicPlan;
 
-    // Aplikujemy modyfikację bólową na starcie (TimeFactor = 1.0)
-    let currentAdjustedPlan = assistant.adjustTrainingVolume(originalDayData, initialPainLevel, 1.0);
+    let basePlanData;
+    if (shouldUseDynamic) {
+        basePlanData = state.todaysDynamicPlan;
+    } else {
+        basePlanData = getHydratedDay(dayDataRaw);
+    }
+
+    let currentAdjustedPlan = assistant.adjustTrainingVolume(basePlanData, initialPainLevel, 1.0);
+
+    // --- SANITYZACJA DANYCH (Naprawa starego cache) ---
+    // Wymuszamy odświeżenie tempa z bazy danych dla podmienionych ćwiczeń
+    const staticReference = getHydratedDay(dayDataRaw);
+
+    ['warmup', 'main', 'cooldown'].forEach(section => {
+        if (currentAdjustedPlan[section] && staticReference[section]) {
+            currentAdjustedPlan[section].forEach((ex, index) => {
+                const isSwapped = ex.isDynamicSwap || ex.isSwapped;
+
+                if (!isSwapped) {
+                    // Jeśli oryginał: przywróć tempo z planu
+                    const originalRef = staticReference[section][index];
+                    if (originalRef && (originalRef.id === ex.id || originalRef.exerciseId === ex.exerciseId)) {
+                        ex.tempo_or_iso = originalRef.tempo_or_iso;
+                    }
+                } 
+                else {
+                    // Jeśli podmienione: pobierz tempo z definicji ćwiczenia (z bazy)
+                    // Używamy nowego helpera
+                    const dbTempo = workoutMixer.getExerciseTempo(ex.id || ex.exerciseId);
+                    ex.tempo_or_iso = dbTempo;
+                }
+            });
+        }
+    });
 
     const screen = screens.preTraining;
+    
+    // ... (Reszta renderowania UI bez zmian, kopiuję całość dla kompletności pliku)
+    const actionButtonsHTML = `
+        <div style="display:flex; gap:12px;">
+            ${shouldUseDynamic ? 
+                `<button id="reset-workout-btn" class="icon-btn" title="Przywróć Plan Bazowy" 
+                    style="background:var(--card-background); border:1px solid var(--danger-color); 
+                    width: 42px; height: 42px; padding: 0; flex-shrink: 0;
+                    display:flex; align-items:center; justify-content:center; border-radius: 50%;">
+                    <img src="/icons/control-reset.svg" width="20" height="20" alt="Reset" 
+                         style="filter: invert(56%) sepia(69%) saturate(408%) hue-rotate(314deg) brightness(88%) contrast(93%); display:block;">
+                </button>` : ''
+            }
+            <button id="shuffle-workout-btn" class="icon-btn" title="Przelosuj Trening" 
+                style="background:var(--card-background); border:1px solid var(--border-color); color:var(--primary-color);
+                width: 42px; height: 42px; padding: 0; flex-shrink: 0;
+                display:flex; align-items:center; justify-content:center; border-radius: 50%;">
+                <img src="/icons/swap.svg" width="22" height="22" alt="Shuffle" style="display:block;">
+            </button>
+        </div>
+    `;
 
     screen.innerHTML = `
-        <h2 id="pre-training-title">Podgląd: ${currentAdjustedPlan.title}</h2>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <h2 id="pre-training-title" style="margin:0;">Podgląd: ${currentAdjustedPlan.title}</h2>
+            ${actionButtonsHTML}
+        </div>
         
         <div class="adjustment-panel">
             <div class="adjustment-header">
@@ -82,7 +147,6 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0) => {
 
     renderList(currentAdjustedPlan);
 
-    // --- OBSŁUGA SUWAKA CZASU ---
     const slider = screen.querySelector('#time-slider');
     const display = screen.querySelector('#time-factor-display');
 
@@ -115,17 +179,52 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0) => {
     slider.addEventListener('input', (e) => {
         const timeFactor = parseFloat(e.target.value);
         display.textContent = `${Math.round(timeFactor * 100)}%`;
-        currentAdjustedPlan = assistant.adjustTrainingVolume(originalDayData, initialPainLevel, timeFactor);
+        currentAdjustedPlan = assistant.adjustTrainingVolume(basePlanData, initialPainLevel, timeFactor);
+        
+        // FIX: Ponowna sanityzacja przy zmianie suwaka
+        ['warmup', 'main', 'cooldown'].forEach(section => {
+            if (currentAdjustedPlan[section]) {
+                currentAdjustedPlan[section].forEach((ex) => {
+                    if (ex.isDynamicSwap || ex.isSwapped) {
+                        ex.tempo_or_iso = workoutMixer.getExerciseTempo(ex.id || ex.exerciseId);
+                    } else {
+                        // Restore original if not swapped (musimy znaleźć oryginał, ale uproszczona wersja bierze z ex, bo assistant kopiuje)
+                        // W idealnym świecie assistant powinien brać też tempo. Tu zakładamy, że ex ma już poprawne dane z 1. sanityzacji
+                    }
+                });
+            }
+        });
+
         updateInputsInDOM(currentAdjustedPlan);
     });
 
-    // --- OBSŁUGA WYMIANY (SMART SWAP) ---
+    const shuffleBtn = screen.querySelector('#shuffle-workout-btn');
+    if (shuffleBtn) {
+        shuffleBtn.addEventListener('click', () => {
+            if (confirm("Chcesz przelosować cały zestaw ćwiczeń?")) {
+                const freshStatic = getHydratedDay(dayDataRaw);
+                state.todaysDynamicPlan = workoutMixer.mixWorkout(freshStatic, true);
+                savePlanToStorage(state.todaysDynamicPlan); 
+                renderPreTrainingScreen(dayId, initialPainLevel, true);
+            }
+        });
+    }
+
+    const resetBtn = screen.querySelector('#reset-workout-btn');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+            if (confirm("Czy na pewno chcesz cofnąć wszystkie losowania i wrócić do oryginalnego planu?")) {
+                clearPlanFromStorage(); 
+                renderPreTrainingScreen(dayId, initialPainLevel, false);
+            }
+        });
+    }
+
     listContainer.addEventListener('click', (e) => {
         const btn = e.target.closest('.swap-btn');
         if (!btn) return;
 
         const globalIndex = parseInt(btn.dataset.exerciseIndex, 10);
-
         let counter = 0;
         let targetSection = null;
         let targetLocalIndex = -1;
@@ -144,149 +243,96 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0) => {
 
         if (foundExercise) {
             renderSwapModal(foundExercise, (newExerciseDef, swapType) => {
-                const calculateNewParams = (oldEx, newDef) => {
-                    const oldVal = (oldEx.reps_or_time || '').toLowerCase();
-                    const isOldTimeBased = /[\d]+\s*(s\b|sec|min|:)/.test(oldVal);
-                    const isNewTimeBased = (newDef.maxDuration && newDef.maxDuration > 0);
-                    const isNewRepBased = (newDef.maxReps && newDef.maxReps > 0);
-
-                    let newRepsOrTime = oldEx.reps_or_time;
-
-                    if (isNewTimeBased) {
-                        if (!isOldTimeBased) {
-                            const defaultTime = Math.min(newDef.maxDuration || 60, 45);
-                            newRepsOrTime = `${defaultTime} s`;
-                        }
-                    }
-                    else if (isNewRepBased) {
-                        if (isOldTimeBased) {
-                            const defaultReps = Math.min(newDef.maxReps || 20, 12);
-                            newRepsOrTime = `${defaultReps}`;
-                        }
-                    }
-
-                    return {
-                        sets: oldEx.sets,
-                        reps_or_time: newRepsOrTime,
-                        tempo_or_iso: newDef.tempo_or_iso || oldEx.tempo_or_iso
-                    };
-                };
-
                 const updateExerciseInPlan = (plan) => {
                     if (plan[targetSection] && plan[targetSection][targetLocalIndex]) {
                         const oldEx = plan[targetSection][targetLocalIndex];
-                        const smartParams = calculateNewParams(oldEx, newExerciseDef);
+                        const smartRepsOrTime = workoutMixer.adaptVolume(oldEx, newExerciseDef);
+                        
+                        // FIX: Pobieramy tempo z bazy dla nowego ćwiczenia
+                        const dbTempo = workoutMixer.getExerciseTempo(newExerciseDef.id);
 
                         plan[targetSection][targetLocalIndex] = {
                             ...newExerciseDef,
-                            sets: smartParams.sets,
-                            reps_or_time: smartParams.reps_or_time,
-                            tempo_or_iso: smartParams.tempo_or_iso,
-                            isSwapped: true
+                            id: newExerciseDef.id,
+                            exerciseId: newExerciseDef.id,
+                            sets: oldEx.sets,
+                            reps_or_time: smartRepsOrTime,
+                            tempo_or_iso: dbTempo, // Nowe tempo
+                            isSwapped: true,
+                            isDynamicSwap: true,
+                            originalName: (oldEx.exerciseId !== newExerciseDef.id) ? oldEx.name : null
                         };
                     }
                 };
 
-                updateExerciseInPlan(originalDayData);
-                updateExerciseInPlan(currentAdjustedPlan);
+                if (!state.todaysDynamicPlan) {
+                    const freshStatic = getHydratedDay(dayDataRaw);
+                    state.todaysDynamicPlan = JSON.parse(JSON.stringify(freshStatic));
+                }
+
+                updateExerciseInPlan(state.todaysDynamicPlan);
+                savePlanToStorage(state.todaysDynamicPlan); 
+
+                renderPreTrainingScreen(dayId, initialPainLevel, true);
 
                 if (swapType === 'blacklist') {
                     const blockedId = foundExercise.id || foundExercise.exerciseId;
                     const replacementId = newExerciseDef.id;
-
                     if (confirm(`Dodać "${foundExercise.name}" do czarnej listy i w przyszłości podmieniać na "${newExerciseDef.name}"?`)) {
-                        dataStore.addToBlacklist(blockedId, replacementId)
-                            .then(() => alert("Zapisano preferencję."));
+                        dataStore.addToBlacklist(blockedId, replacementId);
                     }
                 }
-
-                renderList(currentAdjustedPlan);
             });
         }
     });
 
-    // --- OBSŁUGA PODGLĄDU ANIMACJI (MODAL) ---
     listContainer.addEventListener('click', (e) => {
-        // Używamy closest, aby złapać kliknięcie w ikonkę wewnątrz przycisku
         const btn = e.target.closest('.preview-anim-btn');
-
         if (btn) {
-            // Zatrzymujemy propagację, aby nie uruchamiać innych handlerów na liście
             e.stopPropagation();
-
             const exId = btn.dataset.exerciseId;
             const ex = state.exerciseLibrary[exId];
-
+            
             if (ex && ex.animationSvg) {
                 const overlay = document.createElement('div');
                 overlay.className = 'modal-overlay';
-                // Dodajemy stopPropagation na overlayu, żeby kliknięcie w treść nie zamykało (tylko tło)
-
                 overlay.innerHTML = `
                     <div class="swap-modal" style="align-items: center; text-align: center;">
                         <h3>${ex.name}</h3>
-                        <div style="width: 100%; max-width: 300px; margin: 1rem 0;">
-                            ${ex.animationSvg}
-                        </div>
+                        <div style="width: 100%; max-width: 300px; margin: 1rem 0;">${ex.animationSvg}</div>
                         <button type="button" id="close-preview" class="nav-btn" style="width: 100%">Zamknij</button>
-                    </div>
-                `;
-
+                    </div>`;
                 document.body.appendChild(overlay);
-
-                // 1. Zamknij przyciskiem
-                const closeBtn = overlay.querySelector('#close-preview');
-                closeBtn.onclick = (evt) => {
-                    evt.preventDefault();
-                    evt.stopPropagation();
-                    overlay.remove();
-                };
-
-                // 2. Zamknij klikając w tło (poza oknem modala)
-                overlay.onclick = (evt) => {
-                    if (evt.target === overlay) {
-                        overlay.remove();
-                    }
-                };
+                overlay.querySelector('#close-preview').onclick = (evt) => { evt.stopPropagation(); overlay.remove(); };
+                overlay.onclick = (evt) => { if (evt.target === overlay) overlay.remove(); };
             }
         }
     });
 
     screen.querySelector('#pre-training-back-btn').addEventListener('click', () => { navigateTo('main'); renderMainScreen(); });
     screen.querySelector('#start-modified-training-btn').addEventListener('click', () => {
-        // --- NOWOŚĆ: Zapisujemy parametry sesji do stanu globalnego ---
         state.sessionParams.initialPainLevel = initialPainLevel;
-
-        // Suwak czasu jest w tym samym widoku, możemy go też pobrać
-        const slider = document.getElementById('time-slider');
-        state.sessionParams.timeFactor = slider ? parseFloat(slider.value) : 1.0;
-        // -------------------------------------------------------------
-
+        const sliderVal = document.getElementById('time-slider');
+        state.sessionParams.timeFactor = sliderVal ? parseFloat(sliderVal.value) : 1.0;
         startModifiedTraining();
     });
 
     navigateTo('preTraining');
 };
 
-// ============================================================
-// 2. EKRAN TRENINGU (ACTIVE FOCUS)
-// ============================================================
 export const renderTrainingScreen = () => {
     screens.training.innerHTML = `
     <div class="focus-view">
-        <!-- HEADER (Bez zmian) -->
         <div class="focus-header">
             <p id="focus-section-name"></p>
             <button id="exit-training-btn">Zakończ</button>
             <p id="focus-progress"></p>
         </div>
         
-        <!-- TIMER (Bez zmian) -->
         <div class="focus-timer-container">
             <p id="focus-timer-display"></p>
         </div>
         
-        <!-- INFO TEKSTOWE (Nazwa, Seria - ZAWSZE WIDOCZNE, NIE SKACZĄ) -->
         <div class="focus-exercise-info" style="margin-bottom: 0.5rem;">
             <div class="exercise-title-container">
                 <h2 id="focus-exercise-name"></h2>
@@ -297,29 +343,15 @@ export const renderTrainingScreen = () => {
             <p id="focus-exercise-details"></p>
         </div>
 
-        <!-- NOWA STRUKTURA: VISUAL CARD (Klikalna) -->
-        <!-- Zastępuje stary przycisk i luźne kontenery -->
         <div id="visual-toggle-card" class="visual-card-wrapper" title="Kliknij, aby przełączyć widok">
-            
-            <!-- Widok 1: Animacja -->
-            <div id="focus-animation-container" class="visual-card-content focus-animation-container hidden">
-                <!-- SVG trafi tutaj -->
-            </div>
-
-            <!-- Widok 2: Opis -->
-            <div id="focus-description" class="visual-card-content focus-description-container">
-                <!-- Tekst trafi tutaj -->
-            </div>
-
-            <!-- Dyskretna ikona w rogu -->
+            <div id="focus-animation-container" class="visual-card-content focus-animation-container hidden"></div>
+            <div id="focus-description" class="visual-card-content focus-description-container"></div>
             <div class="flip-indicator">
-                <img src="/icons/info.svg" alt="Info"> <!-- Upewnij się, że masz ikonę info.svg lub użyj inline SVG poniżej -->
+                <img src="/icons/info.svg" alt="Info">
             </div>
         </div>
         
-        <!-- CONTROLS (Bez zmian) -->
         <div class="focus-controls-wrapper">
-            <!-- ... przyciski ... -->
              <div class="focus-main-action">
                 <button id="rep-based-done-btn" class="control-btn action-btn hidden">GOTOWE</button>
             </div>
@@ -335,21 +367,15 @@ export const renderTrainingScreen = () => {
         </div>
     </div>`;
 
-    // Inicjalizacja referencji (Twoja funkcja z dom.js)
     initializeFocusElements();
 
-    // === NOWA OBSŁUGA KLIKNIĘCIA W KARTĘ ===
     const cardWrapper = document.getElementById('visual-toggle-card');
     const animContainer = document.getElementById('focus-animation-container');
     const descContainer = document.getElementById('focus-description');
 
     if (cardWrapper) {
         cardWrapper.addEventListener('click', () => {
-            // Prosta logika przełączania
             const isAnimVisible = !animContainer.classList.contains('hidden');
-
-            // Jeśli jest animacja (i nie jest pusta), to przełączamy.
-            // Jeśli animacji nie ma w ogóle (null), kliknięcie nic nie psuje (opis zostaje).
             if (animContainer.innerHTML.trim() !== "") {
                 if (isAnimVisible) {
                     animContainer.classList.add('hidden');

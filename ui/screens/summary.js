@@ -4,8 +4,6 @@ import { screens } from '../../dom.js';
 import { navigateTo, showLoader, hideLoader } from '../core.js';
 import dataStore from '../../dataStore.js';
 import { renderEvolutionModal } from '../modals.js';
-// USUWAMY STATYCZNY IMPORT, ŻEBY PRZERWAĆ PĘTLĘ:
-// import { renderMainScreen } from './dashboard.js'; 
 import { getIsCasting, sendShowIdle } from '../../cast.js';
 
 let selectedFeedback = { type: null, value: 0 };
@@ -115,7 +113,6 @@ export const renderSummaryScreen = () => {
 export async function handleSummarySubmit(e) {
     e.preventDefault();
     
-    // 1. BLOKADA PRZYCISKU (Anti-Double-Click)
     const submitBtn = e.target.querySelector('button[type="submit"]');
     if (submitBtn) {
         submitBtn.disabled = true;
@@ -124,7 +121,7 @@ export async function handleSummarySubmit(e) {
 
     showLoader();
 
-    const dateKey = state.currentTrainingDate || new Date().toISOString().split('T')[0];
+    // const dateKey = state.currentTrainingDate || new Date().toISOString().split('T')[0]; // REMOVED - nie potrzebujemy klucza do ręcznego pushowania
     
     const now = new Date();
     const stravaCheckbox = document.getElementById('strava-sync-checkbox');
@@ -134,13 +131,12 @@ export async function handleSummarySubmit(e) {
     const durationSeconds = Math.round(netDuration / 1000);
     
     const activePlan = state.trainingPlans[state.settings.activePlanId];
-    // Zabezpieczenie: jeśli plan nie istnieje, użyj stringa "Unknown"
     const trainingTitle = activePlan 
         ? (activePlan.Days.find(d => d.dayNumber === state.currentTrainingDayId)?.title || "Trening")
         : "Trening";
 
     const sessionPayload = {
-        sessionId: Date.now(),
+        sessionId: Date.now(), // To ID zostanie zignorowane przez naszą nową logikę, baza nada własne
         planId: state.settings.activePlanId,
         trainingDayId: state.currentTrainingDayId,
         trainingTitle: trainingTitle,
@@ -157,9 +153,16 @@ export async function handleSummarySubmit(e) {
     try {
         const response = await dataStore.saveSession(sessionPayload); 
         
-        if (!state.userProgress[dateKey]) state.userProgress[dateKey] = [];
-        state.userProgress[dateKey].push(sessionPayload);
+        // --- FIX: USUNIĘTO RĘCZNE PUSHOWANIE DO STANU ---
+        // Wcześniej tutaj dodawaliśmy sesję z timestamp ID, co powodowało duplikaty.
+        // if (!state.userProgress[dateKey]) state.userProgress[dateKey] = [];
+        // state.userProgress[dateKey].push(sessionPayload);
         
+        // --- FIX: WYMUSZENIE ODŚWIEŻENIA DANYCH Z SERWERA ---
+        // Pobieramy historię z ostatnich 7 dni, aby mieć pewność, że nowa sesja
+        // trafi do stanu z poprawnym ID z bazy danych.
+        await dataStore.loadRecentHistory(7);
+
         if (response && response.newStats) {
             state.userStats = { ...state.userStats, ...response.newStats };
         } else {
@@ -180,8 +183,7 @@ export async function handleSummarySubmit(e) {
 
         hideLoader();
 
-        // 2. DYNAMICZNY IMPORT (Rozwiązuje Circular Dependency!)
-        // Importujemy dashboard.js dopiero teraz, co przerywa pętlę zależności.
+        // Dynamiczny import dashboardu
         const { renderMainScreen } = await import('./dashboard.js');
 
         if (response && response.adaptation) {
@@ -199,7 +201,6 @@ export async function handleSummarySubmit(e) {
         hideLoader();
         alert("Błąd zapisu. Sprawdź połączenie.");
         
-        // Odblokuj przycisk w razie błędu
         if (submitBtn) {
             submitBtn.disabled = false;
             submitBtn.textContent = "Spróbuj ponownie";

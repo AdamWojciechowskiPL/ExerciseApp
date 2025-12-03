@@ -16,6 +16,7 @@ const CUSTOM_NAMESPACE = 'urn:x-cast:com.trening.app';
 // Stan lokalny modułu
 let castSession = null;
 let isCasting = false;
+let heartbeatInterval = null; // --- NOWOŚĆ ---
 
 /**
  * Inicjalizuje API Google Cast.
@@ -28,60 +29,103 @@ export const initializeCastApi = () => {
 
     const context = cast.framework.CastContext.getInstance();
     
-    context.setOptions({
-        receiverApplicationId: APPLICATION_ID,
-        autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
-        language: 'pl',
-        resumeSavedSession: true
-    });
+    try {
+        context.setOptions({
+            receiverApplicationId: APPLICATION_ID,
+            autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
+            language: 'pl',
+            resumeSavedSession: true
+        });
 
-    // Listener zmian stanu sesji
-    context.addEventListener(
-        cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
-        (event) => {
-            const currentCastSession = context.getCurrentSession();
-
-            switch (event.sessionState) {
-                case cast.framework.SessionState.SESSION_STARTED:
-                case cast.framework.SessionState.SESSION_RESUMED:
-                    castSession = currentCastSession;
-                    isCasting = true;
-                    console.log('[Cast Sender] ✅ Połączono z urządzeniem Chromecast.');
-                    
-                    // --- FIX: WYSYŁAMY STATYSTYKI OD RAZU PO POŁĄCZENIU ---
-                    // Dzięki temu TV od razu pokaże rangę, a nie logo.
-                    if (state.userProgress) {
-                        const stats = getGamificationState(state.userProgress);
-                        // Dodajemy też wynik tarczy, jeśli jest dostępny w asystencie
-                        // (tutaj uproszczone, bo assistantEngine może nie być załadowany, 
-                        //  ale główne stats z gamification wystarczą na start)
-                        sendUserStats(stats);
-                    }
-                    break;
-
-                case cast.framework.SessionState.SESSION_ENDED:
-                case cast.framework.SessionState.SESSION_ENDING:
-                    castSession = null;
-                    isCasting = false;
-                    console.log('[Cast Sender] 🔌 Rozłączono sesję.');
-                    break;
+        context.addEventListener(
+            cast.framework.CastContextEventType.SESSION_START_FAILED,
+            (event) => {
+                console.error('[Cast Sender] ❌ Błąd startu sesji:', event);
             }
-        }
-    );
-    
-    console.log('[Cast Sender] API zainicjalizowane.');
+        );
+
+        // Listener zmian stanu sesji
+        context.addEventListener(
+            cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
+            (event) => {
+                const currentCastSession = context.getCurrentSession();
+
+                switch (event.sessionState) {
+                    case cast.framework.SessionState.SESSION_STARTED:
+                    case cast.framework.SessionState.SESSION_RESUMED:
+                        castSession = currentCastSession;
+                        isCasting = true;
+                        console.log('[Cast Sender] ✅ Połączono z urządzeniem Chromecast.');
+                        
+                        // --- START HEARTBEAT ---
+                        startHeartbeat();
+
+                        if (state.userProgress) {
+                            const stats = getGamificationState(state.userProgress);
+                            sendUserStats(stats);
+                        }
+                        break;
+
+                    case cast.framework.SessionState.SESSION_ENDED:
+                    case cast.framework.SessionState.SESSION_ENDING:
+                        castSession = null;
+                        isCasting = false;
+                        
+                        // --- STOP HEARTBEAT ---
+                        stopHeartbeat();
+                        
+                        console.log('[Cast Sender] 🔌 Rozłączono sesję.');
+                        break;
+                }
+            }
+        );
+        
+        console.log('[Cast Sender] API zainicjalizowane.');
+
+    } catch (e) {
+        console.error('[Cast Sender] Wyjątek podczas inicjalizacji:', e);
+    }
 };
 
 export const getIsCasting = () => isCasting && castSession !== null;
 
+// --- NOWOŚĆ: HEARTBEAT LOGIC ---
+function startHeartbeat() {
+    stopHeartbeat();
+    // Wysyłaj PING co 4 minuty (240000 ms). Limit idle to zazwyczaj 5 minut.
+    heartbeatInterval = setInterval(() => {
+        if (getIsCasting()) {
+            console.log('[Cast Sender] 💓 Sending Heartbeat...');
+            sendMessage({ type: 'PING' });
+        }
+    }, 240000);
+}
+
+function stopHeartbeat() {
+    if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+    }
+}
+// -------------------------------
+
 function sendMessage(message) {
     if (!getIsCasting()) return;
     
-    castSession.sendMessage(CUSTOM_NAMESPACE, message)
-        .catch(error => {
-            console.error('[Cast Sender] ❌ Błąd wysyłania wiadomości:', error);
-            if (error.code === 'session_error') isCasting = false;
-        });
+    try {
+        castSession.sendMessage(CUSTOM_NAMESPACE, message)
+            .catch(error => {
+                console.error('[Cast Sender] ❌ Błąd wysyłania wiadomości:', error);
+                if (error.code === 'session_error') {
+                    isCasting = false;
+                    stopHeartbeat();
+                }
+            });
+    } catch (e) {
+        console.error('[Cast Sender] Krytyczny błąd wysyłania:', e);
+        isCasting = false;
+        stopHeartbeat();
+    }
 }
 
 // ============================================================

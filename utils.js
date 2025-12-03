@@ -1,9 +1,6 @@
 // utils.js
 
 import { state } from './state.js';
-// ZMIANA: Usunięto importy statycznych plików z danymi.
-// import { TRAINING_PLANS } from './training-plans.js';
-// import { EXERCISE_LIBRARY } from './exercise-library.js';
 
 export const getISODate = (date) => {
   const year = date.getFullYear();
@@ -12,15 +9,66 @@ export const getISODate = (date) => {
   return `${year}-${month}-${day}`;
 };
 
-// ZMIANA: Funkcja korzysta teraz z `state.trainingPlans`.
 export const getActiveTrainingPlan = () => {
     return state.trainingPlans[state.settings.activePlanId] || state.trainingPlans['l5s1-foundation'];
 };
 
-// BEZ ZMIAN: Ta funkcja korzysta z `getActiveTrainingPlan`, więc automatycznie używa nowego źródła danych.
+export const isTodayRestDay = () => {
+    const todayIndex = new Date().getDay(); 
+    const scheduleIndex = todayIndex === 0 ? 6 : todayIndex - 1;
+    
+    if (!state.settings.schedule || !state.settings.schedule[scheduleIndex]) return false;
+    return !state.settings.schedule[scheduleIndex].active;
+};
+
+export const getAvailableMinutesForToday = () => {
+    const todayIndex = new Date().getDay();
+    const scheduleIndex = todayIndex === 0 ? 6 : todayIndex - 1;
+    
+    if (!state.settings.schedule || !state.settings.schedule[scheduleIndex]) return 60; 
+    return state.settings.schedule[scheduleIndex].minutes || 45;
+};
+
+export const getNextLogicalDay = () => {
+    const activePlan = getActiveTrainingPlan();
+    if (!activePlan) return null;
+
+    let allSessions = [];
+    if (state.userProgress) {
+        allSessions = Object.values(state.userProgress).flat();
+    }
+
+    const planSessions = allSessions.filter(s => 
+        s.planId === state.settings.activePlanId && 
+        s.status === 'completed' &&
+        s.completedAt
+    );
+
+    planSessions.sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
+
+    const lastSession = planSessions[0];
+    
+    if (!lastSession) {
+        console.log("[Queue] Brak historii dla tego planu. Startuję od Dnia 1.");
+        return activePlan.Days.find(d => d.dayNumber === 1);
+    }
+
+    const lastDayNum = parseInt(lastSession.trainingDayId || 0);
+    const totalDaysInPlan = activePlan.Days.length;
+
+    console.log(`[Queue] Ostatni trening: Dzień ${lastDayNum} wykonany ${lastSession.completedAt.split('T')[0]}`);
+
+    let nextDayNum = lastDayNum + 1;
+    if (nextDayNum > totalDaysInPlan) {
+        nextDayNum = 1;
+    }
+
+    return activePlan.Days.find(d => d.dayNumber === nextDayNum);
+};
+
 export const getTrainingDayForDate = (date) => {
     const activePlan = getActiveTrainingPlan();
-    if (!activePlan) return null; // Zabezpieczenie na wypadek, gdyby plany nie zostały jeszcze załadowane.
+    if (!activePlan) return null;
     
     const startDate = new Date(state.settings.appStartDate);
     const currentDate = new Date(getISODate(date));
@@ -34,17 +82,14 @@ export const getTrainingDayForDate = (date) => {
     return activePlan.Days.find(d => d.dayNumber === planDayNumber);
 };
 
-// ZMIANA: Funkcja korzysta teraz z `state.exerciseLibrary`.
 export const getHydratedDay = (dayData) => {
     if (!dayData) return null;
     
-    // Głęboka kopia struktury dnia
     const hydratedDay = JSON.parse(JSON.stringify(dayData));
 
     ['warmup', 'main', 'cooldown'].forEach(section => {
         if (hydratedDay[section]) {
             hydratedDay[section] = hydratedDay[section].map(exerciseRef => {
-                // Pobieramy pełne dane z biblioteki na podstawie ID
                 const libraryDetails = state.exerciseLibrary[exerciseRef.exerciseId];
 
                 if (!libraryDetails) {
@@ -52,13 +97,9 @@ export const getHydratedDay = (dayData) => {
                     return exerciseRef;
                 }
 
-                // Łączymy dane (Merge):
-                // 1. libraryDetails daje: name, categoryId, difficultyLevel, youtube_url
-                // 2. exerciseRef daje: sets, reps_or_time (nadpisuje domyślne jeśli są)
                 return {
                     ...libraryDetails, 
                     ...exerciseRef,
-                    // Upewniamy się, że categoryId jest przekazane jawnie
                     categoryId: libraryDetails.categoryId,
                     difficultyLevel: libraryDetails.difficultyLevel
                 };
@@ -68,14 +109,7 @@ export const getHydratedDay = (dayData) => {
     return hydratedDay;
 };
 
-export const applyProgression = (value, factor) => {
-    if (!value || factor === 100) return value;
-    const multiplier = factor / 100;
-    return value.replace(/(\d+)/g, (match) => {
-        const num = parseInt(match, 10);
-        return Math.round(num * multiplier);
-    });
-};
+// REMOVED: applyProgression function
 
 export const parseSetCount = (setsString) => {
     if (!setsString) return 1;
@@ -145,22 +179,13 @@ export const formatForTTS = (text) => {
     return formattedText;
 };
 
-/**
- * Konwertuje obiekt Date na ciąg znaków w formacie ISO 8601,
- * ale używając LOKALNEJ strefy czasowej i usuwając informację o strefie ('Z').
- * Zwraca format: YYYY-MM-DDTHH:mm:ss
- * @param {Date} date Obiekt daty do sformatowania.
- * @returns {string} Sformatowany ciąg znaków.
- */
 export const getLocalISOString = (date) => {
   const pad = (num) => String(num).padStart(2, '0');
-
   const year = date.getFullYear();
-  const month = pad(date.getMonth() + 1); // getMonth() jest 0-indeksowane
+  const month = pad(date.getMonth() + 1); 
   const day = pad(date.getDate());
   const hours = pad(date.getHours());
   const minutes = pad(date.getMinutes());
   const seconds = pad(date.getSeconds());
-
   return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
 };

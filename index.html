@@ -43,15 +43,16 @@
             <h1>Aplikacja Treningowa</h1>
         </div>
         
-        <!-- 2. ŚRODEK: Nawigacja (Przesunięta tutaj!) -->
+        <!-- 2. ŚRODEK: Nawigacja -->
         <nav id="main-nav" class="hidden" aria-label="Główna nawigacja">
             <button id="nav-main">Ekran Główny</button>
             <button id="nav-history">Historia</button>
             <button id="nav-library">Baza Ćwiczeń</button>
             <button id="nav-settings">Ustawienia</button>
+            <button id="nav-help">Pomoc</button>
         </nav>
 
-        <!-- 3. PRAWA: Użytkownik i Akcje (Przesunięte na koniec!) -->
+        <!-- 3. PRAWA: Użytkownik i Akcje -->
         <div id="user-info-container" class="hidden">
             <google-cast-launcher id="cast-button"></google-cast-launcher>
             
@@ -59,7 +60,6 @@
             
             <button id="logout-btn" class="nav-btn danger-btn" aria-label="Wyloguj się">
                 <span class="desktop-only">Wyloguj się</span>
-                <!-- Ikona mobilna -->
                 <svg class="mobile-only" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                     <polyline points="16 17 21 12 16 7"></polyline>
@@ -72,9 +72,7 @@
     <!-- EKRAN POWITALNY / LOGOWANIE -->
     <section id="welcome-screen" class="screen active">
         <div class="welcome-content">
-            <!-- ZMIANA: Dodano logo -->
             <img src="icons/logo.png" alt="Aplikacja Treningowa" class="welcome-logo">
-
             <h2>Witaj w Aplikacji Treningowej</h2>
             <p>Zaloguj się, aby rozpocząć śledzenie swoich postępów...</p>
             <button id="login-btn" class="action-btn">Zaloguj się / Zarejestruj</button>
@@ -86,10 +84,7 @@
 
         <!-- EKRAN GŁÓWNY -->
         <section id="main-screen" class="screen active">
-            <!-- NOWOŚĆ: HERO DASHBOARD (GAMIFIKACJA) -->
-            <!-- Treść wstrzykiwana przez ui.js -->
             <div id="hero-dashboard" class="hidden"></div>
-
             <h2 id="main-screen-title">Plan na najbliższe 7 dni</h2>
             <div id="days-container"></div>
         </section>
@@ -146,18 +141,10 @@
                     <label for="setting-training-plan">Aktywny plan treningowy</label>
                     <select id="setting-training-plan"></select>
                 </div>
-
-                <div class="form-group">
-                    <label for="setting-progression-factor">Współczynnik progresji (%)</label>
-                    <div class="slider-container">
-                        <input type="range" id="setting-progression-factor" min="50" max="200" step="5">
-                        <span class="slider-value" id="progression-factor-value">100%</span>
-                    </div>
-                </div>
+                
                 <button type="submit" class="action-btn">Zapisz ustawienia</button>
             </form>
 
-            <!-- Sekcja usuwania konta -->
             <div id="danger-zone" class="settings-section">
                 <h3>Strefa Niebezpieczna</h3>
                 <p>
@@ -169,7 +156,17 @@
             </div>
         </section>
 
-        <!-- EKRANY DYNAMICZNE (Wypełniane przez JS) -->
+        <!-- EKRAN POMOCY -->
+        <section id="help-screen" class="screen">
+            <!-- Zawartość renderowana dynamicznie w help.js -->
+        </section>
+
+        <!-- EKRAN KREATORA KONFIGURACJI (WIZARD) -->
+        <section id="wizard-screen" class="screen">
+            <div id="wizard-container"></div>
+        </section>
+
+        <!-- EKRANY DYNAMICZNE -->
         <section id="pre-training-screen" class="screen"></section>
         <section id="training-screen" class="screen"></section>
         <section id="summary-screen" class="screen"></section>
@@ -180,74 +177,48 @@
             <p class="disclaimer">
                 <strong>Zastrzeżenie:</strong> Aplikacja ma charakter informacyjny. Przed rozpoczęciem ćwiczeń skonsultuj się z lekarzem.
             </p>
-            
-            <!-- NOWE LINKI PRAWNE -->
             <div class="legal-links">
                 <a href="/terms.html">Regulamin</a>
                 <span class="separator">•</span>
                 <a href="/privacy.html">Polityka Prywatności</a>
             </div>
-
             <p class="copyright">
-                &copy; <span id="current-year"></span> Aplikacja Treningowa. Wersja 7.0.0
+                &copy; <span id="current-year"></span> Aplikacja Treningowa. Wersja 8.0.0
             </p>
         </div>
     </footer>
 
-    <!-- DOLNA NAWIGACJA (MOBILE ONLY) -->
+    <!-- DOLNA NAWIGACJA -->
     <nav id="app-bottom-nav" class="hidden">
         <button data-screen="main" class="bottom-nav-btn active" aria-label="Ekran Główny">
-            <!-- Ikona Domu -->
-            <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none"
-                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                <polyline points="9 22 9 12 15 12 15 22"></polyline>
-            </svg>
+            <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
             <span class="label">Główny</span>
         </button>
-
         <button data-screen="history" class="bottom-nav-btn" aria-label="Historia">
-            <!-- Ikona Kalendarza -->
-            <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none"
-                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                <line x1="16" y1="2" x2="16" y2="6"></line>
-                <line x1="8" y1="2" x2="8" y2="6"></line>
-                <line x1="3" y1="10" x2="21" y2="10"></line>
-            </svg>
+            <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
             <span class="label">Historia</span>
         </button>
-
         <button data-screen="library" class="bottom-nav-btn" aria-label="Baza Ćwiczeń">
-            <!-- Ikona Hantla / Biblioteki -->
-            <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none"
-                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M6.5 6.5h11"></path>
-                <path d="M6 20v-2a6 6 0 1 1 12 0v2"></path>
-                <rect x="4" y="4" width="16" height="4" rx="1"></rect>
-            </svg>
+            <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 6.5h11"></path><path d="M6 20v-2a6 6 0 1 1 12 0v2"></path><rect x="4" y="4" width="16" height="4" rx="1"></rect></svg>
             <span class="label">Ćwiczenia</span>
         </button>
-
         <button data-screen="settings" class="bottom-nav-btn" aria-label="Ustawienia">
-            <!-- Ikona Ustawień -->
-            <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none"
-                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="3"></circle>
-                <path
-                    d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
-                </path>
-            </svg>
+            <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2 2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
             <span class="label">Ustawienia</span>
+        </button>
+        <button data-screen="help" class="bottom-nav-btn" aria-label="Pomoc">
+            <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            <span class="label">Pomoc</span>
         </button>
     </nav>
 
-    <!-- GŁÓWNY SKRYPT -->
     <script type="module" src="app.js"></script>
 
-    <!-- WSKAŹNIK ŁADOWANIA -->
     <div id="loading-overlay" class="hidden">
-        <!-- ZMIANA: Zamiast <div class="spinner"> używamy logo -->
         <img src="icons/logo.png" alt="Ładowanie..." class="loader-logo pulsate-slow">
     </div>
 

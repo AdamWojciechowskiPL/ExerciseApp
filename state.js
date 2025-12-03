@@ -1,108 +1,63 @@
 // state.js
 
-/**
- * Centralny Obiekt Stanu Aplikacji
- * 
- * Przechowuje wszystkie dynamiczne dane, które aplikacja wykorzystuje podczas działania.
- * Działa jako ulotna, operacyjna pamięć. Jest wypełniany danymi przez dataStore.js
- * przy starcie aplikacji i modyfikowany w trakcie interakcji użytkownika.
- */
 export const state = {
-    /**
-     * Postępy użytkownika. Kluczem jest data w formacie ISO (YYYY-MM-DD),
-     * a wartością jest tablica obiektów sesji treningowych z danego dnia.
-     */
     userProgress: {},
 
-    /**
-     * Ustawienia aplikacji. Służą jako domyślny szablon, który jest
-     * nadpisywany przez ustawienia wczytane z bazy danych dla zalogowanego użytkownika.
-     */
     settings: {
         appStartDate: null,
-        progressionFactor: 100,
-        activePlanId: "l5s1-foundation"
+        activePlanId: "l5s1-foundation",
+        onboardingCompleted: false,
+        painZones: [],
+        equipment: [],
+        schedule: {},
+        ttsEnabled: true // NOWOŚĆ: Globalne ustawienie dźwięku
     },
 
-    // --- NOWE WŁAŚCIWOŚCI ---
-    /**
-     * Przechowuje bibliotekę ćwiczeń załadowaną z bazy danych.
-     * Struktura: { "exerciseId": { name: "...", ... } }
-     */
     exerciseLibrary: {},
-
-    /**
-     * Przechowuje plany treningowe załadowane z bazy danych.
-     * Struktura: { "planId": { name: "...", Days: [...] } }
-     */
     trainingPlans: {},
-
     blacklist: [],
+    
+    // --- NOWA FLAGA STANU ---
+    isHistoryLoaded: false, 
 
     stravaIntegration: {
         isConnected: false
     },
+    
     currentTrainingDate: null,
     loadedMonths: new Set(),
-    /**
-     * Obiekt daty używany do nawigacji w widoku kalendarza.
-     */
     currentCalendarView: new Date(),
-
-    /**
-     * Indeks aktualnie wykonywanego kroku (ćwiczenia lub przerwy) w spłaszczonej liście.
-     */
     currentExerciseIndex: null,
-
-    /**
-     * Spłaszczona tablica wszystkich kroków (ćwiczeń i przerw) dla bieżącej sesji.
-     */
     flatExercises: [],
-    
-    /**
-     * Szczegółowy log ćwiczeń wykonanych w bieżącej sesji.
-     */
     sessionLog: [],
-
     sessionStartTime: null,
-    /**
-     * Stan timera używanego w trybie treningu.
-     */
-    totalPausedTime: 0, // w milisekundach
+    totalPausedTime: 0,
     lastPauseStartTime: null,
     isPaused: false,
     breakTimeoutId: null,
+    
+    todaysDynamicPlan: null,
+
     timer: {
         interval: null,
         timeLeft: 0,
         isActive: false,
         isPaused: false,
-        onTimerEnd: () => {} // Callback wywoływany po zakończeniu odliczania
+        onTimerEnd: () => {} 
     },
 
-    /**
-     * Stan stopera używanego w trybie treningu.
-     */
     stopwatch: {
         interval: null,
         seconds: 0
     },
 
-    /**
-     * Kontekst audio do generowania dźwięków.
-     */
     audioContext: null,
 
-    /**
-     * Parametry bieżącej sesji, ustalane na starcie (np. w pre-training).
-     */
     sessionParams: {
         initialPainLevel: 0,
         timeFactor: 1.0
     },
-    /**
-     * Funkcja generująca krótki dźwięk na zakończenie ćwiczenia/przerwy.
-     */
+
     completionSound: () => {
         if (!state.audioContext) state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
         const oscillator = state.audioContext.createOscillator();
@@ -116,9 +71,6 @@ export const state = {
         oscillator.stop(state.audioContext.currentTime + 0.2);
     },
 
-    /**
-     * Funkcja generująca charakterystyczny, podwójny dźwięk na zakończenie całej sesji.
-     */
     finalCompletionSound: () => {
         if (!state.audioContext) state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
         const now = state.audioContext.currentTime;
@@ -134,9 +86,6 @@ export const state = {
         oscillator.stop(now + 0.4);
     },
 
-    /**
-     * Stan syntezatora mowy (Text-to-Speech).
-     */
     tts: {
         synth: window.speechSynthesis,
         polishVoice: null,

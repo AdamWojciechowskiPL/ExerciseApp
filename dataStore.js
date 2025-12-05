@@ -6,22 +6,22 @@ import { getISODate } from './utils.js';
 
 const callAPI = async (endpoint, { body, method = 'GET', params } = {}) => {
     const token = await getToken();
-    if (!token) throw new Error("Użytkownik nie jest zalogowany (brak tokena).");
 
-    const payload = getUserPayload();
-    if (!payload || !payload.sub) throw new Error("Błąd tokena: brak identyfikatora użytkownika.");
+    let headers = { 'Content-Type': 'application/json' };
+
+    if (token) {
+        const payload = getUserPayload();
+        headers['Authorization'] = `Bearer ${token}`;
+        if (payload && payload.sub) {
+            headers['X-User-Id'] = payload.sub;
+        }
+    }
 
     let url = `/.netlify/functions/${endpoint}`;
     if (params) {
         const queryString = new URLSearchParams(params).toString();
         url += `?${queryString}`;
     }
-
-    const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        'X-User-Id': payload.sub
-    };
 
     const config = { method, headers, body: body ? JSON.stringify(body) : undefined };
     const response = await fetch(url, config);
@@ -34,8 +34,18 @@ const callAPI = async (endpoint, { body, method = 'GET', params } = {}) => {
 
     if (response.status === 204) return null;
 
-    try { return await response.json(); } catch (e) { return await response.text(); }
+    try {
+        const text = await response.text();
+        if (!text) return null;
+        return JSON.parse(text);
+    } catch (e) {
+        console.warn('Odpowiedź nie jest JSON:', e);
+        return null;
+    }
 };
+
+// Helper do generowania spójnego klucza cache
+const getMonthCacheKey = (year, month) => `${year}-${month}`;
 
 const dataStore = {
     loadAppContent: async () => {
@@ -46,11 +56,11 @@ const dataStore = {
 
             const response = await fetch('/.netlify/functions/get-app-content', { headers });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            
+
             const data = await response.json();
             state.exerciseLibrary = data.exercises || {};
             state.trainingPlans = data.training_plans || {};
-            
+
             console.log(token ? '📦 Zasoby PERSONALIZOWANE załadowane.' : '📦 Zasoby PUBLICZNE załadowane.');
         } catch (error) {
             console.error("Critical: Failed to load app content:", error);
@@ -61,24 +71,33 @@ const dataStore = {
     initialize: async () => {
         try {
             const data = await callAPI('get-or-create-user-data');
-            
-            if (!state.userProgress) state.userProgress = {}; 
+
+            if (!state.userProgress) state.userProgress = {};
 
             if (data.settings) {
                 state.settings = { ...state.settings, ...data.settings };
-                // NOWOŚĆ: Synchronizacja stanu TTS z ustawieniami z bazy
-                // Jeśli w bazie nie ma ustawienia (stary user), przyjmij true
                 state.tts.isSoundOn = state.settings.ttsEnabled ?? true;
+
+                if (!state.settings.planMode) {
+                    if (state.settings.dynamicPlanData && state.settings.dynamicPlanData.days) {
+                        state.settings.planMode = 'dynamic';
+                    } else {
+                        state.settings.planMode = 'static';
+                    }
+                }
             }
-            
+
             if (data.integrations) state.stravaIntegration.isConnected = !!data.integrations.isStravaConnected;
 
             const cachedStats = localStorage.getItem('cachedUserStats');
             if (cachedStats) {
-                state.userStats = JSON.parse(cachedStats);
-                console.log("📊 Załadowano statystyki z cache lokalnego.");
+                try {
+                    state.userStats = JSON.parse(cachedStats);
+                } catch (e) {
+                    state.userStats = { totalSessions: 0, streak: 0, resilience: null };
+                }
             } else {
-                state.userStats = { totalSessions: 0, streak: 0, resilience: null }; 
+                state.userStats = { totalSessions: 0, streak: 0, resilience: null };
             }
 
             if (data.recentSessions) {
@@ -90,7 +109,7 @@ const dataStore = {
                 });
             }
 
-            await dataStore.fetchBlacklist(); 
+            await dataStore.fetchBlacklist();
             return data;
         } catch (error) {
             console.error("Initialization failed:", error);
@@ -98,16 +117,61 @@ const dataStore = {
         }
     },
 
+    generateDynamicPlan: async (questionnaireData) => {
+        try {
+            console.log("🧠 Wysyłanie ankiety do generatora AI...");
+            const result = await callAPI('generate-plan', {
+                method: 'POST',
+                body: questionnaireData
+            });
+
+            if (result && result.plan) {
+                state.settings.dynamicPlanData = result.plan;
+                state.settings.planMode = 'dynamic';
+                state.settings.onboardingCompleted = true;
+                state.settings.wizardData = questionnaireData;
+                return result;
+            } else {
+                throw new Error("Pusta odpowiedź z generatora.");
+            }
+        } catch (error) {
+            console.error("Generating plan failed:", error);
+            throw error;
+        }
+    },
+
     fetchDetailedStats: async () => {
         try {
-            console.log("🔄 Pobieranie szczegółowych statystyk w tle...");
-            const stats = await callAPI('get-user-stats');
+            // Dodajemy parametr 'ts' (timestamp), żeby oszukać cache przeglądarki
+            const stats = await callAPI('get-user-stats', { 
+                params: { ts: Date.now() } 
+            });
+            
             state.userStats = stats;
             localStorage.setItem('cachedUserStats', JSON.stringify(stats));
             return stats;
         } catch (error) {
             console.error("Błąd pobierania statystyk:", error);
             return null;
+        }
+    },
+
+
+    // --- NOWA FUNKCJA: Pobieranie pełnych statystyk Mastery ---
+    fetchMasteryStats: async (force = false) => {
+        // Jeśli mamy dane w stanie i nie wymuszamy odświeżenia, zwracamy cache
+        if (!force && state.masteryStats && state.masteryStats.length > 0) {
+            return state.masteryStats;
+        }
+
+        try {
+            console.log("📊 Pobieranie pełnych statystyk Mastery z serwera...");
+            const stats = await callAPI('get-exercise-mastery');
+            state.masteryStats = stats || [];
+            return stats;
+        } catch (error) {
+            console.error("Błąd pobierania mastery stats:", error);
+            return [];
         }
     },
 
@@ -124,10 +188,9 @@ const dataStore = {
     deleteAccount: async () => {
         try {
             await callAPI('delete-user-data', { method: 'DELETE' });
-            console.log("🗑️ Konto usunięte.");
         } catch (error) {
             console.error("Failed to delete account:", error);
-            throw new Error("Nie udało się usunąć konta."); 
+            throw new Error("Nie udało się usunąć konta.");
         }
     },
 
@@ -162,33 +225,37 @@ const dataStore = {
     },
 
     getHistoryForMonth: async (year, month, forceRefresh = false) => {
-        const cacheKey = `${year}-${month}`;
+        const cacheKey = getMonthCacheKey(year, month);
+        
         if (!forceRefresh && state.loadedMonths.has(cacheKey)) {
-            return; 
+            console.log(`CACHE HIT: Historia dla ${cacheKey} już jest.`);
+            return;
         }
 
         try {
+            console.log(`NETWORK FETCH: Historia dla ${cacheKey}...`);
             const sessions = await callAPI('get-history-by-month', { params: { year, month } });
-            
-            sessions.forEach(session => {
-                const dateObj = new Date(session.completedAt);
-                const dateKey = getISODate(dateObj);
-                
-                if (!state.userProgress[dateKey]) {
-                    state.userProgress[dateKey] = [];
-                }
-                
-                const exists = state.userProgress[dateKey].find(s => String(s.sessionId) === String(session.sessionId));
-                if (!exists) {
-                    state.userProgress[dateKey].push(session);
-                } else {
-                    const idx = state.userProgress[dateKey].indexOf(exists);
-                    state.userProgress[dateKey][idx] = session;
-                }
-            });
+
+            if (sessions) {
+                sessions.forEach(session => {
+                    const dateObj = new Date(session.completedAt);
+                    const dateKey = getISODate(dateObj);
+
+                    if (!state.userProgress[dateKey]) {
+                        state.userProgress[dateKey] = [];
+                    }
+
+                    const exists = state.userProgress[dateKey].find(s => String(s.sessionId) === String(session.sessionId));
+                    if (!exists) {
+                        state.userProgress[dateKey].push(session);
+                    } else {
+                        const idx = state.userProgress[dateKey].indexOf(exists);
+                        state.userProgress[dateKey][idx] = session;
+                    }
+                });
+            }
 
             state.loadedMonths.add(cacheKey);
-            console.log(`📅 Pobrano historię dla ${cacheKey}`);
         } catch (error) {
             console.error(`Failed to fetch history for ${year}-${month}:`, error);
             throw error;
@@ -197,21 +264,20 @@ const dataStore = {
 
     loadRecentHistory: async (days = 90) => {
         console.log(`⏳ Pobieranie historii (ostatnie ${days} dni)...`);
-        
         try {
             const sessions = await callAPI('get-recent-history', { params: { days } });
-            
+
             if (sessions && sessions.length > 0) {
                 sessions.forEach(session => {
                     const dateObj = new Date(session.completedAt);
                     const dateKey = getISODate(dateObj);
-                    
+
                     if (!state.userProgress[dateKey]) {
                         state.userProgress[dateKey] = [];
                     }
-                    
+
                     const exists = state.userProgress[dateKey].find(s => String(s.sessionId) === String(session.sessionId));
-                    
+
                     if (!exists) {
                         state.userProgress[dateKey].push(session);
                     } else {
@@ -222,22 +288,28 @@ const dataStore = {
             }
             
             const now = new Date();
-            const currentKey = `${now.getFullYear()}-${now.getMonth() + 1}`;
-            state.loadedMonths.add(currentKey);
-            
-            // --- FIX: Ustawiamy flagę na true ---
+            state.loadedMonths.add(getMonthCacheKey(now.getFullYear(), now.getMonth() + 1));
+
+            for (let i = 1; i <= Math.ceil(days / 30); i++) {
+                const pastDate = new Date();
+                pastDate.setMonth(now.getMonth() - i);
+                const pastKey = getMonthCacheKey(pastDate.getFullYear(), pastDate.getMonth() + 1);
+                state.loadedMonths.add(pastKey);
+            }
+
             state.isHistoryLoaded = true;
-            
-            console.log(`📅✅ Historia zsynchronizowana (${sessions.length} sesji).`);
+            console.log(`📅✅ Historia zsynchronizowana. Cache keys:`, Array.from(state.loadedMonths));
         } catch (error) {
             console.error("Błąd pobierania recent history:", error);
         }
     },
-    
+
     saveSession: async (sessionData) => {
         try {
             const result = await callAPI('save-session', { method: 'POST', body: sessionData });
             state.loadedMonths.clear();
+            state.masteryStats = null; // Czyścimy cache statystyk, aby wymusić odświeżenie po treningu
+            console.log("💾 Sesja zapisana. Cache historii i statystyk wyczyszczony.");
             return result;
         } catch (error) {
             console.error("Failed to save session:", error);
@@ -248,7 +320,9 @@ const dataStore = {
     deleteSession: async (sessionId) => {
         try {
             await callAPI('delete-session', { method: 'DELETE', params: { sessionId } });
-            state.loadedMonths.clear(); 
+            state.loadedMonths.clear();
+            state.masteryStats = null; // Czyścimy cache statystyk
+            console.log("🗑️ Sesja usunięta. Cache historii i statystyk wyczyszczony.");
         } catch (error) {
             console.error(`Failed to delete session ${sessionId}:`, error);
             throw error;
@@ -278,8 +352,8 @@ const dataStore = {
 
     uploadToStrava: async (sessionPayload) => {
         try {
-            let durationSeconds = typeof sessionPayload.netDurationSeconds === 'number' 
-                ? sessionPayload.netDurationSeconds 
+            let durationSeconds = typeof sessionPayload.netDurationSeconds === 'number'
+                ? sessionPayload.netDurationSeconds
                 : Math.round((new Date(sessionPayload.completedAt) - new Date(sessionPayload.startedAt)) / 1000);
 
             const uploadData = {

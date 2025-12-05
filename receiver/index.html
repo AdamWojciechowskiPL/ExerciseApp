@@ -1,12 +1,15 @@
 <!-- receiver/index.html -->
 <!DOCTYPE html>
 <html lang="pl">
+
 <head>
     <meta charset="UTF-8">
     <title>Aplikacja Treningowa - Receiver</title>
     <link rel="stylesheet" type="text/css" href="style.css?v=5.0">
-    <script type="text/javascript" src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+    <script type="text/javascript"
+        src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
 </head>
+
 <body>
 
     <!-- ========================================== -->
@@ -14,14 +17,18 @@
     <!-- ========================================== -->
     <!-- Wideo jest "pod" aplikacją, ale jest w pełni "widoczne" dla silnika (opacity: 1).
          Dzięki temu Chromecast myśli, że wyświetla film. -->
-    <video id="keepAliveVideo" playsinline muted loop 
+    <video id="keepAliveVideo" playsinline muted loop
         style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: -10; opacity: 1;">
-        <source src="data:video/mp4;base64,AAAAHGZ0eXBNNEVAAAAAbXA0MnVzbVrvAAAAAFmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcf type="video/mp4">
+        <source
+            src="data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAAu1tZGF0AAACrQYF//+p3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE1MiByMjg1NCBlOWE1OTAzIC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAxNyAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTMgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTI1IHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9NDAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTE6MS4wMACAAAAAbWWIhAAv//72rvzLK0cLlS4dWXuzUfLoSXL9iDB9aAAAAwAAAwAAAwAAAwAAD/LgAAHK0AB6wAP//Y33IMIEFNxHoAAEREZhH//WAABJACr/0E2AAAAwAAAwAAAwAAAwAAAwAAAwAABxl0AAADAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcfAAAAzmoovcf type="
+            video/mp4">
     </video>
 
     <!-- HACK 2: NIEWIDZIALNY "PIXEL ZMIENNY" -->
     <!-- Ten element będzie zmieniał kolor w pętli renderowania JS, wymuszając odświeżanie ekranu -->
-    <div id="gpu-activator" style="position: absolute; bottom: 0; right: 0; width: 1px; height: 1px; background: transparent; z-index: 1000;"></div>
+    <div id="gpu-activator"
+        style="position: absolute; bottom: 0; right: 0; width: 1px; height: 1px; background: transparent; z-index: 1000;">
+    </div>
 
     <div id="cast-container">
         <!-- ========================================== -->
@@ -61,7 +68,7 @@
             <div class="header">
                 <p id="section-name">Rozgrzewka</p>
             </div>
-            
+
             <div class="timer-container">
                 <div class="timer-display">
                     <h1 id="timer">00:00</h1>
@@ -75,12 +82,12 @@
                     <p id="exercise-details">Oczekiwanie na start...</p>
                 </div>
             </div>
-            
+
             <div class="footer">
                 <p>Następne: <span id="next-exercise">-</span></p>
             </div>
         </div>
-        
+
         <!-- ========================================== -->
         <!-- EKRAN 3: WIDEO (YouTube)                   -->
         <!-- ========================================== -->
@@ -89,8 +96,9 @@
         </div>
     </div>
 
-    <div id="version-display">v6.0 (Input Simulation + Nuclear Anti-Idle)</div>
+    <div id="version-display">v7.1 (Web Audio API Oscillator + Aggressive KeepAlive + GPU Activator)</div>
 
     <script type="text/javascript" src="receiver.js"></script>
 </body>
+
 </html>

@@ -79,7 +79,6 @@ export const workoutMixer = {
     
     getSafeTempo: (repsOrTimeString) => calculateSafeTempo(repsOrTimeString),
 
-    // --- NOWA METODA (FIX) ---
     getExerciseTempo: (exerciseId) => {
         if (!exerciseId) return "Kontrolowane";
         const ex = state.exerciseLibrary[exerciseId];
@@ -125,7 +124,7 @@ function injectPrehabExercises(plan, usedIds) {
                 tempo_or_iso: chosen.defaultTempo || "Izometria",
                 isPersonalized: true, 
                 section: "warmup",
-                isUnilateral: chosen.isUnilateral // Flagujemy pre-hab
+                isUnilateral: chosen.isUnilateral 
             });
             usedIds.add(chosen.id);
         }
@@ -148,34 +147,49 @@ function compressWorkout(plan, targetMin, currentMin) {
 function adaptVolumeInternal(originalEx, newEx) {
     const oldVal = (originalEx.reps_or_time || "").toString();
     const isOldTimeBased = /s\b|min\b|:/.test(oldVal); 
-    const prefersTime = (newEx.maxDuration && newEx.maxDuration > 0);
-    const prefersReps = (newEx.maxReps && newEx.maxReps > 0);
+    
+    // Pobranie limitów z bazy (lub 0 jeśli brak)
+    const newMaxDuration = newEx.maxDuration || 0;
+    const newMaxReps = newEx.maxReps || 0;
+
     let newVal = oldVal;
 
-    if (isOldTimeBased && prefersReps && !prefersTime) {
+    // SCENARIUSZ 1: Konwersja Czas (np. 2 min) -> Powtórzenia (limit np. 12 reps)
+    if (isOldTimeBased && newMaxReps > 0 && newMaxDuration === 0) {
         const seconds = parseSeconds(oldVal);
         let reps = Math.round(seconds / SECONDS_PER_REP);
-        if (newEx.maxReps) reps = Math.min(reps, newEx.maxReps);
-        reps = Math.max(5, reps);
+        reps = Math.min(reps, newMaxReps); // Cięcie do limitu
+        reps = Math.max(5, reps); // Minimum 5
         newVal = `${reps}`;
     } 
-    else if (!isOldTimeBased && prefersTime && !prefersReps) {
+    // SCENARIUSZ 2: Konwersja Powtórzenia -> Czas (limit np. 30s)
+    else if (!isOldTimeBased && newMaxDuration > 0 && newMaxReps === 0) {
         const reps = parseReps(oldVal);
         let seconds = reps * SECONDS_PER_REP;
-        if (newEx.maxDuration) seconds = Math.min(seconds, newEx.maxDuration);
-        seconds = Math.max(15, seconds);
+        seconds = Math.min(seconds, newMaxDuration); // Cięcie do limitu
+        seconds = Math.max(15, seconds); // Minimum 15s
         newVal = `${seconds} s`;
     }
+    // SCENARIUSZ 3: Ten sam typ (Czas -> Czas LUB Powt -> Powt)
     else {
-        if (isOldTimeBased && newEx.maxDuration) {
+        // A. Czas -> Czas (np. 2 min -> max 30s)
+        if (isOldTimeBased && newMaxDuration > 0) {
              const seconds = parseSeconds(oldVal);
-             if (seconds > newEx.maxDuration) newVal = oldVal.replace(/\d+/, newEx.maxDuration);
+             if (seconds > newMaxDuration) {
+                 // CRITICAL FIX: Jeśli przekroczono limit, wymuszamy jednostkę "s"
+                 // Ignorujemy oryginalne "min"
+                 newVal = `${newMaxDuration} s`;
+             }
         }
-        else if (!isOldTimeBased && newEx.maxReps) {
+        // B. Powtórzenia -> Powtórzenia (np. 20 -> max 10)
+        else if (!isOldTimeBased && newMaxReps > 0) {
              const reps = parseReps(oldVal);
-             if (reps > newEx.maxReps) newVal = oldVal.replace(/\d+/, newEx.maxReps);
+             if (reps > newMaxReps) {
+                 newVal = `${newMaxReps}`;
+             }
         }
     }
+    
     return newVal;
 }
 
@@ -190,7 +204,11 @@ function calculateSafeTempo(repsOrTimeString) {
 
 function parseSeconds(val) {
     const v = val.toLowerCase();
-    if (v.includes('min')) return parseInt(v) * 60;
+    if (v.includes('min')) {
+        // Parsuje "2 min" na 120 sekund
+        return parseFloat(v) * 60;
+    }
+    // Parsuje "45 s" na 45 sekund
     return parseInt(v) || 45; 
 }
 
@@ -276,10 +294,7 @@ function mergeExerciseData(original, variant) {
     let smartRepsOrTime = adaptVolumeInternal(original, variant);
     let smartSets = original.sets;
 
-    // --- FIX: OBSŁUGA SYMETRII (Unilateral) ---
-    // Sprawdzamy czy nowe ćwiczenie jest jednostronne
     if (variant.isUnilateral) {
-        // Jeśli oryginał był obustronny, musimy dodać adnotację "/str."
         if (!smartRepsOrTime.includes("/str")) {
             if (smartRepsOrTime.includes("s")) {
                 smartRepsOrTime = smartRepsOrTime.replace("s", "s/str.");
@@ -287,19 +302,14 @@ function mergeExerciseData(original, variant) {
                 smartRepsOrTime = `${smartRepsOrTime}/str.`;
             }
         }
-
-        // Jeśli oryginał miał tylko 1 serię (np. Plank 60s), a nowe jest na strony (Side Plank),
-        // zwiększamy serie do 2, żeby użytkownik zrobił obie strony.
         const setsCount = parseSetCount(original.sets);
         if (setsCount === 1) {
             smartSets = "2";
         }
     } 
     else {
-        // Jeśli nowe jest OBUSTRONNE, a stare miało "/str", usuwamy to.
         smartRepsOrTime = smartRepsOrTime.replace(/\/str\.?/g, "").trim();
     }
-    // ------------------------------------------
 
     const isSameExercise = (original.exerciseId === variant.id);
     
@@ -317,13 +327,9 @@ function mergeExerciseData(original, variant) {
         equipment: variant.equipment,
         youtube_url: variant.youtube_url,
         animationSvg: variant.animationSvg,
-        
-        // Nowe wartości przeliczone
         reps_or_time: smartRepsOrTime,
         sets: smartSets,
-        
         tempo_or_iso: finalTempo, 
-        
         isDynamicSwap: !isSameExercise,
         originalName: !isSameExercise ? original.name : null
     };

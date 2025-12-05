@@ -16,18 +16,10 @@ const DEFAULT_REST_EXERCISES = 90; // Domyślna przerwa między ćwiczeniami
 
 export const assistant = {
 
-    // ============================================================
-    // TASK-04: Resilience Calculator (Kalkulator Tarczy)
-    // [KOD POZOSTAJE BEZ ZMIAN - SKIPIUJĘ GO DLA CZYTELNOŚCI]
-    // ============================================================
     calculateResilience: () => {
-        // Jeśli serwer przysłał nam gotowe dane w state.userStats, używamy ich!
         if (state.userStats && state.userStats.resilience) {
             return state.userStats.resilience;
         }
-
-        // Fallback: Jeśli z jakiegoś powodu danych brak (np. błąd initu), zwracamy domyślne zero.
-        // Nie ma sensu liczyć tego lokalnie na niepełnych danych.
         return { score: 0, status: 'Vulnerable', daysSinceLast: 0, sessionCount: 0 };
     },
 
@@ -63,14 +55,20 @@ export const assistant = {
             
             // 1. Czas pracy (Work)
             // Sprawdzamy czy to ćwiczenie na czas (Duration) czy powtórzenia
+            // UWAGA: getExerciseDuration teraz poprawnie parsuje np. "30 s/str." jako 60s (30 * 2)
             let workTimePerSet = getExerciseDuration(exercise); 
             
             if (workTimePerSet === null) {
-                // Jeśli to powtórzenia, parsujemy string (np. "10-12") i mnożymy przez stałą
-                const repsString = String(exercise.reps_or_time);
-                const repsMatch = repsString.match(/(\d+)/); // Pobieramy pierwszą liczbę
+                // Jeśli to powtórzenia (brak "min" lub "s"), parsujemy liczbę
+                const repsString = String(exercise.reps_or_time).toLowerCase();
+                const repsMatch = repsString.match(/(\d+)/);
                 const reps = repsMatch ? parseInt(repsMatch[0], 10) : 10;
-                workTimePerSet = reps * SECONDS_PER_REP;
+                
+                // FIX: Obsługa jednostronności dla powtórzeń (np. "10/str.")
+                const isUnilateral = repsString.includes('/str') || repsString.includes('stron') || exercise.isUnilateral;
+                const multiplier = isUnilateral ? 2 : 1;
+
+                workTimePerSet = reps * SECONDS_PER_REP * multiplier;
             }
 
             totalSeconds += sets * workTimePerSet;
@@ -134,19 +132,23 @@ export const assistant = {
                 newSets = Math.max(1, newSets); 
                 exercise.sets = String(newSets);
 
-                // 2. Skalowanie POWTÓRZEŃ / CZASU (NOWOŚĆ!)
-                // Jeśli serie nie spadły (bo np. była 1 i została 1), a suwak jest nisko,
-                // musimy przyciąć powtórzenia, żeby skrócić czas.
-                
-                // Logika: Jeśli totalFactor < 1, skalujemy też powtórzenia
+                // 2. Skalowanie POWTÓRZEŃ / CZASU
                 if (totalFactor < 0.9 || totalFactor > 1.1) {
                     const duration = getExerciseDuration(exercise);
                     
                     if (duration !== null) {
                         // Ćwiczenie na czas (np. 60s -> 30s)
-                        // Skalujemy czas proporcjonalnie
-                        const newDuration = Math.max(5, Math.round(duration * totalFactor));
-                        exercise.reps_or_time = `${newDuration} s`;
+                        // Uwaga: getExerciseDuration zwraca czas całkowity (np. x2 dla stron). 
+                        // Tutaj musimy operować na surowym stringu, żeby go podmienić.
+                        // Ale łatwiej sparsować liczbę ze stringa i ją przeskalować.
+                        
+                        const timeMatch = String(exercise.reps_or_time).match(/(\d+)/);
+                        if (timeMatch) {
+                            const originalTime = parseInt(timeMatch[0], 10);
+                            const newTime = Math.max(5, Math.round(originalTime * totalFactor));
+                            // Zachowujemy jednostki i sufiksy (s, min, /str.)
+                            exercise.reps_or_time = exercise.reps_or_time.replace(originalTime, newTime);
+                        }
                     } else {
                         // Ćwiczenie na powtórzenia (np. 10 -> 5)
                         const repsMatch = String(exercise.reps_or_time).match(/(\d+)/);

@@ -9,7 +9,8 @@ export const screens = {
     preTraining: document.getElementById('pre-training-screen'),
     training: document.getElementById('training-screen'),
     summary: document.getElementById('summary-screen'),
-    help: document.getElementById('help-screen'), 
+    help: document.getElementById('help-screen'),
+    analytics: document.getElementById('analytics-screen'), // NOWY EKRAN
 };
 
 export const containers = {

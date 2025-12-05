@@ -9,7 +9,8 @@ import {
     renderDayDetailsScreen,
     renderLibraryScreen,
     renderTrainingScreen,
-    renderHelpScreen, // NOWOŚĆ: Import ekranu pomocy
+    renderHelpScreen,
+    renderAnalyticsScreen, // NOWY IMPORT
     navigateTo,
     showLoader,
     hideLoader,
@@ -26,7 +27,7 @@ import { initializeCastApi, getIsCasting, sendShowIdle } from './cast.js';
 
 function initAppLogic() {
     renderTrainingScreen();
-    
+
     // Obsługa kliknięcia w logo/nazwę aplikacji
     const brandContainer = document.querySelector('.brand-container');
     if (brandContainer) {
@@ -35,72 +36,72 @@ function initAppLogic() {
             renderMainScreen();
         });
     }
-    
+
     if (mainNav) {
         mainNav.querySelector('#nav-main').addEventListener('click', () => { navigateTo('main'); renderMainScreen(); });
-        mainNav.querySelector('#nav-history').addEventListener('click', renderHistoryScreen);
+        mainNav.querySelector('#nav-history').addEventListener('click', () => renderHistoryScreen());
         mainNav.querySelector('#nav-library').addEventListener('click', () => renderLibraryScreen());
         mainNav.querySelector('#nav-settings').addEventListener('click', renderSettingsScreen);
         
-        // NOWOŚĆ: Obsługa przycisku pomocy w górnej nawigacji (jeśli istnieje w HTML)
-        const helpBtn = mainNav.querySelector('#nav-help');
-        if (helpBtn) {
-            helpBtn.addEventListener('click', renderHelpScreen);
+        // NOWY PRZYCISK W GÓRNYM MENU (opcjonalny, jeśli dodasz do HTML, tutaj obsługa)
+        const statsBtn = mainNav.querySelector('#nav-analytics');
+        if (statsBtn) {
+            statsBtn.addEventListener('click', renderAnalyticsScreen);
         }
     }
-    
+
     const bottomNav = document.getElementById('app-bottom-nav');
     if (bottomNav) {
         bottomNav.addEventListener('click', (e) => {
             const button = e.target.closest('.bottom-nav-btn');
             if (!button) return;
-            
+
             const screen = button.dataset.screen;
             bottomNav.querySelectorAll('.bottom-nav-btn').forEach(btn => btn.classList.remove('active'));
             button.classList.add('active');
 
             switch (screen) {
                 case 'main': renderMainScreen(); break;
+                case 'analytics': renderAnalyticsScreen(); break; // NOWA OBSŁUGA
                 case 'history': renderHistoryScreen(); break;
                 case 'library': renderLibraryScreen(); break;
                 case 'settings': renderSettingsScreen(); break;
-                case 'help': renderHelpScreen(); break; // NOWOŚĆ: Obsługa dolnej nawigacji
             }
         });
     }
 
     const prevMonthBtn = document.getElementById('prev-month-btn');
-    if(prevMonthBtn) prevMonthBtn.addEventListener('click', () => { state.currentCalendarView.setMonth(state.currentCalendarView.getMonth() - 1); renderHistoryScreen(); });
+    if (prevMonthBtn) prevMonthBtn.addEventListener('click', () => { state.currentCalendarView.setMonth(state.currentCalendarView.getMonth() - 1); renderHistoryScreen(); });
     const nextMonthBtn = document.getElementById('next-month-btn');
-    if(nextMonthBtn) nextMonthBtn.addEventListener('click', () => { state.currentCalendarView.setMonth(state.currentCalendarView.getMonth() + 1); renderHistoryScreen(); });
-    if(containers.calendarGrid) { containers.calendarGrid.addEventListener('click', (e) => { const dayEl = e.target.closest('.calendar-day.has-entry'); if (dayEl && dayEl.dataset.date) { renderDayDetailsScreen(dayEl.dataset.date); } }); }
+    if (nextMonthBtn) nextMonthBtn.addEventListener('click', () => { state.currentCalendarView.setMonth(state.currentCalendarView.getMonth() + 1); renderHistoryScreen(); });
+    if (containers.calendarGrid) { containers.calendarGrid.addEventListener('click', (e) => { const dayEl = e.target.closest('.calendar-day.has-entry'); if (dayEl && dayEl.dataset.date) { renderDayDetailsScreen(dayEl.dataset.date); } }); }
     const searchInput = document.getElementById('library-search-input');
-    if(searchInput) searchInput.addEventListener('input', (e) => { renderLibraryScreen(e.target.value); });
-    
+    if (searchInput) searchInput.addEventListener('input', (e) => { renderLibraryScreen(e.target.value); });
+
     const settingsForm = document.getElementById('settings-form');
-    if(settingsForm) settingsForm.addEventListener('submit', async (e) => { 
-        e.preventDefault(); 
-        state.settings.appStartDate = e.target['setting-start-date'].value; 
-        state.settings.activePlanId = e.target['setting-training-plan'].value; 
-        
-        // NOWOŚĆ: Zapisywanie ustawienia TTS
+    if (settingsForm) settingsForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        state.settings.appStartDate = e.target['setting-start-date'].value;
+
+        // Jeśli jesteśmy w trybie dynamicznym, selector może być ukryty, więc nie nadpisujemy activePlanId jeśli nie istnieje w formularzu
+        if (e.target['setting-training-plan']) {
+            state.settings.activePlanId = e.target['setting-training-plan'].value;
+        }
+
         const ttsCheckbox = e.target.querySelector('#setting-tts');
         if (ttsCheckbox) {
             state.settings.ttsEnabled = ttsCheckbox.checked;
-            // Aktualizacja stanu runtime'owego, żeby zadziałało od razu
             state.tts.isSoundOn = state.settings.ttsEnabled;
         }
-        
-        await dataStore.saveSettings(); 
-        alert('Ustawienia zostały zapisane.'); 
-        navigateTo('main'); 
-        renderMainScreen(); 
+
+        await dataStore.saveSettings();
+        alert('Ustawienia zostały zapisane.');
+        navigateTo('main');
+        renderMainScreen();
     });
-    
-    // REMOVED: progressionSlider listener
 
     const deleteAccountBtn = document.getElementById('delete-account-btn');
-    if(deleteAccountBtn) deleteAccountBtn.addEventListener('click', async () => { const confirmation1 = prompt("Czy na pewno chcesz usunąć swoje konto? Wpisz 'usuń moje konto' aby potwierdzić."); if (confirmation1 !== 'usuń moje konto') return; if (!confirm("OSTATECZNE POTWIERDZENIE: Dane zostaną trwale usunięte.")) return; showLoader(); try { await dataStore.deleteAccount(); hideLoader(); alert("Konto usunięte."); logout(); } catch (error) { hideLoader(); alert(error.message); } });
+    if (deleteAccountBtn) deleteAccountBtn.addEventListener('click', async () => { const confirmation1 = prompt("Czy na pewno chcesz usunąć swoje konto? Wpisz 'usuń moje konto' aby potwierdzić."); if (confirmation1 !== 'usuń moje konto') return; if (!confirm("OSTATECZNE POTWIERDZENIE: Dane zostaną trwale usunięte.")) return; showLoader(); try { await dataStore.deleteAccount(); hideLoader(); alert("Konto usunięte."); logout(); } catch (error) { hideLoader(); alert(error.message); } });
 
     if (screens.training) {
         screens.training.addEventListener('click', (e) => {
@@ -115,18 +116,26 @@ function initAppLogic() {
     }
     if (state.tts.isSupported) { loadVoices(); if (speechSynthesis.onvoiceschanged !== undefined) speechSynthesis.onvoiceschanged = loadVoices; }
     const yearEl = document.getElementById('current-year');
-    if(yearEl) yearEl.textContent = new Date().getFullYear();
+    if (yearEl) yearEl.textContent = new Date().getFullYear();
 }
 
 function checkAndMigrateLocalData() {
     const localProgressRaw = localStorage.getItem('trainingAppProgress');
-    if (localProgressRaw && Object.keys(JSON.parse(localProgressRaw)).length > 0) {
-        setTimeout(() => {
-            if (confirm("Wykryliśmy dane lokalne. Przenieść na konto?")) {
-                showLoader();
-                dataStore.migrateData(JSON.parse(localProgressRaw)).then(() => { localStorage.removeItem('trainingAppProgress'); localStorage.removeItem('trainingAppSettings'); alert("Zmigrowano! Przeładowanie..."); window.location.reload(); }).catch(e => { hideLoader(); alert("Błąd migracji: " + e.message); });
-            }
-        }, 1000);
+    if (!localProgressRaw) return;
+
+    try {
+        const parsedData = JSON.parse(localProgressRaw);
+        if (Object.keys(parsedData).length > 0) {
+            setTimeout(() => {
+                if (confirm("Wykryliśmy dane lokalne. Przenieść na konto?")) {
+                    showLoader();
+                    dataStore.migrateData(parsedData).then(() => { localStorage.removeItem('trainingAppProgress'); localStorage.removeItem('trainingAppSettings'); alert("Zmigrowano! Przeładowanie..."); window.location.reload(); }).catch(e => { hideLoader(); alert("Błąd migracji: " + e.message); });
+                }
+            }, 1000);
+        }
+    } catch (e) {
+        console.error("Błąd parsowania lokalnych danych:", e);
+        localStorage.removeItem('trainingAppProgress');
     }
 }
 
@@ -138,11 +147,12 @@ export async function main() {
     const bottomNav = document.getElementById('app-bottom-nav');
 
     await configureClient();
-    initializeCastApi(); 
+    initializeCastApi();
 
     try {
+        // Równoległe ładowanie planów (Public)
         const resourcesPromise = dataStore.loadAppContent();
-        
+
         if (loginBtn && !loginBtn.dataset.listenerAttached) { loginBtn.addEventListener('click', login); loginBtn.dataset.listenerAttached = 'true'; }
         if (logoutBtn && !logoutBtn.dataset.listenerAttached) { logoutBtn.addEventListener('click', logout); logoutBtn.dataset.listenerAttached = 'true'; }
 
@@ -161,30 +171,44 @@ export async function main() {
             if (userInfoContainer) userInfoContainer.classList.remove('hidden');
             if (mainNav) mainNav.classList.remove('hidden');
 
-            await getToken(); 
+            await getToken();
             const profile = getUserProfile();
             const nameEl = document.getElementById('user-display-name');
-            if(nameEl) nameEl.textContent = profile.name || profile.email || 'Użytkownik';
+            if (nameEl) nameEl.textContent = profile.name || profile.email || 'Użytkownik';
 
-            await resourcesPromise; 
-            
+            // Czekamy na plany
+            await resourcesPromise;
+
             initAppLogic();
-            hideLoader();
+            
+            // --- ETAP 1: SZYBKI START (Ustawienia + Szkielet) ---
+            try {
+                localStorage.removeItem('cachedUserStats'); 
+                // Pobieramy ustawienia i profil (bardzo szybkie zapytanie)
+                await dataStore.initialize();
+                state.isAppInitialized = true;
 
-            dataStore.loadAppContent().then(() => {
-                console.log("🔄 Weryfikacja danych w tle zakończona.");
-            });
-
-            dataStore.initialize().then(async () => {
-                console.log("DEBUG: Init zakończony, pobieram historię...");
-                await dataStore.loadRecentHistory();
-                console.log("DEBUG: Historia gotowa. Sprawdzam Wizard...");
-
-                const wizardStarted = initWizard(); 
+                // Natychmiast renderujemy nawigację i szkielet Dashboardu
+                if (bottomNav) bottomNav.classList.remove('hidden');
                 
+                // UKRYWAMY LOADER TERAZ, ABY POKAZAĆ SZKIELET
+                hideLoader(); 
+                
+                // Wywołujemy renderMainScreen z flagą isLoading=true
+                // To wyświetli migoczący szkielet zamiast pustki
+                renderMainScreen(true);
+
+                console.log("DEBUG: Render szkieletu zakończony. Pobieram historię...");
+
+                // --- ETAP 2: ŁADOWANIE CIĘŻKICH DANYCH (W TLE) ---
+                // Pobieramy historię dla ostatnich 90 dni, aby mieć dane do Kart Mistrzostwa
+                await dataStore.loadRecentHistory(90);
+                
+                console.log("DEBUG: Historia gotowa. Przeliczam widok...");
+
+                const wizardStarted = initWizard();
+
                 if (!wizardStarted) {
-                    if (bottomNav) bottomNav.classList.remove('hidden');
-                    
                     if (isReturningFromStrava) {
                         const urlParams = new URLSearchParams(window.location.search);
                         const status = urlParams.get('strava_status');
@@ -193,19 +217,25 @@ export async function main() {
                         renderSettingsScreen();
                         window.history.replaceState({}, document.title, window.location.pathname + "#settings");
                     } else {
-                        console.log("DEBUG: Wymuszam render Dashboardu po załadowaniu historii.");
-                        renderMainScreen();
+                        // Odświeżamy Dashboard, teraz już z pełnymi danymi
+                        // Funkcja sama wykryje, że ma dane i wyrenderuje właściwą treść
+                        renderMainScreen(false);
                     }
                 }
-                checkAndMigrateLocalData();
-            });
 
-            dataStore.fetchDetailedStats().then((newStats) => {
+                checkAndMigrateLocalData();
+
+                // Statystyki pobierane na samym końcu (nie blokują UI)
+                const newStats = await dataStore.fetchDetailedStats();
                 const mainScreen = document.getElementById('main-screen');
                 if (mainScreen && mainScreen.classList.contains('active')) {
-                    renderMainScreen();
+                    // Delikatne odświeżenie tylko jeśli jesteśmy na Dashboardzie
+                    renderMainScreen(false);
                 }
-            });
+            } catch (initError) {
+                console.error("Błąd inicjalizacji:", initError);
+                hideLoader(); // Safety fallback
+            }
 
         } else {
             await resourcesPromise;
@@ -225,9 +255,9 @@ export async function main() {
 window.addEventListener('DOMContentLoaded', main);
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/service-worker.js')
-      .then(registration => console.log('SW OK:', registration.scope))
-      .catch(err => console.error('SW Fail:', err));
-  });
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js')
+            .then(registration => console.log('SW OK:', registration.scope))
+            .catch(err => console.error('SW Fail:', err));
+    });
 }

@@ -1,29 +1,37 @@
 // state.js
 
 export const state = {
+    // --- FLAGA GLOBALNEJ INICJALIZACJI ---
+    isAppInitialized: false,
+
     userProgress: {},
+    masteryStats: null, // NOWE: Cache dla statystyk ćwiczeń
 
     settings: {
         appStartDate: null,
         activePlanId: "l5s1-foundation",
+        // Tryb planu (static/dynamic)
+        planMode: 'static',
+        // Przechowywanie wygenerowanego planu dynamicznego (tygodniówka)
+        dynamicPlanData: null,
+
         onboardingCompleted: false,
         painZones: [],
         equipment: [],
         schedule: {},
-        ttsEnabled: true // NOWOŚĆ: Globalne ustawienie dźwięku
+        ttsEnabled: true
     },
 
     exerciseLibrary: {},
     trainingPlans: {},
     blacklist: [],
-    
-    // --- NOWA FLAGA STANU ---
-    isHistoryLoaded: false, 
+
+    isHistoryLoaded: false,
 
     stravaIntegration: {
         isConnected: false
     },
-    
+
     currentTrainingDate: null,
     loadedMonths: new Set(),
     currentCalendarView: new Date(),
@@ -35,7 +43,7 @@ export const state = {
     lastPauseStartTime: null,
     isPaused: false,
     breakTimeoutId: null,
-    
+
     todaysDynamicPlan: null,
 
     timer: {
@@ -43,7 +51,7 @@ export const state = {
         timeLeft: 0,
         isActive: false,
         isPaused: false,
-        onTimerEnd: () => {} 
+        onTimerEnd: () => { }
     },
 
     stopwatch: {
@@ -90,6 +98,6 @@ export const state = {
         synth: window.speechSynthesis,
         polishVoice: null,
         isSupported: 'speechSynthesis' in window,
-        isSoundOn: true
+        isSoundOn: null // Wartość ustawiana w dataStore.initialize() z settings.ttsEnabled
     }
 };

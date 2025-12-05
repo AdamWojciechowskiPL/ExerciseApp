@@ -9,29 +9,26 @@ import dataStore from '../../dataStore.js';
 export const renderHistoryScreen = async (forceRefresh = false) => {
     navigateTo('history');
     
-    // Jeśli dane są w cache i nie wymuszamy, loader nie jest potrzebny (działa natychmiast)
-    // Ale dla spójności pokażmy go na krótko lub tylko przy faktycznym pobieraniu.
-    // Tutaj uproszczona wersja:
-    
     const date = state.currentCalendarView;
     const year = date.getFullYear();
     const month = date.getMonth() + 1;
     const cacheKey = `${year}-${month}`;
 
-    // Pokazujemy loader TYLKO jeśli faktycznie będziemy pobierać dane
-    if (forceRefresh || !state.loadedMonths.has(cacheKey)) {
+    // --- OPTYMALIZACJA: CACHE CHECK ---
+    const isCached = state.loadedMonths.has(cacheKey);
+    
+    // Pokazujemy loader TYLKO jeśli danych nie ma w cache lub wymuszono odświeżenie
+    if (forceRefresh || !isCached) {
         showLoader();
     }
 
     try {
-        // Przekazujemy flagę forceRefresh do dataStore
+        // Pobranie danych (funkcja w dataStore sama zdecyduje czy uderzyć do API czy wziąć z RAM)
         await dataStore.getHistoryForMonth(year, month, forceRefresh);
         
         // Generowanie nagłówka z przyciskiem odświeżania
         const headerContainer = document.getElementById('month-year-header');
         
-        // Czyścimy stare event listenery poprzez klonowanie (prost trick) lub innerHTML
-        // Tutaj użyjemy innerHTML dla wstawienia przycisku
         headerContainer.innerHTML = `
             <span style="vertical-align: middle;">${date.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' })}</span>
             <button id="refresh-history-btn" style="background:none; border:none; cursor:pointer; margin-left:10px; vertical-align: middle; opacity: 0.6;" title="Odśwież">
@@ -39,17 +36,13 @@ export const renderHistoryScreen = async (forceRefresh = false) => {
             </button>
         `;
 
-        // Obsługa przycisku odświeżania
         document.getElementById('refresh-history-btn').addEventListener('click', (e) => {
             e.stopPropagation();
-            // Wywołujemy render z flagą true
             renderHistoryScreen(true);
         });
 
         const grid = containers.calendarGrid;
         grid.innerHTML = '';
-        
-        // ... (Reszta logiki renderowania kalendarza bez zmian: firstDayOfMonth, pętle, kafelki) ...
         
         const firstDayOfMonth = new Date(year, date.getMonth(), 1);
         const lastDayOfMonth = new Date(year, date.getMonth() + 1, 0);
@@ -105,7 +98,6 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
     const date = new Date(isoDate);
     const sessionsHtml = dayEntries.map(generateSessionCardHTML).join('');
 
-    // Ustalanie etykiety przycisku w zależności od kontekstu
     const backButtonLabel = customBackAction ? "Wróć" : "Wróć do Historii";
 
     screens.dayDetails.innerHTML = `
@@ -114,14 +106,11 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
         <button id="details-back-btn" class="action-btn">${backButtonLabel}</button>
     `;
 
-    // Obsługa kliknięcia Wstecz
     const backBtn = screens.dayDetails.querySelector('#details-back-btn');
     backBtn.addEventListener('click', () => {
         if (customBackAction) {
-            // Jeśli podano niestandardową akcję (np. powrót do Dashboardu)
             customBackAction();
         } else {
-            // Domyślne zachowanie (powrót do kalendarza)
             renderHistoryScreen();
         }
     });

@@ -11,9 +11,22 @@ let selectedFeedback = { type: null, value: 0 };
 export const renderSummaryScreen = () => {
     if (getIsCasting()) sendShowIdle();
     
-    const activePlan = state.trainingPlans[state.settings.activePlanId];
+    // 1. Wykrywanie właściwego planu (Dynamic vs Static)
+    let activePlan = null;
+    const isDynamicMode = state.settings.planMode === 'dynamic' || (state.settings.dynamicPlanData && !state.settings.planMode);
+
+    if (isDynamicMode && state.settings.dynamicPlanData) {
+        activePlan = state.settings.dynamicPlanData;
+    } else {
+        activePlan = state.trainingPlans[state.settings.activePlanId];
+    }
+
     if (!activePlan) return;
-    const trainingDay = activePlan.Days.find(d => d.dayNumber === state.currentTrainingDayId);
+
+    // 2. Pobieranie dnia (obsługa różnic w strukturze Days/days)
+    const daysList = activePlan.Days || activePlan.days || [];
+    const trainingDay = daysList.find(d => d.dayNumber === state.currentTrainingDayId);
+    
     if (!trainingDay) return;
     
     const initialPain = state.sessionParams.initialPainLevel || 0;
@@ -121,8 +134,6 @@ export async function handleSummarySubmit(e) {
 
     showLoader();
 
-    // const dateKey = state.currentTrainingDate || new Date().toISOString().split('T')[0]; // REMOVED - nie potrzebujemy klucza do ręcznego pushowania
-    
     const now = new Date();
     const stravaCheckbox = document.getElementById('strava-sync-checkbox');
 
@@ -130,14 +141,30 @@ export async function handleSummarySubmit(e) {
     const netDuration = Math.max(0, rawDuration - (state.totalPausedTime || 0));
     const durationSeconds = Math.round(netDuration / 1000);
     
-    const activePlan = state.trainingPlans[state.settings.activePlanId];
-    const trainingTitle = activePlan 
-        ? (activePlan.Days.find(d => d.dayNumber === state.currentTrainingDayId)?.title || "Trening")
-        : "Trening";
+    // 1. LOGIKA WYBORU PLANU (FIX DLA DYNAMICZNEGO)
+    const isDynamicMode = state.settings.planMode === 'dynamic' || (state.settings.dynamicPlanData && !state.settings.planMode);
+    
+    let planIdToSave = state.settings.activePlanId;
+    let trainingTitle = "Trening";
+
+    if (isDynamicMode && state.settings.dynamicPlanData) {
+        // W trybie dynamicznym ID bierzemy z obiektu wygenerowanego planu
+        planIdToSave = state.settings.dynamicPlanData.id;
+        const days = state.settings.dynamicPlanData.days || [];
+        const day = days.find(d => d.dayNumber === state.currentTrainingDayId);
+        if (day) trainingTitle = day.title;
+    } else {
+        // W trybie statycznym
+        const activePlan = state.trainingPlans[state.settings.activePlanId];
+        if (activePlan) {
+            const day = activePlan.Days.find(d => d.dayNumber === state.currentTrainingDayId);
+            if (day) trainingTitle = day.title;
+        }
+    }
 
     const sessionPayload = {
-        sessionId: Date.now(), // To ID zostanie zignorowane przez naszą nową logikę, baza nada własne
-        planId: state.settings.activePlanId,
+        sessionId: Date.now(), 
+        planId: planIdToSave, // <-- TUTAJ BYŁ BŁĄD (teraz jest poprawne ID dynamiczne)
         trainingDayId: state.currentTrainingDayId,
         trainingTitle: trainingTitle,
         status: 'completed',
@@ -153,14 +180,6 @@ export async function handleSummarySubmit(e) {
     try {
         const response = await dataStore.saveSession(sessionPayload); 
         
-        // --- FIX: USUNIĘTO RĘCZNE PUSHOWANIE DO STANU ---
-        // Wcześniej tutaj dodawaliśmy sesję z timestamp ID, co powodowało duplikaty.
-        // if (!state.userProgress[dateKey]) state.userProgress[dateKey] = [];
-        // state.userProgress[dateKey].push(sessionPayload);
-        
-        // --- FIX: WYMUSZENIE ODŚWIEŻENIA DANYCH Z SERWERA ---
-        // Pobieramy historię z ostatnich 7 dni, aby mieć pewność, że nowa sesja
-        // trafi do stanu z poprawnym ID z bazy danych.
         await dataStore.loadRecentHistory(7);
 
         if (response && response.newStats) {
@@ -183,7 +202,7 @@ export async function handleSummarySubmit(e) {
 
         hideLoader();
 
-        // Dynamiczny import dashboardu
+        // Dynamiczny import dashboardu, aby uniknąć cyklicznych zależności
         const { renderMainScreen } = await import('./dashboard.js');
 
         if (response && response.adaptation) {

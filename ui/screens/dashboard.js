@@ -6,11 +6,13 @@ import { getIsCasting, sendUserStats } from '../../cast.js';
 import { getGamificationState } from '../../gamification.js';
 import { assistant } from '../../assistantEngine.js';
 import { navigateTo } from '../core.js';
-import { generateHeroDashboardHTML, generateMissionCardHTML, generateCompletedMissionCardHTML } from '../templates.js';
+import { generateHeroDashboardHTML, generateMissionCardHTML, generateCompletedMissionCardHTML, generateSkeletonDashboardHTML } from '../templates.js';
 import { renderPreTrainingScreen } from './training.js';
 import { renderDayDetailsScreen } from './history.js';
 import { workoutMixer } from '../../workoutMixer.js';
 import { getUserPayload } from '../../auth.js'; 
+
+// --- POMOCNICZE FUNKCJE STORAGE ---
 
 const getStorageKey = () => {
     const user = getUserPayload();
@@ -39,13 +41,62 @@ const loadPlanFromStorage = () => {
     } catch (e) { return null; }
 };
 
-export const renderMainScreen = () => {
-    const activePlan = getActiveTrainingPlan();
-    if (!activePlan) {
-        containers.days.innerHTML = '<p>Ładowanie planu treningowego...</p>';
+const getDynamicDayFromSettings = (dayIndex) => {
+    const dynamicPlan = state.settings.dynamicPlanData;
+    if (!dynamicPlan || !dynamicPlan.days) return null;
+    
+    const planLength = dynamicPlan.days.length;
+    const arrayIndex = (dayIndex - 1) % planLength;
+    
+    return dynamicPlan.days[arrayIndex];
+};
+
+const getPlanDaysArray = (plan) => {
+    if (!plan) return [];
+    return plan.Days || plan.days || [];
+};
+
+// --- GŁÓWNA FUNKCJA RENDERUJĄCA ---
+
+export const renderMainScreen = (isLoading = false) => {
+    
+    if (isLoading) {
+        const heroContainer = document.getElementById('hero-dashboard');
+        if (heroContainer) {
+            heroContainer.classList.remove('hidden');
+            heroContainer.innerHTML = generateHeroDashboardHTML({ resilience: null });
+        }
+        containers.days.innerHTML = generateSkeletonDashboardHTML();
+        navigateTo('main');
         return;
     }
 
+    const hasDynamicData = state.settings.dynamicPlanData && state.settings.dynamicPlanData.days && state.settings.dynamicPlanData.days.length > 0;
+    
+    let isDynamicMode = false;
+    
+    if (state.settings.planMode === 'dynamic') {
+        isDynamicMode = true;
+    } else if (state.settings.planMode === 'static') {
+        isDynamicMode = false;
+    } else {
+        isDynamicMode = hasDynamicData;
+    }
+
+    const activePlan = isDynamicMode && hasDynamicData
+        ? state.settings.dynamicPlanData 
+        : getActiveTrainingPlan();
+
+    if (!activePlan) {
+        containers.days.innerHTML = '<p style="padding:2rem; text-align:center;">Brak aktywnego planu. Sprawdź ustawienia.</p>';
+        return;
+    }
+
+    const currentPlanId = isDynamicMode 
+        ? (state.settings.dynamicPlanData.id || 'dynamic') 
+        : state.settings.activePlanId;
+
+    // 1. RENDEROWANIE HERO STATS
     const heroContainer = document.getElementById('hero-dashboard');
     if (heroContainer) {
         try {
@@ -55,7 +106,8 @@ export const renderMainScreen = () => {
                 resilience: stats.resilience, 
                 streak: stats.streak,         
                 totalSessions: stats.totalSessions,
-                level: stats.level
+                level: stats.level,
+                totalMinutes: stats.totalMinutes
             };
 
             if (getIsCasting()) sendUserStats(combinedStats);
@@ -66,16 +118,42 @@ export const renderMainScreen = () => {
         }
     }
 
+    // 2. RENDEROWANIE ZAWARTOŚCI GŁÓWNEJ
     containers.days.innerHTML = '';
+    
     const today = new Date();
     const todayISO = getISODate(today); 
+    
+    // Formatowanie daty do podtytułu
+    const dateOptions = { weekday: 'long', day: 'numeric', month: 'long' };
+    const dateString = today.toLocaleDateString('pl-PL', dateOptions);
+    const capitalizedDate = dateString.charAt(0).toUpperCase() + dateString.slice(1);
 
-    // --- PRIORYTET 1: CZY TRENING JUŻ ZROBIONY? ---
+    // EFEKT WOW: Nowy Nagłówek
+    containers.days.innerHTML += `
+        <div class="daily-mission-header">
+            <div class="dm-text">
+                <span class="dm-subtitle">${capitalizedDate}</span>
+                <h2 class="dm-title">TWOJA MISJA</h2>
+            </div>
+            <div class="dm-icon-wrapper">
+                <div class="dm-icon">🎯</div>
+            </div>
+        </div>
+    `;
+
     const todaysSessions = state.userProgress[todayISO] || [];
-    const completedSession = todaysSessions.find(s => s.planId === state.settings.activePlanId);
+    
+    const completedSession = todaysSessions.find(s => 
+        (isDynamicMode && s.planId && s.planId.startsWith('dynamic')) || 
+        (!isDynamicMode && s.planId === currentPlanId)
+    );
 
+    let currentSequenceDayNum = 1;
+
+    // A. SEKCJA "MISJA NA DZIŚ"
     if (completedSession) {
-        containers.days.innerHTML += `<div class="section-title">Twoja Misja na Dziś</div>`;
+        // SCENARIUSZ 1: Trening już zrobiony
         const missionWrapper = document.createElement('div');
         missionWrapper.className = 'mission-card-wrapper';
         missionWrapper.innerHTML = generateCompletedMissionCardHTML(completedSession);
@@ -89,73 +167,98 @@ export const renderMainScreen = () => {
                 renderDayDetailsScreen(todayISO, () => { navigateTo('main'); renderMainScreen(); });
             });
         }
+        
+        currentSequenceDayNum = parseInt(completedSession.trainingDayId || 1);
 
     } else if (isTodayRestDay()) {
+        // SCENARIUSZ 2: Dzień regeneracji
         containers.days.innerHTML += `
-            <div class="section-title">Dzisiaj</div>
             <div class="mission-card" style="border-left-color: #aaa; background: linear-gradient(135deg, #fff, #f0f0f0);">
                 <div class="mission-header">
                     <div>
                         <span class="mission-day-badge" style="background:#888;">REGENERACJA</span>
                         <h3 class="mission-title">Dzień Wolny</h3>
-                        <p style="opacity:0.7; margin:0">Odpoczynek to część treningu. Zadbaj o sen i nawodnienie.</p>
+                        <p style="opacity:0.7; margin:0">Odpoczynek to część treningu.</p>
                     </div>
                     <div style="font-size:2rem;">🔋</div>
                 </div>
             </div>
         `;
         clearPlanFromStorage();
+        
+        const allSessions = Object.values(state.userProgress).flat();
+        const dynSessions = allSessions.filter(s => s.planId && s.planId.startsWith('dynamic'));
+        currentSequenceDayNum = dynSessions.length; 
 
     } else {
-        const todayDataRaw = getNextLogicalDay();
-        const todayDataStatic = getHydratedDay(todayDataRaw);
+        // SCENARIUSZ 3: Trening do zrobienia
+        let finalPlan = null;
+        let estimatedMinutes = 0;
 
-        if (todayDataStatic) {
-            containers.days.innerHTML += `<div class="section-title">Twoja Misja na Dziś</div>`;
+        if (isDynamicMode) {
+            const allSessions = Object.values(state.userProgress).flat();
+            const dynSessions = allSessions.filter(s => s.planId && s.planId.startsWith('dynamic'));
+            currentSequenceDayNum = dynSessions.length + 1;
             
+            const rawDay = getDynamicDayFromSettings(currentSequenceDayNum);
+            
+            if (!rawDay) {
+                containers.days.innerHTML += `<p class="error-msg">Błąd danych planu dynamicznego.</p>`;
+                return;
+            }
+
+            const cachedPlan = loadPlanFromStorage();
+            
+            if (cachedPlan && 
+                cachedPlan.dayNumber === currentSequenceDayNum && 
+                cachedPlan.planId === currentPlanId) {
+                finalPlan = cachedPlan;
+            } else {
+                const hydratedDay = getHydratedDay(rawDay);
+                finalPlan = JSON.parse(JSON.stringify(hydratedDay));
+                finalPlan.dayNumber = currentSequenceDayNum;
+                finalPlan.planId = currentPlanId; 
+                savePlanToStorage(finalPlan);
+            }
+            state.todaysDynamicPlan = finalPlan;
+
+        } else {
+            const todayDataRaw = getNextLogicalDay();
+            if (todayDataRaw) {
+                const todayDataStatic = getHydratedDay(todayDataRaw);
+                currentSequenceDayNum = todayDataStatic.dayNumber;
+                
+                let dynamicDayData = state.todaysDynamicPlan;
+                if (!dynamicDayData) {
+                    const cachedPlan = loadPlanFromStorage();
+                    if (cachedPlan && 
+                        cachedPlan.dayNumber === currentSequenceDayNum && 
+                        cachedPlan.planId === currentPlanId) {
+                        dynamicDayData = cachedPlan;
+                    }
+                }
+                
+                if (!dynamicDayData) {
+                    state.todaysDynamicPlan = workoutMixer.mixWorkout(todayDataStatic);
+                    dynamicDayData = state.todaysDynamicPlan;
+                    dynamicDayData.planId = currentPlanId;
+                    savePlanToStorage(dynamicDayData);
+                }
+                finalPlan = dynamicDayData || todayDataStatic;
+                
+                if (state.todaysDynamicPlan) state.todaysDynamicPlan = finalPlan;
+            }
+        }
+
+        if (finalPlan) {
             const missionWrapper = document.createElement('div');
             missionWrapper.className = 'mission-card-wrapper';
             containers.days.appendChild(missionWrapper);
-
-            let dynamicDayData = state.todaysDynamicPlan;
-
-            if (!dynamicDayData) {
-                const cachedPlan = loadPlanFromStorage();
-                if (cachedPlan && cachedPlan.dayNumber === todayDataStatic.dayNumber) {
-                    console.log("💾 Załadowano zapisany plan dynamiczny z dysku.");
-                    state.todaysDynamicPlan = cachedPlan;
-                    dynamicDayData = cachedPlan;
-                }
-            }
-
-            const isProcessing = !state.isHistoryLoaded && !dynamicDayData;
             
-            if (!isProcessing && !dynamicDayData) {
-                console.log("🎲 Generowanie nowego Planu (Mixer)...");
-                state.todaysDynamicPlan = workoutMixer.mixWorkout(todayDataStatic);
-                dynamicDayData = state.todaysDynamicPlan;
-                savePlanToStorage(dynamicDayData);
-            }
+            estimatedMinutes = assistant.estimateDuration(finalPlan);
             
-            const finalPlan = dynamicDayData || todayDataStatic;
-            const estimatedMinutes = assistant.estimateDuration(finalPlan);
-            
-            missionWrapper.innerHTML = generateMissionCardHTML(finalPlan, estimatedMinutes);
-
-            if (isProcessing) {
-                const cardEl = missionWrapper.firstElementChild;
-                cardEl.classList.add('ai-blur');
-                
-                const overlay = document.createElement('div');
-                overlay.className = 'ai-processing-overlay';
-                overlay.innerHTML = `
-                    <div class="ai-badge">
-                        <div class="spinner-dots"></div>
-                        <span>Analiza historii...</span>
-                    </div>
-                `;
-                missionWrapper.appendChild(overlay);
-            }
+            const wizardData = isDynamicMode ? state.settings.wizardData : null;
+            missionWrapper.innerHTML = generateMissionCardHTML(finalPlan, estimatedMinutes, wizardData);
 
             const cardEl = missionWrapper.querySelector('.mission-card');
             const timeBadge = cardEl.querySelector('#mission-time-val');
@@ -172,11 +275,9 @@ export const renderMainScreen = () => {
                 opt.addEventListener('click', () => {
                     painOptions.forEach(o => o.classList.remove('selected'));
                     opt.classList.add('selected');
-
                     const painLevel = parseInt(opt.dataset.level, 10);
                     const adjustedPlan = assistant.adjustTrainingVolume(finalPlan, painLevel);
                     const newDuration = assistant.estimateDuration(adjustedPlan);
-
                     timeBadge.textContent = `${newDuration} min`;
                     startBtn.dataset.initialPain = painLevel;
                 });
@@ -185,61 +286,52 @@ export const renderMainScreen = () => {
             startBtn.addEventListener('click', (e) => {
                 e.stopPropagation(); 
                 const pain = parseInt(startBtn.dataset.initialPain, 10) || 0;
-                renderPreTrainingScreen(finalPlan.dayNumber, pain, true); 
+                renderPreTrainingScreen(finalPlan.dayNumber, pain, isDynamicMode); 
             });
-
-        } else {
-            containers.days.innerHTML += `<p style="padding:1rem; text-align:center; opacity:0.6">Plan ukończony lub brak danych.</p>`;
         }
     }
 
-    // 3. NADCHODZĄCE DNI (Kolejka)
-    let upcomingHeaderAdded = false;
-    
-    const baseDayRaw = getNextLogicalDay();
-    
-    if (baseDayRaw) {
-        let startOffset = 1;
-        // Jeśli dzisiaj zrobione, to baseDayRaw = Jutro (kolejka przesunięta), więc startujemy od 0
-        if (completedSession) {
-            startOffset = 0;
-        }
+    // B. SEKCJA "NADCHODZĄCE" (Horyzontalna Karuzela)
+    let upcomingHTML = '';
+    const planDays = getPlanDaysArray(activePlan);
+    const totalDaysInPlan = planDays.length;
 
-        const nextDayNum = baseDayRaw.dayNumber;
-        
-        // FIX: Zwiększono limit pętli z 3 do 6, aby pokazać więcej nadchodzących dni
-        for (let i = 0; i < 6; i++) {
-            // Cykliczne pobieranie dni z planu
-            const targetDayNum = ((nextDayNum - 1 + i + startOffset) % activePlan.Days.length) + 1;
+    if (totalDaysInPlan > 0) {
+        // Tytuł sekcji z marginesem
+        upcomingHTML += `<div class="section-title" style="margin-top:1.5rem; margin-bottom:0.8rem; padding-left:4px;">KOLEJNE W CYKLU</div>`;
+        upcomingHTML += `<div class="upcoming-scroll-container">`;
+
+        for (let i = 0; i < 5; i++) {
+            let targetLogicalNum = currentSequenceDayNum + 1 + i;
+            const arrayIndex = (targetLogicalNum - 1) % totalDaysInPlan;
+            const dayDataRaw = planDays[arrayIndex];
             
-            const dayDataRaw = activePlan.Days.find(d => d.dayNumber === targetDayNum);
-            if (!dayDataRaw) continue;
             const dayData = getHydratedDay(dayDataRaw);
+            dayData.dayNumber = targetLogicalNum; 
 
-            if (!upcomingHeaderAdded) {
-                const upcomingTitle = document.createElement('div');
-                upcomingTitle.className = 'section-title';
-                upcomingTitle.textContent = 'Kolejne w cyklu';
-                containers.days.appendChild(upcomingTitle);
-                upcomingHeaderAdded = true;
-            }
-            
-            const card = document.createElement('div');
-            card.className = 'day-card';
-            const label = `Kolejka #${i + 1}`;
-            
-            card.innerHTML = `
-                <p class="day-card-date" style="font-size:0.7rem; opacity:0.6;">${label}</p>
-                <div class="card-header"><h3>Dzień ${dayData.dayNumber}: ${dayData.title}</h3></div>
-                <button class="nav-btn" style="width:100%; margin-top:0.5rem; opacity:0.7">Podgląd</button>
+            upcomingHTML += `
+                <div class="upcoming-card" data-day-id="${targetLogicalNum}">
+                    <div>
+                        <div class="upcoming-day-label">Dzień ${dayData.dayNumber}</div>
+                        <div class="upcoming-title">${dayData.title}</div>
+                    </div>
+                    <button class="upcoming-btn">Podgląd</button>
+                </div>
             `;
-            
-            card.querySelector('button').addEventListener('click', (e) => {
-                e.stopPropagation();
-                renderPreTrainingScreen(dayData.dayNumber, 0, false); 
-            });
-            containers.days.appendChild(card);
         }
+        upcomingHTML += `</div>`;
+        
+        const upcomingWrapper = document.createElement('div');
+        upcomingWrapper.innerHTML = upcomingHTML;
+        containers.days.appendChild(upcomingWrapper);
+
+        upcomingWrapper.querySelectorAll('.upcoming-card').forEach(card => {
+            card.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const dayId = parseInt(card.dataset.dayId, 10);
+                renderPreTrainingScreen(dayId, 0, isDynamicMode); 
+            });
+        });
     }
 
     navigateTo('main');

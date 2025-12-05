@@ -16,7 +16,7 @@ const CUSTOM_NAMESPACE = 'urn:x-cast:com.trening.app';
 // Stan lokalny modułu
 let castSession = null;
 let isCasting = false;
-let heartbeatInterval = null; // --- NOWOŚĆ ---
+let heartbeatInterval = null;
 
 /**
  * Inicjalizuje API Google Cast.
@@ -89,16 +89,18 @@ export const initializeCastApi = () => {
 
 export const getIsCasting = () => isCasting && castSession !== null;
 
-// --- NOWOŚĆ: HEARTBEAT LOGIC ---
+// --- FIX: AGRESYWNY HEARTBEAT (ANTI-IDLE) ---
 function startHeartbeat() {
     stopHeartbeat();
-    // Wysyłaj PING co 4 minuty (240000 ms). Limit idle to zazwyczaj 5 minut.
+    
+    // ZMIANA: Interwał zmniejszony z 240000 (4 min) na 20000 (20 sek).
+    // Wiele TV z Androidem usypia połączenie po 60 sekundach braku pakietów.
     heartbeatInterval = setInterval(() => {
         if (getIsCasting()) {
-            console.log('[Cast Sender] 💓 Sending Heartbeat...');
+            // console.log('[Cast Sender] 💓 Sending Heartbeat...'); // Opcjonalnie zakomentuj, żeby nie śmiecić w konsoli
             sendMessage({ type: 'PING' });
         }
-    }, 240000);
+    }, 20000);
 }
 
 function stopHeartbeat() {

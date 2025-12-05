@@ -27,14 +27,14 @@ export const startTimer = (seconds, onEndCallback) => {
     state.timer.timeLeft = seconds;
     state.timer.isActive = true;
     state.timer.onTimerEnd = onEndCallback;
-    
+
     // Jeśli jest pauza i wznawiamy, ikona powinna być już ustawiona na Pauzę w togglePauseTimer
     // Ale dla bezpieczeństwa przy starcie nowej rundy:
     if (focus.pauseResumeBtn) {
-         focus.pauseResumeBtn.innerHTML = `<img src="/icons/control-pause.svg" alt="Pauza">`;
-         focus.pauseResumeBtn.classList.remove('paused-state');
+        focus.pauseResumeBtn.innerHTML = `<img src="/icons/control-pause.svg" alt="Pauza">`;
+        focus.pauseResumeBtn.classList.remove('paused-state');
     }
-    
+
     updateTimerDisplay();
 
     state.timer.interval = setInterval(() => {
@@ -62,7 +62,7 @@ export const startTimer = (seconds, onEndCallback) => {
 export const updateStopwatchDisplay = () => {
     const minutes = Math.floor(state.stopwatch.seconds / 60);
     const seconds = state.stopwatch.seconds % 60;
-    
+
     if (focus.timerDisplay) {
         focus.timerDisplay.classList.remove('rep-based-text');
         focus.timerDisplay.textContent = `${minutes < 10 ? '0' : ''}${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
@@ -78,7 +78,7 @@ export const startStopwatch = () => {
     // UWAGA: Nie zerujemy tutaj seconds, jeśli wznawiamy z pauzy.
     // Zerowanie powinno odbywać się w training.js przy starcie nowego ćwiczenia.
     // Tutaj po prostu uruchamiamy interwał.
-    
+
     if (state.stopwatch.seconds === undefined) state.stopwatch.seconds = 0;
 
     updateStopwatchDisplay();
@@ -108,30 +108,30 @@ export const togglePauseTimer = async () => {
         // ===========================
         state.isPaused = true;
         state.lastPauseStartTime = now;
-        
+
         // Zatrzymujemy liczniki
-        stopTimer(); 
+        stopTimer();
         stopStopwatch();
-        
+
         // Jeśli trwała przerwa "START...", czyścimy timeout, ale NIE zmieniamy UI
         if (state.breakTimeoutId) {
             clearTimeout(state.breakTimeoutId);
             state.breakTimeoutId = null;
         }
-        
+
         // Zmiana ikony na Play (Wznów)
         if (focus.pauseResumeBtn) {
             focus.pauseResumeBtn.innerHTML = `<img src="/icons/control-play.svg" alt="Wznów">`;
             focus.pauseResumeBtn.classList.add('paused-state');
         }
-        
+
         if (focus.timerDisplay) focus.timerDisplay.style.opacity = '0.5';
 
     } else {
         // ===========================
         // WZNAWIAMY
         // ===========================
-        
+
         // Oblicz czas trwania pauzy
         if (state.isPaused && state.lastPauseStartTime) {
             const pausedDuration = now - state.lastPauseStartTime;
@@ -142,13 +142,13 @@ export const togglePauseTimer = async () => {
 
         // SCENARIUSZ 1: Wznawiamy Timer (Odliczanie w dół)
         if (state.timer.timeLeft > 0) {
-             startTimer(state.timer.timeLeft, state.timer.onTimerEnd);
-        } 
-        
+            startTimer(state.timer.timeLeft, state.timer.onTimerEnd);
+        }
+
         // SCENARIUSZ 2: Wznawiamy przerwę typu "START..."
         // Sprawdzamy, czy na ekranie jest tekst "START..." i czy to faza przerwy
-        else if (currentStep && currentStep.isRest && focus.timerDisplay.textContent.includes("START")) {
-            
+        else if (currentStep && currentStep.isRest && focus.timerDisplay?.textContent?.includes("START")) {
+
             // Dynamiczny import, aby uniknąć cyklicznej zależności z training.js
             const { moveToNextExercise } = await import('./training.js');
 
@@ -158,7 +158,7 @@ export const togglePauseTimer = async () => {
                 moveToNextExercise({ skipped: false });
             }, 2000);
         }
-        
+
         // SCENARIUSZ 3: Wznawiamy Stoper (Ćwiczenie na powtórzenia)
         else if (currentStep && !currentStep.isRest) {
             // Po prostu uruchamiamy interwał, startStopwatch nie zeruje stanu jeśli seconds > 0

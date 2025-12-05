@@ -2,12 +2,12 @@ import * as jose from 'https://cdn.jsdelivr.net/npm/jose@5/dist/browser/index.js
 
 let auth0Client = null;
 let userPayload = null;
-let userProfile = null; 
+let userProfile = null;
 
 const AUTH_CONFIG = {
-    domain: 'dev-2vw7d462t0vkpx5c.us.auth0.com',
-    clientId: 'zHhWu3aQv8scz7TP4QtqzPjdFVHCYYo2',
-    audience: 'https://excercise-app.netlify.app/'
+  domain: 'dev-2vw7d462t0vkpx5c.us.auth0.com',
+  clientId: 'zHhWu3aQv8scz7TP4QtqzPjdFVHCYYo2',
+  audience: 'https://excercise-app.netlify.app/'
 };
 
 const configureClient = async () => {
@@ -38,6 +38,7 @@ const login = async () => {
 };
 
 const logout = () => {
+  if (!auth0Client) return;
   auth0Client.logout({
     logoutParams: {
       returnTo: window.location.origin
@@ -58,22 +59,22 @@ const getToken = async () => {
     });
     userPayload = payload;
     if (!userProfile) {
-        userProfile = await auth0Client.getUser();
+      userProfile = await auth0Client.getUser();
     }
     return token;
   } catch (e) {
-    console.error("Błąd podczasgetTokenSilently:", e);
+    console.error("Błąd podczas getTokenSilently:", e);
     return null;
   }
 };
 
 const getUserPayload = () => userPayload;
-const getUserProfile = () => userProfile; 
+const getUserProfile = () => userProfile;
 const handleRedirectCallback = async () => {
   if (!auth0Client) return;
   try {
     await auth0Client.handleRedirectCallback();
-  } catch(err) {
+  } catch (err) {
     console.error("Błąd w handleRedirectCallback:", err);
   }
 };
@@ -83,12 +84,12 @@ const isAuthenticated = async () => {
 };
 
 export {
-    configureClient,
-    login,
-    logout,
-    getToken,
-    getUserPayload,
-    getUserProfile,
-    handleRedirectCallback,
-    isAuthenticated
+  configureClient,
+  login,
+  logout,
+  getToken,
+  getUserPayload,
+  getUserProfile,
+  handleRedirectCallback,
+  isAuthenticated
 };

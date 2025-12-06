@@ -20,6 +20,8 @@ const SECONDS_PER_REP = 4;
 const REST_BETWEEN_SETS = 60;
 const REST_BETWEEN_EXERCISES = 90;
 const MAX_MAIN_OCCURRENCES_PER_WEEK = 4;
+const MAX_ROTATIONAL_CORE_WITH_DISC_HERNIATION = 3;
+const MAX_ROTATION_MOBILITY_WITH_DISC_HERNIATION = 4;
 
 const DIFFICULTY_MAP = {
     'none': 1,
@@ -280,9 +282,10 @@ exports.handler = async (event) => {
 
             // 2.10.1. Nowy licznik tygodniowy
             const weeklyUsage = new Map(); // exerciseId -> liczba wystąpień w części main
+            const weeklyRotationMobilityUsage = new Map(); // exerciseId -> liczba wystąpień w warmup/cooldown
 
             for (let i = 1; i <= sessionsPerWeek; i++) {
-                let session = generateSession(i, candidates, weights, severityScore, userData.exercise_experience, weeklyUsage, sessionsPerWeek);
+                let session = generateSession(i, candidates, weights, severityScore, userData.exercise_experience, weeklyUsage, sessionsPerWeek, userData, weeklyRotationMobilityUsage);
 
                 optimizeSessionDuration(session, targetDurationMin);
 
@@ -364,7 +367,7 @@ function passesTolerancePattern(ex, tolerancePattern) {
 }
 
 // 2.10.2, 2.10.3 - Zmodyfikowana sygnatury generateSession i pickOne
-function generateSession(dayNum, candidates, weights, severity, experience, weeklyUsage, sessionsPerWeek) {
+function generateSession(dayNum, candidates, weights, severity, experience, weeklyUsage, sessionsPerWeek, userData, weeklyRotationMobilityUsage) {
     const session = {
         dayNumber: dayNum,
         title: `Sesja ${dayNum}`,
@@ -376,38 +379,38 @@ function generateSession(dayNum, candidates, weights, severity, experience, week
     const sessionUsedIds = new Set();
 
     // 1. Rozgrzewka (2.9)
-    session.warmup.push(pickOne(candidates, BREATHING_CATEGORIES, sessionUsedIds, weeklyUsage, 'warmup'));
+    session.warmup.push(pickOne(candidates, BREATHING_CATEGORIES, sessionUsedIds, weeklyUsage, 'warmup', userData, weeklyRotationMobilityUsage));
 
     if (weights['spine_mobility'] > 1.2) {
-        session.warmup.push(pickOne(candidates, 'spine_mobility', sessionUsedIds, weeklyUsage, 'warmup'));
-        session.warmup.push(pickOne(candidates, 'spine_mobility', sessionUsedIds, weeklyUsage, 'warmup'));
+        session.warmup.push(pickOne(candidates, 'spine_mobility', sessionUsedIds, weeklyUsage, 'warmup', userData, weeklyRotationMobilityUsage));
+        session.warmup.push(pickOne(candidates, 'spine_mobility', sessionUsedIds, weeklyUsage, 'warmup', userData, weeklyRotationMobilityUsage));
     } else {
-        session.warmup.push(pickOne(candidates, 'spine_mobility', sessionUsedIds, weeklyUsage, 'warmup'));
+        session.warmup.push(pickOne(candidates, 'spine_mobility', sessionUsedIds, weeklyUsage, 'warmup', userData, weeklyRotationMobilityUsage));
     }
 
     // 2. Część Główna
     if (weights['nerve_flossing'] > 1.0) {
-        session.main.push(pickOne(candidates, 'nerve_flossing', sessionUsedIds, weeklyUsage, 'main'));
+        session.main.push(pickOne(candidates, 'nerve_flossing', sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage));
     }
 
     const coreCats = ['core_anti_extension', 'core_anti_flexion', 'core_anti_rotation'];
     coreCats.sort((a, b) => weights[b] - weights[a]);
 
-    session.main.push(pickOne(candidates, coreCats[0], sessionUsedIds, weeklyUsage, 'main'));
+    session.main.push(pickOne(candidates, coreCats[0], sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage));
 
     if (weights[coreCats[0]] > 1.2) {
-        session.main.push(pickOne(candidates, coreCats[1], sessionUsedIds, weeklyUsage, 'main'));
+        session.main.push(pickOne(candidates, coreCats[1], sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage));
     }
 
     if (weights['glute_activation'] > 0.8) {
-        session.main.push(pickOne(candidates, 'glute_activation', sessionUsedIds, weeklyUsage, 'main'));
+        session.main.push(pickOne(candidates, 'glute_activation', sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage));
     }
 
     // 3. Schłodzenie (2.9)
     if (weights['hip_mobility'] >= 1.0) {
-        session.cooldown.push(pickOne(candidates, 'hip_mobility', sessionUsedIds, weeklyUsage, 'cooldown'));
+        session.cooldown.push(pickOne(candidates, 'hip_mobility', sessionUsedIds, weeklyUsage, 'cooldown', userData, weeklyRotationMobilityUsage));
     }
-    session.cooldown.push(pickOne(candidates, BREATHING_CATEGORIES, sessionUsedIds, weeklyUsage, 'cooldown'));
+    session.cooldown.push(pickOne(candidates, BREATHING_CATEGORIES, sessionUsedIds, weeklyUsage, 'cooldown', userData, weeklyRotationMobilityUsage));
 
     // Filtrowanie
     session.warmup = session.warmup.filter(Boolean);
@@ -452,8 +455,10 @@ function sanitizeForStorage(session) {
 }
 
 // 2.10.3 - Zmodyfikowana pickOne z weeklyUsage i sectionName
-function pickOne(pool, category, usedIds, weeklyUsage, sectionName) {
+// 3.1, 3.2 - Dodane limity dla disc_herniation: core_anti_rotation i rotacyjnych mobilizacji
+function pickOne(pool, category, usedIds, weeklyUsage, sectionName, userData, weeklyRotationMobilityUsage) {
     const categories = Array.isArray(category) ? category : [category];
+    const hasDisc = (userData?.medical_diagnosis || []).includes('disc_herniation');
 
     let matching = pool.filter(ex => {
         if (!categories.includes(ex.category_id)) return false;
@@ -461,22 +466,51 @@ function pickOne(pool, category, usedIds, weeklyUsage, sectionName) {
 
         if (weeklyUsage && sectionName === 'main') {
             const used = weeklyUsage.get(ex.id) || 0;
+
+            // globalny limit
             if (used >= MAX_MAIN_OCCURRENCES_PER_WEEK) return false;
+
+            // 3.1 - dodatkowy limit dla core_anti_rotation przy disc_herniation
+            if (hasDisc && ex.category_id === 'core_anti_rotation') {
+                if (used >= MAX_ROTATIONAL_CORE_WITH_DISC_HERNIATION) return false;
+            }
         }
+
+        // 3.2 - limit rotacyjnych mobilizacji w warmup/cooldown przy disc_herniation
+        if (weeklyRotationMobilityUsage && sectionName !== 'main' && hasDisc) {
+            const plane = ex.primary_plane || 'multi';
+            if (plane === 'rotation') {
+                const usedRot = weeklyRotationMobilityUsage.get(ex.id) || 0;
+                if (usedRot >= MAX_ROTATION_MOBILITY_WITH_DISC_HERNIATION) return false;
+            }
+        }
+
         return true;
     });
 
+    // fallback - jeśli brak pasujących, ignoruj ograniczenia tygodniowe
     if (matching.length === 0) {
         matching = pool.filter(ex => categories.includes(ex.category_id));
+        if (matching.length === 0) return null;
     }
-
-    if (matching.length === 0) return null;
 
     const original = matching[Math.floor(Math.random() * matching.length)];
 
     if (usedIds) usedIds.add(original.id);
+
     if (weeklyUsage && sectionName === 'main') {
         weeklyUsage.set(original.id, (weeklyUsage.get(original.id) || 0) + 1);
+    }
+
+    // 3.2 - aktualizacja licznika rotacyjnych mobilizacji
+    if (weeklyRotationMobilityUsage && sectionName !== 'main' && hasDisc) {
+        const plane = original.primary_plane || 'multi';
+        if (plane === 'rotation') {
+            weeklyRotationMobilityUsage.set(
+                original.id,
+                (weeklyRotationMobilityUsage.get(original.id) || 0) + 1
+            );
+        }
     }
 
     return JSON.parse(JSON.stringify(original));

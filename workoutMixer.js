@@ -9,6 +9,14 @@ import { assistant } from './assistantEngine.js';
 const CACHE_FRESHNESS_DAYS = 60;
 const SECONDS_PER_REP = 4;
 
+// 1.1. Stała z mapowaniem doświadczenia
+const DIFFICULTY_MAP = {
+    none: 1,
+    occasional: 2,
+    regular: 3,
+    advanced: 4
+};
+
 export const workoutMixer = {
 
     mixWorkout: (staticDayPlan, forceShuffle = false) => {
@@ -19,8 +27,13 @@ export const workoutMixer = {
         const dynamicPlan = JSON.parse(JSON.stringify(staticDayPlan));
         const sessionUsedIds = new Set();
 
+        // 3.1. Inicjalizacja kontekstu klinicznego
+        const clinicalCtx = buildClinicalContext();
+        const effectiveForceShuffle = clinicalCtx.isSevere ? false : forceShuffle;
+
+        // 3.2. Wywołanie injectPrehabExercises z kontekstem
         if (state.settings.painZones && state.settings.painZones.length > 0) {
-            injectPrehabExercises(dynamicPlan, sessionUsedIds);
+            injectPrehabExercises(dynamicPlan, sessionUsedIds, clinicalCtx);
         }
 
         ['warmup', 'main', 'cooldown'].forEach(section => {
@@ -36,10 +49,17 @@ export const workoutMixer = {
                     targetLevel: originalExercise.difficultyLevel || 1,
                 };
 
-                // Zwiększamy szansę na losowość (forceShuffle = true przy braku sprzętu lub losowo dla urozmaicenia)
-                const shouldShuffle = forceShuffle || mustSwap;
+                // 3.3. Użycie effectiveForceShuffle i przekazanie clinicalCtx do findFreshVariant
+                const shouldShuffle = effectiveForceShuffle || mustSwap;
 
-                const freshVariant = findFreshVariant(originalExercise, criteria, sessionUsedIds, shouldShuffle, mustSwap);
+                const freshVariant = findFreshVariant(
+                    originalExercise,
+                    criteria,
+                    sessionUsedIds,
+                    shouldShuffle,
+                    mustSwap,
+                    clinicalCtx
+                );
 
                 if (freshVariant && (freshVariant.id !== originalExercise.exerciseId && freshVariant.id !== originalExercise.id)) {
                     console.log(`🔀 [Mixer] Zamiana: ${originalExercise.name} -> ${freshVariant.name}`);
@@ -69,13 +89,15 @@ export const workoutMixer = {
         return dynamicPlan;
     },
 
+    // 5. Zmiany w getAlternative - dodanie kontekstu klinicznego
     getAlternative: (originalExercise, currentId) => {
         const criteria = {
             categoryId: originalExercise.categoryId,
             targetLevel: originalExercise.difficultyLevel || 1
         };
         const usedIds = new Set([currentId]);
-        const variant = findFreshVariant(originalExercise, criteria, usedIds, true, false);
+        const clinicalCtx = buildClinicalContext();
+        const variant = findFreshVariant(originalExercise, criteria, usedIds, true, false, clinicalCtx);
 
         if (variant) {
             return mergeExerciseData(originalExercise, variant);
@@ -111,14 +133,20 @@ function checkEquipment(exercise) {
     });
 }
 
-function injectPrehabExercises(plan, usedIds) {
+// 4. Zmiany w injectPrehabExercises
+function injectPrehabExercises(plan, usedIds, clinicalCtx) {
     if (!plan.warmup) plan.warmup = [];
 
     const libraryArray = Object.entries(state.exerciseLibrary).map(([id, data]) => ({ id, ...data }));
 
     state.settings.painZones.forEach(zone => {
+        // 4.2. Filtr kandydatów z regułami klinicznymi
         const rehabCandidates = libraryArray.filter(ex => {
-            return ex.painReliefZones && ex.painReliefZones.includes(zone) && !usedIds.has(ex.id) && checkEquipment(ex);
+            if (!ex.painReliefZones || !ex.painReliefZones.includes(zone)) return false;
+            if (usedIds.has(ex.id)) return false;
+            if (!checkEquipment(ex)) return false;
+            if (!passesMixerClinicalRules(ex, clinicalCtx)) return false;
+            return true;
         });
 
         if (rehabCandidates.length > 0) {
@@ -215,9 +243,11 @@ function parseReps(val) {
     return parseInt(val) || 10;
 }
 
-function findFreshVariant(originalEx, criteria, usedIds, forceShuffle = false, mustSwap = false) {
+// 6. Zmiany w findFreshVariant
+function findFreshVariant(originalEx, criteria, usedIds, forceShuffle = false, mustSwap = false, clinicalCtx = null) {
     if (!criteria.categoryId) return null;
 
+    // 6.2. Filtr kandydatów – dodanie reguł klinicznych
     let candidates = Object.entries(state.exerciseLibrary)
         .map(([id, data]) => ({ id: id, ...data }))
         .filter(ex => {
@@ -232,6 +262,9 @@ function findFreshVariant(originalEx, criteria, usedIds, forceShuffle = false, m
             if (usedIds.has(ex.id)) return false;
 
             if (!checkEquipment(ex)) return false;
+
+            // Nowy filtr kliniczny
+            if (!passesMixerClinicalRules(ex, clinicalCtx)) return false;
 
             return true;
         });
@@ -342,4 +375,130 @@ function mergeExerciseData(original, variant) {
         isSwapped: !isSameExercise, // Dodatkowa flaga dla UI
         originalName: !isSameExercise ? original.name : null
     };
+}
+
+// --- KONTEKST KLINICZNY ---
+
+// 1.2. Funkcja budująca kontekst kliniczny
+function buildClinicalContext() {
+    const wizard = (state.settings && state.settings.wizardData) || {};
+    const restrictions = wizard.physical_restrictions || [];
+    const triggers = wizard.trigger_movements || [];
+    const reliefs = wizard.relief_movements || [];
+    const painChar = wizard.pain_character || [];
+    const painLocs = wizard.pain_locations || [];
+    const diagnosis = wizard.medical_diagnosis || [];
+    const painZones = state.settings.painZones || [];
+
+    const tolerancePattern = detectTolerancePattern(triggers, reliefs);
+
+    const painInt = parseInt(wizard.pain_intensity) || 0;
+    const impact = parseInt(wizard.daily_impact) || 0;
+    let severityScore = (painInt + impact) / 2;
+
+    const isPainSharp =
+        painChar.includes('sharp') ||
+        painChar.includes('burning') ||
+        painChar.includes('radiating');
+
+    if (isPainSharp) {
+        severityScore *= 1.2;
+    }
+
+    const isSevere = severityScore >= 6.5;
+
+    const experienceKey = wizard.exercise_experience;
+    const baseDifficultyCap = DIFFICULTY_MAP[experienceKey] || 2;
+
+    let difficultyCap = baseDifficultyCap;
+    if (isSevere) {
+        difficultyCap = Math.min(baseDifficultyCap, 2);
+    } else if (isPainSharp && severityScore >= 4) {
+        difficultyCap = Math.min(baseDifficultyCap, 3);
+    }
+
+    return {
+        restrictions,
+        tolerancePattern,
+        isSevere,
+        isPainSharp,
+        severityScore,
+        difficultyCap,
+        painZones,
+        painLocations: painLocs,
+        diagnosis,
+        hasDisc: diagnosis.includes('disc_herniation')
+    };
+}
+
+function detectTolerancePattern(triggers, reliefs) {
+    if (!Array.isArray(triggers)) triggers = [];
+    if (!Array.isArray(reliefs)) reliefs = [];
+
+    if (triggers.includes('bending_forward') || reliefs.includes('bending_backward')) {
+        return 'flexion_intolerant';
+    }
+    if (triggers.includes('bending_backward') || reliefs.includes('bending_forward')) {
+        return 'extension_intolerant';
+    }
+    return 'neutral';
+}
+
+// --- HELPERY DO ODCZYTU PLANE/POSITION ---
+
+// 2.1. Helpery do odczytu plane/position
+function getPlane(ex) {
+    return ex.primaryPlane || ex.primary_plane || 'multi';
+}
+
+function getPosition(ex) {
+    return ex.position || ex.bodyPosition || null;
+}
+
+// 2.2. Główna funkcja reguł klinicznych do mixera
+function passesMixerClinicalRules(ex, ctx) {
+    if (!ctx) return true;
+
+    const plane = getPlane(ex);
+    const pos = getPosition(ex);
+    const restrictions = ctx.restrictions || [];
+    const zones = ex.painReliefZones || ex.pain_relief_zones || [];
+
+    // Ograniczenia pozycji
+    if (restrictions.includes('no_kneeling')) {
+        if (pos === 'kneeling' || pos === 'quadruped') return false;
+    }
+    if (restrictions.includes('no_twisting')) {
+        if (plane === 'rotation') return false;
+    }
+    if (restrictions.includes('no_floor_sitting')) {
+        if (pos === 'sitting') return false;
+    }
+
+    // Wzorzec tolerancji
+    if (ctx.tolerancePattern === 'flexion_intolerant') {
+        if (plane === 'flexion' && !zones.includes('lumbar_flexion_intolerant')) {
+            return false;
+        }
+    } else if (ctx.tolerancePattern === 'extension_intolerant') {
+        if (plane === 'extension' && !zones.includes('lumbar_extension_intolerant')) {
+            return false;
+        }
+    }
+
+    // Cap trudności
+    const lvl = ex.difficultyLevel || ex.difficulty_level || 1;
+    if (ctx.difficultyCap && lvl > ctx.difficultyCap) {
+        return false;
+    }
+
+    // Tryb ostry – trzymamy się ćwiczeń „ulga dla tej strefy"
+    if (ctx.isSevere) {
+        if (!zones || zones.length === 0) return false;
+        if (!ctx.painZones || !ctx.painZones.some(z => zones.includes(z))) {
+            return false;
+        }
+    }
+
+    return true;
 }

@@ -1,4 +1,4 @@
-// receiver/receiver.js - v7.1 (Web Audio API Oscillator + Aggressive KeepAlive + GPU Activator)
+// receiver/receiver.js - v8.0 (MediaSession + Wake Lock + Canvas + Ultra-Aggressive KeepAlive)
 
 const context = cast.framework.CastReceiverContext.getInstance();
 const CUSTOM_NAMESPACE = 'urn:x-cast:com.trening.app';
@@ -7,11 +7,10 @@ const CUSTOM_NAMESPACE = 'urn:x-cast:com.trening.app';
 const IDLE_TIMEOUT = 43200;
 
 let lastRenderedSvg = null;
-let inputSimulationInterval = null;
+let internalKeepAliveInterval = null;
+let wakeLock = null;
 
 // --- HACK 1: WEB AUDIO API OSCILLATOR (THE NUCLEAR OPTION) ---
-// Zamiast pliku MP3, używamy generatora dźwięku. 
-// Sprzęt audio nie może przejść w stan uśpienia, gdy kontekst jest "running".
 let audioContext = null;
 let silenceOscillator = null;
 
@@ -27,22 +26,19 @@ function startAudioEngine() {
     }
 
     if (!silenceOscillator) {
-        // Tworzymy oscylator
         silenceOscillator = audioContext.createOscillator();
-        // Częstotliwość 1Hz (niesłyszalna dla człowieka, ale aktywna dla sterownika)
         silenceOscillator.frequency.value = 1;
         const gainNode = audioContext.createGain();
-        // Głośność bliska zeru, ale nie matematyczne zero (niektóre sterowniki wyłączają się przy 0)
         gainNode.gain.value = 0.0001;
 
         silenceOscillator.connect(gainNode);
         gainNode.connect(audioContext.destination);
         silenceOscillator.start();
-        console.log('[Receiver] 🔈 Audio Engine Started (Anti-Idle Mode)');
+        console.log('[Receiver] 🔈 Audio Engine Started');
     }
 }
 
-// --- HACK 2: VIDEO LOOP (Force Repaint) ---
+// --- HACK 2: VIDEO LOOP ---
 const keepAliveVideo = document.getElementById('keepAliveVideo');
 
 function startKeepAlive() {
@@ -57,10 +53,8 @@ function stopKeepAlive() {
     }
 }
 
-// --- HACK 3: INPUT SIMULATION ON PING ---
-// Symulujemy aktywność tylko wtedy, gdy przyjdzie PING od sendera.
+// --- HACK 3: INPUT SIMULATION ---
 function simulateActivity() {
-    // console.log('[Receiver] 🤖 Simulating Touch...');
     try {
         const touchEvent = new TouchEvent('touchstart', {
             bubbles: true,
@@ -76,8 +70,134 @@ function simulateActivity() {
             cancelable: true
         });
         document.body.dispatchEvent(clickEvent);
+    } catch (e) { /* Ignore */ }
+}
 
-    } catch (e) { /* Ignore errors on old browsers */ }
+// --- HACK 4: GPU ACTIVATOR ---
+const gpuActivator = document.getElementById('gpu-activator');
+
+function startGpuActivator() {
+    setInterval(() => {
+        if (gpuActivator) {
+            gpuActivator.style.opacity = gpuActivator.style.opacity === '0.01' ? '0.02' : '0.01';
+        }
+    }, 5000);
+}
+
+// --- HACK 5: AUDIO CONTEXT KEEP-ALIVE ---
+function startAudioContextKeepAlive() {
+    setInterval(() => {
+        if (audioContext && audioContext.state === 'suspended') {
+            console.log('[Receiver] 🔄 Resuming suspended AudioContext...');
+            audioContext.resume();
+        }
+    }, 30000);
+}
+
+// --- HACK 6: MEDIA SESSION API (KLUCZOWE DLA ANDROID TV!) ---
+// To mówi systemowi, że jesteśmy "odtwarzaczem mediów" i nie powinien nas wygaszać
+function setupMediaSession() {
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: 'Trening w toku',
+            artist: 'Aplikacja Treningowa',
+            album: 'Ćwiczenia'
+        });
+
+        // Ustawiamy stan na "playing" - kluczowe!
+        navigator.mediaSession.playbackState = 'playing';
+
+        // Puste handlery, ale ich obecność sygnalizuje aktywność
+        navigator.mediaSession.setActionHandler('play', () => { });
+        navigator.mediaSession.setActionHandler('pause', () => { });
+        navigator.mediaSession.setActionHandler('stop', () => { });
+
+        console.log('[Receiver] 🎵 MediaSession API configured');
+    }
+}
+
+function updateMediaSessionState(exerciseName) {
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: exerciseName || 'Trening w toku',
+            artist: 'Aplikacja Treningowa',
+            album: 'Ćwiczenia'
+        });
+        navigator.mediaSession.playbackState = 'playing';
+    }
+}
+
+// --- HACK 7: WAKE LOCK API ---
+async function requestWakeLock() {
+    try {
+        if ('wakeLock' in navigator) {
+            wakeLock = await navigator.wakeLock.request('screen');
+            console.log('[Receiver] 🔒 Wake Lock acquired');
+
+            wakeLock.addEventListener('release', () => {
+                console.log('[Receiver] 🔓 Wake Lock released, re-acquiring...');
+                setTimeout(requestWakeLock, 1000);
+            });
+        }
+    } catch (e) {
+        console.warn('[Receiver] Wake Lock failed:', e.message);
+    }
+}
+
+// --- HACK 8: CANVAS ANIMATION (GPU Activity) ---
+let canvasCtx = null;
+function startCanvasAnimation() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 2;
+    canvas.height = 2;
+    canvas.style.cssText = 'position:fixed;top:-10px;left:-10px;opacity:0.01;pointer-events:none;z-index:-1000;';
+    document.body.appendChild(canvas);
+    canvasCtx = canvas.getContext('2d');
+
+    function animate() {
+        if (canvasCtx) {
+            // Zmieniamy kolor bazując na czasie - wymusza rendering GPU
+            const color = Date.now() % 256;
+            canvasCtx.fillStyle = `rgb(${color}, ${(color + 85) % 256}, ${(color + 170) % 256})`;
+            canvasCtx.fillRect(0, 0, 2, 2);
+        }
+        requestAnimationFrame(animate);
+    }
+    animate();
+    console.log('[Receiver] 🎨 Canvas Animation started');
+}
+
+// --- HACK 9: WEWNĘTRZNY KEEP-ALIVE (CO 5 SEKUND!) ---
+// Niezależny od sendera - sam receiver utrzymuje aktywność
+function startInternalKeepAlive() {
+    if (internalKeepAliveInterval) return;
+
+    internalKeepAliveInterval = setInterval(() => {
+        // Symuluj aktywność
+        simulateActivity();
+
+        // Odśwież MediaSession
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.playbackState = 'playing';
+        }
+
+        // Upewnij się, że audio działa
+        if (audioContext && audioContext.state === 'suspended') {
+            audioContext.resume();
+        }
+
+        // Odśwież Wake Lock jeśli trzeba
+        if (!wakeLock || wakeLock.released) {
+            requestWakeLock();
+        }
+
+        // Log co minutę (co 12 iteracji)
+        if (Date.now() % 60000 < 5000) {
+            console.log('[Receiver] 💓 Internal KeepAlive pulse');
+        }
+    }, 5000); // Co 5 sekund!
+
+    console.log('[Receiver] ⏱️ Internal KeepAlive started (5s interval)');
 }
 
 // --- UI CACHE & LOGIC ---
@@ -120,7 +240,6 @@ context.addCustomMessageListener(CUSTOM_NAMESPACE, (event) => {
 
     switch (message.type) {
         case 'PING':
-            // Symulujemy interakcję tylko przy Pingu, aby zresetować wewnętrzny licznik idle TV
             simulateActivity();
             break;
 
@@ -135,6 +254,7 @@ context.addCustomMessageListener(CUSTOM_NAMESPACE, (event) => {
             showScreen('training');
             if (message.payload.exerciseName) {
                 context.setApplicationState(`Trening: ${message.payload.exerciseName}`);
+                updateMediaSessionState(message.payload.exerciseName);
             }
             break;
 
@@ -146,7 +266,6 @@ context.addCustomMessageListener(CUSTOM_NAMESPACE, (event) => {
 
         case 'PLAY_VIDEO':
             stopKeepAlive();
-            // Przy YouTube nie stopujemy oscylatora, niech działa w tle
             playVideo(message.payload.youtubeId);
             showScreen('video');
             context.setApplicationState("Odtwarzanie wideo");
@@ -222,41 +341,26 @@ function stopVideo() {
     UI.video.iframe.src = '';
 }
 
-// --- HACK 4: GPU ACTIVATOR (Force Repaint) ---
-const gpuActivator = document.getElementById('gpu-activator');
-
-function startGpuActivator() {
-    setInterval(() => {
-        if (gpuActivator) {
-            gpuActivator.style.opacity = gpuActivator.style.opacity === '0.01' ? '0.02' : '0.01';
-        }
-    }, 5000);
-}
-
-// --- HACK 5: AUDIO CONTEXT KEEP-ALIVE ---
-// Niektóre urządzenia automatycznie wstrzymują AudioContext
-function startAudioContextKeepAlive() {
-    setInterval(() => {
-        if (audioContext && audioContext.state === 'suspended') {
-            console.log('[Receiver] 🔄 Resuming suspended AudioContext...');
-            audioContext.resume();
-        }
-    }, 30000);
-}
-
 // --- INITIALIZATION ---
 
 context.addEventListener(cast.framework.system.EventType.READY, () => {
-    console.log('[Receiver] System Ready - Starting Engines');
+    console.log('[Receiver] System Ready - Starting ALL Engines v8.0');
+
+    // Start wszystkich mechanizmów anti-idle
     startAudioEngine();
     startKeepAlive();
     startGpuActivator();
     startAudioContextKeepAlive();
+    setupMediaSession();
+    requestWakeLock();
+    startCanvasAnimation();
+    startInternalKeepAlive(); // Nowy: co 5 sekund!
 });
 
-// Obsługa zdarzeń, aby zapobiec wygaszeniu, gdy użytkownik nic nie robi
 context.addEventListener(cast.framework.system.EventType.SENDER_CONNECTED, () => {
+    console.log('[Receiver] Sender connected - reinforcing anti-idle');
     startAudioEngine();
+    requestWakeLock();
 });
 
 const options = new cast.framework.CastReceiverOptions();
@@ -264,14 +368,13 @@ options.customNamespaces = {
     [CUSTOM_NAMESPACE]: cast.framework.system.MessageType.JSON
 };
 
-// OSTATECZNA KONFIGURACJA IDLE - Wyłączenie Timeoutu
+// KONFIGURACJA IDLE
 options.disableIdleTimeout = true;
-// Ustawienie max czasu bezczynności na 12h (w sekundach)
 options.maxInactivity = IDLE_TIMEOUT;
 
 context.start(options);
 
-// Legacy Fallback dla starszych urządzeń
+// Legacy Fallback
 try {
     const castMgr = cast.receiver.CastReceiverManager.getInstance();
     castMgr.setInactivityTimeout(IDLE_TIMEOUT);

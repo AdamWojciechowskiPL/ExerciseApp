@@ -1,16 +1,17 @@
 // js/ui/screens/summary.js
 import { state } from '../../state.js';
-import { screens } from '../../dom.js'; 
+import { screens } from '../../dom.js';
 import { navigateTo, showLoader, hideLoader } from '../core.js';
 import dataStore from '../../dataStore.js';
 import { renderEvolutionModal } from '../modals.js';
 import { getIsCasting, sendShowIdle } from '../../cast.js';
+import { clearSessionBackup } from '../../sessionRecovery.js';
 
 let selectedFeedback = { type: null, value: 0 };
 
 export const renderSummaryScreen = () => {
     if (getIsCasting()) sendShowIdle();
-    
+
     // 1. Wykrywanie właściwego planu (Dynamic vs Static)
     let activePlan = null;
     const isDynamicMode = state.settings.planMode === 'dynamic' || (state.settings.dynamicPlanData && !state.settings.planMode);
@@ -26,18 +27,18 @@ export const renderSummaryScreen = () => {
     // 2. Pobieranie dnia (obsługa różnic w strukturze Days/days)
     const daysList = activePlan.Days || activePlan.days || [];
     const trainingDay = daysList.find(d => d.dayNumber === state.currentTrainingDayId);
-    
+
     if (!trainingDay) return;
-    
+
     const initialPain = state.sessionParams.initialPainLevel || 0;
     const isSafetyMode = initialPain > 3;
-    
+
     const summaryScreen = screens.summary;
     summaryScreen.innerHTML = '';
 
     let feedbackHtml = '';
     let questionTitle = '';
-    
+
     if (isSafetyMode) {
         questionTitle = "Zaczynaliśmy z bólem. Jak czujesz się teraz?";
         selectedFeedback.type = 'symptom';
@@ -125,7 +126,7 @@ export const renderSummaryScreen = () => {
 
 export async function handleSummarySubmit(e) {
     e.preventDefault();
-    
+
     const submitBtn = e.target.querySelector('button[type="submit"]');
     if (submitBtn) {
         submitBtn.disabled = true;
@@ -140,21 +141,19 @@ export async function handleSummarySubmit(e) {
     const rawDuration = now - state.sessionStartTime;
     const netDuration = Math.max(0, rawDuration - (state.totalPausedTime || 0));
     const durationSeconds = Math.round(netDuration / 1000);
-    
+
     // 1. LOGIKA WYBORU PLANU (FIX DLA DYNAMICZNEGO)
     const isDynamicMode = state.settings.planMode === 'dynamic' || (state.settings.dynamicPlanData && !state.settings.planMode);
-    
+
     let planIdToSave = state.settings.activePlanId;
     let trainingTitle = "Trening";
 
     if (isDynamicMode && state.settings.dynamicPlanData) {
-        // W trybie dynamicznym ID bierzemy z obiektu wygenerowanego planu
         planIdToSave = state.settings.dynamicPlanData.id;
         const days = state.settings.dynamicPlanData.days || [];
         const day = days.find(d => d.dayNumber === state.currentTrainingDayId);
         if (day) trainingTitle = day.title;
     } else {
-        // W trybie statycznym
         const activePlan = state.trainingPlans[state.settings.activePlanId];
         if (activePlan) {
             const day = activePlan.Days.find(d => d.dayNumber === state.currentTrainingDayId);
@@ -163,13 +162,13 @@ export async function handleSummarySubmit(e) {
     }
 
     const sessionPayload = {
-        sessionId: Date.now(), 
-        planId: planIdToSave, // <-- TUTAJ BYŁ BŁĄD (teraz jest poprawne ID dynamiczne)
+        sessionId: Date.now(),
+        planId: planIdToSave,
         trainingDayId: state.currentTrainingDayId,
         trainingTitle: trainingTitle,
         status: 'completed',
-        feedback: selectedFeedback, 
-        pain_during: selectedFeedback.type === 'symptom' && selectedFeedback.value === -1 ? 5 : 0, 
+        feedback: selectedFeedback,
+        pain_during: selectedFeedback.type === 'symptom' && selectedFeedback.value === -1 ? 5 : 0,
         notes: document.getElementById('general-notes').value,
         startedAt: state.sessionStartTime ? state.sessionStartTime.toISOString() : now.toISOString(),
         completedAt: now.toISOString(),
@@ -178,8 +177,11 @@ export async function handleSummarySubmit(e) {
     };
 
     try {
-        const response = await dataStore.saveSession(sessionPayload); 
-        
+        const response = await dataStore.saveSession(sessionPayload);
+
+        // Wyczyść backup sesji po udanym zapisie
+        clearSessionBackup();
+
         await dataStore.loadRecentHistory(7);
 
         if (response && response.newStats) {
@@ -192,7 +194,7 @@ export async function handleSummarySubmit(e) {
         if (stravaCheckbox && stravaCheckbox.checked) {
             dataStore.uploadToStrava(sessionPayload);
         }
-        
+
         state.currentTrainingDate = null;
         state.currentTrainingDayId = null;
         state.sessionLog = [];
@@ -202,7 +204,6 @@ export async function handleSummarySubmit(e) {
 
         hideLoader();
 
-        // Dynamiczny import dashboardu, aby uniknąć cyklicznych zależności
         const { renderMainScreen } = await import('./dashboard.js');
 
         if (response && response.adaptation) {
@@ -219,7 +220,7 @@ export async function handleSummarySubmit(e) {
         console.error("Błąd zapisu sesji:", error);
         hideLoader();
         alert("Błąd zapisu. Sprawdź połączenie.");
-        
+
         if (submitBtn) {
             submitBtn.disabled = false;
             submitBtn.textContent = "Spróbuj ponownie";

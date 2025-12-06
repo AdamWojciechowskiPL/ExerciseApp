@@ -17,10 +17,12 @@ import {
     initWizard
 } from './ui.js';
 import { containers, mainNav, screens } from './dom.js';
-import { moveToPreviousExercise, moveToNextExercise } from './training.js';
+import { moveToPreviousExercise, moveToNextExercise, resumeFromBackup } from './training.js';
 import { stopTimer, togglePauseTimer, stopStopwatch } from './timer.js';
 import { loadVoices } from './tts.js';
 import { initializeCastApi, getIsCasting, sendShowIdle } from './cast.js';
+import { getSessionBackup, clearSessionBackup, calculateTimeGap, formatTimeGap } from './sessionRecovery.js';
+import { renderSessionRecoveryModal } from './ui/modals.js';
 
 
 // === 2. GŁÓWNE FUNKCJE APLIKACJI ===
@@ -42,7 +44,7 @@ function initAppLogic() {
         mainNav.querySelector('#nav-history').addEventListener('click', () => renderHistoryScreen());
         mainNav.querySelector('#nav-library').addEventListener('click', () => renderLibraryScreen());
         mainNav.querySelector('#nav-settings').addEventListener('click', renderSettingsScreen);
-        
+
         // NOWY PRZYCISK W GÓRNYM MENU (opcjonalny, jeśli dodasz do HTML, tutaj obsługa)
         const statsBtn = mainNav.querySelector('#nav-analytics');
         if (statsBtn) {
@@ -106,7 +108,7 @@ function initAppLogic() {
     if (screens.training) {
         screens.training.addEventListener('click', (e) => {
             const target = e.target;
-            if (target.closest('#exit-training-btn')) { if (confirm('Przerwać trening?')) { stopTimer(); stopStopwatch(); if (state.tts.isSupported) state.tts.synth.cancel(); if (getIsCasting()) sendShowIdle(); state.currentTrainingDate = null; state.sessionLog = []; state.isPaused = false; navigateTo('main'); renderMainScreen(); } return; }
+            if (target.closest('#exit-training-btn')) { if (confirm('Przerwać trening?')) { stopTimer(); stopStopwatch(); if (state.tts.isSupported) state.tts.synth.cancel(); if (getIsCasting()) sendShowIdle(); clearSessionBackup(); state.currentTrainingDate = null; state.sessionLog = []; state.isPaused = false; navigateTo('main'); renderMainScreen(); } return; }
             if (target.closest('#tts-toggle-btn')) { state.tts.isSoundOn = !state.tts.isSoundOn; const icon = document.getElementById('tts-icon'); if (icon) icon.src = state.tts.isSoundOn ? '/icons/sound-on.svg' : '/icons/sound-off.svg'; if (!state.tts.isSoundOn && state.tts.isSupported) state.tts.synth.cancel(); return; }
             if (target.closest('#prev-step-btn')) { moveToPreviousExercise(); return; }
             if (target.closest('#pause-resume-btn')) { togglePauseTimer(); return; }
@@ -180,20 +182,20 @@ export async function main() {
             await resourcesPromise;
 
             initAppLogic();
-            
+
             // --- ETAP 1: SZYBKI START (Ustawienia + Szkielet) ---
             try {
-                localStorage.removeItem('cachedUserStats'); 
+                localStorage.removeItem('cachedUserStats');
                 // Pobieramy ustawienia i profil (bardzo szybkie zapytanie)
                 await dataStore.initialize();
                 state.isAppInitialized = true;
 
                 // Natychmiast renderujemy nawigację i szkielet Dashboardu
                 if (bottomNav) bottomNav.classList.remove('hidden');
-                
+
                 // UKRYWAMY LOADER TERAZ, ABY POKAZAĆ SZKIELET
-                hideLoader(); 
-                
+                hideLoader();
+
                 // Wywołujemy renderMainScreen z flagą isLoading=true
                 // To wyświetli migoczący szkielet zamiast pustki
                 renderMainScreen(true);
@@ -203,7 +205,7 @@ export async function main() {
                 // --- ETAP 2: ŁADOWANIE CIĘŻKICH DANYCH (W TLE) ---
                 // Pobieramy historię dla ostatnich 90 dni, aby mieć dane do Kart Mistrzostwa
                 await dataStore.loadRecentHistory(90);
-                
+
                 console.log("DEBUG: Historia gotowa. Przeliczam widok...");
 
                 const wizardStarted = initWizard();
@@ -217,9 +219,29 @@ export async function main() {
                         renderSettingsScreen();
                         window.history.replaceState({}, document.title, window.location.pathname + "#settings");
                     } else {
-                        // Odświeżamy Dashboard, teraz już z pełnymi danymi
-                        // Funkcja sama wykryje, że ma dane i wyrenderuje właściwą treść
-                        renderMainScreen(false);
+                        // Sprawdź czy jest backup sesji do odzyskania
+                        const backup = getSessionBackup();
+                        if (backup) {
+                            const timeGap = calculateTimeGap(backup);
+                            const timeGapFormatted = formatTimeGap(timeGap);
+
+                            renderSessionRecoveryModal(
+                                backup,
+                                timeGapFormatted,
+                                () => {
+                                    // Przywróć sesję
+                                    resumeFromBackup(backup, timeGap);
+                                },
+                                () => {
+                                    // Porzuć sesję
+                                    clearSessionBackup();
+                                    renderMainScreen(false);
+                                }
+                            );
+                        } else {
+                            // Odświeżamy Dashboard, teraz już z pełnymi danymi
+                            renderMainScreen(false);
+                        }
                     }
                 }
 

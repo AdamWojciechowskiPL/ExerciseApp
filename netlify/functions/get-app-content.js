@@ -13,11 +13,11 @@ exports.handler = async (event) => {
   try {
     let userId = null;
     try {
-        if (event.headers.authorization) {
-            userId = await getUserIdFromEvent(event);
-        }
+      if (event.headers.authorization) {
+        userId = await getUserIdFromEvent(event);
+      }
     } catch (e) {
-        console.warn("Public access to app content (no personalization)");
+      console.warn("Public access to app content (no personalization)");
     }
 
     // 1. Pobierz Ćwiczenia (Dodano default_tempo oraz is_unilateral)
@@ -36,7 +36,9 @@ exports.handler = async (event) => {
         painReliefZones: ex.pain_relief_zones || [],
         animationSvg: ex.animation_svg || null,
         defaultTempo: ex.default_tempo || null,
-        isUnilateral: ex.is_unilateral || false // NOWE POLE
+        isUnilateral: ex.is_unilateral || false,
+        primaryPlane: ex.primary_plane || 'multi',
+        position: ex.position || null
       };
       return acc;
     }, {});
@@ -46,25 +48,25 @@ exports.handler = async (event) => {
     let blockedIds = new Set();
 
     if (userId) {
-        const overridesResult = await client.query(
-            'SELECT original_exercise_id, replacement_exercise_id FROM user_plan_overrides WHERE user_id = $1',
-            [userId]
-        );
-        overridesResult.rows.forEach(row => {
-            overrides[row.original_exercise_id] = row.replacement_exercise_id;
-        });
+      const overridesResult = await client.query(
+        'SELECT original_exercise_id, replacement_exercise_id FROM user_plan_overrides WHERE user_id = $1',
+        [userId]
+      );
+      overridesResult.rows.forEach(row => {
+        overrides[row.original_exercise_id] = row.replacement_exercise_id;
+      });
 
-        const blacklistResult = await client.query(
-            'SELECT exercise_id, preferred_replacement_id FROM user_exercise_blacklist WHERE user_id = $1',
-            [userId]
-        );
-        blacklistResult.rows.forEach(row => {
-            if (row.preferred_replacement_id) {
-                overrides[row.exercise_id] = row.preferred_replacement_id;
-            } else {
-                blockedIds.add(row.exercise_id);
-            }
-        });
+      const blacklistResult = await client.query(
+        'SELECT exercise_id, preferred_replacement_id FROM user_exercise_blacklist WHERE user_id = $1',
+        [userId]
+      );
+      blacklistResult.rows.forEach(row => {
+        if (row.preferred_replacement_id) {
+          overrides[row.exercise_id] = row.preferred_replacement_id;
+        } else {
+          blockedIds.add(row.exercise_id);
+        }
+      });
     }
 
     // 3. Pobierz i Zbuduj Plan
@@ -101,33 +103,33 @@ exports.handler = async (event) => {
         }
 
         if (row.exercise_id && day[row.section]) {
-            let finalExerciseId = row.exercise_id;
-            let isOverridden = false;
+          let finalExerciseId = row.exercise_id;
+          let isOverridden = false;
 
-            if (overrides[finalExerciseId]) {
-                finalExerciseId = overrides[finalExerciseId];
-                isOverridden = true;
-            }
+          if (overrides[finalExerciseId]) {
+            finalExerciseId = overrides[finalExerciseId];
+            isOverridden = true;
+          }
 
-            if (blockedIds.has(finalExerciseId)) {
-                return acc; 
-            }
+          if (blockedIds.has(finalExerciseId)) {
+            return acc;
+          }
 
-            const exerciseRef = {
-                exerciseId: finalExerciseId,
-                sets: row.sets,
-                reps_or_time: row.reps_or_time,
-                tempo_or_iso: row.tempo_or_iso,
-                isPersonalized: isOverridden
-            };
-            day[row.section].push(exerciseRef);
+          const exerciseRef = {
+            exerciseId: finalExerciseId,
+            sets: row.sets,
+            reps_or_time: row.reps_or_time,
+            tempo_or_iso: row.tempo_or_iso,
+            isPersonalized: isOverridden
+          };
+          day[row.section].push(exerciseRef);
         }
       }
       return acc;
     }, {});
-    
+
     Object.values(training_plans).forEach(plan => {
-        plan.Days.sort((a, b) => a.dayNumber - b.dayNumber);
+      plan.Days.sort((a, b) => a.dayNumber - b.dayNumber);
     });
 
     return {

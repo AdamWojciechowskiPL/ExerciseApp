@@ -5,7 +5,7 @@ export function renderSwapModal(currentExercise, onConfirm) {
     // 1. IDENTYFIKACJA KATEGORII
     // Pobieramy ID z planu (exerciseId) lub z obiektu (id)
     const currentId = currentExercise.id || currentExercise.exerciseId;
-    
+
     // Sprawdzamy kategorię w planie, a jak brak to w bibliotece
     let categoryId = currentExercise.categoryId;
     const libraryExercise = state.exerciseLibrary[currentId];
@@ -23,7 +23,7 @@ export function renderSwapModal(currentExercise, onConfirm) {
     // 2. PRZYGOTOWANIE ALTERNATYW (FIX: Dodawanie ID)
     // Zamiast Object.values, używamy Object.entries, żeby wyciągnąć klucz (ID)
     const alternatives = Object.entries(state.exerciseLibrary)
-        .map(([id, data]) => ({ 
+        .map(([id, data]) => ({
             id: id,      // Jawnie przypisujemy ID z klucza
             ...data      // Reszta danych (name, categoryId, etc.)
         }))
@@ -43,7 +43,7 @@ export function renderSwapModal(currentExercise, onConfirm) {
     // 3. RENDEROWANIE WIDOKU (HTML)
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
-    
+
     const altsHtml = alternatives.map(alt => `
         <div class="alt-exercise-card" data-id="${alt.id}">
             <div class="alt-info">
@@ -96,7 +96,7 @@ export function renderSwapModal(currentExercise, onConfirm) {
             card.classList.add('selected');
             // Teraz data-id na pewno jest poprawne
             selectedAltId = card.dataset.id;
-            
+
             const selectedName = state.exerciseLibrary[selectedAltId]?.name || 'Wybrane';
             confirmBtn.disabled = false;
             confirmBtn.textContent = `Wymień na: ${selectedName}`;
@@ -107,14 +107,14 @@ export function renderSwapModal(currentExercise, onConfirm) {
         btn.addEventListener('click', (e) => {
             // 1. Resetujemy klasę 'active' na wszystkich przyciskach
             toggleBtns.forEach(b => b.classList.remove('active'));
-            
+
             // 2. Dodajemy klasę 'active' do KLIKNIĘTEGO przycisku
             // Używamy 'btn' zamiast 'e.target', aby mieć pewność, że celujemy w <button>
             btn.classList.add('active');
-            
+
             // 3. Aktualizujemy zmienną logiczną
             swapType = btn.dataset.type;
-            
+
             console.log("Wybrano tryb wymiany:", swapType);
         });
     });
@@ -131,7 +131,7 @@ export function renderSwapModal(currentExercise, onConfirm) {
                 id: selectedAltId, // Gwarantujemy, że ID jest w obiekcie
                 ...rawDef
             };
-            
+
             onConfirm(newExerciseDef, swapType);
             document.body.removeChild(overlay);
         }
@@ -169,12 +169,12 @@ document.addEventListener('click', (e) => {
 
 export function renderEvolutionModal(adaptation, onCheck) {
     // adaptation: { original: string, type: 'evolution'|'devolution', newId: string, newName: string }
-    
+
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
-    
+
     const isEvo = adaptation.type === 'evolution';
-    
+
     // Konfiguracja treści zależna od typu zmiany
     const config = isEvo ? {
         title: "Ewolucja!",
@@ -214,12 +214,12 @@ export function renderEvolutionModal(adaptation, onCheck) {
             </button>
         </div>
     `;
-    
+
     document.body.appendChild(overlay);
-    
+
     // Dźwięk sukcesu (jeśli mamy audioContext w state)
     if (state.completionSound && isEvo) {
-        state.finalCompletionSound(); 
+        state.finalCompletionSound();
     }
 
     const closeBtn = overlay.querySelector('#close-evo');
@@ -233,4 +233,70 @@ export function renderEvolutionModal(adaptation, onCheck) {
             if (onCheck) onCheck();
         }, 200);
     };
+}
+
+/**
+ * Modal do odzyskiwania przerwanej sesji treningowej.
+ * @param {Object} backup - Dane z sessionRecovery.getSessionBackup()
+ * @param {string} timeGapFormatted - Sformatowana luka czasowa (np. "5 minut")
+ * @param {Function} onRestore - Callback przy wyborze "Przywróć"
+ * @param {Function} onDiscard - Callback przy wyborze "Porzuć"
+ */
+export function renderSessionRecoveryModal(backup, timeGapFormatted, onRestore, onDiscard) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+
+    // Oblicz postęp
+    const totalSteps = backup.flatExercises?.length || 0;
+    const currentStep = backup.currentExerciseIndex || 0;
+    const progressPercent = totalSteps > 0 ? Math.round((currentStep / totalSteps) * 100) : 0;
+
+    overlay.innerHTML = `
+        <div class="swap-modal" style="max-width: 380px;">
+            <div style="text-align: center; margin-bottom: 1.5rem;">
+                <span style="font-size: 3rem;">⚠️</span>
+                <h2 style="margin: 0.5rem 0;">Przerwana sesja</h2>
+                <p style="opacity: 0.7; font-size: 0.9rem;">
+                    Wykryto niezakończony trening
+                </p>
+            </div>
+            
+            <div style="background: var(--card-color); border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem;">
+                <div style="font-weight: 600; margin-bottom: 0.5rem;">${backup.trainingTitle || 'Trening'}</div>
+                <div style="font-size: 0.85rem; opacity: 0.7; margin-bottom: 0.75rem;">
+                    Przerwa: ${timeGapFormatted} temu
+                </div>
+                <div style="background: var(--bg-color); border-radius: 8px; padding: 0.5rem;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.25rem;">
+                        <span>Postęp</span>
+                        <span>${currentStep} / ${totalSteps} (${progressPercent}%)</span>
+                    </div>
+                    <div style="height: 6px; background: var(--secondary-color); border-radius: 3px; overflow: hidden;">
+                        <div style="height: 100%; width: ${progressPercent}%; background: var(--primary-color); transition: width 0.3s;"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <p style="font-size: 0.85rem; opacity: 0.8; margin-bottom: 1rem; text-align: center;">
+                Czas przerwy zostanie dodany do całkowitego czasu pauzy.
+            </p>
+            
+            <div style="display: flex; gap: 10px;">
+                <button id="discard-session" class="nav-btn" style="flex: 1;">Porzuć</button>
+                <button id="restore-session" class="action-btn" style="flex: 1;">Przywróć</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    overlay.querySelector('#restore-session').addEventListener('click', () => {
+        overlay.remove();
+        if (onRestore) onRestore();
+    });
+
+    overlay.querySelector('#discard-session').addEventListener('click', () => {
+        overlay.remove();
+        if (onDiscard) onDiscard();
+    });
 }

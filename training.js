@@ -8,6 +8,7 @@ import { getExerciseDuration, parseSetCount, formatForTTS, getHydratedDay } from
 import { navigateTo } from './ui.js';
 import { renderSummaryScreen } from './ui/screens/summary.js';
 import { getIsCasting, sendTrainingStateUpdate } from './cast.js';
+import { saveSessionBackup } from './sessionRecovery.js';
 
 /**
  * Synchronizacja z Chromecastem
@@ -65,6 +66,44 @@ function logCurrentStep(status) {
     } else {
         state.sessionLog.push(newLogEntry);
     }
+}
+
+/**
+ * Zapisuje backup sesji do localStorage.
+ * Wywoływane przy każdej zmianie ćwiczenia.
+ */
+function triggerSessionBackup() {
+    // Określamy tytuł treningu
+    let trainingTitle = 'Trening';
+    const isDynamicMode = state.settings.planMode === 'dynamic' || (state.settings.dynamicPlanData && !state.settings.planMode);
+
+    if (isDynamicMode && state.settings.dynamicPlanData) {
+        const days = state.settings.dynamicPlanData.days || [];
+        const day = days.find(d => d.dayNumber === state.currentTrainingDayId);
+        if (day) trainingTitle = day.title;
+    } else {
+        const activePlan = state.trainingPlans[state.settings.activePlanId];
+        if (activePlan) {
+            const day = activePlan.Days.find(d => d.dayNumber === state.currentTrainingDayId);
+            if (day) trainingTitle = day.title;
+        }
+    }
+
+    saveSessionBackup({
+        sessionStartTime: state.sessionStartTime ? state.sessionStartTime.toISOString() : null,
+        totalPausedTime: state.totalPausedTime || 0,
+        planId: isDynamicMode ? (state.settings.dynamicPlanData?.id || state.settings.activePlanId) : state.settings.activePlanId,
+        planMode: state.settings.planMode,
+        currentTrainingDayId: state.currentTrainingDayId,
+        trainingTitle: trainingTitle,
+        todaysDynamicPlan: state.todaysDynamicPlan,
+        flatExercises: state.flatExercises,
+        currentExerciseIndex: state.currentExerciseIndex,
+        sessionLog: state.sessionLog,
+        stopwatchSeconds: state.stopwatch.seconds,
+        timerTimeLeft: state.timer.timeLeft,
+        sessionParams: state.sessionParams
+    });
 }
 
 export function moveToNextExercise(options = { skipped: false }) {
@@ -240,6 +279,7 @@ export function startExercise(index) {
     }
 
     syncStateToChromecast();
+    triggerSessionBackup(); // Zapisz backup przy każdej zmianie ćwiczenia
 }
 
 export function generateFlatExercises(dayData) {
@@ -349,4 +389,36 @@ export async function startModifiedTraining() {
     initializeFocusElements();
 
     startExercise(0);
+    triggerSessionBackup(); // Pierwszy backup przy starcie
+}
+
+/**
+ * Przywraca sesję treningową z backupu.
+ * @param {Object} backup - Dane z sessionRecovery.getSessionBackup()
+ * @param {number} timeGapMs - Luka czasowa w milisekundach
+ */
+export function resumeFromBackup(backup, timeGapMs) {
+    console.log('[Training] 🔄 Resuming session from backup...');
+
+    // Odtwórz stan sesji
+    state.sessionStartTime = backup.sessionStartTime ? new Date(backup.sessionStartTime) : new Date();
+    state.totalPausedTime = (backup.totalPausedTime || 0) + timeGapMs; // Dodaj lukę jako przerwę
+    state.isPaused = false;
+    state.lastPauseStartTime = null;
+
+    // Odtwórz dane planu
+    state.currentTrainingDayId = backup.currentTrainingDayId;
+    state.todaysDynamicPlan = backup.todaysDynamicPlan;
+
+    // Odtwórz postęp
+    state.flatExercises = backup.flatExercises;
+    state.sessionLog = backup.sessionLog || [];
+    state.sessionParams = backup.sessionParams || { initialPainLevel: 0, timeFactor: 1.0 };
+
+    // Przejdź do ekranu treningu
+    navigateTo('training');
+    initializeFocusElements();
+
+    // Wznów od ostatniego ćwiczenia (timer/stoper startuje od 0)
+    startExercise(backup.currentExerciseIndex);
 }

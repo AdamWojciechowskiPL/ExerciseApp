@@ -212,9 +212,13 @@ export const renderMainScreen = (isLoading = false) => {
                 console.log("CACHE HIT: Używam zapisanego planu z dysku.");
                 finalPlan = cachedPlan;
             } else {
-                console.log("CACHE MISS: Generuję plan na dziś.");
+                console.log("CACHE MISS: Generuję plan na dziś (z Mikserem).");
                 const hydratedDay = getHydratedDay(rawDay);
-                finalPlan = JSON.parse(JSON.stringify(hydratedDay));
+                
+                // --- ZMIANA: Dodajemy Mixer tutaj ---
+                // true na drugim argumencie wymusza lekkie losowanie nawet jeśli sprzęt się zgadza
+                finalPlan = workoutMixer.mixWorkout(hydratedDay, false); 
+                
                 finalPlan.dayNumber = currentSequenceDayNum;
                 finalPlan.planId = currentPlanId;
                 savePlanToStorage(finalPlan);

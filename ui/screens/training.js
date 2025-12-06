@@ -1,4 +1,3 @@
-// ui/screens/training.js
 import { state } from '../../state.js';
 import { screens, initializeFocusElements } from '../../dom.js';
 import { getActiveTrainingPlan, getHydratedDay, getISODate } from '../../utils.js';
@@ -32,30 +31,30 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
     let rawDayData = null;
     let isCurrentDynamicDay = false;
 
-    if (useDynamicPlan) {
-        // A. Sprawdź czy to "Dzień Dzisiejszy" w trybie dynamicznym
-        // Jeśli tak, bierzemy z state.todaysDynamicPlan, bo tam mogą być już wykonane Swapy/Mixer
-        if (state.todaysDynamicPlan && state.todaysDynamicPlan.dayNumber === dayId) {
-            rawDayData = state.todaysDynamicPlan;
-            isCurrentDynamicDay = true;
-        } 
-        // B. Jeśli to inny dzień (podgląd przyszłości) w trybie dynamicznym
-        else if (state.settings.dynamicPlanData && state.settings.dynamicPlanData.days) {
-            const dynDays = state.settings.dynamicPlanData.days;
-            // Obsługa cykliczności (modulo), jeśli dayId wykracza poza długość planu
-            // dayId jest 1-based, tablica 0-based
-            const arrayIndex = (dayId - 1) % dynDays.length;
-            rawDayData = dynDays[arrayIndex];
-            
-            // Upewnij się, że dayNumber w obiekcie jest zgodny z wyświetlanym (ważne przy cyklicznym powtarzaniu planu)
-            if (rawDayData) {
-                // Tworzymy płytką kopię, żeby nie nadpisać oryginału w settings przy zmianie dayNumber
-                rawDayData = { ...rawDayData, dayNumber: dayId };
-            }
+    // --- FIX: PRIORYTET DLA ZMIKSOWANEGO PLANU W PAMIĘCI ---
+    // Sprawdzamy, czy w state.todaysDynamicPlan znajduje się plan dla żądanego dnia.
+    // Dzieje się tak, gdy Mixer zadziałał w Dashboardzie (tryb Static+Mixer) LUB w trybie Dynamicznym.
+    if (state.todaysDynamicPlan && state.todaysDynamicPlan.dayNumber === dayId) {
+        console.log("✅ [PreTraining] Używam planu z pamięci (Mixer/Dynamic) dla dnia:", dayId);
+        rawDayData = state.todaysDynamicPlan;
+        isCurrentDynamicDay = true;
+    } 
+    // Jeśli nie ma w pamięci, a tryb jest stricte dynamiczny (np. podgląd przyszłych dni z settings)
+    else if (useDynamicPlan && state.settings.dynamicPlanData && state.settings.dynamicPlanData.days) {
+        const dynDays = state.settings.dynamicPlanData.days;
+        // Obsługa cykliczności (modulo), jeśli dayId wykracza poza długość planu
+        // dayId jest 1-based, tablica 0-based
+        const arrayIndex = (dayId - 1) % dynDays.length;
+        rawDayData = dynDays[arrayIndex];
+        
+        // Upewnij się, że dayNumber w obiekcie jest zgodny z wyświetlanym (ważne przy cyklicznym powtarzaniu planu)
+        if (rawDayData) {
+            // Tworzymy płytką kopię, żeby nie nadpisać oryginału w settings przy zmianie dayNumber
+            rawDayData = { ...rawDayData, dayNumber: dayId };
         }
     }
 
-    // C. Fallback do planu statycznego (jeśli nie znaleziono dynamicznego lub tryb statyczny)
+    // Fallback do planu statycznego (jeśli powyższe nie znalazły danych)
     if (!rawDayData && activePlan) {
         rawDayData = activePlan.Days.find(d => d.dayNumber === dayId);
     }
@@ -75,8 +74,8 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
 
     const screen = screens.preTraining;
     
-    // Przycisk resetu pokazujemy tylko jeśli to jest AKTYWNY (dzisiejszy) plan dynamiczny, który można zresetować
-    const showResetButton = useDynamicPlan && isCurrentDynamicDay;
+    // Przycisk resetu pokazujemy tylko jeśli to jest AKTYWNY (dzisiejszy) plan dynamiczny/zmiksowany
+    const showResetButton = isCurrentDynamicDay;
 
     const actionButtonsHTML = `
         <div style="display:flex; gap:12px;">
@@ -196,23 +195,17 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
                 const freshStatic = getHydratedDay(rawDayData);
                 const mixedPlan = workoutMixer.mixWorkout(freshStatic, true);
                 
-                // Jeśli to dzisiejszy dzień, zapisujemy w state i storage
-                if (isCurrentDynamicDay) {
-                    state.todaysDynamicPlan = mixedPlan;
-                    savePlanToStorage(mixedPlan);
-                } else {
-                    // Jeśli to przyszłość, tylko podmieniamy w podglądzie (nie zapisujemy trwale w storage jako "today")
-                    // Opcjonalnie: można by to zapisać w settings.dynamicPlanData, ale to skomplikowane.
-                    // Na razie pozwalamy przelosować tylko do podglądu.
-                    // Aby user mógł to wykonać, musiałby to być dzień dzisiejszy.
-                }
+                // Jeśli to dzisiejszy dzień (lub został właśnie stworzony/podmieniony), aktualizujemy state
+                // Nawet jeśli wcześniej był statyczny, teraz staje się "current dynamic" dla tej sesji.
+                state.todaysDynamicPlan = mixedPlan;
+                savePlanToStorage(mixedPlan);
+                isCurrentDynamicDay = true; 
                 
                 // Ponowne renderowanie z nowym planem w pamięci funkcji (rekurencja UI)
-                // Mały hack: podmieniamy basePlanData i currentAdjustedPlan w locie
                 const hydratedMixed = getHydratedDay(mixedPlan);
-                currentAdjustedPlan = assistant.adjustTrainingVolume(hydratedMixed, initialPainLevel, parseFloat(slider.value));
-                renderList(currentAdjustedPlan);
-                updateInputsInDOM(currentAdjustedPlan);
+                // Uaktualniamy też referencję basePlanData, żeby suwak czasu działał na nowym zestawie
+                // Uwaga: basePlanData jest stałą w tym scope, więc musimy przeładować funkcję renderującą
+                renderPreTrainingScreen(dayId, initialPainLevel, useDynamicPlan); 
             }
         });
     }
@@ -223,8 +216,9 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
             if (confirm("Czy na pewno chcesz cofnąć wszystkie losowania i wrócić do oryginalnego planu?")) {
                 if (isCurrentDynamicDay) {
                     clearPlanFromStorage(); 
+                    state.todaysDynamicPlan = null; // Ważne: czyścimy stan w pamięci
                 }
-                // Przeładuj ekran
+                // Przeładuj ekran - teraz pobierze czysty static (lub dynamic base)
                 renderPreTrainingScreen(dayId, initialPainLevel, useDynamicPlan);
             }
         });
@@ -274,26 +268,18 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
                     }
                 };
 
-                // Jeśli modyfikujemy podgląd przyszłości, musimy stworzyć kopię
-                let planToModify = isCurrentDynamicDay ? state.todaysDynamicPlan : JSON.parse(JSON.stringify(rawDayData));
-                
-                // Jeśli state.todaysDynamicPlan był pusty (np. pierwszy start), tworzymy go
-                if (isCurrentDynamicDay && !planToModify) {
-                    planToModify = JSON.parse(JSON.stringify(getHydratedDay(rawDayData)));
-                    state.todaysDynamicPlan = planToModify;
+                // Jeśli modyfikujemy, upewniamy się, że działamy na kopii w state.todaysDynamicPlan
+                if (!state.todaysDynamicPlan) {
+                    state.todaysDynamicPlan = JSON.parse(JSON.stringify(getHydratedDay(rawDayData)));
                 }
+                
+                let planToModify = state.todaysDynamicPlan;
 
                 updateExerciseInPlan(planToModify);
-
-                if (isCurrentDynamicDay) {
-                    savePlanToStorage(planToModify);
-                    renderPreTrainingScreen(dayId, initialPainLevel, true);
-                } else {
-                    // Dla przyszłych dni tylko odświeżamy widok (bez trwałego zapisu w todayStorage)
-                    const hydrated = getHydratedDay(planToModify);
-                    currentAdjustedPlan = assistant.adjustTrainingVolume(hydrated, initialPainLevel, parseFloat(slider.value));
-                    renderList(currentAdjustedPlan);
-                }
+                savePlanToStorage(planToModify);
+                
+                // Odświeżamy ekran, aby pokazać zmiany
+                renderPreTrainingScreen(dayId, initialPainLevel, true); // Wymuszamy useDynamicPlan=true, bo teraz już mamy plan w state
 
                 if (swapType === 'blacklist') {
                     const blockedId = foundExercise.id || foundExercise.exerciseId;
@@ -333,9 +319,6 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
     screen.querySelector('#start-modified-training-btn').addEventListener('click', () => {
         // Jeśli to przyszły dzień, to nie powinniśmy pozwalać na start w trybie "official"
         // Chyba że użytkownik chce "przeskoczyć" dzień.
-        // W obecnej logice startModifiedTraining i tak czyta z state.todaysDynamicPlan lub activePlan.
-        // Jeśli podglądamy przyszłość, state.todaysDynamicPlan może być inny niż to co widzimy.
-        // Aby to obsłużyć poprawnie, musielibyśmy wymusić ustawienie todaysDynamicPlan na ten dzień.
         
         if (!isCurrentDynamicDay && useDynamicPlan) {
             if (confirm("To jest trening z przyszłości. Czy chcesz ustawić go jako dzisiejszy plan i rozpocząć?")) {

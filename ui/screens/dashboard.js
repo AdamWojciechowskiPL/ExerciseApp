@@ -246,6 +246,7 @@ export const renderMainScreen = (isLoading = false) => {
                         if (cachedPlan._isDynamic) {
                             console.log("CACHE HIT (Static-Mixed): Znaleziono zmiksowany plan.");
                             dynamicDayData = cachedPlan;
+                            state.todaysDynamicPlan = cachedPlan; // <--- FIX: Przypisanie do stanu!
                         } else {
                             console.log("CACHE STALE: Plan nie był miksowany. Usuwam i generuję nowy.");
                             clearPlanFromStorage();
@@ -262,7 +263,10 @@ export const renderMainScreen = (isLoading = false) => {
                 }
                 finalPlan = dynamicDayData || todayDataStatic;
 
-                if (state.todaysDynamicPlan) state.todaysDynamicPlan = finalPlan;
+                // FIX: Upewnij się, że stan jest zaktualizowany o finalny plan (jeśli jest dynamiczny)
+                if (finalPlan && finalPlan._isDynamic) {
+                    state.todaysDynamicPlan = finalPlan;
+                }
             }
         }
 

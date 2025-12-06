@@ -3,10 +3,10 @@
 import { state } from './state.js';
 
 export const getISODate = (date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
 };
 
 export const getActiveTrainingPlan = () => {
@@ -14,9 +14,9 @@ export const getActiveTrainingPlan = () => {
 };
 
 export const isTodayRestDay = () => {
-    const todayIndex = new Date().getDay(); 
+    const todayIndex = new Date().getDay();
     const scheduleIndex = todayIndex === 0 ? 6 : todayIndex - 1;
-    
+
     if (!state.settings.schedule || !state.settings.schedule[scheduleIndex]) return false;
     return !state.settings.schedule[scheduleIndex].active;
 };
@@ -24,8 +24,8 @@ export const isTodayRestDay = () => {
 export const getAvailableMinutesForToday = () => {
     const todayIndex = new Date().getDay();
     const scheduleIndex = todayIndex === 0 ? 6 : todayIndex - 1;
-    
-    if (!state.settings.schedule || !state.settings.schedule[scheduleIndex]) return 60; 
+
+    if (!state.settings.schedule || !state.settings.schedule[scheduleIndex]) return 60;
     return state.settings.schedule[scheduleIndex].minutes || 45;
 };
 
@@ -38,8 +38,8 @@ export const getNextLogicalDay = () => {
         allSessions = Object.values(state.userProgress).flat();
     }
 
-    const planSessions = allSessions.filter(s => 
-        s.planId === state.settings.activePlanId && 
+    const planSessions = allSessions.filter(s =>
+        s.planId === state.settings.activePlanId &&
         s.status === 'completed' &&
         s.completedAt
     );
@@ -47,7 +47,7 @@ export const getNextLogicalDay = () => {
     planSessions.sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
 
     const lastSession = planSessions[0];
-    
+
     if (!lastSession) {
         console.log("[Queue] Brak historii dla tego planu. Startuję od Dnia 1.");
         return activePlan.Days.find(d => d.dayNumber === 1);
@@ -69,23 +69,23 @@ export const getNextLogicalDay = () => {
 export const getTrainingDayForDate = (date) => {
     const activePlan = getActiveTrainingPlan();
     if (!activePlan) return null;
-    
+
     const startDate = new Date(state.settings.appStartDate);
     const currentDate = new Date(getISODate(date));
-    
+
     const diffTime = currentDate - startDate;
     const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
     const dayIndex = diffDays % activePlan.Days.length;
-    
+
     const planDayNumber = (dayIndex < 0) ? dayIndex + activePlan.Days.length + 1 : dayIndex + 1;
-    
+
     return activePlan.Days.find(d => d.dayNumber === planDayNumber);
 };
 
 // --- FIX: POPRAWIONA HYDRACJA ---
 export const getHydratedDay = (dayData) => {
     if (!dayData) return null;
-    
+
     // Tworzymy głęboką kopię, aby nie modyfikować oryginału w state/storage
     const hydratedDay = JSON.parse(JSON.stringify(dayData));
 
@@ -96,6 +96,11 @@ export const getHydratedDay = (dayData) => {
                 const exerciseId = exerciseRef.exerciseId || exerciseRef.id;
                 const libraryDetails = state.exerciseLibrary[exerciseId];
 
+                // DEBUG: Sprawdź czy mixer przekazał zmienioną nazwę
+                if (exerciseRef.name && libraryDetails && exerciseRef.name !== libraryDetails.name) {
+                    console.log(`🔍 [Hydration] Mixer swap detected: ${exerciseRef.name} (from mixer) vs ${libraryDetails.name} (from library)`);
+                }
+
                 if (!libraryDetails) {
                     console.warn(`⚠️ Ostrzeżenie: Ćwiczenie ${exerciseId} jest w planie, ale brak go w bibliotece.`);
                     return exerciseRef;
@@ -103,7 +108,7 @@ export const getHydratedDay = (dayData) => {
 
                 // 1. Scalamy dane z biblioteki z danymi z planu (plan ma priorytet w kwestii sets/reps)
                 const mergedExercise = {
-                    ...libraryDetails, 
+                    ...libraryDetails,
                     ...exerciseRef,
                     categoryId: libraryDetails.categoryId,
                     difficultyLevel: libraryDetails.difficultyLevel
@@ -139,9 +144,9 @@ export const getExerciseDuration = (exercise) => {
     if (exercise.isRest) {
         return exercise.duration;
     }
-    
+
     const text = (exercise.reps_or_time || '').trim().toLowerCase();
-    
+
     const isUnilateralStr = text.includes('/str') || text.includes('stron');
     const isUnilateralProp = exercise.isUnilateral || false;
     const multiplier = (isUnilateralStr || isUnilateralProp) ? 2 : 1;
@@ -154,7 +159,7 @@ export const getExerciseDuration = (exercise) => {
     }
 
     // 2. Wykrywanie SEKUND
-    const secMatch = text.match(/(\d+)\s*s\b/); 
+    const secMatch = text.match(/(\d+)\s*s\b/);
     if (secMatch) {
         const seconds = parseInt(secMatch[1], 10);
         return seconds * multiplier;
@@ -210,12 +215,12 @@ export const formatForTTS = (text) => {
 };
 
 export const getLocalISOString = (date) => {
-  const pad = (num) => String(num).padStart(2, '0');
-  const year = date.getFullYear();
-  const month = pad(date.getMonth() + 1); 
-  const day = pad(date.getDate());
-  const hours = pad(date.getHours());
-  const minutes = pad(date.getMinutes());
-  const seconds = pad(date.getSeconds());
-  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+    const pad = (num) => String(num).padStart(2, '0');
+    const year = date.getFullYear();
+    const month = pad(date.getMonth() + 1);
+    const day = pad(date.getDate());
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    const seconds = pad(date.getSeconds());
+    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
 };

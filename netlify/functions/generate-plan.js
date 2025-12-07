@@ -17,8 +17,8 @@ const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
  */
 
 const SECONDS_PER_REP = 4;
-const REST_BETWEEN_SETS = 60;
-const REST_BETWEEN_EXERCISES = 90;
+const REST_BETWEEN_SETS = 5;
+const REST_BETWEEN_EXERCISES = 5;
 const MAX_MAIN_OCCURRENCES_PER_WEEK = 4;
 const MAX_ROTATIONAL_CORE_WITH_DISC_HERNIATION = 3;
 const MAX_ROTATION_MOBILITY_WITH_DISC_HERNIATION = 4;

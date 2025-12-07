@@ -1,10 +1,10 @@
 import { state } from '../../state.js';
-import { screens, initializeFocusElements } from '../../dom.js';
+import { screens, initializeFocusElements, focus } from '../../dom.js';
 import { getActiveTrainingPlan, getHydratedDay, getISODate } from '../../utils.js';
 import { assistant } from '../../assistantEngine.js';
 import { navigateTo, showLoader, hideLoader } from '../core.js';
-import { generatePreTrainingCardHTML } from '../templates.js';
-import { renderSwapModal } from '../modals.js';
+import { generatePreTrainingCardHTML, getAffinityBadge } from '../templates.js';
+import { renderSwapModal, renderPreviewModal } from '../modals.js';
 import { startModifiedTraining } from '../../training.js';
 import { getIsCasting, sendShowIdle, sendPlayVideo, sendStopVideo } from '../../cast.js';
 import dataStore from '../../dataStore.js';
@@ -25,36 +25,29 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
     state.currentTrainingDayId = dayId;
     state.currentTrainingDate = getISODate(new Date());
 
-    const activePlan = getActiveTrainingPlan(); // To jest zawsze plan statyczny (baza wiedzy)
+    const activePlan = getActiveTrainingPlan(); 
     
-    // 1. Logika pobierania surowych danych dnia
     let rawDayData = null;
     let isCurrentDynamicDay = false;
 
-    // --- FIX: PRIORYTET DLA ZMIKSOWANEGO PLANU W PAMIĘCI ---
-    // Sprawdzamy, czy w state.todaysDynamicPlan znajduje się plan dla żądanego dnia.
-    // Dzieje się tak, gdy Mixer zadziałał w Dashboardzie (tryb Static+Mixer) LUB w trybie Dynamicznym.
+    // Priorytet dla planu w pamięci (Mixer/Dynamic)
     if (state.todaysDynamicPlan && state.todaysDynamicPlan.dayNumber === dayId) {
         console.log("✅ [PreTraining] Używam planu z pamięci (Mixer/Dynamic) dla dnia:", dayId);
         rawDayData = state.todaysDynamicPlan;
         isCurrentDynamicDay = true;
     } 
-    // Jeśli nie ma w pamięci, a tryb jest stricte dynamiczny (np. podgląd przyszłych dni z settings)
+    // Fallback do danych z settings (tryb dynamiczny)
     else if (useDynamicPlan && state.settings.dynamicPlanData && state.settings.dynamicPlanData.days) {
         const dynDays = state.settings.dynamicPlanData.days;
-        // Obsługa cykliczności (modulo), jeśli dayId wykracza poza długość planu
-        // dayId jest 1-based, tablica 0-based
         const arrayIndex = (dayId - 1) % dynDays.length;
         rawDayData = dynDays[arrayIndex];
         
-        // Upewnij się, że dayNumber w obiekcie jest zgodny z wyświetlanym (ważne przy cyklicznym powtarzaniu planu)
         if (rawDayData) {
-            // Tworzymy płytką kopię, żeby nie nadpisać oryginału w settings przy zmianie dayNumber
             rawDayData = { ...rawDayData, dayNumber: dayId };
         }
     }
 
-    // Fallback do planu statycznego (jeśli powyższe nie znalazły danych)
+    // Fallback do planu statycznego
     if (!rawDayData && activePlan) {
         rawDayData = activePlan.Days.find(d => d.dayNumber === dayId);
     }
@@ -66,15 +59,10 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
         return;
     }
 
-    // 2. KLUCZOWY MOMENT: Hydracja (uzupełnienie danych z biblioteki)
     const basePlanData = getHydratedDay(rawDayData);
-
-    // 3. Adaptacja (skalowanie objętości przez Asystenta)
     let currentAdjustedPlan = assistant.adjustTrainingVolume(basePlanData, initialPainLevel, 1.0);
 
     const screen = screens.preTraining;
-    
-    // Przycisk resetu pokazujemy tylko jeśli to jest AKTYWNY (dzisiejszy) plan dynamiczny/zmiksowany
     const showResetButton = isCurrentDynamicDay;
 
     const actionButtonsHTML = `
@@ -143,6 +131,7 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
             listContainer.appendChild(header);
 
             section.exercises.forEach((ex) => {
+                // Funkcja generatePreTrainingCardHTML (z templates.js) automatycznie dodaje Affinity Badge
                 listContainer.innerHTML += generatePreTrainingCardHTML(ex, exerciseCounter);
                 exerciseCounter++;
             });
@@ -195,16 +184,11 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
                 const freshStatic = getHydratedDay(rawDayData);
                 const mixedPlan = workoutMixer.mixWorkout(freshStatic, true);
                 
-                // Jeśli to dzisiejszy dzień (lub został właśnie stworzony/podmieniony), aktualizujemy state
-                // Nawet jeśli wcześniej był statyczny, teraz staje się "current dynamic" dla tej sesji.
                 state.todaysDynamicPlan = mixedPlan;
                 savePlanToStorage(mixedPlan);
                 isCurrentDynamicDay = true; 
                 
-                // Ponowne renderowanie z nowym planem w pamięci funkcji (rekurencja UI)
-                const hydratedMixed = getHydratedDay(mixedPlan);
-                // Uaktualniamy też referencję basePlanData, żeby suwak czasu działał na nowym zestawie
-                // Uwaga: basePlanData jest stałą w tym scope, więc musimy przeładować funkcję renderującą
+                // Rekurencyjne przeładowanie z nowym planem
                 renderPreTrainingScreen(dayId, initialPainLevel, useDynamicPlan); 
             }
         });
@@ -216,9 +200,8 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
             if (confirm("Czy na pewno chcesz cofnąć wszystkie losowania i wrócić do oryginalnego planu?")) {
                 if (isCurrentDynamicDay) {
                     clearPlanFromStorage(); 
-                    state.todaysDynamicPlan = null; // Ważne: czyścimy stan w pamięci
+                    state.todaysDynamicPlan = null;
                 }
-                // Przeładuj ekran - teraz pobierze czysty static (lub dynamic base)
                 renderPreTrainingScreen(dayId, initialPainLevel, useDynamicPlan);
             }
         });
@@ -247,7 +230,6 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
 
         if (foundExercise) {
             renderSwapModal(foundExercise, (newExerciseDef, swapType) => {
-                // Logika aktualizacji obiektu planu w pamięci
                 const updateExerciseInPlan = (plan) => {
                     if (plan[targetSection] && plan[targetSection][targetLocalIndex]) {
                         const oldEx = plan[targetSection][targetLocalIndex];
@@ -268,7 +250,6 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
                     }
                 };
 
-                // Jeśli modyfikujemy, upewniamy się, że działamy na kopii w state.todaysDynamicPlan
                 if (!state.todaysDynamicPlan) {
                     state.todaysDynamicPlan = JSON.parse(JSON.stringify(getHydratedDay(rawDayData)));
                 }
@@ -278,13 +259,12 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
                 updateExerciseInPlan(planToModify);
                 savePlanToStorage(planToModify);
                 
-                // Odświeżamy ekran, aby pokazać zmiany
-                renderPreTrainingScreen(dayId, initialPainLevel, true); // Wymuszamy useDynamicPlan=true, bo teraz już mamy plan w state
+                renderPreTrainingScreen(dayId, initialPainLevel, true);
 
                 if (swapType === 'blacklist') {
                     const blockedId = foundExercise.id || foundExercise.exerciseId;
                     const replacementId = newExerciseDef.id;
-                    if (confirm(`Dodać "${foundExercise.name}" do czarnej listy i w przyszłości podmieniać na "${newExerciseDef.name}"?`)) {
+                    if (confirm(`Dodać "${foundExercise.name}" do czarnej listy?`)) {
                         dataStore.addToBlacklist(blockedId, replacementId);
                     }
                 }
@@ -300,29 +280,31 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
             const ex = state.exerciseLibrary[exId];
             
             if (ex && ex.animationSvg) {
-                const overlay = document.createElement('div');
-                overlay.className = 'modal-overlay';
-                overlay.innerHTML = `
-                    <div class="swap-modal" style="align-items: center; text-align: center;">
-                        <h3>${ex.name}</h3>
-                        <div style="width: 100%; max-width: 300px; margin: 1rem 0;">${ex.animationSvg}</div>
-                        <button type="button" id="close-preview" class="nav-btn" style="width: 100%">Zamknij</button>
-                    </div>`;
-                document.body.appendChild(overlay);
-                overlay.querySelector('#close-preview').onclick = (evt) => { evt.stopPropagation(); overlay.remove(); };
-                overlay.onclick = (evt) => { if (evt.target === overlay) overlay.remove(); };
+                if (typeof renderPreviewModal === 'function') {
+                    renderPreviewModal(ex.animationSvg, ex.name);
+                } else {
+                    // Fallback jeśli modal nie jest wyeksportowany
+                    const overlay = document.createElement('div');
+                    overlay.className = 'modal-overlay';
+                    overlay.innerHTML = `
+                        <div class="swap-modal" style="align-items: center; text-align: center;">
+                            <h3>${ex.name}</h3>
+                            <div style="width: 100%; max-width: 300px; margin: 1rem 0;">${ex.animationSvg}</div>
+                            <button type="button" id="close-preview" class="nav-btn" style="width: 100%">Zamknij</button>
+                        </div>`;
+                    document.body.appendChild(overlay);
+                    overlay.querySelector('#close-preview').onclick = (evt) => { evt.stopPropagation(); overlay.remove(); };
+                    overlay.onclick = (evt) => { if (evt.target === overlay) overlay.remove(); };
+                }
             }
         }
     });
 
     screen.querySelector('#pre-training-back-btn').addEventListener('click', () => { navigateTo('main'); renderMainScreen(); });
     screen.querySelector('#start-modified-training-btn').addEventListener('click', () => {
-        // Jeśli to przyszły dzień, to nie powinniśmy pozwalać na start w trybie "official"
-        // Chyba że użytkownik chce "przeskoczyć" dzień.
-        
         if (!isCurrentDynamicDay && useDynamicPlan) {
             if (confirm("To jest trening z przyszłości. Czy chcesz ustawić go jako dzisiejszy plan i rozpocząć?")) {
-                state.todaysDynamicPlan = currentAdjustedPlan; // Ustawiamy podglądany plan jako "dzisiejszy"
+                state.todaysDynamicPlan = currentAdjustedPlan; 
                 savePlanToStorage(currentAdjustedPlan);
             } else {
                 return;
@@ -338,6 +320,8 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
 
     navigateTo('preTraining');
 };
+
+// --- LIVE TRAINING SCREEN ---
 
 export const renderTrainingScreen = () => {
     screens.training.innerHTML = `
@@ -355,6 +339,9 @@ export const renderTrainingScreen = () => {
         <div class="focus-exercise-info" style="margin-bottom: 0.5rem;">
             <div class="exercise-title-container">
                 <h2 id="focus-exercise-name"></h2>
+                <!-- NOWE: Kontener na badge preferencji -->
+                <span id="focus-affinity-badge"></span> 
+                
                 <button id="tts-toggle-btn" class="tts-button">
                     <img id="tts-icon" src="/icons/sound-on.svg" alt="Dźwięk">
                 </button>
@@ -387,6 +374,9 @@ export const renderTrainingScreen = () => {
     </div>`;
 
     initializeFocusElements();
+    
+    // Dodajemy referencję do nowego elementu w obiekcie focus
+    focus.affinityBadge = document.getElementById('focus-affinity-badge');
 
     const cardWrapper = document.getElementById('visual-toggle-card');
     const animContainer = document.getElementById('focus-animation-container');
@@ -405,5 +395,33 @@ export const renderTrainingScreen = () => {
                 }
             }
         });
+    }
+
+    // --- OBSERVER DO AKTUALIZACJI BADGE'A ---
+    // Ponieważ logika zmiany ćwiczeń jest w training.js (którego nie edytujemy w tym kroku),
+    // używamy MutationObserver, aby wykryć zmianę nazwy ćwiczenia i zaktualizować badge.
+    
+    const obs = new MutationObserver(() => {
+        const exNameEl = document.getElementById('focus-exercise-name');
+        if (!exNameEl) return;
+        
+        const index = state.currentExerciseIndex;
+        if (index === null || !state.flatExercises || !state.flatExercises[index]) return;
+        
+        const ex = state.flatExercises[index];
+        const badgeContainer = document.getElementById('focus-affinity-badge');
+        
+        if (badgeContainer) {
+            if (ex.isWork && ex.exerciseId) {
+                badgeContainer.innerHTML = getAffinityBadge(ex.exerciseId);
+            } else {
+                badgeContainer.innerHTML = '';
+            }
+        }
+    });
+
+    const screen = document.getElementById('training-screen');
+    if (screen) {
+        obs.observe(screen, { childList: true, subtree: true });
     }
 };

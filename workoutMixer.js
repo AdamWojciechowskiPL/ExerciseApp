@@ -3,13 +3,25 @@ import { getISODate, getAvailableMinutesForToday, parseSetCount } from './utils.
 import { assistant } from './assistantEngine.js';
 
 /**
- * WORKOUT MIXER (Dynamic Biomechanical Matrix)
+ * WORKOUT MIXER (Dynamic Biomechanical Matrix) v2.0 (Affinity Engine Enabled)
+ * 
+ * Odpowiada za dobór ćwiczeń uwzględniając:
+ * 1. Reguły kliniczne (Ból, Ograniczenia) - PRIORYTET
+ * 2. Sprzęt
+ * 3. Świeżość (Kiedy ostatnio robione)
+ * 4. Preferencje użytkownika (Affinity Score - Like/Dislike)
+ * 5. Bezpieczniki trudności (Difficulty Rating - Too Hard)
  */
 
 const CACHE_FRESHNESS_DAYS = 60;
 const SECONDS_PER_REP = 4;
 
-// 1.1. Stała z mapowaniem doświadczenia
+// Wagi dla algorytmu punktacji
+const WEIGHT_FRESHNESS = 1.0;
+const WEIGHT_AFFINITY = 1.5; // Preferencje mają duży wpływ (Like +20 = +30 pkt w rankingu)
+const PENALTY_TOO_HARD = 50; // Kara za oznaczenie "Za trudne"
+
+// Mapowanie doświadczenia
 const DIFFICULTY_MAP = {
     none: 1,
     occasional: 2,
@@ -27,15 +39,18 @@ export const workoutMixer = {
         const dynamicPlan = JSON.parse(JSON.stringify(staticDayPlan));
         const sessionUsedIds = new Set();
 
-        // 3.1. Inicjalizacja kontekstu klinicznego
+        // 1. Inicjalizacja kontekstu klinicznego
         const clinicalCtx = buildClinicalContext();
+        
+        // W trybie ostrym (Severe) wyłączamy losowość, ale nadal uwzględniamy preferencje w ramach bezpiecznych ćwiczeń
         const effectiveForceShuffle = clinicalCtx.isSevere ? false : forceShuffle;
 
-        // 3.2. Wywołanie injectPrehabExercises z kontekstem
+        // 2. Prehab (Rozgrzewka celowana)
         if (state.settings.painZones && state.settings.painZones.length > 0) {
             injectPrehabExercises(dynamicPlan, sessionUsedIds, clinicalCtx);
         }
 
+        // 3. Iteracja po sekcjach
         ['warmup', 'main', 'cooldown'].forEach(section => {
             if (!dynamicPlan[section]) return;
 
@@ -44,15 +59,17 @@ export const workoutMixer = {
                 const hasEquipmentForOriginal = checkEquipment(originalExercise);
                 const mustSwap = !hasEquipmentForOriginal;
 
+                // Kryteria poszukiwania alternatywy
                 const criteria = {
                     categoryId: originalExercise.categoryId,
                     targetLevel: originalExercise.difficultyLevel || 1,
                 };
 
-                // 3.3. Użycie effectiveForceShuffle i przekazanie clinicalCtx do findFreshVariant
+                // Decyzja czy szukać zamiennika
                 const shouldShuffle = effectiveForceShuffle || mustSwap;
 
-                const freshVariant = findFreshVariant(
+                // --- GŁÓWNY MECHANIZM WYBORU ---
+                const freshVariant = findBestVariant(
                     originalExercise,
                     criteria,
                     sessionUsedIds,
@@ -62,7 +79,7 @@ export const workoutMixer = {
                 );
 
                 if (freshVariant && (freshVariant.id !== originalExercise.exerciseId && freshVariant.id !== originalExercise.id)) {
-                    console.log(`🔀 [Mixer] Zamiana: ${originalExercise.name} -> ${freshVariant.name}`);
+                    console.log(`🔀 [Mixer] Zamiana: ${originalExercise.name} -> ${freshVariant.name} (Score: ${freshVariant._score?.toFixed(1)})`);
                     sessionUsedIds.add(freshVariant.id);
                     return mergeExerciseData(originalExercise, freshVariant);
                 }
@@ -77,6 +94,7 @@ export const workoutMixer = {
             });
         });
 
+        // 4. Kompresja czasu (jeśli potrzebna)
         const availableMinutes = getAvailableMinutesForToday();
         const estimatedMinutes = assistant.estimateDuration(dynamicPlan);
 
@@ -89,7 +107,6 @@ export const workoutMixer = {
         return dynamicPlan;
     },
 
-    // 5. Zmiany w getAlternative - dodanie kontekstu klinicznego
     getAlternative: (originalExercise, currentId) => {
         const criteria = {
             categoryId: originalExercise.categoryId,
@@ -97,7 +114,9 @@ export const workoutMixer = {
         };
         const usedIds = new Set([currentId]);
         const clinicalCtx = buildClinicalContext();
-        const variant = findFreshVariant(originalExercise, criteria, usedIds, true, false, clinicalCtx);
+        
+        // Wymuszamy shuffle=true
+        const variant = findBestVariant(originalExercise, criteria, usedIds, true, false, clinicalCtx);
 
         if (variant) {
             return mergeExerciseData(originalExercise, variant);
@@ -116,7 +135,114 @@ export const workoutMixer = {
     }
 };
 
-// --- HELPERY LOGICZNE ---
+// --- CORE LOGIC: RANKING I WYBÓR ---
+
+/**
+ * Znajduje najlepszy wariant ćwiczenia na podstawie:
+ * 1. Reguł klinicznych (Filtr twardy)
+ * 2. Punktacji (Score): Świeżość + Affinity (Preferencje) - Difficulty Penalty
+ */
+function findBestVariant(originalEx, criteria, usedIds, forceShuffle = false, mustSwap = false, clinicalCtx = null) {
+    if (!criteria.categoryId) return null;
+
+    // 1. FILTROWANIE KANDYDATÓW
+    let candidates = Object.entries(state.exerciseLibrary)
+        .map(([id, data]) => ({ id: id, ...data }))
+        .filter(ex => {
+            // A. Kategoria
+            if (ex.categoryId !== criteria.categoryId) return false;
+
+            // B. Poziom trudności (jeśli nie jest to wymuszona zamiana z braku sprzętu, trzymamy się poziomu +/- 1)
+            if (!mustSwap) {
+                const lvl = ex.difficultyLevel || 1;
+                if (Math.abs(lvl - criteria.targetLevel) > 1) return false;
+            }
+
+            // C. Czarna lista i Użyte w sesji
+            if (state.blacklist.includes(ex.id)) return false;
+            if (usedIds.has(ex.id)) return false;
+
+            // D. Sprzęt
+            if (!checkEquipment(ex)) return false;
+
+            // E. Reguły Kliniczne (Safety First!)
+            if (!passesMixerClinicalRules(ex, clinicalCtx)) return false;
+
+            return true;
+        });
+
+    if (candidates.length === 0) return null;
+
+    // 2. PUNKTACJA (SCORING)
+    const scoredCandidates = candidates.map(ex => {
+        let score = 0;
+
+        // A. Świeżość (Kiedy ostatnio robione?)
+        // Range: -100 (wczoraj) do +60 (dawno temu)
+        const lastDate = getLastPerformedDate(ex.id, ex.name);
+        if (!lastDate) {
+            score += 100 * WEIGHT_FRESHNESS; // Nie robione nigdy? Priorytet.
+        } else {
+            const daysSince = (new Date() - lastDate) / (1000 * 60 * 60 * 24);
+            const freshnessScore = Math.min(daysSince, CACHE_FRESHNESS_DAYS);
+            
+            if (daysSince < 2) score -= 100; // Robione wczoraj/dziś? Kara.
+            else score += freshnessScore * WEIGHT_FRESHNESS;
+        }
+
+        // B. Preferencje (Affinity Score)
+        // Range: -100 do +100. Mnożnik 1.5x
+        const userPref = state.userPreferences[ex.id] || { score: 0, difficulty: 0 };
+        const affinityPoints = (userPref.score || 0) * WEIGHT_AFFINITY;
+        score += affinityPoints;
+
+        // C. Bezpiecznik Trudności (Difficulty Flag)
+        // Jeśli użytkownik oznaczył jako "Za trudne" (difficulty === 1)
+        if (userPref.difficulty === 1) {
+            score -= PENALTY_TOO_HARD; // -50 pkt
+        }
+        // Jeśli oznaczył jako "Za łatwe" (-1), lekka kara (bo pewnie nudne), ale mniejsza
+        if (userPref.difficulty === -1) {
+            score -= 5; 
+        }
+
+        // D. Bonus za idealny poziom trudności
+        if ((ex.difficultyLevel || 1) === criteria.targetLevel) score += 15;
+
+        // E. Bonus za bycie oryginałem (stabilność planu)
+        // Jeśli nie wymuszamy tasowania, oryginał ma duży bonus, żeby nie zmieniać bez sensu
+        if (!forceShuffle && !mustSwap && (ex.id === originalEx.exerciseId || ex.id === originalEx.id)) {
+            score += 60; // Podbito z 50, żeby przebić affinity lekkie
+        }
+
+        // F. Losowość (Entropy)
+        // Jeśli forceShuffle=true, losowość jest duża, żeby przełamać rutynę
+        const randomFactor = forceShuffle ? (Math.random() * 50) : (Math.random() * 10);
+        score += randomFactor;
+
+        return { ex, score };
+    });
+
+    // 3. SORTOWANIE I WYBÓR
+    scoredCandidates.sort((a, b) => b.score - a.score);
+
+    // Debugging (opcjonalny)
+    // if (criteria.categoryId === 'core_anti_extension') {
+    //     console.log(`[Mixer Score] Top for ${criteria.categoryId}:`);
+    //     scoredCandidates.slice(0, 3).forEach(c => console.log(` - ${c.ex.name}: ${c.score.toFixed(1)} (Affinity: ${state.userPreferences[c.ex.id]?.score || 0})`));
+    // }
+
+    if (scoredCandidates.length > 0) {
+        // Zwracamy obiekt z dopisanym _score do debugowania
+        const winner = scoredCandidates[0].ex;
+        winner._score = scoredCandidates[0].score;
+        return winner;
+    }
+
+    return null;
+}
+
+// --- HELPERY LOGICZNE (Bez zmian lub drobne poprawki) ---
 
 function checkEquipment(exercise) {
     if (!state.settings.equipment || state.settings.equipment.length === 0) return true;
@@ -133,14 +259,12 @@ function checkEquipment(exercise) {
     });
 }
 
-// 4. Zmiany w injectPrehabExercises
 function injectPrehabExercises(plan, usedIds, clinicalCtx) {
     if (!plan.warmup) plan.warmup = [];
 
     const libraryArray = Object.entries(state.exerciseLibrary).map(([id, data]) => ({ id, ...data }));
 
     state.settings.painZones.forEach(zone => {
-        // 4.2. Filtr kandydatów z regułami klinicznymi
         const rehabCandidates = libraryArray.filter(ex => {
             if (!ex.painReliefZones || !ex.painReliefZones.includes(zone)) return false;
             if (usedIds.has(ex.id)) return false;
@@ -150,9 +274,9 @@ function injectPrehabExercises(plan, usedIds, clinicalCtx) {
         });
 
         if (rehabCandidates.length > 0) {
+            // Tutaj też można by dodać ważenie preferencjami, ale prehab rządzi się swoimi prawami (medycznymi)
             const chosen = rehabCandidates[Math.floor(Math.random() * rehabCandidates.length)];
-            console.log(`🚑 [Mixer] Dodano Prehab: ${chosen.name} (${zone})`);
-
+            
             plan.warmup.unshift({
                 ...chosen,
                 exerciseId: chosen.id,
@@ -243,72 +367,6 @@ function parseReps(val) {
     return parseInt(val) || 10;
 }
 
-// 6. Zmiany w findFreshVariant
-function findFreshVariant(originalEx, criteria, usedIds, forceShuffle = false, mustSwap = false, clinicalCtx = null) {
-    if (!criteria.categoryId) return null;
-
-    // 6.2. Filtr kandydatów – dodanie reguł klinicznych
-    let candidates = Object.entries(state.exerciseLibrary)
-        .map(([id, data]) => ({ id: id, ...data }))
-        .filter(ex => {
-            if (ex.categoryId !== criteria.categoryId) return false;
-
-            if (!mustSwap) {
-                const lvl = ex.difficultyLevel || 1;
-                if (Math.abs(lvl - criteria.targetLevel) > 1) return false;
-            }
-
-            if (state.blacklist.includes(ex.id)) return false;
-            if (usedIds.has(ex.id)) return false;
-
-            if (!checkEquipment(ex)) return false;
-
-            // Nowy filtr kliniczny
-            if (!passesMixerClinicalRules(ex, clinicalCtx)) return false;
-
-            return true;
-        });
-
-    if (candidates.length === 0) return null;
-
-    const scoredCandidates = candidates.map(ex => {
-        const lastDate = getLastPerformedDate(ex.id, ex.name);
-        let score = 0;
-
-        if (!lastDate) {
-            score = 100; // Nie robione? Priorytet!
-        } else {
-            const daysSince = (new Date() - lastDate) / (1000 * 60 * 60 * 24);
-            score = Math.min(daysSince, CACHE_FRESHNESS_DAYS);
-            if (daysSince < 2) score = -100; // Robione wczoraj/dziś? Kara.
-        }
-
-        // Bonus za idealny poziom trudności
-        if ((ex.difficultyLevel || 1) === criteria.targetLevel) score += 15;
-
-        // Bonus za bycie oryginałem (jeśli nie wymuszamy losowania)
-        if (!forceShuffle && !mustSwap && (ex.id === originalEx.exerciseId || ex.id === originalEx.id)) {
-            score += 50;
-        }
-
-        // Losowość - ZWIĘKSZONA WAGA
-        const randomFactor = forceShuffle ? (Math.random() * 60) : (Math.random() * 10);
-        score += randomFactor;
-
-        return { ex, score };
-    });
-
-    // Sortujemy malejąco wg wyniku
-    scoredCandidates.sort((a, b) => b.score - a.score);
-
-    // Debug log dla kategorii, żeby zobaczyć co wygrywa
-    // console.log(`[Mixer Debug] Cat: ${criteria.categoryId}, Winner: ${scoredCandidates[0].ex.name} (${scoredCandidates[0].score.toFixed(1)})`);
-
-    if (scoredCandidates.length > 0) return scoredCandidates[0].ex;
-
-    return null;
-}
-
 function getLastPerformedDate(exerciseId, exerciseName) {
     let latestDate = null;
     const loadedDates = Object.keys(state.userProgress);
@@ -372,14 +430,13 @@ function mergeExerciseData(original, variant) {
         sets: smartSets,
         tempo_or_iso: finalTempo,
         isDynamicSwap: !isSameExercise,
-        isSwapped: !isSameExercise, // Dodatkowa flaga dla UI
+        isSwapped: !isSameExercise, 
         originalName: !isSameExercise ? original.name : null
     };
 }
 
 // --- KONTEKST KLINICZNY ---
 
-// 1.2. Funkcja budująca kontekst kliniczny
 function buildClinicalContext() {
     const wizard = (state.settings && state.settings.wizardData) || {};
     const restrictions = wizard.physical_restrictions || [];
@@ -444,9 +501,6 @@ function detectTolerancePattern(triggers, reliefs) {
     return 'neutral';
 }
 
-// --- HELPERY DO ODCZYTU PLANE/POSITION ---
-
-// 2.1. Helpery do odczytu plane/position
 function getPlane(ex) {
     return ex.primaryPlane || ex.primary_plane || 'multi';
 }
@@ -455,7 +509,6 @@ function getPosition(ex) {
     return ex.position || ex.bodyPosition || null;
 }
 
-// 2.2. Główna funkcja reguł klinicznych do mixera
 function passesMixerClinicalRules(ex, ctx) {
     if (!ctx) return true;
 

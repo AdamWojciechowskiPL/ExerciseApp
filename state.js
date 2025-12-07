@@ -5,7 +5,12 @@ export const state = {
     isAppInitialized: false,
 
     userProgress: {},
-    masteryStats: null, // NOWE: Cache dla statystyk ćwiczeń
+    
+    // --- NOWOŚĆ: PREFERENCJE UŻYTKOWNIKA ---
+    // Struktura: { "deadBug": { score: 20, difficulty: 0 }, ... }
+    userPreferences: {},
+
+    masteryStats: null, // Cache dla statystyk Mastery (nadal użyteczne dla ilości)
 
     settings: {
         appStartDate: null,

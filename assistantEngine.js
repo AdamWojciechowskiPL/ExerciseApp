@@ -66,7 +66,7 @@ export const assistant = {
 
                 // FIX: Obsługa jednostronności dla powtórzeń (np. "10/str.")
                 const isUnilateral = repsString.includes('/str') || repsString.includes('stron') || exercise.isUnilateral;
-                const multiplier = isUnilateral ? 2 : 1;
+                const multiplier = 1;
 
                 workTimePerSet = reps * SECONDS_PER_REP * multiplier;
             }

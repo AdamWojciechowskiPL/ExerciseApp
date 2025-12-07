@@ -12,7 +12,7 @@ let activeFilters = {
     category: 'all',
     level: 'all',
     equipment: 'all',
-    preference: 'all' // NOWY FILTR
+    preference: 'all'
 };
 
 const formatCategoryName = (catId) => {
@@ -34,6 +34,7 @@ export const renderLibraryScreen = (searchTerm = '') => {
     const container = containers.exerciseLibrary;
     container.innerHTML = '';
 
+    // 1. Przygotowanie danych
     const allExercises = Object.values(state.exerciseLibrary);
     
     const uniqueCategories = [...new Set(allExercises.map(ex => ex.categoryId).filter(Boolean))].sort();
@@ -44,6 +45,7 @@ export const renderLibraryScreen = (searchTerm = '') => {
     const levelOptions = uniqueLevels.map(lvl => `<option value="${lvl}" ${String(activeFilters.level) === String(lvl) ? 'selected' : ''}>${getLevelLabel(lvl)}</option>`).join('');
     const equipmentOptions = uniqueEquipment.map(eq => `<option value="${eq}" ${activeFilters.equipment === eq ? 'selected' : ''}>${eq}</option>`).join('');
 
+    // 2. Generowanie nagłówka i filtrów
     const headerHTML = `
         <div class="library-tabs" style="display:flex; gap:10px; margin-bottom:1rem;">
             <button id="tab-all" class="toggle-btn ${currentTab === 'all' ? 'active' : ''}" style="flex:1; padding:10px;">Baza Ćwiczeń</button>
@@ -69,6 +71,7 @@ export const renderLibraryScreen = (searchTerm = '') => {
     wrapper.innerHTML = headerHTML;
     container.appendChild(wrapper);
 
+    // 3. Filtrowanie
     const lowerCaseSearchTerm = searchTerm.toLowerCase();
     
     let exercisesToShow = Object.entries(state.exerciseLibrary).map(([id, data]) => ({ id: id, ...data }));
@@ -85,7 +88,6 @@ export const renderLibraryScreen = (searchTerm = '') => {
     if (activeFilters.level !== 'all') exercisesToShow = exercisesToShow.filter(ex => (ex.difficultyLevel || 1) == activeFilters.level);
     if (activeFilters.equipment !== 'all') exercisesToShow = exercisesToShow.filter(ex => (ex.equipment || 'Brak sprzętu') === activeFilters.equipment);
 
-    // FILTR PREFERENCJI
     if (activeFilters.preference !== 'all') {
         exercisesToShow = exercisesToShow.filter(ex => {
             const pref = state.userPreferences[ex.id] || { score: 0, difficulty: 0 };
@@ -104,11 +106,9 @@ export const renderLibraryScreen = (searchTerm = '') => {
         return a.name.localeCompare(b.name, 'pl');
     });
 
+    // 4. Renderowanie kart
     if (exercisesToShow.length === 0) {
-        container.appendChild(Object.assign(document.createElement('p'), { 
-            textContent: "Brak ćwiczeń spełniających kryteria.", 
-            style: "text-align:center; opacity:0.6; margin-top:2rem;" 
-        }));
+        container.appendChild(Object.assign(document.createElement('p'), { textContent: "Brak ćwiczeń spełniających kryteria.", style: "text-align:center; opacity:0.6; margin-top:2rem;" }));
     } else {
         exercisesToShow.forEach(exercise => {
             const card = document.createElement('div');
@@ -133,7 +133,6 @@ export const renderLibraryScreen = (searchTerm = '') => {
             `;
 
              let actionButtons = '';
-            
             if (currentTab === 'blacklist') {
                 actionButtons = `<button class="btn-with-icon btn-danger restore-btn" data-id="${exercise.id}" style="border-color: var(--success-color); color: var(--success-color);"><span>♻️ Przywróć</span></button>`;
             } else {
@@ -143,13 +142,14 @@ export const renderLibraryScreen = (searchTerm = '') => {
                 if (!isBlocked) actionButtons += `<button class="btn-with-icon btn-danger block-btn" data-id="${exercise.id}" title="Dodaj do czarnej listy"><img src="/icons/ban.svg" alt=""><span>Blokuj</span></button>`;
             }
 
+            // POPRAWIONY UKŁAD NAGŁÓWKA (FLEXBOX + GAP)
             card.innerHTML = `
-                <div class="card-header" style="display:flex; justify-content:space-between; align-items:flex-start;">
-                    <div>
-                        <h3 style="margin-bottom:0.5rem; display:inline;">${exercise.name}</h3>
+                <div class="card-header" style="display:flex; justify-content:space-between; align-items:flex-start; gap: 10px; margin-bottom: 0.8rem;">
+                    <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 12px;">
+                        <h3 style="margin: 0; line-height: 1.2;">${exercise.name}</h3>
                         ${affinityBadge}
                     </div>
-                    ${isBlocked && currentTab === 'all' ? '<span style="font-size:0.8rem; color:red; font-weight:bold;">🚫 Zablokowane</span>' : ''}
+                    ${isBlocked && currentTab === 'all' ? '<span style="font-size:0.8rem; color:red; font-weight:bold; white-space: nowrap;">🚫 Zablokowane</span>' : ''}
                 </div>
                 ${tagsHTML}
                 <p class="library-card-description">${exercise.description || ''}</p>
@@ -158,35 +158,88 @@ export const renderLibraryScreen = (searchTerm = '') => {
         });
     }
 
+    // 5. Obsługa zdarzeń
     const searchInput = document.getElementById('library-search-input');
     wrapper.querySelector('#tab-all').addEventListener('click', () => { currentTab = 'all'; renderLibraryScreen(searchInput.value); });
     wrapper.querySelector('#tab-blacklist').addEventListener('click', () => { currentTab = 'blacklist'; renderLibraryScreen(searchInput.value); });
     wrapper.querySelector('#filter-category').addEventListener('change', (e) => { activeFilters.category = e.target.value; renderLibraryScreen(searchInput.value); });
     wrapper.querySelector('#filter-level').addEventListener('change', (e) => { activeFilters.level = e.target.value; renderLibraryScreen(searchInput.value); });
     wrapper.querySelector('#filter-equipment').addEventListener('change', (e) => { activeFilters.equipment = e.target.value; renderLibraryScreen(searchInput.value); });
-    wrapper.querySelector('#filter-preference').addEventListener('change', (e) => { activeFilters.preference = e.target.value; renderLibraryScreen(searchInput.value); }); // Listener nowego filtra
-    
+    wrapper.querySelector('#filter-preference').addEventListener('change', (e) => { activeFilters.preference = e.target.value; renderLibraryScreen(searchInput.value); });
     wrapper.querySelector('#filter-reset').addEventListener('click', () => {
         activeFilters = { category: 'all', level: 'all', equipment: 'all', preference: 'all' };
         renderLibraryScreen(searchInput.value); 
     });
 
-    // ... (Obsługa click jak wcześniej) ...
-    // Skrótowo, bo reszta logiki kliknięć jest w renderLibraryScreen i się nie zmienia
-    if (container._libraryClickHandler) {
-        container.removeEventListener('click', container._libraryClickHandler);
-    }
+    // Delegacja zdarzeń dla dynamicznej listy
+    if (container._libraryClickHandler) { container.removeEventListener('click', container._libraryClickHandler); }
+    
     const handleContainerClick = async (e) => {
+        // Modal podglądu
         const previewBtn = e.target.closest('.preview-anim-btn');
-        if (previewBtn) { /* ... modal code ... */ e.stopPropagation(); return; }
+        if (previewBtn) { 
+            e.stopPropagation();
+            const exId = previewBtn.dataset.exerciseId;
+            const ex = state.exerciseLibrary[exId];
+            if (ex && ex.animationSvg) {
+                const overlay = document.createElement('div');
+                overlay.className = 'modal-overlay';
+                overlay.innerHTML = `<div class="swap-modal" style="align-items: center; text-align: center;"><h3>${ex.name}</h3><div style="width: 100%; max-width: 300px; margin: 1rem 0;">${ex.animationSvg}</div><button id="close-preview" class="nav-btn" style="width: 100%">Zamknij</button></div>`;
+                document.body.appendChild(overlay);
+                overlay.querySelector('#close-preview').onclick = () => overlay.remove();
+                overlay.onclick = (ev) => { if(ev.target === overlay) overlay.remove(); };
+            }
+            return; 
+        }
+
+        // Przywracanie z czarnej listy
         const restoreBtn = e.target.closest('.restore-btn');
-        if (restoreBtn) { const id = restoreBtn.dataset.id; e.stopPropagation(); if (confirm('Przywrócić?')) { await dataStore.removeFromBlacklist(id); renderLibraryScreen(searchInput.value); } return; }
+        if (restoreBtn) { 
+            const id = restoreBtn.dataset.id; 
+            e.stopPropagation(); 
+            if (confirm('Przywrócić?')) { 
+                await dataStore.removeFromBlacklist(id); 
+                renderLibraryScreen(searchInput.value); 
+            } 
+            return; 
+        }
+
+        // Dodawanie do czarnej listy
         const blockBtn = e.target.closest('.block-btn');
-        if (blockBtn) { const id = blockBtn.dataset.id; e.stopPropagation(); if (confirm('Blokować?')) { await dataStore.addToBlacklist(id, null); renderLibraryScreen(searchInput.value); } return; }
-        // ... cast buttons ...
+        if (blockBtn) { 
+            const id = blockBtn.dataset.id; 
+            e.stopPropagation(); 
+            if (confirm('Blokować?')) { 
+                await dataStore.addToBlacklist(id, null); 
+                renderLibraryScreen(searchInput.value); 
+            } 
+            return; 
+        }
+        
+        // Obsługa Google Cast
+        const castBtn = e.target.closest('.cast-video-btn');
+        if (castBtn) { 
+             const youtubeId = castBtn.dataset.youtubeId; 
+             if (youtubeId && getIsCasting()) { 
+                 sendPlayVideo(youtubeId); 
+                 castBtn.querySelector('span').textContent = "Zatrzymaj"; 
+                 castBtn.classList.replace('cast-video-btn', 'stop-cast-video-btn'); 
+             } else if (!getIsCasting()) {
+                 alert("Najpierw połącz się z TV.");
+             }
+             return;
+        }
+
+        const stopCastBtn = e.target.closest('.stop-cast-video-btn');
+        if (stopCastBtn) { 
+            sendStopVideo(); 
+            stopCastBtn.querySelector('span').textContent = "Rzutuj"; 
+            stopCastBtn.classList.replace('stop-cast-video-btn', 'cast-video-btn'); 
+            return; 
+        }
     };
+
     container.addEventListener('click', handleContainerClick);
     container._libraryClickHandler = handleContainerClick;
-
     navigateTo('library');
 };

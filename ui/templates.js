@@ -36,7 +36,7 @@ const formatFeedback = (session) => {
     return { label: '-', class: '' };
 };
 
-// --- HELPER: Odznaka (Badge) ---
+// --- HELPER: Odznaka (Badge) - POPRAWIONY STYL ---
 export const getAffinityBadge = (exerciseId) => {
     const pref = state.userPreferences[exerciseId] || { score: 0, difficulty: 0 };
     const score = pref.score || 0;
@@ -45,26 +45,29 @@ export const getAffinityBadge = (exerciseId) => {
     let badge = null;
 
     if (diff === 1) { 
-        badge = { icon: '🔥', label: 'Za trudne', color: 'var(--danger-color)', bg: '#fff5f5', border: 'var(--danger-color)' };
+        badge = { icon: '🔥', label: 'Za trudne', color: '#b91c1c', bg: '#fef2f2', border: '#fca5a5' };
     } else if (score <= -10) { 
-        badge = { icon: '👎', label: 'Unikam', color: 'var(--danger-color)', bg: '#fff5f5', border: 'var(--danger-color)' };
+        badge = { icon: '👎', label: 'Unikam', color: '#b91c1c', bg: '#fef2f2', border: '#fca5a5' };
     } else if (score >= 20) {
-        badge = { icon: '💎', label: 'Tier S', color: '#b45309', bg: '#fffbeb', border: '#f59e0b' }; 
+        badge = { icon: '💎', label: 'Tier S', color: '#92400e', bg: '#fffbeb', border: '#fcd34d' }; 
     } else if (score >= 10) {
-        badge = { icon: '⭐', label: 'Tier A', color: '#0f766e', bg: '#f0fdfa', border: '#2dd4bf' }; 
+        badge = { icon: '⭐', label: 'Tier A', color: '#115e59', bg: '#f0fdfa', border: '#5eead4' }; 
     } else if (diff === -1) {
-        badge = { icon: '💤', label: 'Za łatwe', color: '#6b7280', bg: '#f3f4f6', border: '#9ca3af' };
+        badge = { icon: '💤', label: 'Za łatwe', color: '#4b5563', bg: '#f3f4f6', border: '#d1d5db' };
     }
 
     if (!badge) return '';
 
+    // Usunięto margin-left (teraz gap w parent robi robotę)
+    // Dodano white-space: nowrap, żeby tekst się nie łamał wewnątrz badge'a
     return `
         <span class="affinity-badge" style="
             display: inline-flex; align-items: center; gap: 4px; 
-            padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; 
+            padding: 3px 8px; border-radius: 99px; 
+            font-size: 0.65rem; font-weight: 700; 
             text-transform: uppercase; letter-spacing: 0.5px;
             color: ${badge.color}; background-color: ${badge.bg}; border: 1px solid ${badge.border};
-            margin-left: 8px; vertical-align: middle;">
+            white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,0.05); line-height: 1;">
             ${badge.icon} ${badge.label}
         </span>
     `;
@@ -154,7 +157,7 @@ export function generateSessionCardHTML(session) {
         statsHtml = `<div class="session-stats-grid"><div class="stat-item"><span class="stat-label">Zakończono</span><span class="stat-value">${completedTimeStr}</span></div></div>`;
     }
 
-    // LISTA ĆWICZEŃ Z PEŁNYM ZESTAWEM PRZYCISKÓW OCEN
+    // LISTA ĆWICZEŃ Z PRZYCISKAMI OCEN
     const exercisesHtml = session.sessionLog && session.sessionLog.length > 0 
         ? session.sessionLog.map(item => {
             const isSkipped = item.status === 'skipped';
@@ -165,7 +168,6 @@ export function generateSessionCardHTML(session) {
             const pref = state.userPreferences[id] || { score: 0, difficulty: 0 };
             const diff = pref.difficulty || 0;
             
-            // Logika wizualna przycisków
             const isLike = pref.score >= 10;
             const isDislike = pref.score <= -10;
             const isHard = diff === 1;
@@ -173,14 +175,11 @@ export function generateSessionCardHTML(session) {
 
             let ratingButtons = '';
             if (id) {
-                // Dodaliśmy przyciski 💤 (Easy) i 🔥 (Hard) oraz separator
                 ratingButtons = `
                     <div class="hist-rating-actions" style="margin-left:auto; display:flex; gap:4px; align-items:center;">
                         <button class="rate-btn-hist ${isLike ? 'active' : ''}" data-id="${id}" data-action="like" title="Lubię to">👍</button>
                         <button class="rate-btn-hist ${isDislike ? 'active' : ''}" data-id="${id}" data-action="dislike" title="Nie lubię">👎</button>
-                        
                         <div style="width:1px; height:16px; background:#ddd; margin:0 4px;"></div>
-                        
                         <button class="rate-btn-hist ${isEasy ? 'active' : ''}" data-id="${id}" data-action="easy" title="Za łatwe">💤</button>
                         <button class="rate-btn-hist ${isHard ? 'active' : ''}" data-id="${id}" data-action="hard" title="Za trudne">🔥</button>
                     </div>

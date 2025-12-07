@@ -1,8 +1,3 @@
-Oto zaktualizowany plik `README.md`. Zachowałem wszystkie dotychczasowe informacje, dodając sekcje opisujące nowy system **Exercise Affinity Engine**, **Synaptic Tuner** oraz zmiany w bazie danych i strukturze plików.
-
-Wersja została podbita do **v11.0.0** ze względu na wprowadzenie istotnych zmian w logice decyzyjnej aplikacji.
-
-```markdown
 # Aplikacja Treningowa (Smart Rehab PWA) v11.0.0
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca trening siłowy z rehabilitacją kręgosłupa (metodyka McGill L5-S1). System wykorzystuje architekturę Serverless oraz autorski silnik **"Virtual Physio"** (v3.3), wspierany przez nowy moduł **"Exercise Affinity Engine"**, który personalizuje treningi na podstawie preferencji emocjonalnych i odczuwalnej trudności.

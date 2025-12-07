@@ -3,22 +3,18 @@
 const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
 
 /**
- * GENERATOR PLANU TRENINGOWEGO (VIRTUAL PHYSIO) v3.3
- * Zmiany v3.3:
- * - Wstępna walidacja kliniczna (can_generate_plan)
- * - Nowa logika severity / difficulty cap
- * - Rozszerzone mapowanie diagnoz (disc_herniation)
- * - Rozszerzona logika nerve_flossing (radiating + lokalizacja)
- * - Nowe helpery: violatesRestrictions, passesTolerancePattern
- * - Zmodyfikowane filtrowanie kandydatów (primary_plane, position)
- * - Ograniczenie powtarzalności ćwiczeń w tygodniu (weeklyUsage)
- * - Skalowanie objętości od sessions_per_week
- * - Zoptymalizowane optimizeSessionDuration
+ * GENERATOR PLANU TRENINGOWEGO (VIRTUAL PHYSIO) v3.5
+ * Zmiany v3.5:
+ * - Wymuszono 2 ćwiczenia Core w części głównej (zamiast warunkowego drugiego).
+ * - Zachowano bezpieczne czasy przerw (5s).
+ * - Zachowano dopychanie objętości (expandSessionDuration).
  */
 
 const SECONDS_PER_REP = 4;
-const REST_BETWEEN_SETS = 5;
-const REST_BETWEEN_EXERCISES = 5;
+// PARAMETRY CZASOWE (5 sekund zgodnie z życzeniem)
+const REST_BETWEEN_SETS = 5; 
+const REST_BETWEEN_EXERCISES = 5; 
+
 const MAX_MAIN_OCCURRENCES_PER_WEEK = 4;
 const MAX_ROTATIONAL_CORE_WITH_DISC_HERNIATION = 3;
 const MAX_ROTATION_MOBILITY_WITH_DISC_HERNIATION = 4;
@@ -276,7 +272,7 @@ exports.handler = async (event) => {
             const weeklyPlan = {
                 id: `dynamic-${Date.now()}`,
                 name: "Terapia Personalizowana",
-                description: "Plan wygenerowany przez Asystenta AI (v3.3)",
+                description: "Plan wygenerowany przez Asystenta AI (v3.5)",
                 days: []
             };
 
@@ -287,6 +283,11 @@ exports.handler = async (event) => {
             for (let i = 1; i <= sessionsPerWeek; i++) {
                 let session = generateSession(i, candidates, weights, severityScore, userData.exercise_experience, weeklyUsage, sessionsPerWeek, userData, weeklyRotationMobilityUsage);
 
+                // --- NOWA LOGIKA ZARZĄDZANIA CZASEM ---
+                // 1. Dopychamy objętość (z zachowaniem bezpieczeństwa)
+                expandSessionDuration(session, targetDurationMin);
+                
+                // 2. Przycinamy, jeśli mimo wszystko wyszło za dużo
                 optimizeSessionDuration(session, targetDurationMin);
 
                 // Sanityzacja (czyszczenie zbędnych pól przed zapisem)
@@ -396,12 +397,13 @@ function generateSession(dayNum, candidates, weights, severity, experience, week
     const coreCats = ['core_anti_extension', 'core_anti_flexion', 'core_anti_rotation'];
     coreCats.sort((a, b) => weights[b] - weights[a]);
 
+    // Core #1 (Najważniejsza kategoria)
     session.main.push(pickOne(candidates, coreCats[0], sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage));
 
-    if (weights[coreCats[0]] > 1.2) {
-        session.main.push(pickOne(candidates, coreCats[1], sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage));
-    }
+    // Core #2 (Druga kategoria) - ZAWSZE
+    session.main.push(pickOne(candidates, coreCats[1], sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage));
 
+    // Aktywacja pośladków
     if (weights['glute_activation'] > 0.8) {
         session.main.push(pickOne(candidates, 'glute_activation', sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage));
     }
@@ -467,7 +469,7 @@ function pickOne(pool, category, usedIds, weeklyUsage, sectionName, userData, we
         if (weeklyUsage && sectionName === 'main') {
             const used = weeklyUsage.get(ex.id) || 0;
 
-            // globalny limit
+            // global limit
             if (used >= MAX_MAIN_OCCURRENCES_PER_WEEK) return false;
 
             // 3.1 - dodatkowy limit dla core_anti_rotation przy disc_herniation
@@ -629,7 +631,7 @@ function estimateDurationSeconds(session) {
     return totalSeconds;
 }
 
-// 2.12. Zmodyfikowana optimizeSessionDuration
+// 2.12. Zmodyfikowana optimizeSessionDuration (Kompresja)
 function optimizeSessionDuration(session, targetMin) {
     const targetSeconds = targetMin * 60;
     let estimatedSeconds = estimateDurationSeconds(session);
@@ -642,7 +644,7 @@ function optimizeSessionDuration(session, targetMin) {
         }
     }
 
-    // Etap 2: Redukcja serii/reps (istniejąca logika)
+    // Etap 2: Redukcja serii/reps
     let attempts = 0;
 
     while (estimatedSeconds > targetSeconds * 1.15 && attempts < 5) {
@@ -678,5 +680,45 @@ function optimizeSessionDuration(session, targetMin) {
 
         estimatedSeconds = estimateDurationSeconds(session);
         attempts++;
+    }
+}
+
+// 2.13. NOWOŚĆ: Funkcja dopychająca (Expansion)
+function expandSessionDuration(session, targetMin) {
+    const targetSeconds = targetMin * 60;
+    let estimatedSeconds = estimateDurationSeconds(session);
+    
+    // Jeśli plan jest krótszy niż 80% celu, próbujemy dodać serie
+    if (estimatedSeconds < targetSeconds * 0.8) {
+        let attempts = 0;
+        const maxSets = 5; 
+
+        // Pętla dodawania serii
+        while (estimatedSeconds < targetSeconds * 0.9 && attempts < 10) {
+            let expansionMade = false;
+
+            for (let ex of session.main) {
+                const sets = parseInt(ex.sets);
+                
+                // Dodajemy tylko jeśli nie przekraczamy limitu maxSets
+                if (sets < maxSets) {
+                    // Dla unilateralnych dodajemy parami (+2), dla zwykłych (+1)
+                    if (ex.is_unilateral) {
+                        if (sets + 2 <= maxSets) {
+                            ex.sets = String(sets + 2);
+                            expansionMade = true;
+                        }
+                    } else {
+                        ex.sets = String(sets + 1);
+                        expansionMade = true;
+                    }
+                }
+            }
+
+            if (!expansionMade) break; // Nie można już nic dodać (limit serii osiągnięty)
+
+            estimatedSeconds = estimateDurationSeconds(session);
+            attempts++;
+        }
     }
 }

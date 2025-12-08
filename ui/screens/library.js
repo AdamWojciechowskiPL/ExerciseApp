@@ -1,245 +1,522 @@
-// js/ui/screens/library.js
+// js/ui/screens/library.js - "The Atlas" (Unified Library & Analytics)
 import { state } from '../../state.js';
 import { containers } from '../../dom.js';
-import { navigateTo } from '../core.js';
-import { getIsCasting, sendPlayVideo, sendStopVideo } from '../../cast.js';
+import { navigateTo, showLoader, hideLoader } from '../core.js';
+import { getAffinityBadge } from '../templates.js';
+import { renderTunerModal } from '../modals.js';
 import dataStore from '../../dataStore.js';
-import { getAffinityBadge } from '../templates.js'; // Import helpera
 
-// --- STAN LOKALNY EKRANU ---
-let currentTab = 'all'; 
-let activeFilters = {
-    category: 'all',
-    level: 'all',
-    equipment: 'all',
-    preference: 'all'
+// --- STAN LOKALNY ---
+let atlasState = {
+    search: '',
+    activeFilter: 'all', 
+    collapsedMap: false
 };
 
-const formatCategoryName = (catId) => {
-    if (!catId) return 'Inne';
-    return catId.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+// --- DEFINICJE STREF CIAŁA (Konfiguracja) ---
+const ZONE_MAPPING = {
+    'cervical': { label: 'Szyja', icon: '🧣', cats: ['neck', 'cervical'] },
+    'thoracic': { label: 'Górne Plecy', icon: '🔙', cats: ['thoracic', 'posture'] },
+    'lumbar_general': { label: 'Lędźwia / Core', icon: '🧱', cats: ['core_anti_extension', 'core_anti_flexion', 'core_anti_rotation', 'lumbar'] },
+    'hip_mobility': { label: 'Biodra', icon: '⚙️', cats: ['hip_mobility', 'glute_activation', 'piriformis'] },
+    'sciatica': { label: 'Nogi / Nerw', icon: '⚡', cats: ['nerve_flossing', 'sciatica', 'legs'] }
 };
 
-const getLevelLabel = (lvl) => {
-    if (!lvl) return 'Baza';
-    if (lvl == 1) return 'Lvl 1 (Rehab/Start)';
-    if (lvl == 2) return 'Lvl 2 (Początkujący)';
-    if (lvl == 3) return 'Lvl 3 (Średniozaaw.)';
-    if (lvl == 4) return 'Lvl 4 (Zaawansowany)';
-    if (lvl >= 5) return 'Lvl 5 (Elita)';
-    return `Poziom ${lvl}`;
-};
-
-export const renderLibraryScreen = (searchTerm = '') => {
+// --- RENDEROWANIE GŁÓWNE ---
+export const renderLibraryScreen = async (searchTerm = '') => {
     const container = containers.exerciseLibrary;
-    container.innerHTML = '';
+    if (!container) return;
 
-    // 1. Przygotowanie danych
-    const allExercises = Object.values(state.exerciseLibrary);
-    
-    const uniqueCategories = [...new Set(allExercises.map(ex => ex.categoryId).filter(Boolean))].sort();
-    const uniqueLevels = [...new Set(allExercises.map(ex => ex.difficultyLevel || 1))].sort((a,b) => a - b);
-    const uniqueEquipment = [...new Set(allExercises.map(ex => ex.equipment || 'Brak sprzętu'))].sort();
+    navigateTo('library');
 
-    const categoryOptions = uniqueCategories.map(cat => `<option value="${cat}" ${activeFilters.category === cat ? 'selected' : ''}>${formatCategoryName(cat)}</option>`).join('');
-    const levelOptions = uniqueLevels.map(lvl => `<option value="${lvl}" ${String(activeFilters.level) === String(lvl) ? 'selected' : ''}>${getLevelLabel(lvl)}</option>`).join('');
-    const equipmentOptions = uniqueEquipment.map(eq => `<option value="${eq}" ${activeFilters.equipment === eq ? 'selected' : ''}>${eq}</option>`).join('');
+    if (!state.userPreferences || Object.keys(state.userPreferences).length === 0) {
+        try { await dataStore.fetchUserPreferences(); } catch(e) {}
+    }
 
-    // 2. Generowanie nagłówka i filtrów
-    const headerHTML = `
-        <div class="library-tabs" style="display:flex; gap:10px; margin-bottom:1rem;">
-            <button id="tab-all" class="toggle-btn ${currentTab === 'all' ? 'active' : ''}" style="flex:1; padding:10px;">Baza Ćwiczeń</button>
-            <button id="tab-blacklist" class="toggle-btn ${currentTab === 'blacklist' ? 'active' : ''}" style="flex:1; padding:10px;">Czarna Lista (${state.blacklist.length})</button>
+    if (searchTerm) {
+        atlasState.search = searchTerm;
+        atlasState.activeFilter = 'all';
+    }
+
+    // STYLE CSS (Wstrzyknięte)
+    const styles = `
+        <style>
+            /* --- LAYOUT & HEADER --- */
+            .atlas-header {
+                position: sticky;
+                top: 0;
+                background: var(--background-color);
+                z-index: 50;
+                padding-bottom: 5px;
+                padding-top: 10px;
+                width: 100%;
+            }
+            .search-bar-wrapper {
+                position: relative;
+                margin-bottom: 10px;
+                display: flex;
+                align-items: center;
+                width: 100%;
+            }
+            .atlas-search-input {
+                width: 100%;
+                padding: 12px 16px;
+                border-radius: 12px;
+                border: 1px solid var(--border-color);
+                background: #fff;
+                font-size: 0.95rem;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+                outline: none;
+                color: var(--text-color);
+                transition: border-color 0.2s, box-shadow 0.2s;
+            }
+            .atlas-search-input:focus {
+                border-color: var(--primary-color);
+                box-shadow: 0 4px 12px rgba(0,95,115,0.15);
+            }
+
+            /* --- ZONE SELECTOR (HUD) --- */
+            .zone-hud-container {
+                display: flex;
+                gap: 10px;
+                overflow-x: auto;
+                padding: 5px 2px 15px 2px;
+                scrollbar-width: none;
+                -webkit-overflow-scrolling: touch;
+            }
+            .zone-hud-container::-webkit-scrollbar { display: none; }
+
+            .zone-tile {
+                flex: 0 0 auto;
+                width: 110px;
+                height: 70px;
+                background: #fff;
+                border-radius: 12px;
+                border: 1px solid var(--border-color);
+                position: relative;
+                overflow: hidden;
+                cursor: pointer;
+                transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                padding: 12px;
+            }
+            
+            .zone-tile:active { transform: scale(0.96); }
+            
+            /* Aktywna strefa */
+            .zone-tile.active {
+                border-color: var(--primary-color);
+                background: #f0fdfa; /* Bardzo jasny cyjan */
+                box-shadow: 0 4px 12px rgba(0,95,115,0.15);
+            }
+
+            .zt-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                font-size: 0.8rem;
+                font-weight: 700;
+                color: var(--text-color);
+                margin-bottom: 4px;
+            }
+            
+            .zt-count {
+                font-size: 0.7rem;
+                font-weight: 500;
+                color: var(--muted-text-color);
+            }
+            
+            .zone-tile.active .zt-count {
+                color: var(--primary-color);
+                font-weight: 700;
+            }
+
+            /* --- CHIPS (Secondary Filter) --- */
+            .chips-scroller {
+                display: flex;
+                flex-wrap: nowrap;
+                gap: 8px;
+                overflow-x: auto;
+                padding: 0 2px 10px 2px;
+                scrollbar-width: none;
+            }
+            .chips-scroller::-webkit-scrollbar { display: none; }
+            
+            .chip {
+                flex: 0 0 auto;
+                padding: 6px 14px;
+                border-radius: 20px;
+                background: #f8f9fa;
+                border: 1px solid transparent;
+                font-size: 0.8rem;
+                font-weight: 600;
+                color: var(--muted-text-color);
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+            .chip.active {
+                background: #fff;
+                color: var(--primary-color);
+                border-color: var(--primary-color);
+                box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            }
+
+            /* --- EXERCISE CARDS --- */
+            .atlas-grid {
+                display: flex; flex-direction: column; gap: 12px; padding-bottom: 80px; 
+            }
+            .atlas-card {
+                background: #fff;
+                border-radius: 12px;
+                padding: 14px;
+                display: grid;
+                grid-template-columns: 1fr auto;
+                gap: 12px;
+                align-items: start;
+                border: 1px solid var(--border-color);
+                border-left-width: 5px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.03);
+            }
+            .ac-title { font-weight: 700; font-size: 1rem; color: var(--text-color); line-height: 1.3; }
+            .ac-desc { font-size: 0.8rem; color: #666; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: 4px; }
+            
+            .ac-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+            .meta-tag { font-size: 0.65rem; padding: 3px 8px; border-radius: 6px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; text-transform: uppercase; white-space: nowrap; }
+            .tag-level { background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }
+            .tag-category { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+            .tag-equipment { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+
+            .ac-footer { display: flex; gap: 12px; margin-top: 10px; padding-top: 8px; border-top: 1px dashed #eee; }
+            .link-btn { font-size: 0.75rem; text-decoration: none; color: var(--secondary-color); font-weight: 600; display: flex; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; padding: 0; }
+            
+            .ac-actions { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 55px; border-left: 1px solid #eee; padding-left: 10px; justify-content: center; height: 100%; }
+            .ac-score { font-weight: 800; font-size: 0.85rem; opacity: 0.8; background: #f3f4f6; padding: 4px 8px; border-radius: 6px; min-width: 40px; text-align: center; }
+            
+            .icon-btn { background: transparent; border: 1px solid transparent; cursor: pointer; padding: 8px; border-radius: 50%; transition: all 0.2s; font-size: 1.2rem; line-height: 1; }
+            .icon-btn:hover { background: #f0f0f0; transform: scale(1.1); }
+            
+            /* Tier Borders */
+            .atlas-card[data-tier="S"] { border-left-color: #f59e0b; background: linear-gradient(90deg, #fffbeb 0%, #fff 100%); }
+            .atlas-card[data-tier="A"] { border-left-color: #10b981; }
+            .atlas-card[data-tier="B"] { border-left-color: #9ca3af; }
+            .atlas-card[data-tier="C"] { border-left-color: #ef4444; }
+        </style>
+    `;
+
+    container.innerHTML = `
+        ${styles}
+        <div class="atlas-header">
+            <div class="search-bar-wrapper">
+                <input type="text" class="atlas-search-input" placeholder="Znajdź ćwiczenie..." value="${atlasState.search}">
+            </div>
+            
+            <div class="chips-scroller" id="atlas-chips">
+                <!-- Generowane dynamicznie -->
+            </div>
         </div>
 
-        <div class="filters-container">
-            <select id="filter-preference" class="filter-select" style="border-color: var(--gold-color);">
-                <option value="all" ${activeFilters.preference === 'all' ? 'selected' : ''}>Wszystkie rangi</option>
-                <option value="tier_s" ${activeFilters.preference === 'tier_s' ? 'selected' : ''}>💎 Tier S (Ulubione)</option>
-                <option value="tier_a" ${activeFilters.preference === 'tier_a' ? 'selected' : ''}>⭐ Tier A (Lubiane)</option>
-                <option value="tier_c" ${activeFilters.preference === 'tier_c' ? 'selected' : ''}>⚠️ Tier C (Problemy)</option>
-            </select>
+        <div class="zone-hud-container" id="zone-hud">
+            <!-- Tutaj wstawimy nowe kafelki stref -->
+        </div>
 
-            <select id="filter-category" class="filter-select"><option value="all">Wszystkie kategorie</option>${categoryOptions}</select>
-            <select id="filter-level" class="filter-select"><option value="all">Wszystkie poziomy</option>${levelOptions}</select>
-            <select id="filter-equipment" class="filter-select"><option value="all">Dowolny sprzęt</option>${equipmentOptions}</select>
-            <button id="filter-reset" class="filter-reset-btn">Wyczyść</button>
+        <div style="height: 15px;"></div> <!-- Spacer -->
+
+        <div class="atlas-grid" id="atlas-grid">
+            <!-- Karty ćwiczeń -->
         </div>
     `;
-    
-    const wrapper = document.createElement('div');
-    wrapper.innerHTML = headerHTML;
-    container.appendChild(wrapper);
 
-    // 3. Filtrowanie
-    const lowerCaseSearchTerm = searchTerm.toLowerCase();
-    
-    let exercisesToShow = Object.entries(state.exerciseLibrary).map(([id, data]) => ({ id: id, ...data }));
+    renderChips();
+    renderZoneSelector(); // NOWY RENDERER
+    renderExerciseList();
 
-    if (currentTab === 'blacklist') {
-        exercisesToShow = exercisesToShow.filter(ex => state.blacklist.includes(ex.id));
-    } 
+    // Event Listeners
+    const searchInput = container.querySelector('.atlas-search-input');
+    searchInput.addEventListener('input', (e) => {
+        atlasState.search = e.target.value;
+        renderExerciseList();
+    });
+};
 
-    if (lowerCaseSearchTerm) {
-        exercisesToShow = exercisesToShow.filter(ex => ex.name.toLowerCase().includes(lowerCaseSearchTerm) || (ex.description && ex.description.toLowerCase().includes(lowerCaseSearchTerm)));
-    }
+// --- RENDEROWANIE FILTRÓW (CHIPS - TYLKO STATUS) ---
+function renderChips() {
+    const container = document.getElementById('atlas-chips');
+    if (!container) return;
 
-    if (activeFilters.category !== 'all') exercisesToShow = exercisesToShow.filter(ex => ex.categoryId === activeFilters.category);
-    if (activeFilters.level !== 'all') exercisesToShow = exercisesToShow.filter(ex => (ex.difficultyLevel || 1) == activeFilters.level);
-    if (activeFilters.equipment !== 'all') exercisesToShow = exercisesToShow.filter(ex => (ex.equipment || 'Brak sprzętu') === activeFilters.equipment);
+    const filters = [
+        { id: 'all', label: 'Wszystkie' },
+        { id: 'tier_s', label: '💎 Ulubione' },
+        { id: 'tier_a', label: '🔥 Dobre' },
+        { id: 'blacklist', label: '🚫 Blokowane' }
+    ];
 
-    if (activeFilters.preference !== 'all') {
-        exercisesToShow = exercisesToShow.filter(ex => {
-            const pref = state.userPreferences[ex.id] || { score: 0, difficulty: 0 };
-            if (activeFilters.preference === 'tier_s') return pref.score >= 20;
-            if (activeFilters.preference === 'tier_a') return pref.score > 0 && pref.score < 20;
-            if (activeFilters.preference === 'tier_c') return pref.score < 0 || pref.difficulty !== 0;
-            return true;
+    container.innerHTML = filters.map(f => `
+        <button class="chip ${atlasState.activeFilter === f.id ? 'active' : ''}" 
+                data-id="${f.id}" 
+                data-tier="${f.id === 'tier_s' ? 'S' : (f.id === 'blacklist' ? 'C' : '')}">
+            ${f.label}
+        </button>
+    `).join('');
+
+    container.querySelectorAll('.chip').forEach(btn => {
+        btn.addEventListener('click', () => {
+            atlasState.activeFilter = btn.dataset.id;
+            if (atlasState.search && btn.dataset.id !== 'all') {
+                atlasState.search = '';
+                document.querySelector('.atlas-search-input').value = '';
+            }
+            renderChips();
+            renderZoneSelector(); // Update HUD active state
+            renderExerciseList();
         });
+    });
+}
+
+// --- NOWY RENDERER: ZONE HUD SELECTOR (CLEAN) ---
+function renderZoneSelector() {
+    const container = document.getElementById('zone-hud');
+    if (!container) return;
+
+    const stats = calculateZoneStats();
+
+    const tilesHTML = Object.entries(ZONE_MAPPING).map(([zoneId, config]) => {
+        const data = stats[zoneId] || { count: 0 };
+        const isActive = atlasState.activeFilter === zoneId;
+        
+        return `
+            <div class="zone-tile ${isActive ? 'active' : ''}" data-zone="${zoneId}">
+                <div class="zt-header">
+                    <span>${config.label}</span>
+                    <span>${config.icon}</span>
+                </div>
+                <div class="zt-count">
+                    ${data.count} ćwiczeń
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    container.innerHTML = tilesHTML;
+
+    container.querySelectorAll('.zone-tile').forEach(tile => {
+        tile.addEventListener('click', () => {
+            const zoneId = tile.dataset.zone;
+            // Toggle
+            if (atlasState.activeFilter === zoneId) {
+                atlasState.activeFilter = 'all';
+            } else {
+                atlasState.activeFilter = zoneId;
+            }
+            renderChips(); 
+            renderZoneSelector(); 
+            renderExerciseList();
+        });
+    });
+}
+
+// --- RENDEROWANIE LISTY ---
+function renderExerciseList() {
+    const grid = document.getElementById('atlas-grid');
+    if (!grid) return;
+
+    let items = Object.entries(state.exerciseLibrary).map(([id, data]) => ({ id, ...data }));
+    const blacklist = state.blacklist || [];
+
+    // 1. Filtrowanie
+    if (atlasState.activeFilter === 'blacklist') {
+        items = items.filter(ex => blacklist.includes(ex.id));
+    } else {
+        if (!atlasState.search) {
+            items = items.filter(ex => !blacklist.includes(ex.id));
+        }
+
+        if (atlasState.activeFilter === 'tier_s') {
+            items = items.filter(ex => (state.userPreferences[ex.id]?.score || 0) >= 20);
+        } else if (atlasState.activeFilter === 'tier_a') {
+            items = items.filter(ex => {
+                const s = state.userPreferences[ex.id]?.score || 0;
+                return s >= 10 && s < 20;
+            });
+        } else if (ZONE_MAPPING[atlasState.activeFilter]) {
+            const zData = ZONE_MAPPING[atlasState.activeFilter];
+            items = items.filter(ex => 
+                zData.cats.includes(ex.categoryId) || 
+                (ex.painReliefZones && ex.painReliefZones.includes(atlasState.activeFilter))
+            );
+        }
     }
 
-    // Sortowanie: Najpierw Ulubione (Tier S), potem alfabetycznie
-    exercisesToShow.sort((a, b) => {
-        const scoreA = (state.userPreferences[a.id]?.score || 0);
-        const scoreB = (state.userPreferences[b.id]?.score || 0);
-        if (scoreB !== scoreA) return scoreB - scoreA;
+    if (atlasState.search) {
+        const term = atlasState.search.toLowerCase();
+        items = items.filter(ex => ex.name.toLowerCase().includes(term));
+    }
+
+    // 2. Sortowanie
+    items.sort((a, b) => {
+        const sA = state.userPreferences[a.id]?.score || 0;
+        const sB = state.userPreferences[b.id]?.score || 0;
+        if (sB !== sA) return sB - sA;
         return a.name.localeCompare(b.name, 'pl');
     });
 
-    // 4. Renderowanie kart
-    if (exercisesToShow.length === 0) {
-        container.appendChild(Object.assign(document.createElement('p'), { textContent: "Brak ćwiczeń spełniających kryteria.", style: "text-align:center; opacity:0.6; margin-top:2rem;" }));
-    } else {
-        exercisesToShow.forEach(exercise => {
-            const card = document.createElement('div');
-            card.className = 'library-card';
-            
-            const isBlocked = state.blacklist.includes(exercise.id);
-            if (isBlocked) card.style.borderLeftColor = 'var(--danger-color)';
-
-            const youtubeIdMatch = exercise.youtube_url ? exercise.youtube_url.match(/(?:v=|\/)([a-zA-Z0-9_-]{11})(?:\?|&|$)/) : null;
-            const youtubeId = youtubeIdMatch ? youtubeIdMatch[1] : null;
-            const lvl = exercise.difficultyLevel || 1;
-            const categoryName = formatCategoryName(exercise.categoryId);
-            const equipment = exercise.equipment || 'Brak sprzętu';
-            const affinityBadge = getAffinityBadge(exercise.id);
-
-            const tagsHTML = `
-                <div class="library-card-meta">
-                    <span class="meta-badge badge-lvl-${lvl}">⚡ ${getLevelLabel(lvl)}</span>
-                    <span class="meta-badge badge-category">📂 ${categoryName}</span>
-                    <span class="meta-badge badge-equipment">🏋️ ${equipment}</span>
-                </div>
-            `;
-
-             let actionButtons = '';
-            if (currentTab === 'blacklist') {
-                actionButtons = `<button class="btn-with-icon btn-danger restore-btn" data-id="${exercise.id}" style="border-color: var(--success-color); color: var(--success-color);"><span>♻️ Przywróć</span></button>`;
-            } else {
-                if (exercise.animationSvg) actionButtons += `<button class="btn-with-icon btn-secondary preview-anim-btn" data-exercise-id="${exercise.id}" title="Podgląd animacji"><img src="/icons/eye.svg" alt=""><span>Podgląd</span></button>`;
-                if (getIsCasting()) { const youtubeId = youtubeIdMatch ? youtubeIdMatch[1] : null; actionButtons += `<button class="btn-with-icon btn-primary cast-video-btn" data-youtube-id="${youtubeId || ''}" ${!youtubeId ? 'disabled' : ''} title="Rzutuj wideo na TV"><img src="/icons/cast.svg" alt=""><span>Rzutuj</span></button>`; }
-                if (exercise.youtube_url) actionButtons += `<a href="${exercise.youtube_url}" target="_blank" rel="noopener noreferrer" class="btn-with-icon btn-secondary" title="Otwórz w YouTube"><img src="/icons/external-link.svg" alt=""><span>Wideo</span></a>`;
-                if (!isBlocked) actionButtons += `<button class="btn-with-icon btn-danger block-btn" data-id="${exercise.id}" title="Dodaj do czarnej listy"><img src="/icons/ban.svg" alt=""><span>Blokuj</span></button>`;
-            }
-
-            // POPRAWIONY UKŁAD NAGŁÓWKA (FLEXBOX + GAP)
-            card.innerHTML = `
-                <div class="card-header" style="display:flex; justify-content:space-between; align-items:flex-start; gap: 10px; margin-bottom: 0.8rem;">
-                    <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 12px;">
-                        <h3 style="margin: 0; line-height: 1.2;">${exercise.name}</h3>
-                        ${affinityBadge}
-                    </div>
-                    ${isBlocked && currentTab === 'all' ? '<span style="font-size:0.8rem; color:red; font-weight:bold; white-space: nowrap;">🚫 Zablokowane</span>' : ''}
-                </div>
-                ${tagsHTML}
-                <p class="library-card-description">${exercise.description || ''}</p>
-                <div class="library-card-footer"><div style="display:flex; gap:5px; flex-wrap:wrap; justify-content:flex-end; width:100%;">${actionButtons}</div></div>`;
-            container.appendChild(card);
-        });
+    // 3. Generowanie HTML
+    if (items.length === 0) {
+        grid.innerHTML = `<div style="text-align:center; padding:3rem 1rem; opacity:0.6; width:100%;">
+            <p>Brak ćwiczeń spełniających kryteria.</p>
+            ${atlasState.activeFilter === 'blacklist' ? '<p style="font-size:0.8rem">Twoja czarna lista jest pusta.</p>' : ''}
+        </div>`;
+        return;
     }
 
-    // 5. Obsługa zdarzeń
-    const searchInput = document.getElementById('library-search-input');
-    wrapper.querySelector('#tab-all').addEventListener('click', () => { currentTab = 'all'; renderLibraryScreen(searchInput.value); });
-    wrapper.querySelector('#tab-blacklist').addEventListener('click', () => { currentTab = 'blacklist'; renderLibraryScreen(searchInput.value); });
-    wrapper.querySelector('#filter-category').addEventListener('change', (e) => { activeFilters.category = e.target.value; renderLibraryScreen(searchInput.value); });
-    wrapper.querySelector('#filter-level').addEventListener('change', (e) => { activeFilters.level = e.target.value; renderLibraryScreen(searchInput.value); });
-    wrapper.querySelector('#filter-equipment').addEventListener('change', (e) => { activeFilters.equipment = e.target.value; renderLibraryScreen(searchInput.value); });
-    wrapper.querySelector('#filter-preference').addEventListener('change', (e) => { activeFilters.preference = e.target.value; renderLibraryScreen(searchInput.value); });
-    wrapper.querySelector('#filter-reset').addEventListener('click', () => {
-        activeFilters = { category: 'all', level: 'all', equipment: 'all', preference: 'all' };
-        renderLibraryScreen(searchInput.value); 
+    grid.innerHTML = items.map(ex => {
+        const pref = state.userPreferences[ex.id] || { score: 0, difficulty: 0 };
+        const tier = getTier(pref);
+        const affinityBadge = getAffinityBadge(ex.id);
+        const isBlacklisted = blacklist.includes(ex.id);
+        const descriptionShort = ex.description ? ex.description : 'Brak opisu.';
+
+        const lvlLabel = getLevelLabel(ex.difficultyLevel);
+        const catLabel = formatCategory(ex.categoryId).toUpperCase();
+        let equipLabel = 'BRAK SPRZĘTU';
+        if (ex.equipment) {
+            if (Array.isArray(ex.equipment)) equipLabel = ex.equipment.join(', ').toUpperCase();
+            else equipLabel = ex.equipment.toUpperCase();
+        }
+        if (equipLabel === '') equipLabel = 'BRAK SPRZĘTU';
+
+        let footerHtml = '';
+        if (ex.youtube_url) {
+            footerHtml += `<a href="${ex.youtube_url}" target="_blank" class="link-btn link-youtube">📺 Wideo</a>`;
+        }
+        if (ex.animationSvg) {
+            footerHtml += `<button class="link-btn preview-btn" data-id="${ex.id}">👁️ Podgląd</button>`;
+        }
+
+        const actionBtn = isBlacklisted 
+            ? `<button class="icon-btn restore-btn" title="Przywróć" style="color:var(--success-color)">♻️</button>` 
+            : `<button class="icon-btn block-btn" title="Zablokuj (Dodaj do czarnej listy)">🚫</button>`;
+
+        return `
+        <div class="atlas-card" data-id="${ex.id}" data-tier="${tier}">
+            <div class="ac-main">
+                <div class="ac-title">${ex.name} ${affinityBadge ? '<span style="margin-left:5px">' + affinityBadge + '</span>' : ''}</div>
+                
+                <div class="ac-tags">
+                    <span class="meta-tag tag-level">⚡ ${lvlLabel}</span>
+                    <span class="meta-tag tag-category">📂 ${catLabel}</span>
+                    <span class="meta-tag tag-equipment">🏋️ ${equipLabel}</span>
+                </div>
+
+                <div class="ac-desc">${descriptionShort}</div>
+                
+                ${footerHtml ? `<div class="ac-footer">${footerHtml}</div>` : ''}
+            </div>
+            
+            <div class="ac-actions">
+                <div class="ac-score">${pref.score > 0 ? '+' + pref.score : pref.score}</div>
+                ${actionBtn}
+            </div>
+        </div>
+        `;
+    }).join('');
+
+    // 4. Obsługa Zdarzeń
+    grid.querySelectorAll('.atlas-card').forEach(card => {
+        const exId = card.dataset.id;
+
+        card.addEventListener('click', (e) => {
+            if (e.target.closest('.icon-btn') || e.target.closest('a') || e.target.closest('.preview-btn')) return;
+            renderTunerModal(exId, () => {
+                renderExerciseList();
+                renderZoneSelector(); 
+            });
+        });
+
+        const previewBtn = card.querySelector('.preview-btn');
+        if (previewBtn) {
+            previewBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const ex = state.exerciseLibrary[exId];
+                if (ex && ex.animationSvg) {
+                    renderPreviewModal(ex.animationSvg, ex.name);
+                }
+            });
+        }
+
+        const ytLink = card.querySelector('.link-youtube');
+        if (ytLink) {
+            ytLink.addEventListener('click', (e) => e.stopPropagation());
+        }
+
+        const blockBtn = card.querySelector('.block-btn');
+        if (blockBtn) {
+            blockBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                if (confirm(`Czy na pewno chcesz dodać "${state.exerciseLibrary[exId].name}" do czarnej listy?`)) {
+                    showLoader();
+                    await dataStore.addToBlacklist(exId, null);
+                    hideLoader();
+                    renderExerciseList();
+                }
+            });
+        }
+
+        const restoreBtn = card.querySelector('.restore-btn');
+        if (restoreBtn) {
+            restoreBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                if (confirm(`Przywrócić "${state.exerciseLibrary[exId].name}" do aktywnych ćwiczeń?`)) {
+                    showLoader();
+                    await dataStore.removeFromBlacklist(exId);
+                    hideLoader();
+                    renderExerciseList();
+                }
+            });
+        }
     });
+}
 
-    // Delegacja zdarzeń dla dynamicznej listy
-    if (container._libraryClickHandler) { container.removeEventListener('click', container._libraryClickHandler); }
+function calculateZoneStats() {
+    const stats = {};
+    const exercises = Object.values(state.exerciseLibrary);
     
-    const handleContainerClick = async (e) => {
-        // Modal podglądu
-        const previewBtn = e.target.closest('.preview-anim-btn');
-        if (previewBtn) { 
-            e.stopPropagation();
-            const exId = previewBtn.dataset.exerciseId;
-            const ex = state.exerciseLibrary[exId];
-            if (ex && ex.animationSvg) {
-                const overlay = document.createElement('div');
-                overlay.className = 'modal-overlay';
-                overlay.innerHTML = `<div class="swap-modal" style="align-items: center; text-align: center;"><h3>${ex.name}</h3><div style="width: 100%; max-width: 300px; margin: 1rem 0;">${ex.animationSvg}</div><button id="close-preview" class="nav-btn" style="width: 100%">Zamknij</button></div>`;
-                document.body.appendChild(overlay);
-                overlay.querySelector('#close-preview').onclick = () => overlay.remove();
-                overlay.onclick = (ev) => { if(ev.target === overlay) overlay.remove(); };
+    exercises.forEach(ex => {
+        let zone = 'other';
+        for (const [zId, zData] of Object.entries(ZONE_MAPPING)) {
+            if (zData.cats.includes(ex.categoryId) || (ex.painReliefZones && ex.painReliefZones.includes(zId))) {
+                zone = zId;
+                break;
             }
-            return; 
         }
+        if (!stats[zone]) stats[zone] = { count: 0 };
+        stats[zone].count++;
+    });
+    return stats;
+}
 
-        // Przywracanie z czarnej listy
-        const restoreBtn = e.target.closest('.restore-btn');
-        if (restoreBtn) { 
-            const id = restoreBtn.dataset.id; 
-            e.stopPropagation(); 
-            if (confirm('Przywrócić?')) { 
-                await dataStore.removeFromBlacklist(id); 
-                renderLibraryScreen(searchInput.value); 
-            } 
-            return; 
-        }
+// Helpers
+function getTier(pref) {
+    if (pref.difficulty === 1) return 'C';
+    if (pref.score >= 20) return 'S';
+    if (pref.score >= 10) return 'A';
+    if (pref.score <= -10) return 'C';
+    return 'B';
+}
 
-        // Dodawanie do czarnej listy
-        const blockBtn = e.target.closest('.block-btn');
-        if (blockBtn) { 
-            const id = blockBtn.dataset.id; 
-            e.stopPropagation(); 
-            if (confirm('Blokować?')) { 
-                await dataStore.addToBlacklist(id, null); 
-                renderLibraryScreen(searchInput.value); 
-            } 
-            return; 
-        }
-        
-        // Obsługa Google Cast
-        const castBtn = e.target.closest('.cast-video-btn');
-        if (castBtn) { 
-             const youtubeId = castBtn.dataset.youtubeId; 
-             if (youtubeId && getIsCasting()) { 
-                 sendPlayVideo(youtubeId); 
-                 castBtn.querySelector('span').textContent = "Zatrzymaj"; 
-                 castBtn.classList.replace('cast-video-btn', 'stop-cast-video-btn'); 
-             } else if (!getIsCasting()) {
-                 alert("Najpierw połącz się z TV.");
-             }
-             return;
-        }
+function formatCategory(cat) {
+    return cat ? cat.replace(/_/g, ' ') : 'Inne';
+}
 
-        const stopCastBtn = e.target.closest('.stop-cast-video-btn');
-        if (stopCastBtn) { 
-            sendStopVideo(); 
-            stopCastBtn.querySelector('span').textContent = "Rzutuj"; 
-            stopCastBtn.classList.replace('stop-cast-video-btn', 'cast-video-btn'); 
-            return; 
-        }
-    };
-
-    container.addEventListener('click', handleContainerClick);
-    container._libraryClickHandler = handleContainerClick;
-    navigateTo('library');
-};
+function getLevelLabel(lvl) {
+    if (!lvl) return 'Baza';
+    switch(parseInt(lvl)) {
+        case 1: return 'Lvl 1 (Rehab/Start)';
+        case 2: return 'Lvl 2 (Beginner)';
+        case 3: return 'Lvl 3 (Intermediate)';
+        case 4: return 'Lvl 4 (Advanced)';
+        case 5: return 'Lvl 5 (Elite)';
+        default: return `Lvl ${lvl}`;
+    }
+}

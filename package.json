@@ -17,5 +17,9 @@
     "jsonwebtoken": "^9.0.2",
     "jwks-rsa": "^3.1.0",
     "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "stylelint": "^16.26.1",
+    "stylelint-config-standard": "^39.0.1"
   }
 }

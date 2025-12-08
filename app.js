@@ -10,7 +10,6 @@ import {
     renderLibraryScreen,
     renderTrainingScreen,
     renderHelpScreen,
-    renderAnalyticsScreen, // NOWY IMPORT
     navigateTo,
     showLoader,
     hideLoader,
@@ -42,14 +41,9 @@ function initAppLogic() {
     if (mainNav) {
         mainNav.querySelector('#nav-main').addEventListener('click', () => { navigateTo('main'); renderMainScreen(); });
         mainNav.querySelector('#nav-history').addEventListener('click', () => renderHistoryScreen());
+        // Zmiana: "Library" to teraz Atlas
         mainNav.querySelector('#nav-library').addEventListener('click', () => renderLibraryScreen());
         mainNav.querySelector('#nav-settings').addEventListener('click', renderSettingsScreen);
-
-        // NOWY PRZYCISK W GÓRNYM MENU (opcjonalny, jeśli dodasz do HTML, tutaj obsługa)
-        const statsBtn = mainNav.querySelector('#nav-analytics');
-        if (statsBtn) {
-            statsBtn.addEventListener('click', renderAnalyticsScreen);
-        }
     }
 
     const bottomNav = document.getElementById('app-bottom-nav');
@@ -64,9 +58,9 @@ function initAppLogic() {
 
             switch (screen) {
                 case 'main': renderMainScreen(); break;
-                case 'analytics': renderAnalyticsScreen(); break; // NOWA OBSŁUGA
+                // case 'analytics': ... (Usunięte, teraz Atlas załatwia wszystko)
                 case 'history': renderHistoryScreen(); break;
-                case 'library': renderLibraryScreen(); break;
+                case 'library': renderLibraryScreen(); break; // Atlas
                 case 'settings': renderSettingsScreen(); break;
             }
         });
@@ -77,6 +71,8 @@ function initAppLogic() {
     const nextMonthBtn = document.getElementById('next-month-btn');
     if (nextMonthBtn) nextMonthBtn.addEventListener('click', () => { state.currentCalendarView.setMonth(state.currentCalendarView.getMonth() + 1); renderHistoryScreen(); });
     if (containers.calendarGrid) { containers.calendarGrid.addEventListener('click', (e) => { const dayEl = e.target.closest('.calendar-day.has-entry'); if (dayEl && dayEl.dataset.date) { renderDayDetailsScreen(dayEl.dataset.date); } }); }
+    
+    // Obsługa Search w nowym Atlasie jest wewnątrz library.js, ale jeśli został element w DOM globalnym, to go tu zostawiamy (bezpiecznik)
     const searchInput = document.getElementById('library-search-input');
     if (searchInput) searchInput.addEventListener('input', (e) => { renderLibraryScreen(e.target.value); });
 
@@ -85,7 +81,6 @@ function initAppLogic() {
         e.preventDefault();
         state.settings.appStartDate = e.target['setting-start-date'].value;
 
-        // Jeśli jesteśmy w trybie dynamicznym, selector może być ukryty, więc nie nadpisujemy activePlanId jeśli nie istnieje w formularzu
         if (e.target['setting-training-plan']) {
             state.settings.activePlanId = e.target['setting-training-plan'].value;
         }
@@ -152,7 +147,6 @@ export async function main() {
     initializeCastApi();
 
     try {
-        // Równoległe ładowanie planów (Public)
         const resourcesPromise = dataStore.loadAppContent();
 
         if (loginBtn && !loginBtn.dataset.listenerAttached) { loginBtn.addEventListener('click', login); loginBtn.dataset.listenerAttached = 'true'; }
@@ -178,36 +172,20 @@ export async function main() {
             const nameEl = document.getElementById('user-display-name');
             if (nameEl) nameEl.textContent = profile.name || profile.email || 'Użytkownik';
 
-            // Czekamy na plany
             await resourcesPromise;
 
             initAppLogic();
 
-            // --- ETAP 1: SZYBKI START (Ustawienia + Szkielet) ---
             try {
                 localStorage.removeItem('cachedUserStats');
-                // Pobieramy ustawienia i profil (bardzo szybkie zapytanie)
                 await dataStore.initialize();
                 state.isAppInitialized = true;
 
-                // Natychmiast renderujemy nawigację i szkielet Dashboardu
                 if (bottomNav) bottomNav.classList.remove('hidden');
-
-                // UKRYWAMY LOADER TERAZ, ABY POKAZAĆ SZKIELET
                 hideLoader();
-
-                // Wywołujemy renderMainScreen z flagą isLoading=true
-                // To wyświetli migoczący szkielet zamiast pustki
                 renderMainScreen(true);
 
-                console.log("DEBUG: Render szkieletu zakończony. Pobieram historię...");
-
-                // --- ETAP 2: ŁADOWANIE CIĘŻKICH DANYCH (W TLE) ---
-                // Pobieramy historię dla ostatnich 90 dni, aby mieć dane do Kart Mistrzostwa
                 await dataStore.loadRecentHistory(90);
-
-                console.log("DEBUG: Historia gotowa. Przeliczam widok...");
-
                 const wizardStarted = initWizard();
 
                 if (!wizardStarted) {
@@ -219,7 +197,6 @@ export async function main() {
                         renderSettingsScreen();
                         window.history.replaceState({}, document.title, window.location.pathname + "#settings");
                     } else {
-                        // Sprawdź czy jest backup sesji do odzyskania
                         const backup = getSessionBackup();
                         if (backup) {
                             const timeGap = calculateTimeGap(backup);
@@ -229,34 +206,28 @@ export async function main() {
                                 backup,
                                 timeGapFormatted,
                                 () => {
-                                    // Przywróć sesję
                                     resumeFromBackup(backup, timeGap);
                                 },
                                 () => {
-                                    // Porzuć sesję
                                     clearSessionBackup();
                                     renderMainScreen(false);
                                 }
                             );
                         } else {
-                            // Odświeżamy Dashboard, teraz już z pełnymi danymi
                             renderMainScreen(false);
                         }
                     }
                 }
 
                 checkAndMigrateLocalData();
-
-                // Statystyki pobierane na samym końcu (nie blokują UI)
-                const newStats = await dataStore.fetchDetailedStats();
+                await dataStore.fetchDetailedStats();
                 const mainScreen = document.getElementById('main-screen');
                 if (mainScreen && mainScreen.classList.contains('active')) {
-                    // Delikatne odświeżenie tylko jeśli jesteśmy na Dashboardzie
                     renderMainScreen(false);
                 }
             } catch (initError) {
                 console.error("Błąd inicjalizacji:", initError);
-                hideLoader(); // Safety fallback
+                hideLoader(); 
             }
 
         } else {

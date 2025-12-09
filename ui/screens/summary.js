@@ -8,7 +8,6 @@ import { getIsCasting, sendShowIdle } from '../../cast.js';
 import { clearSessionBackup } from '../../sessionRecovery.js';
 
 let selectedFeedback = { type: null, value: 0 };
-let exerciseRatings = {}; // Mapa: exerciseId -> { action: 'like'|'dislike'|'hard'|'easy' }
 
 export const renderSummaryScreen = () => {
     if (getIsCasting()) sendShowIdle();
@@ -30,61 +29,110 @@ export const renderSummaryScreen = () => {
     const initialPain = state.sessionParams.initialPainLevel || 0;
     const isSafetyMode = initialPain > 3;
 
-    // 2. Reset stanu ocen
-    exerciseRatings = {};
+    // 2. Reset stanu
     selectedFeedback = { type: isSafetyMode ? 'symptom' : 'tension', value: 0 };
 
     const summaryScreen = screens.summary;
     summaryScreen.innerHTML = '';
 
-    // 3. Budowa Sekcji Globalnej (Bez zmian logicznych, tylko UI)
+    // 3. Budowa Sekcji Globalnej
     let globalQuestion = isSafetyMode ? "Jak czuje się Twoje ciało?" : "Jak oceniasz trudność?";
     let globalOptionsHtml = '';
 
     if (isSafetyMode) {
         globalOptionsHtml = `
-            <div class="feedback-option" data-type="symptom" data-value="1"><div class="fb-icon">🍃</div><div class="fb-text"><h4>Ulga</h4></div></div>
-            <div class="feedback-option selected" data-type="symptom" data-value="0"><div class="fb-icon">⚖️</div><div class="fb-text"><h4>Stabilnie</h4></div></div>
-            <div class="feedback-option" data-type="symptom" data-value="-1"><div class="fb-icon">⚡</div><div class="fb-text"><h4>Gorzej</h4></div></div>
+            <div class="feedback-option" data-type="symptom" data-value="1">
+                <div class="fb-icon">🍃</div>
+                <div class="fb-text"><h4>Ulga</h4></div>
+            </div>
+            <div class="feedback-option selected" data-type="symptom" data-value="0">
+                <div class="fb-icon">⚖️</div>
+                <div class="fb-text"><h4>Stabilnie</h4></div>
+            </div>
+            <div class="feedback-option" data-type="symptom" data-value="-1">
+                <div class="fb-icon">⚡</div>
+                <div class="fb-text"><h4>Gorzej</h4></div>
+            </div>
         `;
     } else {
         globalOptionsHtml = `
-            <div class="feedback-option" data-type="tension" data-value="1"><div class="fb-icon">🥱</div><div class="fb-text"><h4>Nuda</h4></div></div>
-            <div class="feedback-option selected" data-type="tension" data-value="0"><div class="fb-icon">🎯</div><div class="fb-text"><h4>Idealnie</h4></div></div>
-            <div class="feedback-option" data-type="tension" data-value="-1"><div class="fb-icon">🥵</div><div class="fb-text"><h4>Za mocno</h4></div></div>
+            <div class="feedback-option" data-type="tension" data-value="1">
+                <div class="fb-icon">🥱</div>
+                <div class="fb-text"><h4>Nuda</h4></div>
+            </div>
+            <div class="feedback-option selected" data-type="tension" data-value="0">
+                <div class="fb-icon">🎯</div>
+                <div class="fb-text"><h4>Idealnie</h4></div>
+            </div>
+            <div class="feedback-option" data-type="tension" data-value="-1">
+                <div class="fb-icon">🥵</div>
+                <div class="fb-text"><h4>Za mocno</h4></div>
+            </div>
         `;
     }
 
-    // 4. Budowa Listy Ćwiczeń (Nowość!)
-    // Filtrujemy unikalne ćwiczenia wykonane (nie pominięte, nie przerwy)
+    // 4. Budowa Listy Ćwiczeń
     const processedIds = new Set();
-    const uniqueExercises = state.sessionLog.filter(entry => {
+    const uniqueExercises = (state.sessionLog || []).filter(entry => {
         if (entry.isRest || entry.status === 'skipped') return false;
-        if (processedIds.has(entry.exerciseId)) return false;
-        processedIds.add(entry.exerciseId);
+        
+        const exId = entry.exerciseId || entry.id;
+        if (!exId) return false;
+
+        if (processedIds.has(exId)) return false;
+        processedIds.add(exId);
         return true;
     });
 
-    const exercisesListHtml = uniqueExercises.map(ex => `
-        <div class="rating-card" data-id="${ex.exerciseId}">
-            <div class="rating-name">${ex.name}</div>
-            <div class="rating-actions">
-                <button type="button" class="rate-btn" data-action="like">👍</button>
-                <button type="button" class="rate-btn" data-action="dislike">👎</button>
-                <div class="sep"></div>
-                <button type="button" class="rate-btn" data-action="easy" title="Za łatwe">💤</button>
-                <button type="button" class="rate-btn" data-action="hard" title="Za trudne">🔥</button>
+    let exercisesListHtml = '';
+
+    if (uniqueExercises.length > 0) {
+        exercisesListHtml = uniqueExercises.map(ex => {
+            const id = ex.exerciseId || ex.id;
+            
+            // Opcjonalnie: Pre-fill na podstawie istniejących preferencji
+            const currentPref = state.userPreferences[id] || { score: 0, difficulty: 0 };
+            const isLike = currentPref.score >= 10 ? 'active' : '';
+            const isDislike = currentPref.score <= -10 ? 'active' : '';
+            const isHard = currentPref.difficulty === 1 ? 'active' : '';
+            const isEasy = currentPref.difficulty === -1 ? 'active' : '';
+
+            return `
+            <div class="rating-card" data-id="${id}">
+                <div class="rating-name">${ex.name}</div>
+                <div class="rating-actions-group">
+                    <!-- Grupa 1: Emocje -->
+                    <div class="btn-group-affinity">
+                        <button type="button" class="rate-btn ${isLike}" data-action="like" title="Lubię to">👍</button>
+                        <button type="button" class="rate-btn ${isDislike}" data-action="dislike" title="Nie lubię">👎</button>
+                    </div>
+                    <div class="sep"></div>
+                    <!-- Grupa 2: Trudność -->
+                    <div class="btn-group-difficulty">
+                        <button type="button" class="rate-btn ${isEasy}" data-action="easy" title="Za łatwe">💤</button>
+                        <button type="button" class="rate-btn ${isHard}" data-action="hard" title="Za trudne">🔥</button>
+                    </div>
+                </div>
             </div>
-        </div>
-    `).join('');
+        `;
+        }).join('');
+    } else {
+        exercisesListHtml = '<p class="empty-state">Brak wykonanych ćwiczeń do oceny.</p>';
+    }
 
     // 5. Strava Toggle
     let stravaHtml = '';
     if (state.stravaIntegration.isConnected) {
-        stravaHtml = `<div class="form-group strava-sync-container" style="margin-top:1rem;"><label class="checkbox-label" for="strava-sync-checkbox" style="display:flex; align-items:center; gap:10px;"><input type="checkbox" id="strava-sync-checkbox" checked style="width:20px; height:20px;"><span>Wyślij do Strava</span></label></div>`;
+        stravaHtml = `
+            <div class="form-group strava-sync-container" style="margin-top:1rem;">
+                <label class="checkbox-label" for="strava-sync-checkbox" style="display:flex; align-items:center; gap:10px;">
+                    <input type="checkbox" id="strava-sync-checkbox" checked style="width:20px; height:20px;">
+                    <span>Wyślij do Strava</span>
+                </label>
+            </div>`;
     }
 
-    // 6. Finalny HTML
+    // 6. Finalny HTML + CSS Fix
     summaryScreen.innerHTML = `
         <h2 id="summary-title" style="margin-bottom:0.5rem">Podsumowanie</h2>
         
@@ -98,7 +146,7 @@ export const renderSummaryScreen = () => {
             <!-- Exercise Ratings -->
             <div class="form-group" style="margin-top:1.5rem;">
                 <label style="display:block; margin-bottom:10px; font-weight:700;">Oceń Ćwiczenia (Opcjonalne)</label>
-                <p style="font-size:0.8rem; opacity:0.7; margin-top:-5px; margin-bottom:10px;">Kliknij tylko te, które chcesz zmienić.</p>
+                <p style="font-size:0.8rem; opacity:0.7; margin-top:-5px; margin-bottom:10px;">Kliknij, aby zmienić ocenę.</p>
                 <div class="ratings-list">
                     ${exercisesListHtml}
                 </div>
@@ -113,30 +161,46 @@ export const renderSummaryScreen = () => {
             ${stravaHtml}
             <button type="submit" class="action-btn" style="margin-top:1.5rem;">Zapisz i Zakończ</button>
         </form>
-
+        
         <style>
-            .feedback-container.compact { gap: 8px; }
-            .feedback-container.compact .feedback-option { padding: 10px; }
+            .rating-actions-group { display: flex; align-items: center; gap: 5px; }
+            .btn-group-affinity, .btn-group-difficulty { display: flex; gap: 4px; }
             
-            .ratings-list { display: flex; flex-direction: column; gap: 8px; }
-            .rating-card { background: #fff; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; display: flex; justify-content: space-between; align-items: center; }
-            .rating-name { font-size: 0.9rem; font-weight: 600; max-width: 50%; }
-            .rating-actions { display: flex; gap: 5px; align-items: center; }
-            
-            .rate-btn { 
-                background: #f3f4f6; border: 1px solid transparent; border-radius: 6px; 
-                width: 36px; height: 36px; font-size: 1.2rem; cursor: pointer; transition: all 0.2s;
-                display: flex; align-items: center; justify-content: center;
+            /* --- CSS FIX: NEUTRALNE TŁO, KOLOR TYLKO NA IKONIE --- */
+            .rate-btn {
+                background: #f3f4f6; /* Zawsze szare/jasne tło */
+                border: 1px solid transparent;
+                border-radius: 8px;
+                width: 40px;
+                height: 40px;
+                font-size: 1.4rem;
+                cursor: pointer;
+                transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+
+                /* Domyślnie: ikona szara i lekko przezroczysta */
+                filter: grayscale(100%);
+                opacity: 0.4;
             }
-            .rate-btn:hover { background: #e5e7eb; }
-            
-            .rate-btn.active { 
-                background: var(--primary-color); border-color: var(--primary-color); 
-                transform: scale(1.1); box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+
+            .rate-btn:hover {
+                opacity: 0.7;
+                background: #e5e7eb;
+                transform: translateY(-1px);
             }
-            /* Emotki na aktywnym tle mogą wymagać filtra, ale systemowe są ok */
-            
-            .sep { width: 1px; height: 24px; background: #ddd; margin: 0 4px; }
+
+            /* AKTYWNY: Ikona odzyskuje kolor, tło pozostaje jasne/neutralne */
+            .rate-btn.active {
+                opacity: 1;
+                filter: grayscale(0%); /* PRZYWRACA KOLOR EMOJI */
+                background: #fff;      /* Tło białe dla kontrastu (lub zostaw f3f4f6) */
+                border-color: #d1d5db; /* Delikatna ramka */
+                box-shadow: 0 2px 5px rgba(0,0,0,0.08); /* Lekki cień */
+                transform: scale(1.15); /* Lekkie powiększenie */
+            }
+            /* --- KONIEC FIXA --- */
         </style>
     `;
 
@@ -153,25 +217,23 @@ export const renderSummaryScreen = () => {
         });
     });
 
-    // Exercise Ratings
+    // Exercise Ratings - LOGIKA
     const ratingCards = summaryScreen.querySelectorAll('.rating-card');
     ratingCards.forEach(card => {
-        const id = card.dataset.id;
         const buttons = card.querySelectorAll('.rate-btn');
         
         buttons.forEach(btn => {
             btn.addEventListener('click', () => {
-                const action = btn.dataset.action;
+                // Grupy
+                const parentGroup = btn.parentElement; 
                 const isActive = btn.classList.contains('active');
 
-                // Reset wszystkich w tym wierszu
-                buttons.forEach(b => b.classList.remove('active'));
+                // 1. Wyłącz wszystkie inne w TEJ SAMEJ grupie (Like/Dislike ORAZ Hard/Easy osobno)
+                parentGroup.querySelectorAll('.rate-btn').forEach(b => b.classList.remove('active'));
 
+                // 2. Włącz kliknięty, jeśli nie był aktywny (Toggle)
                 if (!isActive) {
                     btn.classList.add('active');
-                    exerciseRatings[id] = { exerciseId: id, action: action };
-                } else {
-                    delete exerciseRatings[id]; // Odznaczenie
                 }
             });
         });
@@ -193,7 +255,7 @@ export async function handleSummarySubmit(e) {
     const netDuration = Math.max(0, rawDuration - (state.totalPausedTime || 0));
     const durationSeconds = Math.round(netDuration / 1000);
 
-    // Wybór planu (Dynamic vs Static) - kod z poprzedniej wersji
+    // Wybór planu (Dynamic vs Static)
     const isDynamicMode = state.settings.planMode === 'dynamic' || (state.settings.dynamicPlanData && !state.settings.planMode);
     let planIdToSave = state.settings.activePlanId;
     let trainingTitle = "Trening";
@@ -210,8 +272,22 @@ export async function handleSummarySubmit(e) {
         }
     }
 
-    // PRZYGOTOWANIE PAYLOADU
-    const ratingsArray = Object.values(exerciseRatings); // Konwersja mapy na tablicę
+    // --- ZBIERANIE OCEN Z UI ---
+    const ratingsArray = [];
+    const ratingCards = document.querySelectorAll('.rating-card');
+    
+    ratingCards.forEach(card => {
+        const id = card.dataset.id;
+        // Szukamy wszystkich aktywnych w obrębie karty (może być Like ORAZ Hard)
+        const activeButtons = card.querySelectorAll('.rate-btn.active');
+        
+        activeButtons.forEach(btn => {
+            ratingsArray.push({
+                exerciseId: id,
+                action: btn.dataset.action
+            });
+        });
+    });
 
     const sessionPayload = {
         sessionId: Date.now(),
@@ -220,7 +296,7 @@ export async function handleSummarySubmit(e) {
         trainingTitle: trainingTitle,
         status: 'completed',
         feedback: selectedFeedback,
-        exerciseRatings: ratingsArray, // NOWE POLE
+        exerciseRatings: ratingsArray, // Przesyłamy tablicę wszystkich aktywnych ocen
         pain_during: selectedFeedback.type === 'symptom' && selectedFeedback.value === -1 ? 5 : 0,
         notes: document.getElementById('general-notes').value,
         startedAt: state.sessionStartTime ? state.sessionStartTime.toISOString() : now.toISOString(),
@@ -233,12 +309,6 @@ export async function handleSummarySubmit(e) {
         const response = await dataStore.saveSession(sessionPayload);
         clearSessionBackup();
         await dataStore.loadRecentHistory(7);
-
-        // Aktualizacja lokalnych preferencji (UI Optimistic Update)
-        if (ratingsArray.length > 0) {
-            // Ponowne pobranie byłoby pewniejsze, ale zrobimy update lokalny dla szybkości
-            // Logika jest już zaszyta w dataStore.saveSession
-        }
 
         if (response && response.newStats) { state.userStats = { ...state.userStats, ...response.newStats }; } 
         else { if (!state.userStats) state.userStats = { totalSessions: 0, streak: 0 }; state.userStats.totalSessions = (parseInt(state.userStats.totalSessions) || 0) + 1; }

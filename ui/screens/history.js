@@ -7,7 +7,6 @@ import { generateSessionCardHTML } from '../templates.js';
 import dataStore from '../../dataStore.js';
 
 export const renderHistoryScreen = async (forceRefresh = false) => {
-    // ... (Kod kalendarza bez zmian) ...
     navigateTo('history');
     const date = state.currentCalendarView;
     const year = date.getFullYear();
@@ -126,23 +125,74 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
             e.stopPropagation();
             
             const id = rateBtn.dataset.id;
-            const action = rateBtn.dataset.action;
-            const isActive = rateBtn.classList.contains('active');
+            const action = rateBtn.dataset.action; // 'like', 'dislike', 'hard', 'easy'
             
-            // Logika grupowania (Affinity vs Difficulty)
-            const parentActions = rateBtn.closest('.hist-rating-actions');
+            // 1. Pobierz aktualny stan (Source of Truth)
+            const currentPref = state.userPreferences[id] || { score: 0, difficulty: 0 };
             
-            if (action === 'like' || action === 'dislike') {
-                // Grupa Affinity: Wyłącz inne affinity, nie ruszaj difficulty
-                parentActions.querySelectorAll('[data-action="like"], [data-action="dislike"]').forEach(b => b.classList.remove('active'));
-            } else if (action === 'hard' || action === 'easy') {
-                // Grupa Difficulty: Wyłącz inne difficulty, nie ruszaj affinity
-                parentActions.querySelectorAll('[data-action="hard"], [data-action="easy"]').forEach(b => b.classList.remove('active'));
+            // 2. Dekompozycja wyniku na części składowe
+            let baseScore = currentPref.score;
+            let currentDiff = currentPref.difficulty;
+
+            // Cofamy kary, aby odzyskać czystą intencję "Lubię/Nie lubię"
+            if (currentDiff === 1) baseScore += 10; // Cofnij karę za Hard
+            if (currentDiff === -1) baseScore += 5; // Cofnij karę za Easy
+
+            let newBaseScore = baseScore;
+            let newDiff = currentDiff;
+
+            // 3. Logika Zmian
+            if (action === 'like') {
+                newBaseScore = (baseScore >= 10) ? 0 : 20;
+            } 
+            else if (action === 'dislike') {
+                newBaseScore = (baseScore <= -10) ? 0 : -20;
+            }
+            else if (action === 'hard') {
+                newDiff = (currentDiff === 1) ? 0 : 1;
+            }
+            else if (action === 'easy') {
+                newDiff = (currentDiff === -1) ? 0 : -1;
             }
 
-            if (!isActive) {
-                rateBtn.classList.add('active');
-                dataStore.updatePreference(id, action);
+            // 4. Rekonstrukcja Finalnego Wyniku
+            let finalScore = newBaseScore;
+            if (newDiff === 1) finalScore -= 10;
+            if (newDiff === -1) finalScore -= 5;
+
+            finalScore = Math.max(-100, Math.min(100, finalScore));
+
+            // 5. Aktualizacja UI - NAPRAWA: Aktualizujemy WSZYSTKIE przyciski dla tego ID
+            // Znajdujemy wszystkie przyciski na ekranie, które dotyczą tego samego ćwiczenia (np. z różnych sesji)
+            const allButtonsForId = contentContainer.querySelectorAll(`.rate-btn-hist[data-id="${id}"]`);
+
+            const showLike = newBaseScore >= 10;
+            const showDislike = newBaseScore <= -10;
+            const showHard = newDiff === 1;
+            const showEasy = newDiff === -1;
+
+            allButtonsForId.forEach(btn => {
+                const btnAction = btn.dataset.action;
+                let isActive = false;
+
+                if (btnAction === 'like') isActive = showLike;
+                else if (btnAction === 'dislike') isActive = showDislike;
+                else if (btnAction === 'hard') isActive = showHard;
+                else if (btnAction === 'easy') isActive = showEasy;
+
+                // Wymuszamy stan klasy active
+                btn.classList.toggle('active', isActive);
+            });
+
+            // 6. Wyślij do API
+            try {
+                // Aktualizujemy lokalny stan natychmiast (Optimistic Update)
+                state.userPreferences[id] = { score: finalScore, difficulty: newDiff };
+                
+                await dataStore.updatePreference(id, 'set', finalScore);
+                await dataStore.updatePreference(id, 'set_difficulty', newDiff);
+            } catch (err) {
+                console.error("Błąd aktualizacji preferencji:", err);
             }
         }
     });

@@ -1,10 +1,10 @@
 // service-worker.js
 
-// Definicja nazw i wersji pamięci podręcznej (cache).
-const STATIC_CACHE_NAME = 'static-assets-v1';
+// ⚠️ WAŻNE: Zmieniaj ten numer wersji przy KAŻDYM wdrożeniu (deployu) na produkcję!
+// To sygnał dla przeglądarki, że są nowe pliki.
+const STATIC_CACHE_NAME = 'static-assets-v11'; // np. v11, v12, v13...
 const DYNAMIC_CACHE_NAME = 'dynamic-content-v1';
 
-// Lista kluczowych zasobów aplikacji (tzw. "App Shell").
 const APP_SHELL_ASSETS = [
     '/',
     '/index.html',
@@ -23,10 +23,9 @@ const APP_SHELL_ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
-    console.log('[Service Worker] Instalacja...');
+    console.log('[Service Worker] Instalacja nowej wersji:', STATIC_CACHE_NAME);
     event.waitUntil(
         caches.open(STATIC_CACHE_NAME).then((cache) => {
-            console.log('[Service Worker] Zapisywanie kluczowych zasobów (App Shell) w cache...');
             return cache.addAll(APP_SHELL_ASSETS);
         })
     );
@@ -42,31 +41,25 @@ self.addEventListener('activate', (event) => {
             );
         })
     );
-    // Wymuszamy przejęcie kontroli przez nowego SW od razu
-    return self.clients.claim();
 });
 
-// * Krok 3: Przechwytywanie zapytań sieciowych (Fetch)
+// --- NOWOŚĆ: Obsługa wymuszenia aktualizacji ---
+self.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'SKIP_WAITING') {
+        self.skipWaiting();
+    }
+});
+
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
 
-    // --- NAPRAWA BŁĘDU FIREFOX / CDN ---
-    // Jeśli zapytanie idzie do innej domeny (np. cdn.jsdelivr.net, auth0.com),
-    // Service Worker NIE powinien go dotykać (nie używamy event.respondWith).
-    // Pozwalamy przeglądarce obsłużyć to standardowo.
-    if (url.origin !== self.location.origin) {
-        return;
-    }
+    if (url.origin !== self.location.origin) return;
 
-    // Strategia dla zapytań do API Netlify Functions
     if (url.pathname.startsWith('/.netlify/functions/')) {
-        // Obsługuj tylko zapytania, które modyfikują dane (POST, PUT, DELETE) strategią "tylko sieć"
         if (event.request.method !== 'GET') {
             event.respondWith(fetch(event.request));
             return;
         }
-
-        // Dla zapytań GET użyj strategii Network First, Fallback to Cache
         event.respondWith(
             caches.open(DYNAMIC_CACHE_NAME).then((cache) => {
                 return fetch(event.request)
@@ -79,16 +72,12 @@ self.addEventListener('fetch', (event) => {
                     });
             })
         );
-    }
-    // Strategia dla wszystkich pozostałych zapytań lokalnych (Cache First)
-    else {
+    } else {
+        // Cache First, Network Fallback
         event.respondWith(
             caches.match(event.request).then((cachedResponse) => {
                 return cachedResponse || fetch(event.request);
             })
         );
     }
-
-
-
 });

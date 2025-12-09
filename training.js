@@ -9,6 +9,36 @@ import { navigateTo } from './ui.js';
 import { renderSummaryScreen } from './ui/screens/summary.js';
 import { getIsCasting, sendTrainingStateUpdate } from './cast.js';
 import { saveSessionBackup } from './sessionRecovery.js';
+// NOWY IMPORT
+import { getAffinityBadge } from './ui/templates.js';
+
+// --- NOWOŚĆ: FUNKCJA SKALOWANIA CZCIONKI ---
+function fitText(element) {
+    if (!element) return;
+    
+    // Resetuj, aby zmierzyć rzeczywistą szerokość
+    element.style.fontSize = '';
+    
+    // Poczekaj na render (opcjonalne, ale bezpieczniejsze)
+    requestAnimationFrame(() => {
+        // Sprawdź czy tekst się nie mieści (scrollWidth > offsetWidth)
+        // offsetWidth to widoczna szerokość (ograniczona CSS max-width: 100%)
+        // scrollWidth to pełna szerokość tekstu
+        if (element.scrollWidth > element.offsetWidth) {
+             const style = window.getComputedStyle(element);
+             const currentSize = parseFloat(style.fontSize);
+             
+             // Oblicz stosunek dostępnej szerokości do wymaganej
+             const ratio = element.offsetWidth / element.scrollWidth;
+             
+             // Zastosuj nowy rozmiar z lekkim zapasem (0.95), aby na pewno się zmieściło
+             // Ustawiamy minimalny rozmiar na 12px, żeby tekst był czytelny
+             const newSize = Math.max(currentSize * ratio * 0.95, 12); 
+             
+             element.style.fontSize = `${newSize}px`;
+        }
+    });
+}
 
 /**
  * Synchronizacja z Chromecastem
@@ -73,7 +103,6 @@ function logCurrentStep(status) {
  * Wywoływane przy każdej zmianie ćwiczenia.
  */
 function triggerSessionBackup() {
-    // Określamy tytuł treningu
     let trainingTitle = 'Trening';
     const isDynamicMode = state.settings.planMode === 'dynamic' || (state.settings.dynamicPlanData && !state.settings.planMode);
 
@@ -188,13 +217,24 @@ export function startExercise(index) {
     if (animContainer) animContainer.innerHTML = '';
 
     // ============================================================
-    // SCENARIUSZ A: ĆWICZENIE (WORK) - ZAWSZE STOPER
+    // SCENARIUSZ A: ĆWICZENIE (WORK)
     // ============================================================
     if (exercise.isWork) {
         focus.sectionName.textContent = exercise.sectionName;
         focus.exerciseName.textContent = `${exercise.name} (Seria ${exercise.currentSet} / ${exercise.totalSets})`;
+        
+        // --- WYWOŁANIE NOWEJ FUNKCJI SKALUJĄCEJ ---
+        fitText(focus.exerciseName);
+        // ------------------------------------------
+
         focus.exerciseDetails.textContent = `Cel: ${exercise.reps_or_time} | Tempo: ${exercise.tempo_or_iso}`;
         focus.focusDescription.textContent = exercise.description || '';
+
+        // --- AKTUALIZACJA ODZNAKI AFFINITY (NOWE) ---
+        if (focus.affinityBadge) {
+            focus.affinityBadge.innerHTML = getAffinityBadge(exercise.exerciseId || exercise.id);
+        }
+        // ----------------------------------------------
 
         if (exercise.animationSvg && animContainer && descContainer) {
             animContainer.innerHTML = exercise.animationSvg;
@@ -232,12 +272,15 @@ export function startExercise(index) {
         }
     }
     // ============================================================
-    // SCENARIUSZ B: PRZERWA (REST) - ZAWSZE TIMER (Odliczanie)
+    // SCENARIUSZ B: PRZERWA (REST)
     // ============================================================
     else {
         if (animContainer) animContainer.classList.add('hidden');
         if (descContainer) descContainer.classList.remove('hidden');
         if (flipIndicator) flipIndicator.classList.add('hidden');
+
+        // Wyczyść badge podczas przerwy
+        if (focus.affinityBadge) focus.affinityBadge.innerHTML = '';
 
         const upcomingExercise = state.flatExercises[index + 1];
         if (!upcomingExercise) { moveToNextExercise({ skipped: false }); return; }
@@ -253,6 +296,11 @@ export function startExercise(index) {
         focus.sectionName.textContent = (exercise.sectionName || "PRZERWA").toUpperCase();
 
         focus.exerciseName.textContent = `Następne: ${upcomingExercise.name}`;
+        
+        // --- SKALOWANIE RÓWNIEŻ DLA PRZERWY ---
+        fitText(focus.exerciseName);
+        // --------------------------------------
+
         focus.exerciseDetails.textContent = `Seria ${upcomingExercise.currentSet}/${upcomingExercise.totalSets} | Cel: ${upcomingExercise.reps_or_time} | Tempo: ${upcomingExercise.tempo_or_iso}`;
         focus.focusDescription.textContent = upcomingExercise.description || 'Brak opisu.';
         focus.nextExerciseName.textContent = afterUpcomingExercise ? afterUpcomingExercise.name : "Koniec treningu";
@@ -261,7 +309,6 @@ export function startExercise(index) {
 
         const startNextExercise = () => moveToNextExercise({ skipped: false });
 
-        // ZMIANA: Sztywne 5 sekund, niezależnie od tego co przyszło z generatora (fallback)
         const restDuration = 5;
 
         state.timer.timeLeft = restDuration;
@@ -279,14 +326,11 @@ export function startExercise(index) {
     }
 
     syncStateToChromecast();
-    triggerSessionBackup(); // Zapisz backup przy każdej zmianie ćwiczenia
+    triggerSessionBackup(); 
 }
 
 export function generateFlatExercises(dayData) {
     const plan = [];
-
-    // ZMIANA: Usunięto logikę pobierania czasów z planu.
-    // Zdefiniowano stałą wartość przerwy.
     const FIXED_REST_DURATION = 5;
 
     const sections = [{ name: 'Rozgrzewka', exercises: dayData.warmup || [] }, { name: 'Część główna', exercises: dayData.main || [] }, { name: 'Schłodzenie', exercises: dayData.cooldown || [] }];
@@ -296,7 +340,6 @@ export function generateFlatExercises(dayData) {
             for (let i = 1; i <= setCount; i++) {
                 plan.push({ ...exercise, isWork: true, sectionName: section.name, currentSet: i, totalSets: setCount });
 
-                // PRZERWA MIĘDZY SERIAMI - ZAWSZE 5 SEKUND
                 if (i < setCount) {
                     plan.push({
                         name: 'Odpoczynek',
@@ -307,7 +350,6 @@ export function generateFlatExercises(dayData) {
                     });
                 }
             }
-            // PRZERWA MIĘDZY ĆWICZENIAMI - ZAWSZE 5 SEKUND
             if (exerciseIndex < section.exercises.length - 1) {
                 plan.push({
                     name: 'Przerwa',
@@ -379,7 +421,6 @@ export async function startModifiedTraining() {
 
     state.sessionLog = [];
 
-    // START TRENINGU - ZAWSZE 5 SEKUND
     state.flatExercises = [
         { name: "Przygotuj się", isRest: true, isWork: false, duration: 5, sectionName: "Start" },
         ...generateFlatExercises(modifiedDay)
@@ -389,36 +430,26 @@ export async function startModifiedTraining() {
     initializeFocusElements();
 
     startExercise(0);
-    triggerSessionBackup(); // Pierwszy backup przy starcie
+    triggerSessionBackup(); 
 }
 
-/**
- * Przywraca sesję treningową z backupu.
- * @param {Object} backup - Dane z sessionRecovery.getSessionBackup()
- * @param {number} timeGapMs - Luka czasowa w milisekundach
- */
 export function resumeFromBackup(backup, timeGapMs) {
     console.log('[Training] 🔄 Resuming session from backup...');
 
-    // Odtwórz stan sesji
     state.sessionStartTime = backup.sessionStartTime ? new Date(backup.sessionStartTime) : new Date();
-    state.totalPausedTime = (backup.totalPausedTime || 0) + timeGapMs; // Dodaj lukę jako przerwę
+    state.totalPausedTime = (backup.totalPausedTime || 0) + timeGapMs; 
     state.isPaused = false;
     state.lastPauseStartTime = null;
 
-    // Odtwórz dane planu
     state.currentTrainingDayId = backup.currentTrainingDayId;
     state.todaysDynamicPlan = backup.todaysDynamicPlan;
 
-    // Odtwórz postęp
     state.flatExercises = backup.flatExercises;
     state.sessionLog = backup.sessionLog || [];
     state.sessionParams = backup.sessionParams || { initialPainLevel: 0, timeFactor: 1.0 };
 
-    // Przejdź do ekranu treningu
     navigateTo('training');
     initializeFocusElements();
 
-    // Wznów od ostatniego ćwiczenia (timer/stoper startuje od 0)
     startExercise(backup.currentExerciseIndex);
 }

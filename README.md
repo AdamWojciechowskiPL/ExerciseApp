@@ -93,9 +93,8 @@ Zaawansowana aplikacja PWA (Progressive Web App) łącząca trening siłowy z re
 │   │       ├── library.js      # Baza Ćwiczeń + filtry Tierów
 │   │       ├── settings.js     # Ustawienia i Integracje
 │   │       ├── summary.js      # Podsumowanie z kafelkami ocen
-│   │       ├── help.js         # Ekran Pomocy
-│   │       └── analytics.js    # Ekran Rankingu (Tiers View)
-│
+│   │       └── help.js         # Ekran Pomocy
+│   │  
 ├── BACKEND (NETLIFY FUNCTIONS):
 │   ├── netlify/functions/
 │   │   ├── generate-plan.js        # Generator planów dynamicznych (v3.3)

@@ -24,7 +24,47 @@ import { getSessionBackup, clearSessionBackup, calculateTimeGap, formatTimeGap }
 import { renderSessionRecoveryModal } from './ui/modals.js';
 
 
-// === 2. GŁÓWNE FUNKCJE APLIKACJI ===
+// === 2. POMOCNICZE FUNKCJE NAWIGACJI ===
+
+/**
+ * Sprawdza, czy można bezpiecznie opuścić obecny ekran.
+ * Jeśli użytkownik jest na ekranie podsumowania (niezapisany trening),
+ * pyta o potwierdzenie i czyści backup w razie zgody.
+ */
+function checkUnsavedSummaryNavigation() {
+    const summaryScreen = document.getElementById('summary-screen');
+    // Sprawdzamy czy ekran podsumowania jest aktywny
+    if (summaryScreen && summaryScreen.classList.contains('active')) {
+        const confirmed = confirm("Twoja sesja nie została zapisana. Czy na pewno chcesz wyjść? Dane tego treningu zostaną bezpowrotnie utracone.");
+        if (confirmed) {
+            clearSessionBackup(); // Użytkownik świadomie porzuca sesję -> czyścimy backup
+            return true; // Pozwalamy na nawigację
+        }
+        return false; // Blokujemy nawigację
+    }
+    return true; // Inny ekran, droga wolna
+}
+
+// Funkcja wyświetlająca powiadomienie o aktualizacji PWA
+function showUpdateNotification(worker) {
+    const notification = document.createElement('div');
+    notification.className = 'update-notification';
+    notification.innerHTML = `
+        <div class="update-content">
+            <span>Dostępna nowa wersja aplikacji!</span>
+            <button id="reload-btn">Odśwież</button>
+        </div>
+    `;
+    
+    document.body.appendChild(notification);
+
+    document.getElementById('reload-btn').addEventListener('click', () => {
+        worker.postMessage({ type: 'SKIP_WAITING' });
+    });
+}
+
+
+// === 3. GŁÓWNE FUNKCJE APLIKACJI ===
 
 function initAppLogic() {
     renderTrainingScreen();
@@ -33,17 +73,30 @@ function initAppLogic() {
     const brandContainer = document.querySelector('.brand-container');
     if (brandContainer) {
         brandContainer.addEventListener('click', () => {
+            if (!checkUnsavedSummaryNavigation()) return;
             navigateTo('main');
             renderMainScreen();
         });
     }
 
     if (mainNav) {
-        mainNav.querySelector('#nav-main').addEventListener('click', () => { navigateTo('main'); renderMainScreen(); });
-        mainNav.querySelector('#nav-history').addEventListener('click', () => renderHistoryScreen());
-        // Zmiana: "Library" to teraz Atlas
-        mainNav.querySelector('#nav-library').addEventListener('click', () => renderLibraryScreen());
-        mainNav.querySelector('#nav-settings').addEventListener('click', renderSettingsScreen);
+        mainNav.querySelector('#nav-main').addEventListener('click', () => { 
+            if (!checkUnsavedSummaryNavigation()) return;
+            navigateTo('main'); 
+            renderMainScreen(); 
+        });
+        mainNav.querySelector('#nav-history').addEventListener('click', () => { 
+            if (!checkUnsavedSummaryNavigation()) return;
+            renderHistoryScreen(); 
+        });
+        mainNav.querySelector('#nav-library').addEventListener('click', () => { 
+            if (!checkUnsavedSummaryNavigation()) return;
+            renderLibraryScreen(); 
+        });
+        mainNav.querySelector('#nav-settings').addEventListener('click', () => {
+            if (!checkUnsavedSummaryNavigation()) return;
+            renderSettingsScreen();
+        });
     }
 
     const bottomNav = document.getElementById('app-bottom-nav');
@@ -52,15 +105,23 @@ function initAppLogic() {
             const button = e.target.closest('.bottom-nav-btn');
             if (!button) return;
 
+            // Sprawdzamy czy to nie jest ten sam ekran (opcjonalna optymalizacja)
+            // ale ważniejsze: sprawdzamy czy można wyjść z summary
+            if (!checkUnsavedSummaryNavigation()) {
+                // Jeśli użytkownik anulował, musimy upewnić się, że wizualnie
+                // aktywny przycisk na dole nie przeskoczył (jeśli dany framework UI to robi automatycznie).
+                // W Twoim kodzie klasa 'active' jest nadawana poniżej, więc return wystarczy.
+                return;
+            }
+
             const screen = button.dataset.screen;
             bottomNav.querySelectorAll('.bottom-nav-btn').forEach(btn => btn.classList.remove('active'));
             button.classList.add('active');
 
             switch (screen) {
                 case 'main': renderMainScreen(); break;
-                // case 'analytics': ... (Usunięte, teraz Atlas załatwia wszystko)
                 case 'history': renderHistoryScreen(); break;
-                case 'library': renderLibraryScreen(); break; // Atlas
+                case 'library': renderLibraryScreen(); break; 
                 case 'settings': renderSettingsScreen(); break;
             }
         });
@@ -72,7 +133,6 @@ function initAppLogic() {
     if (nextMonthBtn) nextMonthBtn.addEventListener('click', () => { state.currentCalendarView.setMonth(state.currentCalendarView.getMonth() + 1); renderHistoryScreen(); });
     if (containers.calendarGrid) { containers.calendarGrid.addEventListener('click', (e) => { const dayEl = e.target.closest('.calendar-day.has-entry'); if (dayEl && dayEl.dataset.date) { renderDayDetailsScreen(dayEl.dataset.date); } }); }
     
-    // Obsługa Search w nowym Atlasie jest wewnątrz library.js, ale jeśli został element w DOM globalnym, to go tu zostawiamy (bezpiecznik)
     const searchInput = document.getElementById('library-search-input');
     if (searchInput) searchInput.addEventListener('input', (e) => { renderLibraryScreen(e.target.value); });
 
@@ -250,7 +310,31 @@ window.addEventListener('DOMContentLoaded', main);
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('/service-worker.js')
-            .then(registration => console.log('SW OK:', registration.scope))
+            .then(registration => {
+                console.log('SW OK:', registration.scope);
+
+                if (registration.waiting) {
+                    showUpdateNotification(registration.waiting);
+                    return;
+                }
+
+                registration.addEventListener('updatefound', () => {
+                    const newWorker = registration.installing;
+                    newWorker.addEventListener('statechange', () => {
+                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                            showUpdateNotification(newWorker);
+                        }
+                    });
+                });
+            })
             .catch(err => console.error('SW Fail:', err));
+
+        let refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (!refreshing) {
+                window.location.reload();
+                refreshing = true;
+            }
+        });
     });
 }

@@ -131,7 +131,6 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
             listContainer.appendChild(header);
 
             section.exercises.forEach((ex) => {
-                // Funkcja generatePreTrainingCardHTML (z templates.js) automatycznie dodaje Affinity Badge
                 listContainer.innerHTML += generatePreTrainingCardHTML(ex, exerciseCounter);
                 exerciseCounter++;
             });
@@ -188,7 +187,6 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
                 savePlanToStorage(mixedPlan);
                 isCurrentDynamicDay = true; 
                 
-                // Rekurencyjne przeładowanie z nowym planem
                 renderPreTrainingScreen(dayId, initialPainLevel, useDynamicPlan); 
             }
         });
@@ -283,7 +281,6 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
                 if (typeof renderPreviewModal === 'function') {
                     renderPreviewModal(ex.animationSvg, ex.name);
                 } else {
-                    // Fallback jeśli modal nie jest wyeksportowany
                     const overlay = document.createElement('div');
                     overlay.className = 'modal-overlay';
                     overlay.innerHTML = `
@@ -396,32 +393,7 @@ export const renderTrainingScreen = () => {
             }
         });
     }
-
-    // --- OBSERVER DO AKTUALIZACJI BADGE'A ---
-    // Ponieważ logika zmiany ćwiczeń jest w training.js (którego nie edytujemy w tym kroku),
-    // używamy MutationObserver, aby wykryć zmianę nazwy ćwiczenia i zaktualizować badge.
     
-    const obs = new MutationObserver(() => {
-        const exNameEl = document.getElementById('focus-exercise-name');
-        if (!exNameEl) return;
-        
-        const index = state.currentExerciseIndex;
-        if (index === null || !state.flatExercises || !state.flatExercises[index]) return;
-        
-        const ex = state.flatExercises[index];
-        const badgeContainer = document.getElementById('focus-affinity-badge');
-        
-        if (badgeContainer) {
-            if (ex.isWork && ex.exerciseId) {
-                badgeContainer.innerHTML = getAffinityBadge(ex.exerciseId);
-            } else {
-                badgeContainer.innerHTML = '';
-            }
-        }
-    });
-
-    const screen = document.getElementById('training-screen');
-    if (screen) {
-        obs.observe(screen, { childList: true, subtree: true });
-    }
+    // UWAGA: Usunięto MutationObserver, który powodował nieskończoną pętlę.
+    // Aktualizacja badge'a odbywa się teraz w training.js -> startExercise().
 };

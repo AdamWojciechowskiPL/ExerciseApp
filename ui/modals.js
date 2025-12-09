@@ -1,56 +1,185 @@
-// js/ui/modals.js
 import { state } from '../state.js';
-import dataStore from '../dataStore.js'; // Potrzebne do zapisu
+import dataStore from '../dataStore.js';
 
-// ... (renderSwapModal, renderPreviewModal, renderEvolutionModal, renderSessionRecoveryModal bez zmian - wklejam je skrótowo) ...
-// Wklejam je skrótowo, aby zachować strukturę, ale dodaję nową funkcję na końcu.
-
-export function renderSwapModal(currentExercise, onConfirm) { /* ... (bez zmian) ... */ 
+export function renderSwapModal(currentExercise, onConfirm) {
     const currentId = currentExercise.id || currentExercise.exerciseId;
     let categoryId = currentExercise.categoryId;
     const libraryExercise = state.exerciseLibrary[currentId];
     if (!categoryId && libraryExercise) categoryId = libraryExercise.categoryId;
     if (!categoryId) { alert("Błąd danych: brak kategorii."); return; }
-    const alternatives = Object.entries(state.exerciseLibrary).map(([id, data]) => ({ id, ...data })).filter(ex => ex.categoryId === categoryId && String(ex.id) !== String(currentId));
+    
+    const alternatives = Object.entries(state.exerciseLibrary)
+        .map(([id, data]) => ({ id, ...data }))
+        .filter(ex => ex.categoryId === categoryId && String(ex.id) !== String(currentId));
+    
     if (alternatives.length === 0) { alert(`Brak alternatyw dla kategorii "${categoryId}".`); return; }
+    
     const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
-    const altsHtml = alternatives.map(alt => `<div class="alt-exercise-card" data-id="${alt.id}"><div class="alt-info"><h4>${alt.name}</h4><p><span class="alt-badge">Lvl ${alt.difficultyLevel || 1}</span> ${alt.equipment || 'Brak sprzętu'}</p></div></div>`).join('');
-    overlay.innerHTML = `<div class="swap-modal"><h3>Wymień: ${currentExercise.name || libraryExercise?.name}</h3><p style="font-size:0.85rem; color:#666;">Kategoria: ${categoryId}</p><div class="swap-options-list">${altsHtml}</div><div class="swap-actions"><div style="font-size:0.85rem; font-weight:bold;">Tryb wymiany:</div><div class="swap-type-toggle"><button class="toggle-btn active" data-type="today">Tylko dziś</button><button class="toggle-btn" data-type="blacklist">🚫 Nie lubię</button></div><div style="display:flex; gap:10px; margin-top:10px;"><button id="cancel-swap" class="nav-btn" style="flex:1">Anuluj</button><button id="confirm-swap" class="action-btn" style="flex:1" disabled>Wymień</button></div></div></div>`;
+    
+    const altsHtml = alternatives.map(alt => `
+        <div class="alt-exercise-card" data-id="${alt.id}">
+            <div class="alt-info">
+                <h4>${alt.name}</h4>
+                <p><span class="alt-badge">Lvl ${alt.difficultyLevel || 1}</span> ${alt.equipment || 'Brak sprzętu'}</p>
+            </div>
+        </div>
+    `).join('');
+    
+    overlay.innerHTML = `
+        <div class="swap-modal">
+            <h3>Wymień: ${currentExercise.name || libraryExercise?.name}</h3>
+            <p style="font-size:0.85rem; color:#666;">Kategoria: ${categoryId}</p>
+            <div class="swap-options-list">${altsHtml}</div>
+            <div class="swap-actions">
+                <div style="font-size:0.85rem; font-weight:bold;">Tryb wymiany:</div>
+                <div class="swap-type-toggle">
+                    <button class="toggle-btn active" data-type="today">Tylko dziś</button>
+                    <button class="toggle-btn" data-type="blacklist">🚫 Nie lubię</button>
+                </div>
+                <div style="display:flex; gap:10px; margin-top:10px;">
+                    <button id="cancel-swap" class="nav-btn" style="flex:1">Anuluj</button>
+                    <button id="confirm-swap" class="action-btn" style="flex:1" disabled>Wymień</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
     document.body.appendChild(overlay);
-    let selectedAltId = null; let swapType = 'today';
-    const cards = overlay.querySelectorAll('.alt-exercise-card'); const confirmBtn = overlay.querySelector('#confirm-swap'); const toggleBtns = overlay.querySelectorAll('.toggle-btn');
-    cards.forEach(card => { card.addEventListener('click', () => { cards.forEach(c => c.classList.remove('selected')); card.classList.add('selected'); selectedAltId = card.dataset.id; confirmBtn.disabled = false; confirmBtn.textContent = `Wymień na: ${state.exerciseLibrary[selectedAltId]?.name}`; }); });
-    toggleBtns.forEach(btn => { btn.addEventListener('click', () => { toggleBtns.forEach(b => b.classList.remove('active')); btn.classList.add('active'); swapType = btn.dataset.type; }); });
+    
+    let selectedAltId = null; 
+    let swapType = 'today';
+    
+    const cards = overlay.querySelectorAll('.alt-exercise-card'); 
+    const confirmBtn = overlay.querySelector('#confirm-swap'); 
+    const toggleBtns = overlay.querySelectorAll('.toggle-btn');
+    
+    cards.forEach(card => { 
+        card.addEventListener('click', () => { 
+            cards.forEach(c => c.classList.remove('selected')); 
+            card.classList.add('selected'); 
+            selectedAltId = card.dataset.id; 
+            confirmBtn.disabled = false; 
+            confirmBtn.textContent = `Wymień na: ${state.exerciseLibrary[selectedAltId]?.name}`; 
+        }); 
+    });
+    
+    toggleBtns.forEach(btn => { 
+        btn.addEventListener('click', () => { 
+            toggleBtns.forEach(b => b.classList.remove('active')); 
+            btn.classList.add('active'); 
+            swapType = btn.dataset.type; 
+        }); 
+    });
+    
     overlay.querySelector('#cancel-swap').addEventListener('click', () => overlay.remove());
-    confirmBtn.addEventListener('click', () => { if (selectedAltId) { onConfirm({ id: selectedAltId, ...state.exerciseLibrary[selectedAltId] }, swapType); overlay.remove(); } });
+    confirmBtn.addEventListener('click', () => { 
+        if (selectedAltId) { 
+            onConfirm({ id: selectedAltId, ...state.exerciseLibrary[selectedAltId] }, swapType); 
+            overlay.remove(); 
+        } 
+    });
 }
 
 export function renderPreviewModal(svgContent, title) {
     const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
-    overlay.innerHTML = `<div class="swap-modal" style="align-items: center; text-align: center;"><h3>${title}</h3><div style="width: 100%; max-width: 300px; margin: 1rem 0;">${svgContent}</div><button id="close-preview" class="nav-btn" style="width: 100%">Zamknij</button></div>`;
-    document.body.appendChild(overlay); overlay.querySelector('#close-preview').addEventListener('click', () => overlay.remove());
+    overlay.innerHTML = `
+        <div class="swap-modal" style="align-items: center; text-align: center;">
+            <h3>${title}</h3>
+            <div style="width: 100%; max-width: 300px; margin: 1rem 0;">${svgContent}</div>
+            <button id="close-preview" class="nav-btn" style="width: 100%">Zamknij</button>
+        </div>
+    `;
+    document.body.appendChild(overlay); 
+    overlay.querySelector('#close-preview').addEventListener('click', () => overlay.remove());
 }
 
 export function renderEvolutionModal(adaptation, onCheck) {
     const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
     const isEvo = adaptation.type === 'evolution';
-    const config = isEvo ? { title: "Ewolucja!", desc: "Twoja stabilność osiągnęła 100%. System odblokował trudniejszy wariant.", icon: "🏆", color: "var(--gold-color)", btnText: "Przyjmuję Wyzwanie" } : { title: "Korekta", desc: "Wykryto przeciążenie. System tymczasowo cofa trudność.", icon: "🛡️", color: "var(--secondary-color)", btnText: "Zrozumiałem" };
-    overlay.innerHTML = `<div class="evolution-modal" style="--glow-color: ${config.color}"><div class="evo-icon-wrapper"><span style="font-size: 3rem;">${config.icon}</span></div><h2 class="evo-title">${config.title}</h2><p class="evo-desc">${config.desc}</p><div class="change-box"><div class="ex-name" style="opacity: 0.7; text-decoration: line-through;">${adaptation.original}</div><div class="change-arrow">⬇</div><div class="ex-name" style="color: ${config.color}">${adaptation.newName || "Nowy Wariant"}</div></div><button id="close-evo" class="action-btn" style="background: ${config.color}; color: #000; border: none;">${config.btnText}</button></div>`;
+    
+    const config = isEvo 
+        ? { title: "Ewolucja!", desc: "Twoja stabilność osiągnęła 100%. System odblokował trudniejszy wariant.", icon: "🏆", color: "var(--gold-color)", btnText: "Przyjmuję Wyzwanie" } 
+        : { title: "Korekta", desc: "Wykryto przeciążenie. System tymczasowo cofa trudność.", icon: "🛡️", color: "var(--secondary-color)", btnText: "Zrozumiałem" };
+    
+    overlay.innerHTML = `
+        <div class="evolution-modal" style="--glow-color: ${config.color}">
+            <div class="evo-icon-wrapper"><span style="font-size: 3rem;">${config.icon}</span></div>
+            <h2 class="evo-title">${config.title}</h2>
+            <p class="evo-desc">${config.desc}</p>
+            <div class="change-box">
+                <div class="ex-name" style="opacity: 0.7; text-decoration: line-through;">${adaptation.original}</div>
+                <div class="change-arrow">⬇</div>
+                <div class="ex-name" style="color: ${config.color}">${adaptation.newName || "Nowy Wariant"}</div>
+            </div>
+            <button id="close-evo" class="action-btn" style="background: ${config.color}; color: #000; border: none;">${config.btnText}</button>
+        </div>
+    `;
+    
     document.body.appendChild(overlay);
     if (state.completionSound && isEvo) state.finalCompletionSound();
-    overlay.querySelector('#close-evo').onclick = () => { overlay.querySelector('.evolution-modal').style.transform = 'scale(0.8)'; overlay.querySelector('.evolution-modal').style.opacity = '0'; setTimeout(() => { overlay.remove(); if (onCheck) onCheck(); }, 200); };
+    
+    overlay.querySelector('#close-evo').onclick = () => { 
+        overlay.querySelector('.evolution-modal').style.transform = 'scale(0.8)'; 
+        overlay.querySelector('.evolution-modal').style.opacity = '0'; 
+        setTimeout(() => { overlay.remove(); if (onCheck) onCheck(); }, 200); 
+    };
 }
 
 export function renderSessionRecoveryModal(backup, timeGapFormatted, onRestore, onDiscard) {
-    const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
-    const totalSteps = backup.flatExercises?.length || 0; const currentStep = backup.currentExerciseIndex || 0; const progressPercent = totalSteps > 0 ? Math.round((currentStep / totalSteps) * 100) : 0;
-    overlay.innerHTML = `<div class="swap-modal" style="max-width: 380px;"><div style="text-align: center; margin-bottom: 1.5rem;"><span style="font-size: 3rem;">⚠️</span><h2 style="margin: 0.5rem 0;">Przerwana sesja</h2><p style="opacity: 0.7; font-size: 0.9rem;">Wykryto niezakończony trening</p></div><div style="background: var(--card-color); border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem;"><div style="font-weight: 600; margin-bottom: 0.5rem;">${backup.trainingTitle || 'Trening'}</div><div style="font-size: 0.85rem; opacity: 0.7; margin-bottom: 0.75rem;">Przerwa: ${timeGapFormatted} temu</div><div style="background: var(--bg-color); border-radius: 8px; padding: 0.5rem;"><div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.25rem;"><span>Postęp</span><span>${currentStep} / ${totalSteps} (${progressPercent}%)</span></div><div style="height: 6px; background: var(--secondary-color); border-radius: 3px; overflow: hidden;"><div style="height: 100%; width: ${progressPercent}%; background: var(--primary-color); transition: width 0.3s;"></div></div></div></div><p style="font-size: 0.85rem; opacity: 0.8; margin-bottom: 1rem; text-align: center;">Czas przerwy zostanie dodany do całkowitego czasu pauzy.</p><div style="display: flex; gap: 10px;"><button id="discard-session" class="nav-btn" style="flex: 1;">Porzuć</button><button id="restore-session" class="action-btn" style="flex: 1;">Przywróć</button></div></div>`;
+    const overlay = document.createElement('div'); 
+    overlay.className = 'modal-overlay';
+    
+    const totalSteps = backup.flatExercises?.length || 0; 
+    const currentStep = backup.currentExerciseIndex || 0; 
+    const progressPercent = totalSteps > 0 ? Math.round((currentStep / totalSteps) * 100) : 0;
+    
+    overlay.innerHTML = `
+        <div class="swap-modal" style="max-width: 380px;">
+            <div style="text-align: center; margin-bottom: 1.5rem;">
+                <span style="font-size: 3rem;">⚠️</span>
+                <h2 style="margin: 0.5rem 0;">Przerwana sesja</h2>
+                <p style="opacity: 0.7; font-size: 0.9rem;">Wykryto niezakończony trening</p>
+            </div>
+            
+            <div style="background: var(--card-color); border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem;">
+                <div style="font-weight: 600; margin-bottom: 0.5rem;">${backup.trainingTitle || 'Trening'}</div>
+                <div style="font-size: 0.85rem; opacity: 0.7; margin-bottom: 0.75rem;">Przerwa: ${timeGapFormatted} temu</div>
+                
+                <div style="background: var(--bg-color); border-radius: 8px; padding: 0.5rem;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.25rem;">
+                        <span>Postęp</span>
+                        <span>${currentStep} / ${totalSteps} (${progressPercent}%)</span>
+                    </div>
+                    <div style="height: 6px; background: var(--secondary-color); border-radius: 3px; overflow: hidden;">
+                        <div style="height: 100%; width: ${progressPercent}%; background: var(--primary-color); transition: width 0.3s;"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <p style="font-size: 0.85rem; opacity: 0.8; margin-bottom: 1.5rem; text-align: center;">
+                Czas przerwy zostanie dodany do całkowitego czasu pauzy.
+            </p>
+            
+            <div style="display: flex; gap: 12px;">
+                <button id="discard-session" class="nav-btn" 
+                    style="flex: 1; padding: 12px; font-size: 1rem; display: flex; align-items: center; justify-content: center;">
+                    Porzuć
+                </button>
+                <button id="restore-session" class="action-btn" 
+                    style="flex: 1; margin: 0; padding: 12px; font-size: 1rem; display: flex; align-items: center; justify-content: center;">
+                    Przywróć
+                </button>
+            </div>
+        </div>
+    `;
+    
     document.body.appendChild(overlay);
+    
     overlay.querySelector('#restore-session').addEventListener('click', () => { overlay.remove(); if (onRestore) onRestore(); });
     overlay.querySelector('#discard-session').addEventListener('click', () => { overlay.remove(); if (onDiscard) onDiscard(); });
 }
 
-// --- NOWOŚĆ: TUNER SYNAPTYCZNY (MODAL) ---
+// --- TUNER SYNAPTYCZNY (MODAL) ---
 export function renderTunerModal(exerciseId, onUpdate) {
     const exercise = state.exerciseLibrary[exerciseId];
     if (!exercise) return;

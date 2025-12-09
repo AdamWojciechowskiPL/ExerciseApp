@@ -7,10 +7,11 @@ import { getGamificationState } from '../../gamification.js';
 import { assistant } from '../../assistantEngine.js';
 import { navigateTo } from '../core.js';
 import { generateHeroDashboardHTML, generateMissionCardHTML, generateCompletedMissionCardHTML, generateSkeletonDashboardHTML } from '../templates.js';
-import { renderPreTrainingScreen } from './training.js';
+import { renderPreTrainingScreen, renderProtocolStart } from './training.js';
 import { renderDayDetailsScreen } from './history.js';
 import { workoutMixer } from '../../workoutMixer.js';
 import { getUserPayload } from '../../auth.js';
+import { generateBioProtocol } from '../../protocolGenerator.js';
 
 // --- POMOCNICZE FUNKCJE STORAGE ---
 
@@ -121,7 +122,6 @@ export const renderMainScreen = (isLoading = false) => {
     // 2. RENDEROWANIE ZAWARTOŚCI GŁÓWNEJ
     containers.days.innerHTML = '';
 
-    // PRZYWRÓCONY EFEKT WOW (Zamiast paska tygodnia)
     const today = new Date();
     const todayISO = getISODate(today);
 
@@ -150,7 +150,9 @@ export const renderMainScreen = (isLoading = false) => {
 
     let currentSequenceDayNum = 1;
 
+    // ============================================================
     // A. SEKCJA "MISJA NA DZIŚ"
+    // ============================================================
     if (completedSession) {
         const missionWrapper = document.createElement('div');
         missionWrapper.className = 'mission-card-wrapper';
@@ -215,8 +217,6 @@ export const renderMainScreen = (isLoading = false) => {
                 console.log("CACHE MISS: Generuję plan na dziś (z Mikserem).");
                 const hydratedDay = getHydratedDay(rawDay);
                 
-                // --- ZMIANA: Dodajemy Mixer tutaj ---
-                // true na drugim argumencie wymusza lekkie losowanie nawet jeśli sprzęt się zgadza
                 finalPlan = workoutMixer.mixWorkout(hydratedDay, false); 
                 
                 finalPlan.dayNumber = currentSequenceDayNum;
@@ -226,7 +226,7 @@ export const renderMainScreen = (isLoading = false) => {
             state.todaysDynamicPlan = finalPlan;
 
         }
-        // --- LOGIKA DLA TRYBU STATYCZNEGO (Z POPRAWIONYM MIXEREM) ---
+        // --- LOGIKA DLA TRYBU STATYCZNEGO (Z MIXEREM) ---
         else {
             const todayDataRaw = getNextLogicalDay();
             if (todayDataRaw) {
@@ -235,9 +235,7 @@ export const renderMainScreen = (isLoading = false) => {
 
                 let dynamicDayData = state.todaysDynamicPlan;
 
-                // Walidacja: czy zapisany plan jest z aktualnego trybu/planId?
                 if (dynamicDayData && dynamicDayData.planId !== currentPlanId) {
-                    console.log(`[Dashboard] Plan mismatch: ${dynamicDayData.planId} vs ${currentPlanId}. Resetuję.`);
                     dynamicDayData = null;
                     state.todaysDynamicPlan = null;
                     clearPlanFromStorage();
@@ -246,13 +244,10 @@ export const renderMainScreen = (isLoading = false) => {
                 if (!dynamicDayData) {
                     const cachedPlan = loadPlanFromStorage();
                     if (cachedPlan && cachedPlan.dayNumber === currentSequenceDayNum && cachedPlan.planId === currentPlanId) {
-                        // SPRAWDZAMY CZY PLAN JEST ZMIKSOWANY (_isDynamic)
                         if (cachedPlan._isDynamic) {
-                            console.log("CACHE HIT (Static-Mixed): Znaleziono zmiksowany plan.");
                             dynamicDayData = cachedPlan;
-                            state.todaysDynamicPlan = cachedPlan; // <--- FIX: Przypisanie do stanu!
+                            state.todaysDynamicPlan = cachedPlan;
                         } else {
-                            console.log("CACHE STALE: Plan nie był miksowany. Usuwam i generuję nowy.");
                             clearPlanFromStorage();
                         }
                     }
@@ -267,7 +262,6 @@ export const renderMainScreen = (isLoading = false) => {
                 }
                 finalPlan = dynamicDayData || todayDataStatic;
 
-                // FIX: Upewnij się, że stan jest zaktualizowany o finalny plan (jeśli jest dynamiczny)
                 if (finalPlan && finalPlan._isDynamic) {
                     state.todaysDynamicPlan = finalPlan;
                 }
@@ -315,7 +309,86 @@ export const renderMainScreen = (isLoading = false) => {
         }
     }
 
+    // ============================================================
+    // B. LABORATORIUM REGENERACJI (NOWOŚĆ - Bio-Protocols)
+    // ============================================================
+    const bioHubContainer = document.createElement('div');
+    bioHubContainer.className = 'bio-hub-container';
+    
+    // Inteligentny dobór kart na podstawie Wizarda
+    const wz = state.settings.wizardData || {};
+    const protocols = [];
+
+    // 1. Zawsze dostępne
+    protocols.push({ mode: 'booster', zone: 'core', time: 5, title: 'Brzuch ze stali', desc: 'Szybki obwód wzmacniający', icon: '🔥' });
+    protocols.push({ mode: 'reset', zone: 'sleep', time: 8, title: 'Dobry Sen', desc: 'Wyciszenie przed nocą', icon: '🌙' });
+
+    // 2. Kontekstowe (Praca)
+    if (wz.work_type === 'sedentary') {
+        protocols.unshift({ mode: 'reset', zone: 'office', time: 5, title: 'Anty-Biuro', desc: 'Rozprostuj się po pracy', icon: '🪑' });
+    }
+
+    // 3. Kontekstowe (Ból/Problemy)
+    if (wz.pain_locations?.includes('cervical')) {
+        protocols.unshift({ mode: 'sos', zone: 'cervical', time: 4, title: 'Szyja: Ratunek', desc: 'Ulga w napięciu karku', icon: '💊' });
+    }
+    if (wz.medical_diagnosis?.includes('sciatica') || wz.pain_locations?.includes('sciatica')) {
+        protocols.unshift({ mode: 'sos', zone: 'sciatica', time: 6, title: 'Rwa Kulszowa', desc: 'Bezpieczne flossingi', icon: '⚡' });
+    }
+
+    // 4. Fallback (jeśli za mało)
+    if (protocols.length < 3) {
+        protocols.push({ mode: 'booster', zone: 'glute', time: 6, title: 'Glute Pump', desc: 'Aktywacja pośladków', icon: '🍑' });
+    }
+
+    // Renderowanie kart
+    const cardsHTML = protocols.map(p => `
+        <div class="bio-card bio-card-${p.mode}" 
+             data-mode="${p.mode}" data-zone="${p.zone}" data-time="${p.time}">
+            <div class="bio-bg-icon">${p.icon}</div>
+            <div class="bio-header">
+                <span class="bio-tag">${p.mode.toUpperCase()}</span>
+                <span class="bio-duration">⏱ ${p.time} min</span>
+            </div>
+            <div>
+                <div class="bio-title">${p.title}</div>
+                <div class="bio-desc">${p.desc}</div>
+            </div>
+        </div>
+    `).join('');
+
+    bioHubContainer.innerHTML = `
+        <div class="section-title" style="margin-top:1.5rem; margin-bottom:0.8rem; padding-left:4px;">LABORATORIUM REGENERACJI</div>
+        <div class="bio-hub-scroll">${cardsHTML}</div>
+    `;
+
+    containers.days.appendChild(bioHubContainer);
+
+    // Obsługa kliknięć w karty protokołów
+    bioHubContainer.querySelectorAll('.bio-card').forEach(card => {
+        card.addEventListener('click', () => {
+            try {
+                // Generowanie w locie
+                const protocol = generateBioProtocol({
+                    mode: card.dataset.mode,
+                    focusZone: card.dataset.zone,
+                    durationMin: parseInt(card.dataset.time),
+                    userContext: state.settings.wizardData || {}
+                });
+                
+                // Uruchomienie (bez widoku pre-training, od razu podgląd dedykowany)
+                renderProtocolStart(protocol);
+
+            } catch (err) {
+                console.error("Błąd generowania protokołu:", err);
+                alert("Nie udało się utworzyć tej sesji: " + err.message);
+            }
+        });
+    });
+
+    // ============================================================
     // C. SEKCJA "KOLEJNE W CYKLU" (Horyzontalna Karuzela)
+    // ============================================================
     let upcomingHTML = '';
     const planDays = getPlanDaysArray(activePlan);
     const totalDaysInPlan = planDays.length;

@@ -1,4 +1,4 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v11.0.0
+# Aplikacja Treningowa (Smart Rehab PWA) v12.0.0
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca trening siłowy z rehabilitacją kręgosłupa (metodyka McGill L5-S1). System wykorzystuje architekturę Serverless oraz autorski silnik **"Virtual Physio"** (v3.3), wspierany przez nowy moduł **"Exercise Affinity Engine"**, który personalizuje treningi na podstawie preferencji emocjonalnych i odczuwalnej trudności.
 
@@ -12,7 +12,7 @@ Zaawansowana aplikacja PWA (Progressive Web App) łącząca trening siłowy z re
 *   **Walidacja kliniczna:** Blokada generacji planu dla przypadków wykluczonych regułami klinicznymi (`can_generate_plan`).
 *   **Ograniczenie powtarzalności:** Mechanizm `weeklyUsage` limitujący częstość pojawiania się tego samego ćwiczenia w tygodniu.
 
-### ❤️ Exercise Affinity Engine (Nowość v11.0)
+### ❤️ Exercise Affinity Engine
 *   **Ranking Preferencji (Tiers):** System klasyfikacji ćwiczeń oparty na odczuciach użytkownika, a nie tylko liczbach.
     *   💎 **Tier S (Supreme):** Ulubione ćwiczenia, najwyższy priorytet w losowaniu.
     *   🔥 **Tier A (Great):** Solidne i lubiane ćwiczenia.
@@ -20,6 +20,15 @@ Zaawansowana aplikacja PWA (Progressive Web App) łącząca trening siłowy z re
     *   ⚠️ **Tier C (Warning):** Ćwiczenia oznaczone jako "Za trudne" lub "Nielubiane".
 *   **Synaptic Tuner:** Innowacyjny interfejs kalibracji (suwak gradientowy), pozwalający precyzyjnie określić stosunek emocjonalny do ćwiczenia.
 *   **Chirurgiczna Ewolucja:** Oznaczenie ćwiczenia jako "Za łatwe" (💤) lub "Za trudne" (🔥) natychmiast wpływa na algorytm progresji/regresji dla tego konkretnego ruchu.
+
+### 🧬 Bio-Protocols & SOS Hub
+Inteligentne "Laboratorium Regeneracji" dostępne na żądanie, niezależnie od głównego planu treningowego.
+*   **On-Demand Generator:** Algorytm działający po stronie klienta (`protocolGenerator.js`), który w ułamku sekundy tworzy mikro-sesję (4-15 min) dopasowaną do aktualnej potrzeby.
+*   **3 Tryby Pracy:**
+    *   🚑 **SOS (Ratunek):** Filtruje ćwiczenia pod kątem ulgi w bólu (`pain_relief_zones`), wymusza wolne tempo i niską trudność.
+    *   🔥 **Booster (Wycisk):** Celowany trening uzupełniający (np. "Brzuch ze stali"), promujący ćwiczenia z wysokim `Affinity Score`.
+    *   🍃 **Reset (Równowaga):** Sesje "Anty-Biuro" lub "Sen", oparte na mobilności i oddechu.
+*   **Time-Boxing:** Algorytm "dopycha" ćwiczenia tak, aby idealnie wypełnić zadeklarowany przez użytkownika czas (np. równe 5 minut).
 
 ### 🏆 Gamifikacja i Analityka
 *   **Hero Dashboard:** Nowoczesny panel z kafelkami statystyk (Seria, Tarcza, Łączny Czas Treningów).
@@ -70,6 +79,7 @@ Zaawansowana aplikacja PWA (Progressive Web App) łącząca trening siłowy z re
 ├── sessionRecovery.js          # Backup/restore sesji treningowej
 │
 ├── LOGIKA BIZNESOWA (FRONTEND):
+│   ├── protocolGenerator.js    # Generator Bio-Protokołów (Time-Boxing logic)
 │   ├── workoutMixer.js         # Mixer v2.0 (Affinity Scoring Logic)
 │   ├── assistantEngine.js      # Skalowanie objętości (Ból/Czas)
 │   ├── training.js             # Kontroler przebiegu treningu + backup
@@ -405,3 +415,28 @@ Gotowy plan tygodniowy jest „sanityzowany" – w sesjach zapisywane są tylko:
 * `equipment` (w formie tekstowej).
 
 Struktura jest zapisywana w `user_settings.settings.dynamicPlanData` jako aktualny plan dynamiczny użytkownika.
+
+## 🧠 Logika Bio-Protocol Generator
+
+Nowy moduł `protocolGenerator.js` działa całkowicie po stronie klienta, zapewniając natychmiastową reakcję interfejsu.
+
+### 1. Wejście (Input)
+Generator przyjmuje obiekt konfiguracyjny:
+*   `mode`: `'sos'` | `'booster'` | `'reset'`
+*   `focusZone`: np. `'cervical'`, `'core'`, `'office'`
+*   `durationMin`: Czas całkowity (np. 5 min)
+*   `userContext`: Dostępny sprzęt, czarna lista.
+
+### 2. Selekcja Kandydatów
+*   Dla trybu **SOS**: Szuka ćwiczeń z tagiem `pain_relief_zones` zgodnym z `focusZone` oraz `difficulty_level <= 2`.
+*   Dla trybu **Booster**: Szuka ćwiczeń z kategorii biomechanicznej (np. `core_anti_rotation`) i sortuje je według `Affinity Score` (ulubione ćwiczenia użytkownika mają priorytet).
+
+### 3. Time-Boxing (Dopychanie Czasu)
+Algorytm buduje linię czasu (Timeline):
+1.  Pobiera kandydata z puli.
+2.  Dodaje czas pracy (np. 60s dla SOS, 40s dla Booster) + czas przejścia (15s).
+3.  Sprawdza, czy `aktualnyCzas + nowyBlok <= durationMin`.
+4.  Powtarza proces aż do wypełnienia zadanego okna czasowego.
+
+### 4. Wyjście (Output)
+Zwraca obiekt sesji kompatybilny z `training.js`, ale ze spłaszczoną strukturą (`flatExercises` gotowe do odtworzenia), co pomija etap standardowej hydracji planu dziennego.

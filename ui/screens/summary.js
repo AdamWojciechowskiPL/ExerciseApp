@@ -12,24 +12,51 @@ let selectedFeedback = { type: null, value: 0 };
 export const renderSummaryScreen = () => {
     if (getIsCasting()) sendShowIdle();
 
-    // 1. Ustalanie Planu
-    let activePlan = null;
-    const isDynamicMode = state.settings.planMode === 'dynamic' || (state.settings.dynamicPlanData && !state.settings.planMode);
-    if (isDynamicMode && state.settings.dynamicPlanData) {
-        activePlan = state.settings.dynamicPlanData;
-    } else {
-        activePlan = state.trainingPlans[state.settings.activePlanId];
+    // 1. Ustalanie Kontekstu (Plan vs Protokół)
+    let trainingTitle = "Trening";
+    let isSafetyMode = false;
+    let isProtocol = false;
+
+    // A. SCENARIUSZ PROTOKOŁU (Bio-Hub)
+    if (state.todaysDynamicPlan && state.todaysDynamicPlan.type === 'protocol') {
+        isProtocol = true;
+        trainingTitle = state.todaysDynamicPlan.title;
+        // Protokoły SOS traktujemy jako tryb bezpieczeństwa (pytanie o objawy)
+        isSafetyMode = state.todaysDynamicPlan.mode === 'sos';
+    } 
+    // B. SCENARIUSZ STANDARDOWY
+    else {
+        let activePlan = null;
+        const isDynamicMode = state.settings.planMode === 'dynamic' || (state.settings.dynamicPlanData && !state.settings.planMode);
+        
+        if (isDynamicMode && state.settings.dynamicPlanData) {
+            activePlan = state.settings.dynamicPlanData;
+        } else {
+            activePlan = state.trainingPlans[state.settings.activePlanId];
+        }
+
+        if (!activePlan) {
+            console.error("Błąd: Brak aktywnego planu w Summary.");
+            navigateTo('main'); 
+            return;
+        }
+
+        const daysList = activePlan.Days || activePlan.days || [];
+        const trainingDay = daysList.find(d => d.dayNumber === state.currentTrainingDayId);
+        
+        if (!trainingDay) {
+            console.error("Błąd: Nie znaleziono dnia treningowego w Summary.");
+            // Fallback: jeśli nie znaleziono dnia, używamy domyślnego tytułu, zamiast przerywać
+            trainingTitle = "Zakończony Trening";
+        } else {
+            trainingTitle = trainingDay.title;
+        }
+
+        const initialPain = state.sessionParams.initialPainLevel || 0;
+        isSafetyMode = initialPain > 3;
     }
-    if (!activePlan) return;
 
-    const daysList = activePlan.Days || activePlan.days || [];
-    const trainingDay = daysList.find(d => d.dayNumber === state.currentTrainingDayId);
-    if (!trainingDay) return;
-
-    const initialPain = state.sessionParams.initialPainLevel || 0;
-    const isSafetyMode = initialPain > 3;
-
-    // 2. Reset stanu
+    // 2. Reset stanu formularza
     selectedFeedback = { type: isSafetyMode ? 'symptom' : 'tension', value: 0 };
 
     const summaryScreen = screens.summary;
@@ -76,9 +103,11 @@ export const renderSummaryScreen = () => {
     const uniqueExercises = (state.sessionLog || []).filter(entry => {
         if (entry.isRest || entry.status === 'skipped') return false;
         
+        // Dla protokołów ID może być unikalne (z suffixem), więc bierzemy bazowe exerciseId
         const exId = entry.exerciseId || entry.id;
         if (!exId) return false;
 
+        // Unikamy duplikatów w widoku oceniania (jeśli np. był obwód i ćwiczenie było 3 razy)
         if (processedIds.has(exId)) return false;
         processedIds.add(exId);
         return true;
@@ -132,9 +161,10 @@ export const renderSummaryScreen = () => {
             </div>`;
     }
 
-    // 6. Finalny HTML + CSS Fix
+    // 6. Finalny HTML
     summaryScreen.innerHTML = `
-        <h2 id="summary-title" style="margin-bottom:0.5rem">Podsumowanie</h2>
+        <h2 id="summary-title" style="margin-bottom:0.5rem">${trainingTitle}</h2>
+        <p style="opacity:0.6; font-size:0.9rem; margin-top:0;">Podsumowanie sesji</p>
         
         <form id="summary-form">
             <!-- Global Feedback -->
@@ -146,7 +176,6 @@ export const renderSummaryScreen = () => {
             <!-- Exercise Ratings -->
             <div class="form-group" style="margin-top:1.5rem;">
                 <label style="display:block; margin-bottom:10px; font-weight:700;">Oceń Ćwiczenia (Opcjonalne)</label>
-                <p style="font-size:0.8rem; opacity:0.7; margin-top:-5px; margin-bottom:10px;">Kliknij, aby zmienić ocenę.</p>
                 <div class="ratings-list">
                     ${exercisesListHtml}
                 </div>
@@ -155,7 +184,7 @@ export const renderSummaryScreen = () => {
             <!-- Notes -->
             <div class="form-group" style="margin-top:2rem;">
                 <label for="general-notes">Notatki:</label>
-                <textarea id="general-notes" rows="2" placeholder="Uwagi..."></textarea>
+                <textarea id="general-notes" rows="2" placeholder="Jak poszło?"></textarea>
             </div>
 
             ${stravaHtml}
@@ -165,42 +194,23 @@ export const renderSummaryScreen = () => {
         <style>
             .rating-actions-group { display: flex; align-items: center; gap: 5px; }
             .btn-group-affinity, .btn-group-difficulty { display: flex; gap: 4px; }
-            
-            /* --- CSS FIX: NEUTRALNE TŁO, KOLOR TYLKO NA IKONIE --- */
             .rate-btn {
-                background: #f3f4f6; /* Zawsze szare/jasne tło */
+                background: #f3f4f6; 
                 border: 1px solid transparent;
                 border-radius: 8px;
-                width: 40px;
-                height: 40px;
+                width: 40px; height: 40px;
                 font-size: 1.4rem;
                 cursor: pointer;
                 transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-
-                /* Domyślnie: ikona szara i lekko przezroczysta */
-                filter: grayscale(100%);
-                opacity: 0.4;
+                display: flex; align-items: center; justify-content: center;
+                filter: grayscale(100%); opacity: 0.4;
             }
-
-            .rate-btn:hover {
-                opacity: 0.7;
-                background: #e5e7eb;
-                transform: translateY(-1px);
-            }
-
-            /* AKTYWNY: Ikona odzyskuje kolor, tło pozostaje jasne/neutralne */
+            .rate-btn:hover { opacity: 0.7; background: #e5e7eb; transform: translateY(-1px); }
             .rate-btn.active {
-                opacity: 1;
-                filter: grayscale(0%); /* PRZYWRACA KOLOR EMOJI */
-                background: #fff;      /* Tło białe dla kontrastu (lub zostaw f3f4f6) */
-                border-color: #d1d5db; /* Delikatna ramka */
-                box-shadow: 0 2px 5px rgba(0,0,0,0.08); /* Lekki cień */
-                transform: scale(1.15); /* Lekkie powiększenie */
+                opacity: 1; filter: grayscale(0%);
+                background: #fff; border-color: #d1d5db;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.08); transform: scale(1.15);
             }
-            /* --- KONIEC FIXA --- */
         </style>
     `;
 
@@ -217,21 +227,15 @@ export const renderSummaryScreen = () => {
         });
     });
 
-    // Exercise Ratings - LOGIKA
+    // Exercise Ratings
     const ratingCards = summaryScreen.querySelectorAll('.rating-card');
     ratingCards.forEach(card => {
         const buttons = card.querySelectorAll('.rate-btn');
-        
         buttons.forEach(btn => {
             btn.addEventListener('click', () => {
-                // Grupy
                 const parentGroup = btn.parentElement; 
                 const isActive = btn.classList.contains('active');
-
-                // 1. Wyłącz wszystkie inne w TEJ SAMEJ grupie (Like/Dislike ORAZ Hard/Easy osobno)
                 parentGroup.querySelectorAll('.rate-btn').forEach(b => b.classList.remove('active'));
-
-                // 2. Włącz kliknięty, jeśli nie był aktywny (Toggle)
                 if (!isActive) {
                     btn.classList.add('active');
                 }
@@ -255,20 +259,29 @@ export async function handleSummarySubmit(e) {
     const netDuration = Math.max(0, rawDuration - (state.totalPausedTime || 0));
     const durationSeconds = Math.round(netDuration / 1000);
 
-    // Wybór planu (Dynamic vs Static)
-    const isDynamicMode = state.settings.planMode === 'dynamic' || (state.settings.dynamicPlanData && !state.settings.planMode);
+    // Wybór planu (Dynamic vs Static vs Protocol)
     let planIdToSave = state.settings.activePlanId;
     let trainingTitle = "Trening";
-    if (isDynamicMode && state.settings.dynamicPlanData) {
-        planIdToSave = state.settings.dynamicPlanData.id;
-        const days = state.settings.dynamicPlanData.days || [];
-        const day = days.find(d => d.dayNumber === state.currentTrainingDayId);
-        if (day) trainingTitle = day.title;
-    } else {
-        const activePlan = state.trainingPlans[state.settings.activePlanId];
-        if (activePlan) {
-            const day = activePlan.Days.find(d => d.dayNumber === state.currentTrainingDayId);
+    
+    // Sprawdzamy czy to Protokół
+    if (state.todaysDynamicPlan && state.todaysDynamicPlan.type === 'protocol') {
+        planIdToSave = state.todaysDynamicPlan.id; // Np. proto_sos_...
+        trainingTitle = state.todaysDynamicPlan.title;
+    }
+    // Jeśli nie protokół, to standardowa logika
+    else {
+        const isDynamicMode = state.settings.planMode === 'dynamic' || (state.settings.dynamicPlanData && !state.settings.planMode);
+        if (isDynamicMode && state.settings.dynamicPlanData) {
+            planIdToSave = state.settings.dynamicPlanData.id;
+            const days = state.settings.dynamicPlanData.days || [];
+            const day = days.find(d => d.dayNumber === state.currentTrainingDayId);
             if (day) trainingTitle = day.title;
+        } else {
+            const activePlan = state.trainingPlans[state.settings.activePlanId];
+            if (activePlan) {
+                const day = activePlan.Days.find(d => d.dayNumber === state.currentTrainingDayId);
+                if (day) trainingTitle = day.title;
+            }
         }
     }
 
@@ -278,7 +291,6 @@ export async function handleSummarySubmit(e) {
     
     ratingCards.forEach(card => {
         const id = card.dataset.id;
-        // Szukamy wszystkich aktywnych w obrębie karty (może być Like ORAZ Hard)
         const activeButtons = card.querySelectorAll('.rate-btn.active');
         
         activeButtons.forEach(btn => {
@@ -296,7 +308,7 @@ export async function handleSummarySubmit(e) {
         trainingTitle: trainingTitle,
         status: 'completed',
         feedback: selectedFeedback,
-        exerciseRatings: ratingsArray, // Przesyłamy tablicę wszystkich aktywnych ocen
+        exerciseRatings: ratingsArray,
         pain_during: selectedFeedback.type === 'symptom' && selectedFeedback.value === -1 ? 5 : 0,
         notes: document.getElementById('general-notes').value,
         startedAt: state.sessionStartTime ? state.sessionStartTime.toISOString() : now.toISOString(),
@@ -310,17 +322,28 @@ export async function handleSummarySubmit(e) {
         clearSessionBackup();
         await dataStore.loadRecentHistory(7);
 
+        // Jeśli protokół, usuwamy go ze stanu "todaysDynamicPlan" żeby nie wisiał w dashboardzie jako główny plan
+        if (state.todaysDynamicPlan && state.todaysDynamicPlan.type === 'protocol') {
+            state.todaysDynamicPlan = null;
+        }
+
         if (response && response.newStats) { state.userStats = { ...state.userStats, ...response.newStats }; } 
         else { if (!state.userStats) state.userStats = { totalSessions: 0, streak: 0 }; state.userStats.totalSessions = (parseInt(state.userStats.totalSessions) || 0) + 1; }
 
         if (stravaCheckbox && stravaCheckbox.checked) { dataStore.uploadToStrava(sessionPayload); }
 
         // Reset stanu sesji
-        state.currentTrainingDate = null; state.currentTrainingDayId = null; state.sessionLog = []; state.sessionStartTime = null; state.totalPausedTime = 0; state.isPaused = false;
+        state.currentTrainingDate = null; 
+        state.currentTrainingDayId = null; 
+        state.sessionLog = []; 
+        state.sessionStartTime = null; 
+        state.totalPausedTime = 0; 
+        state.isPaused = false;
 
         hideLoader();
         const { renderMainScreen } = await import('./dashboard.js');
 
+        // Pokaż ewolucję tylko jeśli były oceny
         if (response && response.adaptation) {
             renderEvolutionModal(response.adaptation, () => { navigateTo('main'); renderMainScreen(); });
         } else {

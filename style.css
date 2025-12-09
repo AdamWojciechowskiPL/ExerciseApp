@@ -1,4 +1,4 @@
-/* style.css - Cleaned Version */
+/* style.css - Full Version v12.0 (Bio-Protocols & SOS Hub) */
 
 /* ============================================= */
 /* === 1. ZMIENNE GLOBALNE I RESET === */
@@ -24,6 +24,11 @@
 
     /* Gamifikacja */
     --gold-color: #e9c46a;
+
+    /* Protocol Hub Colors (Bio-Protocols) */
+    --proto-sos-bg: linear-gradient(135deg, #4c1d95 0%, #8b5cf6 100%);
+    --proto-booster-bg: linear-gradient(135deg, #9f1239 0%, #fb7185 100%);
+    --proto-reset-bg: linear-gradient(135deg, #047857 0%, #34d399 100%);
 
     /* Efekty */
     --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.08);
@@ -405,7 +410,126 @@ main {
 .upcoming-btn { background: rgba(0,0,0,0.05); border: none; color: var(--text-color); font-size: 0.75rem; padding: 6px; border-radius: 6px; font-weight: 600; width: 100%; }
 
 /* ============================================= */
-/* === 7. COMMON UI ELEMENTS === */
+/* === 7. BIO-HUB (LABORATORIUM REGENERACJI) === */
+/* ============================================= */
+.bio-hub-container {
+    margin-top: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.bio-hub-scroll {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    padding-bottom: 10px;
+    
+    /* Edge-to-edge scrolling on mobile */
+    margin: 0 -1rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+    
+    /* Ukrywanie paska przewijania */
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none;  /* IE 10+ */
+    
+    /* Płynne przewijanie dotykowe */
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+}
+
+.bio-hub-scroll::-webkit-scrollbar { 
+    display: none; /* Chrome/Safari */
+}
+
+.bio-card {
+    /* ZMNIEJSZONE WYMIARY */
+    min-width: 150px;
+    width: 150px;
+    height: 100px;
+    
+    border-radius: 12px;
+    padding: 0.8rem;
+    color: white;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    transition: transform 0.2s;
+    
+    /* Snap alignment */
+    scroll-snap-align: start;
+    flex-shrink: 0; /* Zapobiega ściskaniu kart */
+}
+
+.bio-card:active { transform: scale(0.96); }
+
+/* Warianty kart */
+.bio-card-sos { background: var(--proto-sos-bg); box-shadow: 0 4px 12px rgba(139, 92, 246, 0.2); }
+.bio-card-booster { background: var(--proto-booster-bg); box-shadow: 0 4px 12px rgba(244, 63, 94, 0.2); }
+.bio-card-reset { background: var(--proto-reset-bg); box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2); }
+
+/* Tło Ikony - ZMNIEJSZONE */
+.bio-bg-icon {
+    position: absolute;
+    right: -5px;
+    bottom: -8px;
+    font-size: 3.5rem;
+    opacity: 0.15;
+    pointer-events: none;
+    line-height: 1;
+}
+
+.bio-header { 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: flex-start; 
+}
+
+/* Tagi i Czas - ZMNIEJSZONE */
+.bio-tag { 
+    font-size: 0.55rem; 
+    text-transform: uppercase; 
+    letter-spacing: 0.5px; 
+    font-weight: 800; 
+    opacity: 0.9; 
+    background: rgba(0,0,0,0.25); 
+    padding: 2px 6px; 
+    border-radius: 4px; 
+}
+
+.bio-duration { 
+    font-size: 0.7rem; 
+    font-weight: 700; 
+    opacity: 0.9;
+}
+
+/* Tytuły i Opis - ZMNIEJSZONE */
+.bio-title { 
+    font-size: 0.95rem; 
+    font-weight: 800; 
+    line-height: 1.1; 
+    margin-top: 4px; 
+    max-width: 90%; 
+    text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.bio-desc { 
+    font-size: 0.65rem; 
+    opacity: 0.9; 
+    margin-top: 2px;
+    
+    /* Ucinanie tekstu po 2 liniach */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.2;
+}
+/* ============================================= */
+/* === 8. COMMON UI ELEMENTS === */
 /* ============================================= */
 .action-btn {
     display: block; width: 100%; padding: 0.8rem; font-size: 1rem; font-weight: 700;
@@ -448,7 +572,7 @@ input[type="range"] { flex-grow: 1; cursor: pointer; }
 .section-title { font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted-text-color); margin: 1.5rem 0 0.5rem 0; font-weight: 700; padding-left: 4px; }
 
 /* ============================================= */
-/* === 8. TRAINING CARD (PRE-TRAINING) === */
+/* === 9. TRAINING CARD (PRE-TRAINING) === */
 /* ============================================= */
 .training-card {
     background: #fff; border-radius: var(--radius-lg); padding: 1.5rem; margin-bottom: 1.5rem;
@@ -503,7 +627,7 @@ input[type="range"] { flex-grow: 1; cursor: pointer; }
 .time-factor-display { font-weight: 800; color: var(--text-color); background: var(--background-color); padding: 2px 8px; border-radius: 4px; }
 
 /* ============================================= */
-/* === 9. FOCUS MODE (TRAINING SCREEN) === */
+/* === 10. FOCUS MODE (TRAINING SCREEN) === */
 /* ============================================= */
 #training-screen {
     background-color: var(--primary-color);
@@ -733,7 +857,7 @@ input[type="range"] { flex-grow: 1; cursor: pointer; }
 .hidden { display: none !important; }
 
 /* ============================================= */
-/* === 10. HISTORY & CALENDAR === */
+/* === 11. HISTORY & CALENDAR === */
 /* ============================================= */
 .calendar-container { background: var(--card-background); padding: 1rem; border-radius: var(--radius-md); box-shadow: var(--shadow-card); }
 .calendar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
@@ -780,7 +904,7 @@ input[type="range"] { flex-grow: 1; cursor: pointer; }
 .status-badge.skipped { color: var(--danger-color); background-color: rgba(231, 111, 81, 0.1); }
 
 /* ============================================= */
-/* === 11. WIZARD / KREATOR === */
+/* === 12. WIZARD / KREATOR === */
 /* ============================================= */
 #wizard-screen {
     background: radial-gradient(circle at top right, #004e60 0%, #002b36 40%, #000000 100%);
@@ -858,7 +982,7 @@ input[type="range"] { flex-grow: 1; cursor: pointer; }
 .zone.selected { fill: var(--danger-color); stroke: #fff; filter: drop-shadow(0 0 10px var(--danger-color)); }
 
 /* ============================================= */
-/* === 12. POMOC I MODALE === */
+/* === 13. POMOC I MODALE === */
 /* ============================================= */
 .help-container { padding-bottom: 2rem; }
 .help-card { background: #fff; border-radius: var(--radius-lg); padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: var(--shadow-card); border: 1px solid var(--border-color); }
@@ -931,7 +1055,7 @@ input[type="range"] { flex-grow: 1; cursor: pointer; }
 .ex-name { font-weight: 700; font-size: 1.1rem; }
 
 /* ============================================= */
-/* === 13. STOPKA I INNE === */
+/* === 14. STOPKA I INNE === */
 /* ============================================= */
 #app-footer {
     background-color: var(--card-background); border-top: 1px solid var(--border-color); padding: 2rem 1rem;
@@ -998,56 +1122,8 @@ input[type="range"] { flex-grow: 1; cursor: pointer; }
 @keyframes spin { 100% { transform: rotate(360deg); } 100% { transform: rotate(360deg); } }
 
 /* ============================================= */
-/* === 14. MEDIA QUERIES === */
+/* === 15. ATLAS / LIBRARY SCREEN === */
 /* ============================================= */
-@media (max-width: 768px) {
-    .desktop-only { display: none !important; }
-    .mobile-only { display: block !important; }
-    header { padding: 0.8rem 1rem; justify-content: space-between; }
-    header nav#main-nav { display: none !important; }
-    #user-display-name { display: none; }
-    #user-info-container { border-left: none; padding-left: 0; gap: 10px; }
-    #logout-btn { padding: 0.4rem; background: transparent; border: none; }
-    #app-bottom-nav { display: flex; }
-    #hero-dashboard {
-        display: grid; grid-template-columns: auto 1fr auto; gap: 6px; padding: 12px 8px; margin-bottom: 1rem;
-        background: linear-gradient(160deg, #0f1c2e 0%, var(--primary-color) 90%);
-    }
-    .hero-metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; width: 100%; margin-top: 4px; }
-    .metric-item { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4px 0; background: rgba(0,0,0,0.25); border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.05); min-height: 42px; }
-    .metric-icon { width: 18px !important; height: 18px !important; margin-right: 0; margin-bottom: 1px; opacity: 1 !important; }
-    .metric-label { display: none; }
-    .metric-value { font-size: 0.7rem; font-weight: 700; line-height: 1.1; white-space: nowrap; color: #fff; letter-spacing: -0.5px; }
-    .hero-weekly-rhythm { padding-left: 8px; padding-top: 0; min-width: auto; }
-    .weekly-chart-label { font-size: 0.5rem; margin-bottom: 3px; }
-    .weekly-chart-grid { gap: 3px; }
-    .day-bar { width: 4px; height: 18px; border-radius: 2px; }
-    .day-bar.filled { height: 18px; }
-    .day-bar.empty { height: 6px; }
-    .day-label { font-size: 0.5rem; margin-top: 2px; }
-    .mission-card { padding: 1rem; margin-bottom: 1rem; }
-    .ai-header-strip { margin: -1rem -1rem 0.8rem -1rem; padding: 0.4rem 1rem; font-size: 0.7rem; }
-    .mission-title { font-size: 1.3rem; margin: 0.2rem 0; line-height: 1.2; }
-    .mission-day-badge { font-size: 0.65rem; padding: 2px 8px; }
-    .estimated-time-badge { font-size: 0.8rem; padding: 2px 8px; }
-    .ai-mini-tags { margin-bottom: 0.5rem; padding-bottom: 0.5rem; gap: 6px; }
-    .wellness-section { margin-top: 0.8rem; padding-top: 0.8rem; }
-    .wellness-label { margin-bottom: 0.5rem; font-size: 0.8rem; }
-    .pain-option { padding: 6px 4px; font-size: 1.2rem; border-radius: 8px; gap: 2px; }
-    .pain-option span { font-size: 0.55rem; font-weight: 600; }
-    .action-btn { margin-top: 0.8rem; padding: 0.8rem; font-size: 1rem; }
-    #app-footer { padding-bottom: 100px !important; }
-}
-
-@media (min-width: 769px) {
-    .mobile-only { display: none !important; }
-    .desktop-only { display: inline-block !important; }
-}
-
-
-/* ============================================= /
-/ === 15. ATLAS / LIBRARY SCREEN === /
-/ ============================================= */
 .atlas-header {
 position: sticky;
 top: 0;
@@ -1210,7 +1286,7 @@ box-shadow: 0 2px 5px rgba(0,0,0,0.03);
 .atlas-card[data-tier="C"] { border-left-color: #ef4444; }
 
 /* ============================================= */
-/* === 15. SUMMARY SECTION (FIXED FLEXBOX) === */
+/* === 16. SUMMARY SECTION (FIXED FLEXBOX) === */
 /* ============================================= */
 .feedback-container {
     display: flex;
@@ -1282,30 +1358,39 @@ box-shadow: 0 2px 5px rgba(0,0,0,0.03);
     align-items: center;
 }
 
+/* --- RATE BUTTON FIX --- */
 .rate-btn {
-    background: #f3f4f6;
+    background: #f3f4f6; /* Zawsze szare/jasne tło */
     border: 1px solid transparent;
-    border-radius: 6px;
-    width: 36px;
-    height: 36px;
-    font-size: 1.2rem;
+    border-radius: 8px;
+    width: 40px;
+    height: 40px;
+    font-size: 1.4rem;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     display: flex;
     align-items: center;
     justify-content: center;
+
+    /* Domyślnie: ikona szara i lekko przezroczysta */
+    filter: grayscale(100%);
+    opacity: 0.4;
 }
 
 .rate-btn:hover {
+    opacity: 0.7;
     background: #e5e7eb;
+    transform: translateY(-1px);
 }
 
+/* AKTYWNY: Ikona odzyskuje kolor, tło pozostaje jasne/neutralne */
 .rate-btn.active {
-    background: var(--primary-color);
-    border-color: var(--primary-color);
-    transform: scale(1.1);
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-    /* Opcjonalnie: zmiana koloru ikonki na biały, jeśli to SVG, ale dla emoji zostawiamy */
+    opacity: 1;
+    filter: grayscale(0%); /* PRZYWRACA KOLOR EMOJI */
+    background: #fff;      /* Tło białe dla kontrastu */
+    border-color: #d1d5db; /* Delikatna ramka */
+    box-shadow: 0 2px 5px rgba(0,0,0,0.08); /* Lekki cień */
+    transform: scale(1.15); /* Lekkie powiększenie */
 }
 
 .sep {
@@ -1371,4 +1456,51 @@ box-shadow: 0 2px 5px rgba(0,0,0,0.03);
 @keyframes slideUpFade {
     from { opacity: 0; transform: translate(-50%, 20px); }
     to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ============================================= */
+/* === 17. MEDIA QUERIES (FULL) === */
+/* ============================================= */
+@media (max-width: 768px) {
+    .desktop-only { display: none !important; }
+    .mobile-only { display: block !important; }
+    header { padding: 0.8rem 1rem; justify-content: space-between; }
+    header nav#main-nav { display: none !important; }
+    #user-display-name { display: none; }
+    #user-info-container { border-left: none; padding-left: 0; gap: 10px; }
+    #logout-btn { padding: 0.4rem; background: transparent; border: none; }
+    #app-bottom-nav { display: flex; }
+    #hero-dashboard {
+        display: grid; grid-template-columns: auto 1fr auto; gap: 6px; padding: 12px 8px; margin-bottom: 1rem;
+        background: linear-gradient(160deg, #0f1c2e 0%, var(--primary-color) 90%);
+    }
+    .hero-metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; width: 100%; margin-top: 4px; }
+    .metric-item { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4px 0; background: rgba(0,0,0,0.25); border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.05); min-height: 42px; }
+    .metric-icon { width: 18px !important; height: 18px !important; margin-right: 0; margin-bottom: 1px; opacity: 1 !important; }
+    .metric-label { display: none; }
+    .metric-value { font-size: 0.7rem; font-weight: 700; line-height: 1.1; white-space: nowrap; color: #fff; letter-spacing: -0.5px; }
+    .hero-weekly-rhythm { padding-left: 8px; padding-top: 0; min-width: auto; }
+    .weekly-chart-label { font-size: 0.5rem; margin-bottom: 3px; }
+    .weekly-chart-grid { gap: 3px; }
+    .day-bar { width: 4px; height: 18px; border-radius: 2px; }
+    .day-bar.filled { height: 18px; }
+    .day-bar.empty { height: 6px; }
+    .day-label { font-size: 0.5rem; margin-top: 2px; }
+    .mission-card { padding: 1rem; margin-bottom: 1rem; }
+    .ai-header-strip { margin: -1rem -1rem 0.8rem -1rem; padding: 0.4rem 1rem; font-size: 0.7rem; }
+    .mission-title { font-size: 1.3rem; margin: 0.2rem 0; line-height: 1.2; }
+    .mission-day-badge { font-size: 0.65rem; padding: 2px 8px; }
+    .estimated-time-badge { font-size: 0.8rem; padding: 2px 8px; }
+    .ai-mini-tags { margin-bottom: 0.5rem; padding-bottom: 0.5rem; gap: 6px; }
+    .wellness-section { margin-top: 0.8rem; padding-top: 0.8rem; }
+    .wellness-label { margin-bottom: 0.5rem; font-size: 0.8rem; }
+    .pain-option { padding: 6px 4px; font-size: 1.2rem; border-radius: 8px; gap: 2px; }
+    .pain-option span { font-size: 0.55rem; font-weight: 600; }
+    .action-btn { margin-top: 0.8rem; padding: 0.8rem; font-size: 1rem; }
+    #app-footer { padding-bottom: 100px !important; }
+}
+
+@media (min-width: 769px) {
+    .mobile-only { display: none !important; }
+    .desktop-only { display: inline-block !important; }
 }

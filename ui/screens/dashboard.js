@@ -216,9 +216,9 @@ export const renderMainScreen = (isLoading = false) => {
             } else {
                 console.log("CACHE MISS: Generuję plan na dziś (z Mikserem).");
                 const hydratedDay = getHydratedDay(rawDay);
-                
-                finalPlan = workoutMixer.mixWorkout(hydratedDay, false); 
-                
+
+                finalPlan = workoutMixer.mixWorkout(hydratedDay, false);
+
                 finalPlan.dayNumber = currentSequenceDayNum;
                 finalPlan.planId = currentPlanId;
                 savePlanToStorage(finalPlan);
@@ -289,14 +289,36 @@ export const renderMainScreen = (isLoading = false) => {
                 timeBadge.textContent = `${estimatedMinutes} min (limit)`;
             }
 
+            // --- WELLNESS LOGIC V2.1 ---
             painOptions.forEach(opt => {
                 opt.addEventListener('click', () => {
                     painOptions.forEach(o => o.classList.remove('selected'));
                     opt.classList.add('selected');
+                    
                     const painLevel = parseInt(opt.dataset.level, 10);
-                    const adjustedPlan = assistant.adjustTrainingVolume(finalPlan, painLevel);
-                    const newDuration = assistant.estimateDuration(adjustedPlan);
-                    timeBadge.textContent = `${newDuration} min`;
+                    
+                    // 1. Sprawdzamy czy to tryb SOS (Level 8+)
+                    // Używamy helpera z assistantEngine, żeby zasymulować odpowiedź
+                    const checkPlan = assistant.adjustTrainingVolume(finalPlan, painLevel);
+                    const isSOS = checkPlan?._modificationInfo?.shouldSuggestSOS;
+
+                    // Aktualizacja przycisku Start
+                    if (isSOS) {
+                        startBtn.textContent = "🏥 Aktywuj Protokół SOS";
+                        startBtn.style.backgroundColor = "var(--danger-color)";
+                        startBtn.dataset.mode = 'sos';
+                        // FIX: Aktualizujemy czas na sztywno dla SOS (protokół trwa ok 10 min)
+                        timeBadge.textContent = "10 min";
+                    } else {
+                        // Standardowa aktualizacja czasu
+                        const newDuration = assistant.estimateDuration(checkPlan);
+                        timeBadge.textContent = `${newDuration} min`;
+                        
+                        startBtn.textContent = "Start Misji";
+                        startBtn.style.backgroundColor = ""; // Reset do domyślnego
+                        startBtn.dataset.mode = 'normal';
+                    }
+                    
                     startBtn.dataset.initialPain = painLevel;
                 });
             });
@@ -304,31 +326,47 @@ export const renderMainScreen = (isLoading = false) => {
             startBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const pain = parseInt(startBtn.dataset.initialPain, 10) || 0;
+                
+                // Obsługa przekierowania SOS
+                if (startBtn.dataset.mode === 'sos') {
+                    if (confirm("Wykryto wysoki poziom bólu. Czy uruchomić bezpieczny Protokół SOS zamiast głównego planu?")) {
+                        try {
+                            const protocol = generateBioProtocol({
+                                mode: 'sos',
+                                focusZone: state.settings.wizardData?.pain_locations?.[0] || 'lumbar_general',
+                                durationMin: 10,
+                                userContext: state.settings.wizardData || {}
+                            });
+                            renderProtocolStart(protocol);
+                            return;
+                        } catch (err) {
+                            console.error("SOS Gen Error:", err);
+                            // Fallback do normalnego startu
+                        }
+                    }
+                }
+
                 renderPreTrainingScreen(finalPlan.dayNumber, pain, isDynamicMode);
             });
         }
     }
 
     // ============================================================
-    // B. LABORATORIUM REGENERACJI (NOWOŚĆ - Bio-Protocols)
+    // B. LABORATORIUM REGENERACJI
     // ============================================================
     const bioHubContainer = document.createElement('div');
     bioHubContainer.className = 'bio-hub-container';
-    
-    // Inteligentny dobór kart na podstawie Wizarda
+
     const wz = state.settings.wizardData || {};
     const protocols = [];
 
-    // 1. Zawsze dostępne
     protocols.push({ mode: 'booster', zone: 'core', time: 5, title: 'Brzuch ze stali', desc: 'Szybki obwód wzmacniający', icon: '🔥' });
     protocols.push({ mode: 'reset', zone: 'sleep', time: 8, title: 'Dobry Sen', desc: 'Wyciszenie przed nocą', icon: '🌙' });
 
-    // 2. Kontekstowe (Praca)
     if (wz.work_type === 'sedentary') {
         protocols.unshift({ mode: 'reset', zone: 'office', time: 5, title: 'Anty-Biuro', desc: 'Rozprostuj się po pracy', icon: '🪑' });
     }
 
-    // 3. Kontekstowe (Ból/Problemy)
     if (wz.pain_locations?.includes('cervical')) {
         protocols.unshift({ mode: 'sos', zone: 'cervical', time: 4, title: 'Szyja: Ratunek', desc: 'Ulga w napięciu karku', icon: '💊' });
     }
@@ -336,14 +374,12 @@ export const renderMainScreen = (isLoading = false) => {
         protocols.unshift({ mode: 'sos', zone: 'sciatica', time: 6, title: 'Rwa Kulszowa', desc: 'Bezpieczne flossingi', icon: '⚡' });
     }
 
-    // 4. Fallback (jeśli za mało)
     if (protocols.length < 3) {
         protocols.push({ mode: 'booster', zone: 'glute', time: 6, title: 'Glute Pump', desc: 'Aktywacja pośladków', icon: '🍑' });
     }
 
-    // Renderowanie kart
     const cardsHTML = protocols.map(p => `
-        <div class="bio-card bio-card-${p.mode}" 
+        <div class="bio-card bio-card-${p.mode}"
              data-mode="${p.mode}" data-zone="${p.zone}" data-time="${p.time}">
             <div class="bio-bg-icon">${p.icon}</div>
             <div class="bio-header">
@@ -364,21 +400,16 @@ export const renderMainScreen = (isLoading = false) => {
 
     containers.days.appendChild(bioHubContainer);
 
-    // Obsługa kliknięć w karty protokołów
     bioHubContainer.querySelectorAll('.bio-card').forEach(card => {
         card.addEventListener('click', () => {
             try {
-                // Generowanie w locie
                 const protocol = generateBioProtocol({
                     mode: card.dataset.mode,
                     focusZone: card.dataset.zone,
                     durationMin: parseInt(card.dataset.time),
                     userContext: state.settings.wizardData || {}
                 });
-                
-                // Uruchomienie (bez widoku pre-training, od razu podgląd dedykowany)
                 renderProtocolStart(protocol);
-
             } catch (err) {
                 console.error("Błąd generowania protokołu:", err);
                 alert("Nie udało się utworzyć tej sesji: " + err.message);
@@ -387,7 +418,7 @@ export const renderMainScreen = (isLoading = false) => {
     });
 
     // ============================================================
-    // C. SEKCJA "KOLEJNE W CYKLU" (Horyzontalna Karuzela)
+    // C. SEKCJA "KOLEJNE W CYKLU"
     // ============================================================
     let upcomingHTML = '';
     const planDays = getPlanDaysArray(activePlan);

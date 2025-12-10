@@ -23,7 +23,7 @@ const formatFeedback = (session) => {
             if (value === 1) return { label: '🥱 Za łatwo', class: 'neutral' };
             if (value === 0) return { label: '🎯 Idealnie', class: 'success' };
             if (value === -1) return { label: '🧶 Za ciężko', class: 'warning' };
-        } 
+        }
         else if (type === 'symptom') {
             if (value === 1) return { label: '🍃 Ulga', class: 'success' };
             if (value === 0) return { label: '⚖️ Stabilnie', class: 'neutral' };
@@ -45,8 +45,8 @@ export const getAffinityBadge = (exerciseId) => {
 
     // Próg wizualny obniżony do 10 dla kompatybilności wstecznej
     if (score >= 10) {
-        badge = { icon: '⭐', label: 'Często', color: '#047857', bg: '#ecfdf5', border: '#6ee7b7' }; 
-    } else if (score <= -10) { 
+        badge = { icon: '⭐', label: 'Często', color: '#047857', bg: '#ecfdf5', border: '#6ee7b7' };
+    } else if (score <= -10) {
         badge = { icon: '📉', label: 'Rzadko', color: '#b91c1c', bg: '#fef2f2', border: '#fca5a5' };
     }
 
@@ -54,9 +54,9 @@ export const getAffinityBadge = (exerciseId) => {
 
     return `
         <span class="affinity-badge" style="
-            display: inline-flex; align-items: center; gap: 4px; 
-            padding: 3px 8px; border-radius: 99px; 
-            font-size: 0.65rem; font-weight: 700; 
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 3px 8px; border-radius: 99px;
+            font-size: 0.65rem; font-weight: 700;
             text-transform: uppercase; letter-spacing: 0.5px;
             color: ${badge.color}; background-color: ${badge.bg}; border: 1px solid ${badge.border};
             white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,0.05); line-height: 1;">
@@ -78,7 +78,7 @@ export function generateHeroDashboardHTML(stats) {
     const loadingClass = isLoading ? 'skeleton-pulse' : '';
     const weekDays = getCurrentWeekDays();
     const todayKey = getIsoDateKey(new Date());
-    
+
     const weeklyBarsHTML = weekDays.map(date => {
         const dateKey = getIsoDateKey(date);
         const dayName = date.toLocaleDateString('pl-PL', { weekday: 'short' }).charAt(0);
@@ -89,7 +89,7 @@ export function generateHeroDashboardHTML(stats) {
         if (hasWorkout) statusClass = 'filled'; else if (isToday) statusClass = 'current';
         return `<div class="week-day-col"><div class="day-bar ${statusClass}" title="${dateKey}"></div><span class="day-label">${dayName}</span></div>`;
     }).join('');
-    
+
     let timeLabel = "0m";
     const totalMin = stats.totalMinutes || 0;
     if (totalMin > 60) { const h = Math.floor(totalMin / 60); const m = totalMin % 60; timeLabel = `${h}h ${m}m`; } else { timeLabel = `${totalMin}m`; }
@@ -103,7 +103,48 @@ export function generateSkeletonDashboardHTML() {
 
 // --- MISSION CARD ---
 function getSmartAiTags(wizardData) { let tags = []; if (wizardData.work_type === 'sedentary') tags.push({ icon: '🪑', text: 'Anti-Office' }); else if (wizardData.work_type === 'standing') tags.push({ icon: '🧍', text: 'Odciążenie' }); if (wizardData.hobby?.includes('running')) tags.push({ icon: '🏃', text: 'Miednica' }); else if (wizardData.hobby?.includes('cycling')) tags.push({ icon: '🚴', text: 'Biodra' }); else if (wizardData.hobby?.includes('gym')) tags.push({ icon: '🏋️', text: 'Mobility' }); if (wizardData.pain_locations?.includes('sciatica') || wizardData.medical_diagnosis?.includes('piriformis')) tags.unshift({ icon: '⚡', text: 'Neuro' }); else if (wizardData.medical_diagnosis?.includes('disc_herniation')) tags.unshift({ icon: '🛡️', text: 'Bezpieczne' }); else if (wizardData.pain_locations?.includes('cervical')) tags.push({ icon: '🦒', text: 'Szyja' }); if (wizardData.physical_restrictions?.includes('no_kneeling')) tags.push({ icon: '🚫', text: 'Bez klękania' }); if (tags.length < 2 && wizardData.primary_goal === 'pain_relief') tags.push({ icon: '💊', text: 'Redukcja bólu' }); return tags.slice(0, 4); }
-export function generateMissionCardHTML(dayData, estimatedMinutes, wizardData = null) { const equipmentSet = new Set(); [...(dayData.warmup || []), ...(dayData.main || []), ...(dayData.cooldown || [])].forEach(ex => { if (ex.equipment) ex.equipment.split(',').forEach(item => equipmentSet.add(item.trim())); }); const equipmentText = equipmentSet.size > 0 ? [...equipmentSet].join(', ') : 'Brak sprzętu'; let aiHeaderHTML = ''; let aiTagsHTML = ''; let aiClass = ''; if (wizardData) { aiClass = 'ai-mode'; const smartTags = getSmartAiTags(wizardData); if (smartTags.length === 0) smartTags.push({ icon: '🧬', text: 'Personalizacja' }); aiHeaderHTML = `<div class="ai-header-strip"><div class="ai-header-left"><span class="ai-dna-icon">🧬</span><span>Virtual Physio</span></div><span style="opacity:0.9; font-size:0.6rem; letter-spacing:0.5px;">DOPASOWANO DO CIEBIE</span></div>`; aiTagsHTML = `<div class="ai-mini-tags">${smartTags.map(t => `<div class="ai-mini-tag"><span>${t.icon}</span> ${t.text}</div>`).join('')}</div>`; } return `<div class="mission-card ${aiClass}">${aiHeaderHTML}<div class="mission-header"><div><span class="mission-day-badge">DZIEŃ ${dayData.dayNumber}</span><h3 class="mission-title">${dayData.title}</h3></div><div class="estimated-time-badge"><img src="/icons/clock.svg" width="16" height="16" alt="Czas"><span id="mission-time-val">${estimatedMinutes} min</span></div></div>${aiTagsHTML}<p style="font-size:0.8rem; opacity:0.7; margin:0; margin-bottom: 0.8rem; border-top: 1px solid rgba(0,0,0,0.05); padding-top: 8px;"><strong>Sprzęt:</strong> ${equipmentText}</p><div class="wellness-section"><div class="wellness-label"><span>Wellness Check-in</span><span style="font-weight:400">Jak się czujesz?</span></div><div class="pain-selector"><div class="pain-option selected" data-level="0">🚀 <span>Świetnie</span></div><div class="pain-option" data-level="3">🙂 <span>Dobrze</span></div><div class="pain-option" data-level="5">😐 <span>Średnio</span></div><div class="pain-option" data-level="7">🤕 <span>Boli</span></div><div class="pain-option" data-level="9">🛑 <span>Krytycznie</span></div></div></div><button id="start-mission-btn" class="action-btn" data-initial-pain="0">Start Misji</button></div>`; }
+
+export function generateMissionCardHTML(dayData, estimatedMinutes, wizardData = null) { 
+    const equipmentSet = new Set(); 
+    [...(dayData.warmup || []), ...(dayData.main || []), ...(dayData.cooldown || [])].forEach(ex => { if (ex.equipment) ex.equipment.split(',').forEach(item => equipmentSet.add(item.trim())); }); 
+    const equipmentText = equipmentSet.size > 0 ? [...equipmentSet].join(', ') : 'Brak sprzętu'; 
+    let aiHeaderHTML = ''; 
+    let aiTagsHTML = ''; 
+    let aiClass = ''; 
+    
+    if (wizardData) { 
+        aiClass = 'ai-mode'; 
+        const smartTags = getSmartAiTags(wizardData); 
+        if (smartTags.length === 0) smartTags.push({ icon: '🧬', text: 'Personalizacja' }); 
+        aiHeaderHTML = `<div class="ai-header-strip"><div class="ai-header-left"><span class="ai-dna-icon">🧬</span><span>Virtual Physio</span></div><span style="opacity:0.9; font-size:0.6rem; letter-spacing:0.5px;">DOPASOWANO DO CIEBIE</span></div>`; 
+        aiTagsHTML = `<div class="ai-mini-tags">${smartTags.map(t => `<div class="ai-mini-tag"><span>${t.icon}</span> ${t.text}</div>`).join('')}</div>`; 
+    } 
+    
+    // ZMIANA: Domyślnie wybrany poziom 3 (Dobrze)
+    return `
+    <div class="mission-card ${aiClass}">
+        ${aiHeaderHTML}
+        <div class="mission-header">
+            <div><span class="mission-day-badge">DZIEŃ ${dayData.dayNumber}</span><h3 class="mission-title">${dayData.title}</h3></div>
+            <div class="estimated-time-badge"><img src="/icons/clock.svg" width="16" height="16" alt="Czas"><span id="mission-time-val">${estimatedMinutes} min</span></div>
+        </div>
+        ${aiTagsHTML}
+        <p style="font-size:0.8rem; opacity:0.7; margin:0; margin-bottom: 0.8rem; border-top: 1px solid rgba(0,0,0,0.05); padding-top: 8px;"><strong>Sprzęt:</strong> ${equipmentText}</p>
+        
+        <div class="wellness-section">
+            <div class="wellness-label"><span>Wellness Check-in</span><span style="font-weight:400">Jak się czujesz?</span></div>
+            <div class="pain-selector">
+                <div class="pain-option" data-level="0">🚀 <span>Świetnie</span></div>
+                <div class="pain-option selected" data-level="3">🙂 <span>Dobrze</span></div>
+                <div class="pain-option" data-level="5">😐 <span>Średnio</span></div>
+                <div class="pain-option" data-level="7">🤕 <span>Boli</span></div>
+                <div class="pain-option" data-level="9">🛑 <span>Krytycznie</span></div>
+            </div>
+        </div>
+        
+        <button id="start-mission-btn" class="action-btn" data-initial-pain="3">Start Misji</button>
+    </div>`; 
+}
 
 // --- PRE-TRAINING / LIBRARY CARD ---
 export function generatePreTrainingCardHTML(ex, index) { const uniqueId = `ex-${index}`; const exerciseId = ex.id || ex.exerciseId; const lvl = ex.difficultyLevel || 1; const categoryName = formatCategoryName(ex.categoryId); const equipment = ex.equipment || 'Brak sprzętu'; const hasAnimation = !!ex.animationSvg; const affinityBadge = getAffinityBadge(exerciseId); const previewBtnHTML = hasAnimation ? `<button class="preview-anim-btn nav-btn" data-exercise-id="${exerciseId}" title="Podgląd animacji" style="padding: 4px 8px; display: flex; align-items: center; gap: 5px; border-color: var(--secondary-color);"><img src="/icons/eye.svg" width="20" height="20" alt="Podgląd" style="display: block;"><span style="font-size: 0.75rem; font-weight: 600; color: var(--secondary-color);">Podgląd</span></button>` : ''; let badgeHTML = ''; if (ex.isPersonalized) badgeHTML = `<span class="meta-badge" style="background:var(--gold-color); color:#000; border:none;">✨ Personalizacja</span>`; else if (ex.isDynamicSwap) badgeHTML = `<span class="meta-badge" style="background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd;">🎲 Mix</span>`; else if (ex.isSwapped) badgeHTML = `<span class="meta-badge" style="background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0;">🔄 Wybór</span>`; const showOriginalInfo = ex.originalName && ex.originalName !== ex.name; const originalInfo = showOriginalInfo ? `<div style="font-size:0.75rem; color:#999; margin-top:-5px; margin-bottom:5px;">Zamiast: ${ex.originalName}</div>` : ''; return `<div class="training-card" data-exercise-id="${exerciseId || ''}" data-category-id="${ex.categoryId || ''}"><div class="training-card-header"><div style="flex-grow: 1; padding-right: 10px;"><h4 style="display:inline;">${ex.name}</h4>${affinityBadge}${originalInfo}</div><div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">${previewBtnHTML}<button class="swap-btn" title="Wymień ćwiczenie" data-exercise-index="${index}"><img src="/icons/swap.svg" width="20" height="20" alt="Wymień"></button></div></div><div class="training-meta">${badgeHTML}<span class="meta-badge badge-lvl-${lvl}">⚡ ${getLevelLabel(lvl)}</span><span class="meta-badge badge-category">📂 ${categoryName}</span><span class="meta-badge badge-equipment">🏋️ ${equipment}</span></div><p class="pre-training-description" style="padding-left:10px; opacity:0.8;">${ex.description || 'Brak opisu.'}</p><div class="training-inputs-grid"><div class="input-wrapper"><label for="sets-${uniqueId}" class="input-label">Serie</label><input type="number" id="sets-${uniqueId}" class="modern-input" value="${ex.sets}" data-exercise-index="${index}"></div><div class="input-wrapper"><label for="reps-${uniqueId}" class="input-label">Powtórzenia / Czas</label><input type="text" id="reps-${uniqueId}" class="modern-input" value="${ex.reps_or_time}" data-exercise-index="${index}"></div></div><div class="training-footer"><div>${ex.youtube_url ? `<a href="${ex.youtube_url}" target="_blank" class="video-link">▶ Zobacz wideo</a>` : ''}</div>${ex.tempo_or_iso ? `<span class="tempo-badge">Tempo: ${ex.tempo_or_iso}</span>` : ''}</div></div>`; }
@@ -114,14 +155,14 @@ export function generateSessionCardHTML(session) {
     const planId = session.planId || 'l5s1-foundation';
     const isDynamic = planId.startsWith('dynamic-');
     const title = session.trainingTitle || 'Trening';
-    
+
     // ... (Stats calculation logic) ...
     let statsHtml = '';
     const optionsTime = { hour: '2-digit', minute: '2-digit' };
     const feedbackInfo = formatFeedback(session);
     let feedbackStyle = '';
     if (feedbackInfo.class === 'success') feedbackStyle = 'color: var(--success-color);';
-    if (feedbackInfo.class === 'warning') feedbackStyle = 'color: #e67e22;'; 
+    if (feedbackInfo.class === 'warning') feedbackStyle = 'color: #e67e22;';
     if (feedbackInfo.class === 'danger') feedbackStyle = 'color: var(--danger-color);';
 
     let completedTimeStr = '';
@@ -144,23 +185,23 @@ export function generateSessionCardHTML(session) {
         statsHtml = `<div class="session-stats-grid"><div class="stat-item"><span class="stat-label">Zakończono</span><span class="stat-value">${completedTimeStr}</span></div></div>`;
     }
 
-    const exercisesHtml = session.sessionLog && session.sessionLog.length > 0 
+    const exercisesHtml = session.sessionLog && session.sessionLog.length > 0
         ? session.sessionLog.map(item => {
             const isSkipped = item.status === 'skipped';
             const rowStyle = isSkipped ? 'opacity: 0.6; background-color: rgba(0,0,0,0.02);' : '';
             const id = item.exerciseId || item.id;
-            
+
             const pref = state.userPreferences[id] || { score: 0, difficulty: 0 };
-            
+
             // POPRAWKA WIZUALNA: Obniżenie progu dla wyświetlania "aktywnych" przycisków
             // Dzięki temu stare dane (20 pkt) będą widoczne jako polubione
-            const isLike = pref.score >= 10; 
+            const isLike = pref.score >= 10;
             const isDislike = pref.score <= -10;
-            
+
             // NOWOŚĆ: INTERAKTYWNE BADGES DLA TRUDNOŚCI (Z MOŻLIWOŚCIĄ RESETU)
             const diff = pref.difficulty || 0;
             let diffBadge = '';
-            
+
             // Dodano klasę reset-diff-btn oraz data-id, aby można było obsłużyć kliknięcie
             if (diff === 1) diffBadge = `<button class="reset-diff-btn" data-id="${id}" title="Kliknij, aby cofnąć oznaczenie 'Za trudne'" style="background:none; border:none; cursor:pointer;"><span style="font-size:0.7rem; color:#ea580c; background:#fff7ed; padding:2px 6px; border-radius:4px; margin-right:5px; border:1px solid #fdba74;">🔥 Za trudne <span style="opacity:0.5; margin-left:2px;">✕</span></span></button>`;
             if (diff === -1) diffBadge = `<button class="reset-diff-btn" data-id="${id}" title="Kliknij, aby cofnąć oznaczenie 'Za łatwe'" style="background:none; border:none; cursor:pointer;"><span style="font-size:0.7rem; color:#0369a1; background:#f0f9ff; padding:2px 6px; border-radius:4px; margin-right:5px; border:1px solid #7dd3fc;">💤 Za łatwe <span style="opacity:0.5; margin-left:2px;">✕</span></span></button>`;
@@ -186,7 +227,7 @@ export function generateSessionCardHTML(session) {
                 ${ratingButtons}
             </div>`;
         }).join('') : '<p class="no-data-msg">Brak szczegółowego logu.</p>';
-    
+
     const dynamicBadge = isDynamic ? `<div class="ai-session-badge">🧬 Virtual Physio</div>` : '';
 
     return `

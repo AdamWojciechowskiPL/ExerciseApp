@@ -2,9 +2,9 @@
 import { state } from './state.js';
 
 /**
- * PROTOCOL GENERATOR (v2.0 - Server-Side Validation Aware)
+ * PROTOCOL GENERATOR (v2.1 - Strict SOS Safety Fix)
  * Moduł odpowiedzialny za dynamiczne tworzenie krótkich sesji "Bio-Protocols".
- * Ufa walidacji z backendu (isAllowed), zamiast sprawdzać warunki lokalnie.
+ * Ufa walidacji z backendu (isAllowed), ale narzuca sztywne ramy trudności dla SOS.
  */
 
 // Konfiguracja mapowania stref na kategorie/tagi
@@ -36,21 +36,21 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext 
 
     const targetSeconds = durationMin * 60;
     const config = TIMING_CONFIG[mode] || TIMING_CONFIG['reset'];
-    
+
     // 1. Pobierz Kandydatów (Respektując walidację serwerową)
     let candidates = getCandidates(mode, focusZone, { ignoreEquipment: false });
 
-    // Fallback: Jeśli brak kandydatów, spróbuj poluzować wymogi sprzętowe
-    // (ale NADAL respektuj zakazy medyczne!)
+    // Fallback 1: Poluzowanie wymogów sprzętowych (ale zachowanie zasad bezpieczeństwa)
     if (candidates.length === 0) {
         console.warn("[ProtocolGenerator] Brak kandydatów. Poluzowanie wymogów sprzętowych.");
         candidates = getCandidates(mode, focusZone, { ignoreEquipment: true });
     }
 
+    // Fallback 2: Ostateczny ratunek (Dowolne bezpieczne ćwiczenia)
     if (candidates.length === 0) {
-        // Ostateczny fallback: Daj cokolwiek bezpiecznego medycznie (niezależnie od strefy)
         console.warn("[ProtocolGenerator] Krytyczny brak. Fallback na dowolne bezpieczne.");
-        candidates = getCandidatesSafeFallback();
+        // FIX: Przekazujemy 'mode', aby fallback też wiedział, że dla SOS nie wolno brać trudnych ćwiczeń
+        candidates = getCandidatesSafeFallback(mode);
     }
 
     if (candidates.length === 0) {
@@ -75,11 +75,11 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext 
         resilienceBonus: calculateResilienceBonus(mode),
         flatExercises: protocolExercises.flatMap((ex, index) => {
             const steps = [];
-            
+
             // Work
             steps.push({
                 ...ex,
-                exerciseId: ex.id, 
+                exerciseId: ex.id,
                 isWork: true,
                 isRest: false,
                 currentSet: 1,
@@ -88,7 +88,7 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext 
                 reps_or_time: `${config.work} s`,
                 sets: "1",
                 tempo_or_iso: config.tempo,
-                uniqueId: `${ex.id}_p${index}` 
+                uniqueId: `${ex.id}_p${index}`
             });
 
             // Transition
@@ -126,7 +126,7 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext 
 function getCandidates(mode, focusZone, ctx = { ignoreEquipment: false }) {
     // Pobieramy ID poprawnie (entries -> map)
     const library = Object.entries(state.exerciseLibrary).map(([id, data]) => ({ id, ...data }));
-    
+
     const zoneConfig = ZONE_MAP[focusZone];
     const blacklist = state.blacklist || [];
 
@@ -141,27 +141,29 @@ function getCandidates(mode, focusZone, ctx = { ignoreEquipment: false }) {
         if (ex.isAllowed === false) {
             // Wyjątek: Jeśli to błąd sprzętu A my pozwalamy go ignorować (Fallback)
             if (ctx.ignoreEquipment && ex.rejectionReason === 'missing_equipment') {
-                // Puszczamy dalej (User może być np. na siłowni mimo profilu Home)
-            } 
+                // Puszczamy dalej
+            }
             // Każdy inny powód (restrykcja fizyczna, ból, severity) -> BLOKUJEMY BEZWZGLĘDNIE
             else {
                 return false;
             }
         }
 
+        const difficulty = parseInt(ex.difficultyLevel || 1, 10);
+
         // 3. Filtr Trybu (Specyfika Protokołu)
         if (mode === 'sos') {
-            if ((ex.difficultyLevel || 1) > 2) return false; 
+            if (difficulty > 2) return false;
         }
         if (mode === 'booster') {
-            if ((ex.difficultyLevel || 1) < 2) return false; 
+            if (difficulty < 2) return false;
         }
 
         // 4. Dopasowanie do Strefy (Zone Logic)
         if (zoneConfig.type === 'zone') {
             const reliefZones = ex.painReliefZones || [];
             return reliefZones.some(z => zoneConfig.keys.includes(z));
-        } 
+        }
         else if (zoneConfig.type === 'cat') {
             return zoneConfig.keys.includes(ex.categoryId);
         }
@@ -178,25 +180,39 @@ function getCandidates(mode, focusZone, ctx = { ignoreEquipment: false }) {
 }
 
 /**
- * Zwraca cokolwiek, co jest bezpieczne medycznie (isAllowed === true), 
+ * Zwraca cokolwiek, co jest bezpieczne medycznie (isAllowed === true),
  * ignorując temat (strefę), byle user mógł cokolwiek zrobić.
+ * POPRAWKA: Teraz uwzględnia limit trudności dla trybu SOS!
  */
-function getCandidatesSafeFallback() {
+function getCandidatesSafeFallback(mode) {
     const library = Object.entries(state.exerciseLibrary).map(([id, data]) => ({ id, ...data }));
-    // Bierzemy tylko te dozwolone przez serwer (sprzęt i zdrowie)
-    return library.filter(ex => ex.isAllowed === true).slice(0, 10);
+    
+    return library.filter(ex => {
+        // 1. Musi być dozwolone medycznie
+        if (ex.isAllowed !== true) return false;
+
+        // 2. Jeśli SOS, musi być łatwe (Level 1 lub 2)
+        if (mode === 'sos') {
+            const difficulty = parseInt(ex.difficultyLevel || 1, 10);
+            if (difficulty > 2) return false;
+        }
+
+        return true;
+    }).slice(0, 10);
 }
 
 function scoreCandidates(candidates, mode) {
     candidates.forEach(ex => {
         let score = 0;
         const pref = state.userPreferences[ex.id] || { score: 0 };
-        
+        const difficulty = parseInt(ex.difficultyLevel || 1, 10);
+
         score += (pref.score || 0);
 
-        if (mode === 'booster') score += (ex.difficultyLevel || 1) * 5;
+        if (mode === 'booster') score += difficulty * 5;
         if (mode === 'sos') {
-            score -= (ex.difficultyLevel || 1) * 10; 
+            // SOS: Im trudniej, tym gorzej (kara punktowa)
+            score -= difficulty * 10;
             if (ex.animationSvg) score += 20;
         }
         if (mode === 'reset' && ex.categoryId === 'breathing') score += 30;
@@ -212,24 +228,40 @@ function buildTimeline(pool, targetSeconds, config, mode) {
     const selected = [];
     let currentSeconds = 0;
     let poolIndex = 0;
-    
+
     let safetyCounter = 0;
 
     while (currentSeconds + config.work <= targetSeconds && safetyCounter < 50) {
         if (poolIndex >= pool.length) {
-            if (mode === 'booster') poolIndex = 0; 
-            else break; 
+            if (mode === 'booster') poolIndex = 0; // W boosterze powtarzamy (obwód)
+            else break; // W innych kończymy
         }
 
         const candidate = pool[poolIndex];
+        
+        // Zabezpieczenie przed duplikatami pod rząd (chyba że mamy tylko 1 ćwiczenie)
+        if (selected.length > 0 && selected[selected.length - 1].id === candidate.id && pool.length > 1) {
+            poolIndex++;
+            continue;
+        }
+
         selected.push(candidate);
         currentSeconds += config.work;
-        
+
         if (currentSeconds + config.rest <= targetSeconds) {
             currentSeconds += config.rest;
         }
 
         poolIndex++;
+        
+        // Jeśli doszliśmy do końca puli, ale mamy jeszcze czas:
+        if (poolIndex >= pool.length && mode !== 'booster') {
+             // W SOS/Reset staramy się nie powtarzać, ale jak trzeba to wracamy do początku
+             // Lepiej powtórzyć łatwe ćwiczenie niż skończyć za wcześnie?
+             // Decyzja: W SOS zapętlamy, ale tylko te najlepsze.
+             poolIndex = 0;
+        }
+        
         safetyCounter++;
     }
 
@@ -275,6 +307,6 @@ function calculateXP(mode, minutes) {
 }
 
 function calculateResilienceBonus(mode) {
-    if (mode === 'sos' || mode === 'reset') return 5; 
-    return 1; 
+    if (mode === 'sos' || mode === 'reset') return 5;
+    return 1;
 }

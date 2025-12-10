@@ -107,23 +107,20 @@ Inteligentne "Laboratorium Regeneracji" dostępne na żądanie, niezależnie od 
 │   │  
 ├── BACKEND (NETLIFY FUNCTIONS):
 │   ├── netlify/functions/
-│   │   ├── generate-plan.js        # Generator planów dynamicznych (v3.3)
-│   │   ├── get-app-content.js      # Pobieranie bazy wiedzy
-│   │   ├── get-or-create-user.js   # Inicjalizacja usera
-│   │   ├── get-user-preferences.js # [NOWOŚĆ] Pobieranie affinity score/difficulty
-│   │   ├── update-preference.js    # [NOWOŚĆ] Aktualizacja pojedynczej oceny
-│   │   ├── save-session.js         # Zapis treningu + Batch Update ocen + Ewolucja
-│   │   ├── save-settings.js        # Zapis ustawień i planów
-│   │   ├── get-user-stats.js       # Statystyki (Streak, Resilience)
-│   │   ├── get-exercise-mastery.js # (Legacy/Support) Agregacja statystyk
-│   │   ├── manage-blacklist.js     # Zarządzanie czarną listą
-│   │   ├── strava-*.js             # Integracja OAuth ze Strava
-│   │   ├── _auth-helper.js         # Weryfikacja JWT i połączenie DB
-│   │   └── _stats-helper.js        # Logika statystyk (współdzielona)
-│
-├── SKRYPTY:
-│   └── scripts/
-│       └── migrate-preferences.js  # Migracja bazy danych (tabela preferencji)
+│   │   ├── generate-plan.js         # Generator planów dynamicznych (v3.3)
+│   │   ├── _clinical-rule-engine.js # Walidator logiki medycznej i sprzętowej
+│   │   ├── get-app-content.js       # Pobieranie bazy wiedzy
+│   │   ├── get-or-create-user.js    # Inicjalizacja usera
+│   │   ├── get-user-preferences.js  # Pobieranie affinity score/difficulty
+│   │   ├── update-preference.js     # Aktualizacja pojedynczej oceny
+│   │   ├── save-session.js          # Zapis treningu + Batch Update ocen + Ewolucja
+│   │   ├── save-settings.js         # Zapis ustawień i planów
+│   │   ├── get-user-stats.js        # Statystyki (Streak, Resilience)
+│   │   ├── get-exercise-mastery.js  # (Legacy/Support) Agregacja statystyk
+│   │   ├── manage-blacklist.js      # Zarządzanie czarną listą
+│   │   ├── strava-*.js              # Integracja OAuth ze Strava
+│   │   ├── _auth-helper.js          # Weryfikacja JWT i połączenie DB
+│   │   └── _stats-helper.js         # Logika statystyk (współdzielona)
 │
 ├── RECEIVER (APLIKACJA TV):
 │   └── receiver/

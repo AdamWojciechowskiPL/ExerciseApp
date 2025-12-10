@@ -38,22 +38,16 @@ const formatFeedback = (session) => {
 
 // --- HELPER: Odznaka (Badge) ---
 export const getAffinityBadge = (exerciseId) => {
-    const pref = state.userPreferences[exerciseId] || { score: 0, difficulty: 0 };
+    const pref = state.userPreferences[exerciseId] || { score: 0 };
     const score = pref.score || 0;
-    const diff = pref.difficulty || 0;
 
     let badge = null;
 
-    if (diff === 1) { 
-        badge = { icon: '🔥', label: 'Za trudne', color: '#b91c1c', bg: '#fef2f2', border: '#fca5a5' };
+    // Próg wizualny obniżony do 10 dla kompatybilności wstecznej
+    if (score >= 10) {
+        badge = { icon: '⭐', label: 'Często', color: '#047857', bg: '#ecfdf5', border: '#6ee7b7' }; 
     } else if (score <= -10) { 
-        badge = { icon: '👎', label: 'Unikam', color: '#b91c1c', bg: '#fef2f2', border: '#fca5a5' };
-    } else if (score >= 20) {
-        badge = { icon: '💎', label: 'Tier S', color: '#92400e', bg: '#fffbeb', border: '#fcd34d' }; 
-    } else if (score >= 10) {
-        badge = { icon: '⭐', label: 'Tier A', color: '#115e59', bg: '#f0fdfa', border: '#5eead4' }; 
-    } else if (diff === -1) {
-        badge = { icon: '💤', label: 'Za łatwe', color: '#4b5563', bg: '#f3f4f6', border: '#d1d5db' };
+        badge = { icon: '📉', label: 'Rzadko', color: '#b91c1c', bg: '#fef2f2', border: '#fca5a5' };
     }
 
     if (!badge) return '';
@@ -119,14 +113,10 @@ export function generatePreTrainingCardHTML(ex, index) { const uniqueId = `ex-${
 export function generateSessionCardHTML(session) {
     const planId = session.planId || 'l5s1-foundation';
     const isDynamic = planId.startsWith('dynamic-');
+    const title = session.trainingTitle || 'Trening';
     
-    let title = session.trainingTitle || 'Trening';
-    if (!session.trainingTitle && !isDynamic) {
-         const planForHistory = state.trainingPlans[planId];
-         const trainingDay = planForHistory ? planForHistory.Days.find(d => d.dayNumber === session.trainingDayId) : null;
-         title = trainingDay ? trainingDay.title : 'Trening';
-    }
-
+    // ... (Stats calculation logic) ...
+    let statsHtml = '';
     const optionsTime = { hour: '2-digit', minute: '2-digit' };
     const feedbackInfo = formatFeedback(session);
     let feedbackStyle = '';
@@ -134,7 +124,6 @@ export function generateSessionCardHTML(session) {
     if (feedbackInfo.class === 'warning') feedbackStyle = 'color: #e67e22;'; 
     if (feedbackInfo.class === 'danger') feedbackStyle = 'color: var(--danger-color);';
 
-    let statsHtml = '';
     let completedTimeStr = '';
     if (session.completedAt) completedTimeStr = new Date(session.completedAt).toLocaleTimeString('pl-PL', optionsTime);
 
@@ -155,48 +144,44 @@ export function generateSessionCardHTML(session) {
         statsHtml = `<div class="session-stats-grid"><div class="stat-item"><span class="stat-label">Zakończono</span><span class="stat-value">${completedTimeStr}</span></div></div>`;
     }
 
-    // LISTA ĆWICZEŃ Z PRZYCISKAMI OCEN (Z NAPRAWIONYM WIDOKIEM POMINIĘTYCH)
     const exercisesHtml = session.sessionLog && session.sessionLog.length > 0 
         ? session.sessionLog.map(item => {
             const isSkipped = item.status === 'skipped';
-            const statusClass = isSkipped ? 'skipped' : 'completed';
-            
-            // Logika wizualna dla pominiętych
             const rowStyle = isSkipped ? 'opacity: 0.6; background-color: rgba(0,0,0,0.02);' : '';
-            const nameStyle = isSkipped ? 'text-decoration: line-through; color: var(--muted-text-color);' : '';
-            const skipBadge = isSkipped ? '<span class="status-badge skipped" style="margin-right:6px;">POMINIĘTO</span>' : '';
-
             const id = item.exerciseId || item.id;
-            const pref = state.userPreferences[id] || { score: 0, difficulty: 0 };
-            const diff = pref.difficulty || 0;
             
-            const isLike = pref.score >= 10;
+            const pref = state.userPreferences[id] || { score: 0, difficulty: 0 };
+            
+            // POPRAWKA WIZUALNA: Obniżenie progu dla wyświetlania "aktywnych" przycisków
+            // Dzięki temu stare dane (20 pkt) będą widoczne jako polubione
+            const isLike = pref.score >= 10; 
             const isDislike = pref.score <= -10;
-            const isHard = diff === 1;
-            const isEasy = diff === -1;
+            
+            // NOWOŚĆ: INTERAKTYWNE BADGES DLA TRUDNOŚCI (Z MOŻLIWOŚCIĄ RESETU)
+            const diff = pref.difficulty || 0;
+            let diffBadge = '';
+            
+            // Dodano klasę reset-diff-btn oraz data-id, aby można było obsłużyć kliknięcie
+            if (diff === 1) diffBadge = `<button class="reset-diff-btn" data-id="${id}" title="Kliknij, aby cofnąć oznaczenie 'Za trudne'" style="background:none; border:none; cursor:pointer;"><span style="font-size:0.7rem; color:#ea580c; background:#fff7ed; padding:2px 6px; border-radius:4px; margin-right:5px; border:1px solid #fdba74;">🔥 Za trudne <span style="opacity:0.5; margin-left:2px;">✕</span></span></button>`;
+            if (diff === -1) diffBadge = `<button class="reset-diff-btn" data-id="${id}" title="Kliknij, aby cofnąć oznaczenie 'Za łatwe'" style="background:none; border:none; cursor:pointer;"><span style="font-size:0.7rem; color:#0369a1; background:#f0f9ff; padding:2px 6px; border-radius:4px; margin-right:5px; border:1px solid #7dd3fc;">💤 Za łatwe <span style="opacity:0.5; margin-left:2px;">✕</span></span></button>`;
 
             let ratingButtons = '';
-            // Przyciski pokazujemy tylko, jeśli ćwiczenie NIE zostało pominięte
+            // Przyciski Affinity (działające)
             if (id && !isSkipped) {
                 ratingButtons = `
                     <div class="hist-rating-actions" style="margin-left:auto; display:flex; gap:4px; align-items:center;">
-                        <button class="rate-btn-hist ${isLike ? 'active' : ''}" data-id="${id}" data-action="like" title="Lubię to">👍</button>
-                        <button class="rate-btn-hist ${isDislike ? 'active' : ''}" data-id="${id}" data-action="dislike" title="Nie lubię">👎</button>
-                        <div style="width:1px; height:16px; background:#ddd; margin:0 4px;"></div>
-                        <button class="rate-btn-hist ${isEasy ? 'active' : ''}" data-id="${id}" data-action="easy" title="Za łatwe">💤</button>
-                        <button class="rate-btn-hist ${isHard ? 'active' : ''}" data-id="${id}" data-action="hard" title="Za trudne">🔥</button>
+                        ${diffBadge} <!-- Pokaż informację o trudności -->
+                        <button class="rate-btn-hist ${isLike ? 'active' : ''}" data-id="${id}" data-action="like" title="Częściej">👍</button>
+                        <button class="rate-btn-hist ${isDislike ? 'active' : ''}" data-id="${id}" data-action="dislike" title="Rzadziej">👎</button>
                     </div>
                 `;
             }
 
             return `
-            <div class="history-exercise-row ${statusClass}" style="align-items:center; ${rowStyle}">
+            <div class="history-exercise-row ${isSkipped ? 'skipped' : 'completed'}" style="align-items:center; ${rowStyle}">
                 <div class="hex-main" style="margin-right:8px; flex-grow:1;">
-                    <div style="display:flex; align-items:center;">
-                        ${skipBadge}
-                        <span class="hex-name" style="${nameStyle}">${item.name}</span>
-                    </div>
-                    <span class="hex-details">Seria ${item.currentSet}/${item.totalSets} • ${item.reps_or_time}</span>
+                    <span class="hex-name">${item.name}</span>
+                    <span class="hex-details">${item.reps_or_time}</span>
                 </div>
                 ${ratingButtons}
             </div>`;

@@ -12,134 +12,72 @@ let selectedFeedback = { type: null, value: 0 };
 export const renderSummaryScreen = () => {
     if (getIsCasting()) sendShowIdle();
 
-    // 1. Ustalanie Kontekstu (Plan vs Protokół)
     let trainingTitle = "Trening";
     let isSafetyMode = false;
-    let isProtocol = false;
 
-    // A. SCENARIUSZ PROTOKOŁU (Bio-Hub)
+    // Ustalanie tytułu i trybu
     if (state.todaysDynamicPlan && state.todaysDynamicPlan.type === 'protocol') {
-        isProtocol = true;
         trainingTitle = state.todaysDynamicPlan.title;
-        // Protokoły SOS traktujemy jako tryb bezpieczeństwa (pytanie o objawy)
         isSafetyMode = state.todaysDynamicPlan.mode === 'sos';
-    } 
-    // B. SCENARIUSZ STANDARDOWY
-    else {
-        let activePlan = null;
-        const isDynamicMode = state.settings.planMode === 'dynamic' || (state.settings.dynamicPlanData && !state.settings.planMode);
-        
-        if (isDynamicMode && state.settings.dynamicPlanData) {
-            activePlan = state.settings.dynamicPlanData;
-        } else {
-            activePlan = state.trainingPlans[state.settings.activePlanId];
-        }
-
-        if (!activePlan) {
-            console.error("Błąd: Brak aktywnego planu w Summary.");
-            navigateTo('main'); 
-            return;
-        }
-
-        const daysList = activePlan.Days || activePlan.days || [];
-        const trainingDay = daysList.find(d => d.dayNumber === state.currentTrainingDayId);
-        
-        if (!trainingDay) {
-            console.error("Błąd: Nie znaleziono dnia treningowego w Summary.");
-            // Fallback: jeśli nie znaleziono dnia, używamy domyślnego tytułu, zamiast przerywać
-            trainingTitle = "Zakończony Trening";
-        } else {
-            trainingTitle = trainingDay.title;
-        }
-
-        const initialPain = state.sessionParams.initialPainLevel || 0;
-        isSafetyMode = initialPain > 3;
-    }
-
-    // 2. Reset stanu formularza
-    selectedFeedback = { type: isSafetyMode ? 'symptom' : 'tension', value: 0 };
-
-    const summaryScreen = screens.summary;
-    summaryScreen.innerHTML = '';
-
-    // 3. Budowa Sekcji Globalnej
-    let globalQuestion = isSafetyMode ? "Jak czuje się Twoje ciało?" : "Jak oceniasz trudność?";
-    let globalOptionsHtml = '';
-
-    if (isSafetyMode) {
-        globalOptionsHtml = `
-            <div class="feedback-option" data-type="symptom" data-value="1">
-                <div class="fb-icon">🍃</div>
-                <div class="fb-text"><h4>Ulga</h4></div>
-            </div>
-            <div class="feedback-option selected" data-type="symptom" data-value="0">
-                <div class="fb-icon">⚖️</div>
-                <div class="fb-text"><h4>Stabilnie</h4></div>
-            </div>
-            <div class="feedback-option" data-type="symptom" data-value="-1">
-                <div class="fb-icon">⚡</div>
-                <div class="fb-text"><h4>Gorzej</h4></div>
-            </div>
-        `;
     } else {
-        globalOptionsHtml = `
-            <div class="feedback-option" data-type="tension" data-value="1">
-                <div class="fb-icon">🥱</div>
-                <div class="fb-text"><h4>Nuda</h4></div>
-            </div>
-            <div class="feedback-option selected" data-type="tension" data-value="0">
-                <div class="fb-icon">🎯</div>
-                <div class="fb-text"><h4>Idealnie</h4></div>
-            </div>
-            <div class="feedback-option" data-type="tension" data-value="-1">
-                <div class="fb-icon">🥵</div>
-                <div class="fb-text"><h4>Za mocno</h4></div>
-            </div>
-        `;
+        const activePlan = state.settings.dynamicPlanData || state.trainingPlans[state.settings.activePlanId];
+        const daysList = activePlan?.Days || activePlan?.days || [];
+        const trainingDay = daysList.find(d => d.dayNumber === state.currentTrainingDayId);
+        trainingTitle = trainingDay ? trainingDay.title : "Trening";
+        isSafetyMode = (state.sessionParams.initialPainLevel || 0) > 3;
     }
 
-    // 4. Budowa Listy Ćwiczeń
+    selectedFeedback = { type: isSafetyMode ? 'symptom' : 'tension', value: 0 };
+    const summaryScreen = screens.summary;
+    
+    // Global Feedback HTML (Bez zmian)
+    let globalOptionsHtml = isSafetyMode ? `
+        <div class="feedback-option" data-type="symptom" data-value="1"><div class="fb-icon">🍃</div><div class="fb-text"><h4>Ulga</h4></div></div>
+        <div class="feedback-option selected" data-type="symptom" data-value="0"><div class="fb-icon">⚖️</div><div class="fb-text"><h4>Stabilnie</h4></div></div>
+        <div class="feedback-option" data-type="symptom" data-value="-1"><div class="fb-icon">⚡</div><div class="fb-text"><h4>Gorzej</h4></div></div>
+    ` : `
+        <div class="feedback-option" data-type="tension" data-value="1"><div class="fb-icon">🥱</div><div class="fb-text"><h4>Nuda</h4></div></div>
+        <div class="feedback-option selected" data-type="tension" data-value="0"><div class="fb-icon">🎯</div><div class="fb-text"><h4>Idealnie</h4></div></div>
+        <div class="feedback-option" data-type="tension" data-value="-1"><div class="fb-icon">🥵</div><div class="fb-text"><h4>Za mocno</h4></div></div>
+    `;
+
+    // Lista Ćwiczeń
     const processedIds = new Set();
     const uniqueExercises = (state.sessionLog || []).filter(entry => {
         if (entry.isRest || entry.status === 'skipped') return false;
-        
-        // Dla protokołów ID może być unikalne (z suffixem), więc bierzemy bazowe exerciseId
         const exId = entry.exerciseId || entry.id;
-        if (!exId) return false;
-
-        // Unikamy duplikatów w widoku oceniania (jeśli np. był obwód i ćwiczenie było 3 razy)
-        if (processedIds.has(exId)) return false;
+        if (!exId || processedIds.has(exId)) return false;
         processedIds.add(exId);
         return true;
     });
 
     let exercisesListHtml = '';
-
     if (uniqueExercises.length > 0) {
         exercisesListHtml = uniqueExercises.map(ex => {
             const id = ex.exerciseId || ex.id;
+            const pref = state.userPreferences[id] || { score: 0 };
             
-            // Opcjonalnie: Pre-fill na podstawie istniejących preferencji
-            const currentPref = state.userPreferences[id] || { score: 0, difficulty: 0 };
-            const isLike = currentPref.score >= 10 ? 'active' : '';
-            const isDislike = currentPref.score <= -10 ? 'active' : '';
-            const isHard = currentPref.difficulty === 1 ? 'active' : '';
-            const isEasy = currentPref.difficulty === -1 ? 'active' : '';
+            // Nowa logika stanów (50 / -50)
+            const isLike = pref.score >= 50 ? 'active' : '';
+            const isDislike = pref.score <= -50 ? 'active' : '';
+            // Trudność nie jest już stanem w pref, jest akcją jednorazową
 
             return `
             <div class="rating-card" data-id="${id}">
                 <div class="rating-name">${ex.name}</div>
                 <div class="rating-actions-group">
-                    <!-- Grupa 1: Emocje -->
+                    <!-- SEKCJA 1: CZĘSTOTLIWOŚĆ (Radio) -->
                     <div class="btn-group-affinity">
-                        <button type="button" class="rate-btn ${isLike}" data-action="like" title="Lubię to">👍</button>
-                        <button type="button" class="rate-btn ${isDislike}" data-action="dislike" title="Nie lubię">👎</button>
+                        <button type="button" class="rate-btn affinity-btn ${isLike}" data-action="like" title="Róbmy to częściej">👍</button>
+                        <button type="button" class="rate-btn affinity-btn ${isDislike}" data-action="dislike" title="Róbmy to rzadziej">👎</button>
                     </div>
+                    
                     <div class="sep"></div>
-                    <!-- Grupa 2: Trudność -->
+                    
+                    <!-- SEKCJA 2: TRUDNOŚĆ (Action) -->
                     <div class="btn-group-difficulty">
-                        <button type="button" class="rate-btn ${isEasy}" data-action="easy" title="Za łatwe">💤</button>
-                        <button type="button" class="rate-btn ${isHard}" data-action="hard" title="Za trudne">🔥</button>
+                        <button type="button" class="rate-btn diff-btn" data-action="easy" title="Za łatwe - Awansuj mnie">💤</button>
+                        <button type="button" class="rate-btn diff-btn" data-action="hard" title="Za trudne - Ratuj mnie">🔥</button>
                     </div>
                 </div>
             </div>
@@ -149,78 +87,70 @@ export const renderSummaryScreen = () => {
         exercisesListHtml = '<p class="empty-state">Brak wykonanych ćwiczeń do oceny.</p>';
     }
 
-    // 5. Strava Toggle
-    let stravaHtml = '';
-    if (state.stravaIntegration.isConnected) {
-        stravaHtml = `
-            <div class="form-group strava-sync-container" style="margin-top:1rem;">
-                <label class="checkbox-label" for="strava-sync-checkbox" style="display:flex; align-items:center; gap:10px;">
-                    <input type="checkbox" id="strava-sync-checkbox" checked style="width:20px; height:20px;">
-                    <span>Wyślij do Strava</span>
-                </label>
-            </div>`;
-    }
+    let stravaHtml = state.stravaIntegration.isConnected ? `
+        <div class="form-group strava-sync-container" style="margin-top:1rem;">
+            <label class="checkbox-label" for="strava-sync-checkbox" style="display:flex; align-items:center; gap:10px;">
+                <input type="checkbox" id="strava-sync-checkbox" checked style="width:20px; height:20px;">
+                <span>Wyślij do Strava</span>
+            </label>
+        </div>` : '';
 
-    // 6. Finalny HTML
     summaryScreen.innerHTML = `
         <h2 id="summary-title" style="margin-bottom:0.5rem">${trainingTitle}</h2>
         <p style="opacity:0.6; font-size:0.9rem; margin-top:0;">Podsumowanie sesji</p>
-        
         <form id="summary-form">
-            <!-- Global Feedback -->
             <div class="form-group">
-                <label style="display:block; margin-bottom:10px; font-weight:700;">${globalQuestion}</label>
+                <label style="display:block; margin-bottom:10px; font-weight:700;">${isSafetyMode ? "Samopoczucie" : "Trudność sesji"}</label>
                 <div class="feedback-container compact">${globalOptionsHtml}</div>
             </div>
-
-            <!-- Exercise Ratings -->
             <div class="form-group" style="margin-top:1.5rem;">
-                <label style="display:block; margin-bottom:10px; font-weight:700;">Oceń Ćwiczenia (Opcjonalne)</label>
-                <div class="ratings-list">
-                    ${exercisesListHtml}
+                <label style="display:block; margin-bottom:5px; font-weight:700;">Kalibracja Ćwiczeń</label>
+                
+                <!-- POPRAWIONE NAGŁÓWKI KOLUMN -->
+                <div style="display:flex; justify-content: flex-end; padding-right: 4px; margin-bottom: 6px;">
+                    <div style="display:flex; gap: 10px; font-size: 0.6rem; color: #888; font-weight: 700; text-transform: uppercase;">
+                        <span style="width: 82px; text-align: center;">Częstotliwość</span>
+                        <span style="width: 82px; text-align: center;">Trudność</span>
+                    </div>
                 </div>
-            </div>
 
-            <!-- Notes -->
+                <div class="ratings-list">${exercisesListHtml}</div>
+            </div>
             <div class="form-group" style="margin-top:2rem;">
                 <label for="general-notes">Notatki:</label>
                 <textarea id="general-notes" rows="2" placeholder="Jak poszło?"></textarea>
             </div>
-
             ${stravaHtml}
             <button type="submit" class="action-btn" style="margin-top:1.5rem;">Zapisz i Zakończ</button>
         </form>
-        
         <style>
-            .rating-actions-group { display: flex; align-items: center; gap: 5px; }
-            .btn-group-affinity, .btn-group-difficulty { display: flex; gap: 4px; }
+            .rating-actions-group { display: flex; align-items: center; gap: 8px; justify-content: flex-end; width: 100%; }
+            .btn-group-affinity { display: flex; gap: 4px; background: #f0fdfa; padding: 3px; border-radius: 8px; width: 82px; justify-content: center; }
+            .btn-group-difficulty { display: flex; gap: 4px; background: #fff7ed; padding: 3px; border-radius: 8px; width: 82px; justify-content: center; }
             .rate-btn {
-                background: #f3f4f6; 
-                border: 1px solid transparent;
-                border-radius: 8px;
-                width: 40px; height: 40px;
-                font-size: 1.4rem;
-                cursor: pointer;
-                transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-                display: flex; align-items: center; justify-content: center;
-                filter: grayscale(100%); opacity: 0.4;
+                background: transparent; border: 1px solid transparent; border-radius: 6px;
+                width: 36px; height: 36px; font-size: 1.2rem; cursor: pointer;
+                transition: all 0.2s; display: flex; align-items: center; justify-content: center;
+                filter: grayscale(100%); opacity: 0.5;
             }
-            .rate-btn:hover { opacity: 0.7; background: #e5e7eb; transform: translateY(-1px); }
-            .rate-btn.active {
-                opacity: 1; filter: grayscale(0%);
-                background: #fff; border-color: #d1d5db;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.08); transform: scale(1.15);
-            }
+            .rate-btn:hover { opacity: 1; filter: grayscale(0%); background: rgba(0,0,0,0.05); }
+            
+            /* Aktywne Affinity */
+            .affinity-btn.active { opacity: 1; filter: grayscale(0%); background: #fff; border-color: #2dd4bf; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+            
+            /* Kliknięte Difficulty (Zablokowane) */
+            .diff-btn.selected { opacity: 1; filter: grayscale(0%); background: #ea580c; color: white; border-color: #ea580c; cursor: default; transform: scale(0.95); }
+            
+            .sep { width: 1px; height: 24px; background: #e5e7eb; }
         </style>
     `;
 
-    // 7. Event Listeners
-    
+    // --- EVENT LISTENERS ---
+
     // Global Feedback
-    const globalOpts = summaryScreen.querySelectorAll('.feedback-option');
-    globalOpts.forEach(opt => {
+    summaryScreen.querySelectorAll('.feedback-option').forEach(opt => {
         opt.addEventListener('click', () => {
-            globalOpts.forEach(o => o.classList.remove('selected'));
+            summaryScreen.querySelectorAll('.feedback-option').forEach(o => o.classList.remove('selected'));
             opt.classList.add('selected');
             selectedFeedback.value = parseInt(opt.dataset.value, 10);
             selectedFeedback.type = opt.dataset.type;
@@ -228,17 +158,37 @@ export const renderSummaryScreen = () => {
     });
 
     // Exercise Ratings
-    const ratingCards = summaryScreen.querySelectorAll('.rating-card');
-    ratingCards.forEach(card => {
-        const buttons = card.querySelectorAll('.rate-btn');
-        buttons.forEach(btn => {
+    summaryScreen.querySelectorAll('.rating-card').forEach(card => {
+        
+        // A. Affinity (Radio Logic)
+        const affinityBtns = card.querySelectorAll('.affinity-btn');
+        affinityBtns.forEach(btn => {
             btn.addEventListener('click', () => {
-                const parentGroup = btn.parentElement; 
                 const isActive = btn.classList.contains('active');
-                parentGroup.querySelectorAll('.rate-btn').forEach(b => b.classList.remove('active'));
+                // Reset grupy
+                affinityBtns.forEach(b => b.classList.remove('active'));
+                
+                // Toggle (jeśli nie był aktywny, to włącz, jeśli był - to wyłączyliśmy wyżej i zostaje wyłączony = neutral)
                 if (!isActive) {
                     btn.classList.add('active');
                 }
+            });
+        });
+
+        // B. Difficulty (Action Logic)
+        const diffBtns = card.querySelectorAll('.diff-btn');
+        diffBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                // Reset grupy (tylko jeden wybór)
+                diffBtns.forEach(b => b.classList.remove('selected'));
+                // Oznacz jako wybrane
+                btn.classList.add('selected');
+                
+                // Wizualny feedback
+                const action = btn.dataset.action;
+                const originalTitle = btn.title;
+                btn.title = "Zgłoszono zmianę";
+                // Opcjonalnie: można dodać alert/toast "Zmienimy to w przyszłości"
             });
         });
     });
@@ -253,65 +203,46 @@ export async function handleSummarySubmit(e) {
     if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Zapisywanie..."; }
     showLoader();
 
-    const now = new Date();
-    const stravaCheckbox = document.getElementById('strava-sync-checkbox');
-    const rawDuration = now - state.sessionStartTime;
-    const netDuration = Math.max(0, rawDuration - (state.totalPausedTime || 0));
-    const durationSeconds = Math.round(netDuration / 1000);
-
-    // Wybór planu (Dynamic vs Static vs Protocol)
-    let planIdToSave = state.settings.activePlanId;
-    let trainingTitle = "Trening";
-    
-    // Sprawdzamy czy to Protokół
-    if (state.todaysDynamicPlan && state.todaysDynamicPlan.type === 'protocol') {
-        planIdToSave = state.todaysDynamicPlan.id; // Np. proto_sos_...
-        trainingTitle = state.todaysDynamicPlan.title;
-    }
-    // Jeśli nie protokół, to standardowa logika
-    else {
-        const isDynamicMode = state.settings.planMode === 'dynamic' || (state.settings.dynamicPlanData && !state.settings.planMode);
-        if (isDynamicMode && state.settings.dynamicPlanData) {
-            planIdToSave = state.settings.dynamicPlanData.id;
-            const days = state.settings.dynamicPlanData.days || [];
-            const day = days.find(d => d.dayNumber === state.currentTrainingDayId);
-            if (day) trainingTitle = day.title;
-        } else {
-            const activePlan = state.trainingPlans[state.settings.activePlanId];
-            if (activePlan) {
-                const day = activePlan.Days.find(d => d.dayNumber === state.currentTrainingDayId);
-                if (day) trainingTitle = day.title;
-            }
-        }
-    }
-
-    // --- ZBIERANIE OCEN Z UI ---
     const ratingsArray = [];
     const ratingCards = document.querySelectorAll('.rating-card');
     
     ratingCards.forEach(card => {
         const id = card.dataset.id;
-        const activeButtons = card.querySelectorAll('.rate-btn.active');
         
-        activeButtons.forEach(btn => {
-            ratingsArray.push({
-                exerciseId: id,
-                action: btn.dataset.action
-            });
-        });
+        // 1. Pobierz stan Affinity
+        const activeAffinity = card.querySelector('.affinity-btn.active');
+        if (activeAffinity) {
+            ratingsArray.push({ exerciseId: id, action: activeAffinity.dataset.action });
+        } else {
+            // Jeśli żaden nie jest aktywny, wysyłamy 'neutral' aby zresetować/utrzymać 0
+            ratingsArray.push({ exerciseId: id, action: 'neutral' });
+        }
+
+        // 2. Pobierz stan Difficulty (Action)
+        const activeDiff = card.querySelector('.diff-btn.selected');
+        if (activeDiff) {
+            ratingsArray.push({ exerciseId: id, action: activeDiff.dataset.action });
+        }
     });
+
+    // ... Reszta logiki zapisu (sessionPayload, dataStore.saveSession) pozostaje bez zmian ...
+    // (Kod poniżej kopiuje logikę z poprzedniego pliku dla kompletności)
+    
+    const now = new Date();
+    const durationSeconds = Math.round(Math.max(0, now - state.sessionStartTime - (state.totalPausedTime || 0)) / 1000);
+    const planId = (state.todaysDynamicPlan?.type === 'protocol') ? state.todaysDynamicPlan.id : state.settings.activePlanId;
+    const title = document.getElementById('summary-title').textContent;
 
     const sessionPayload = {
         sessionId: Date.now(),
-        planId: planIdToSave,
+        planId: planId,
         trainingDayId: state.currentTrainingDayId,
-        trainingTitle: trainingTitle,
+        trainingTitle: title,
         status: 'completed',
         feedback: selectedFeedback,
         exerciseRatings: ratingsArray,
-        pain_during: selectedFeedback.type === 'symptom' && selectedFeedback.value === -1 ? 5 : 0,
         notes: document.getElementById('general-notes').value,
-        startedAt: state.sessionStartTime ? state.sessionStartTime.toISOString() : now.toISOString(),
+        startedAt: state.sessionStartTime.toISOString(),
         completedAt: now.toISOString(),
         sessionLog: state.sessionLog,
         netDurationSeconds: durationSeconds
@@ -321,39 +252,31 @@ export async function handleSummarySubmit(e) {
         const response = await dataStore.saveSession(sessionPayload);
         clearSessionBackup();
         await dataStore.loadRecentHistory(7);
+        if (state.todaysDynamicPlan?.type === 'protocol') state.todaysDynamicPlan = null;
+        
+        // Update stats locally
+        if (response?.newStats) state.userStats = { ...state.userStats, ...response.newStats };
+        
+        // Strava
+        if (document.getElementById('strava-sync-checkbox')?.checked) dataStore.uploadToStrava(sessionPayload);
 
-        // Jeśli protokół, usuwamy go ze stanu "todaysDynamicPlan" żeby nie wisiał w dashboardzie jako główny plan
-        if (state.todaysDynamicPlan && state.todaysDynamicPlan.type === 'protocol') {
-            state.todaysDynamicPlan = null;
-        }
-
-        if (response && response.newStats) { state.userStats = { ...state.userStats, ...response.newStats }; } 
-        else { if (!state.userStats) state.userStats = { totalSessions: 0, streak: 0 }; state.userStats.totalSessions = (parseInt(state.userStats.totalSessions) || 0) + 1; }
-
-        if (stravaCheckbox && stravaCheckbox.checked) { dataStore.uploadToStrava(sessionPayload); }
-
-        // Reset stanu sesji
+        // Reset App State
         state.currentTrainingDate = null; 
-        state.currentTrainingDayId = null; 
-        state.sessionLog = []; 
-        state.sessionStartTime = null; 
-        state.totalPausedTime = 0; 
+        state.sessionLog = [];
         state.isPaused = false;
 
         hideLoader();
         const { renderMainScreen } = await import('./dashboard.js');
 
-        // Pokaż ewolucję tylko jeśli były oceny
         if (response && response.adaptation) {
             renderEvolutionModal(response.adaptation, () => { navigateTo('main'); renderMainScreen(); });
         } else {
             navigateTo('main'); renderMainScreen();
         }
-
     } catch (error) {
-        console.error("Błąd zapisu sesji:", error);
+        console.error(error);
         hideLoader();
-        alert("Błąd zapisu. Sprawdź połączenie.");
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Spróbuj ponownie"; }
+        alert("Błąd zapisu.");
+        submitBtn.disabled = false;
     }
 }

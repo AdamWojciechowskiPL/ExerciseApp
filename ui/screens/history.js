@@ -119,78 +119,83 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
             return;
         }
 
-        // RATE EXERCISE
+        // --- RESET DIFFICULTY (NOWA POPRAWKA) ---
+        const resetBtn = e.target.closest('.reset-diff-btn');
+        if (resetBtn) {
+            e.stopPropagation();
+            if (!confirm("Czy na pewno cofnąć oznaczenie trudności? Spowoduje to przywrócenie poprzedniego wariantu ćwiczenia.")) return;
+            
+            const id = resetBtn.dataset.id;
+            
+            // 1. Optymistyczna aktualizacja UI (DLA WSZYSTKICH WYSTĄPIEŃ TEGO ĆWICZENIA)
+            // Szukamy wszystkich przycisków resetu dla tego ID w kontenerze
+            const allResetButtons = contentContainer.querySelectorAll(`.reset-diff-btn[data-id="${id}"]`);
+            allResetButtons.forEach(btn => btn.style.display = 'none');
+            
+            // 2. Aktualizacja lokalnego stanu
+            if (state.userPreferences[id]) state.userPreferences[id].difficulty = 0;
+
+            // 3. API Call
+            try {
+                await dataStore.updatePreference(id, 'reset_difficulty');
+                console.log("Difficulty reset successful");
+            } catch (err) {
+                console.error("Failed to reset difficulty:", err);
+                // W razie błędu przywracamy widoczność
+                allResetButtons.forEach(btn => btn.style.display = 'inline-block');
+                alert("Błąd połączenia. Spróbuj ponownie.");
+            }
+            return;
+        }
+
+        // RATE EXERCISE (AFFINITY ONLY)
         const rateBtn = e.target.closest('.rate-btn-hist');
         if (rateBtn) {
             e.stopPropagation();
             
             const id = rateBtn.dataset.id;
-            const action = rateBtn.dataset.action; // 'like', 'dislike', 'hard', 'easy'
+            const action = rateBtn.dataset.action; // 'like' or 'dislike'
             
-            // 1. Pobierz aktualny stan (Source of Truth)
-            const currentPref = state.userPreferences[id] || { score: 0, difficulty: 0 };
+            if (!state.userPreferences[id]) state.userPreferences[id] = { score: 0, difficulty: 0 };
+            const currentScore = state.userPreferences[id].score;
             
-            // 2. Dekompozycja wyniku na części składowe
-            let baseScore = currentPref.score;
-            let currentDiff = currentPref.difficulty;
+            let newScore = 0;
+            let apiAction = 'neutral';
 
-            // Cofamy kary, aby odzyskać czystą intencję "Lubię/Nie lubię"
-            if (currentDiff === 1) baseScore += 10; // Cofnij karę za Hard
-            if (currentDiff === -1) baseScore += 5; // Cofnij karę za Easy
-
-            let newBaseScore = baseScore;
-            let newDiff = currentDiff;
-
-            // 3. Logika Zmian
             if (action === 'like') {
-                newBaseScore = (baseScore >= 10) ? 0 : 20;
+                if (currentScore >= 50) { // Próg 50 dla nowego toggle
+                    newScore = 0;
+                    apiAction = 'neutral';
+                } else {
+                    newScore = 50;
+                    apiAction = 'like';
+                }
             } 
             else if (action === 'dislike') {
-                newBaseScore = (baseScore <= -10) ? 0 : -20;
-            }
-            else if (action === 'hard') {
-                newDiff = (currentDiff === 1) ? 0 : 1;
-            }
-            else if (action === 'easy') {
-                newDiff = (currentDiff === -1) ? 0 : -1;
+                if (currentScore <= -50) {
+                    newScore = 0;
+                    apiAction = 'neutral';
+                } else {
+                    newScore = -50;
+                    apiAction = 'dislike';
+                }
             }
 
-            // 4. Rekonstrukcja Finalnego Wyniku
-            let finalScore = newBaseScore;
-            if (newDiff === 1) finalScore -= 10;
-            if (newDiff === -1) finalScore -= 5;
+            state.userPreferences[id].score = newScore;
 
-            finalScore = Math.max(-100, Math.min(100, finalScore));
-
-            // 5. Aktualizacja UI - NAPRAWA: Aktualizujemy WSZYSTKIE przyciski dla tego ID
-            // Znajdujemy wszystkie przyciski na ekranie, które dotyczą tego samego ćwiczenia (np. z różnych sesji)
             const allButtonsForId = contentContainer.querySelectorAll(`.rate-btn-hist[data-id="${id}"]`);
-
-            const showLike = newBaseScore >= 10;
-            const showDislike = newBaseScore <= -10;
-            const showHard = newDiff === 1;
-            const showEasy = newDiff === -1;
-
             allButtonsForId.forEach(btn => {
                 const btnAction = btn.dataset.action;
                 let isActive = false;
-
-                if (btnAction === 'like') isActive = showLike;
-                else if (btnAction === 'dislike') isActive = showDislike;
-                else if (btnAction === 'hard') isActive = showHard;
-                else if (btnAction === 'easy') isActive = showEasy;
-
-                // Wymuszamy stan klasy active
+                // Wizualizacja: >= 10 dla Like (żeby uwzględnić stare), <= -10 dla Dislike
+                // Ale przy toggle ustawiamy 50/-50
+                if (btnAction === 'like' && newScore >= 10) isActive = true;
+                if (btnAction === 'dislike' && newScore <= -10) isActive = true;
                 btn.classList.toggle('active', isActive);
             });
 
-            // 6. Wyślij do API
             try {
-                // Aktualizujemy lokalny stan natychmiast (Optimistic Update)
-                state.userPreferences[id] = { score: finalScore, difficulty: newDiff };
-                
-                await dataStore.updatePreference(id, 'set', finalScore);
-                await dataStore.updatePreference(id, 'set_difficulty', newDiff);
+                await dataStore.updatePreference(id, apiAction);
             } catch (err) {
                 console.error("Błąd aktualizacji preferencji:", err);
             }

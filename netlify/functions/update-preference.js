@@ -14,50 +14,62 @@ exports.handler = async (event) => {
 
     const client = await pool.connect();
     
-    let scoreDelta = 0;
-    let diffRating = 0; // 0 = bez zmian/neutral, 1 = hard, -1 = easy
-    let isSetOperation = false;
-    let absoluteScore = 0;
+    let targetScore = 0;
+    let targetDiff = 0; // 0 = Neutral
+    let performUpdate = true;
+    let isResetDifficulty = false;
 
-    // Logika punktacji
     switch (action) {
-        case 'like': scoreDelta = 20; break;
-        case 'dislike': scoreDelta = -20; break;
-        case 'hard': scoreDelta = -10; diffRating = 1; break;
-        case 'easy': scoreDelta = -5; diffRating = -1; break;
-        case 'reset_diff': diffRating = 99; break; // Kod resetu trudności
-        
-        // NOWOŚĆ: Tryb "SET" dla suwaka (Tuner)
+        case 'like': 
+            targetScore = 50; 
+            break;
+        case 'dislike': 
+            targetScore = -50; 
+            break;
+        case 'neutral':
+            targetScore = 0;
+            break;
+            
         case 'set': 
-            isSetOperation = true;
-            absoluteScore = typeof value === 'number' ? value : 0;
-            // Przy ręcznym ustawianiu suwakiem, resetujemy flagi trudności, 
-            // chyba że front-end wyśle je osobno (w tym MVP zakładamy reset difficulty przy manualnym set score)
-            // lub pozostawienie starej. Przyjmijmy: nie ruszamy difficulty w trybie set score, chyba że podano.
+            targetScore = typeof value === 'number' ? value : 0;
             break;
+
         case 'set_difficulty':
-            // Specjalna akcja do zmiany samej trudności bez zmiany punktów
-            diffRating = value; 
+            targetDiff = value;
+            performUpdate = false; 
             break;
+            
+        case 'reset_difficulty':
+            isResetDifficulty = true;
+            performUpdate = false;
+            break;
+            
+        default:
+            performUpdate = false;
     }
 
     try {
         let query = '';
         let params = [];
 
-        if (isSetOperation) {
-            // Tryb SET: Nadpisujemy affinity_score konkretną wartością
-            query = `
-                INSERT INTO user_exercise_preferences (user_id, exercise_id, affinity_score, difficulty_rating, updated_at)
-                VALUES ($1, $2, $3, 0, CURRENT_TIMESTAMP)
-                ON CONFLICT (user_id, exercise_id) DO UPDATE SET
-                    affinity_score = $3,
-                    updated_at = CURRENT_TIMESTAMP
-                RETURNING affinity_score, difficulty_rating;
-            `;
-            params = [userId, exerciseId, absoluteScore];
-        } else if (action === 'set_difficulty') {
-            // Tryb SET DIFFICULTY: Nadpisujemy tylko difficulty
+        if (isResetDifficulty) {
+            // 1. Zresetuj flagę w preferencjach
+            await client.query(`
+                UPDATE user_exercise_preferences 
+                SET difficulty_rating = 0, updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = $1 AND exercise_id = $2
+            `, [userId, exerciseId]);
+
+            // 2. Usuń overrides (Cofnij Ewolucję/Dewolucję)
+            // Usuwamy wpisy, gdzie to ćwiczenie było ŹRÓDŁEM zmiany
+            await client.query(`
+                DELETE FROM user_plan_overrides
+                WHERE user_id = $1 AND original_exercise_id = $2
+            `, [userId, exerciseId]);
+
+            return { statusCode: 200, body: JSON.stringify({ message: "Difficulty reset and overrides removed" }) };
+        }
+        else if (action === 'set_difficulty') {
             query = `
                 INSERT INTO user_exercise_preferences (user_id, exercise_id, affinity_score, difficulty_rating, updated_at)
                 VALUES ($1, $2, 0, $3, CURRENT_TIMESTAMP)
@@ -66,36 +78,31 @@ exports.handler = async (event) => {
                     updated_at = CURRENT_TIMESTAMP
                 RETURNING affinity_score, difficulty_rating;
             `;
-            params = [userId, exerciseId, diffRating];
+            params = [userId, exerciseId, targetDiff];
         } else {
-            // Tryb DELTA (Stary): Dodajemy/Odejmujemy
             query = `
                 INSERT INTO user_exercise_preferences (user_id, exercise_id, affinity_score, difficulty_rating, updated_at)
-                VALUES ($1, $2, $3, CASE WHEN $4 = 99 THEN 0 ELSE $4 END, CURRENT_TIMESTAMP)
+                VALUES ($1, $2, $3, 0, CURRENT_TIMESTAMP)
                 ON CONFLICT (user_id, exercise_id) DO UPDATE SET
-                    affinity_score = GREATEST(-100, LEAST(100, user_exercise_preferences.affinity_score + $3)),
-                    difficulty_rating = CASE 
-                        WHEN $4 = 99 THEN 0 
-                        WHEN $4 <> 0 THEN $4 
-                        ELSE user_exercise_preferences.difficulty_rating 
-                    END,
+                    affinity_score = $3,
                     updated_at = CURRENT_TIMESTAMP
                 RETURNING affinity_score, difficulty_rating;
             `;
-            params = [userId, exerciseId, scoreDelta, diffRating];
+            params = [userId, exerciseId, targetScore];
         }
 
-        const result = await client.query(query, params);
-        const newPref = result.rows[0];
-
-        return {
-            statusCode: 200,
-            body: JSON.stringify({ 
-                message: "Updated",
-                newScore: newPref.affinity_score,
-                newDifficulty: newPref.difficulty_rating
-            })
-        };
+        if (!isResetDifficulty) {
+            const result = await client.query(query, params);
+            const newPref = result.rows[0];
+            return {
+                statusCode: 200,
+                body: JSON.stringify({ 
+                    message: "Updated",
+                    newScore: newPref.affinity_score,
+                    newDifficulty: newPref.difficulty_rating
+                })
+            };
+        }
 
     } finally {
         client.release();

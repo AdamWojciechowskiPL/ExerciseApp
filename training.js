@@ -52,6 +52,12 @@ function logCurrentStep(status) {
     const exercise = state.flatExercises[state.currentExerciseIndex];
     if (!exercise || !exercise.isWork) return;
     let duration = state.stopwatch.seconds > 0 ? state.stopwatch.seconds : 0;
+    
+    // Jeśli był timer (ćwiczenie na czas), pobierz czas z timera (przybliżony czas wykonania)
+    if (state.timer.isActive || state.timer.initialDuration > 0) {
+        duration = state.timer.initialDuration;
+    }
+
     const newLogEntry = {
         name: exercise.name,
         exerciseId: exercise.id || exercise.exerciseId,
@@ -133,7 +139,7 @@ export function startExercise(index) {
     if (focus.prevStepBtn) focus.prevStepBtn.disabled = (index === 0);
     if (focus.progress) focus.progress.textContent = `${index + 1} / ${state.flatExercises.length}`;
 
-    // PAUSE STATE
+    // PAUSE STATE HANDLING
     if (state.isPaused) {
         state.lastPauseStartTime = Date.now();
         if (focus.pauseResumeBtn) { focus.pauseResumeBtn.innerHTML = `<img src="/icons/control-play.svg" alt="Wznów">`; focus.pauseResumeBtn.classList.add('paused-state'); focus.pauseResumeBtn.classList.remove('hidden'); }
@@ -153,9 +159,13 @@ export function startExercise(index) {
     // ============================================================
     if (exercise.isWork) {
         focus.sectionName.textContent = exercise.sectionName;
-        focus.exerciseName.textContent = `${exercise.name} (Seria ${exercise.currentSet} / ${exercise.totalSets})`;
+        
+        // ZMIANA: Usunięcie tekstu "Seria X/Y" z głównego nagłówka
+        focus.exerciseName.textContent = exercise.name;
         fitText(focus.exerciseName);
-        focus.exerciseDetails.textContent = `Cel: ${exercise.reps_or_time} | Tempo: ${exercise.tempo_or_iso}`;
+        
+        // ZMIANA: Usunięto spacje wokół ukośnika (Seria X/Y)
+        focus.exerciseDetails.textContent = `Seria ${exercise.currentSet}/${exercise.totalSets} | Cel: ${exercise.reps_or_time}`;
         focus.focusDescription.textContent = exercise.description || '';
         
         if (focus.affinityBadge) focus.affinityBadge.innerHTML = getAffinityBadge(exercise.exerciseId || exercise.id);
@@ -174,8 +184,6 @@ export function startExercise(index) {
         state.stopwatch.seconds = 0;
         updateStopwatchDisplay();
 
-        // --- ZMIANA: PRZYCISK 'GOTOWE' ZAWSZE WIDOCZNY ---
-        // Niezależnie od tego, czy to czas, czy powtórzenia, user może chcieć skończyć wcześniej.
         focus.repBasedDoneBtn.classList.remove('hidden');
         focus.pauseResumeBtn.classList.remove('hidden');
         focus.timerDisplay.classList.remove('rep-based-text');
@@ -191,10 +199,11 @@ export function startExercise(index) {
                     speak(`Ćwicz: ${exercise.name}, ${exercise.reps_or_time}`, true, () => { speak(formatForTTS(exercise.description), false); });
                 }
                 
-                // Start timera odliczającego w dół
-                startTimer(duration, () => moveToNextExercise({ skipped: false }));
+                // ZMIANA: Timer w trybie CountUp (true jako ostatni parametr)
+                // Czas liczy się w górę (0 -> duration), ale kończy się automatycznie
+                startTimer(duration, () => moveToNextExercise({ skipped: false }), syncStateToChromecast, true);
             } else {
-                // Ćwiczenie na powtórzenia (Stoper w górę)
+                // Ćwiczenie na powtórzenia (Stoper w górę bez limitu)
                 startStopwatch();
 
                 if (state.tts.isSoundOn) {
@@ -216,7 +225,7 @@ export function startExercise(index) {
         const upcomingExercise = state.flatExercises[index + 1];
         if (!upcomingExercise) { moveToNextExercise({ skipped: false }); return; }
 
-        focus.repBasedDoneBtn.classList.add('hidden'); // Przycisk ukryty na przerwie
+        focus.repBasedDoneBtn.classList.add('hidden'); 
         focus.pauseResumeBtn.classList.remove('hidden');
 
         let afterUpcomingExercise = null;
@@ -239,9 +248,10 @@ export function startExercise(index) {
             if (state.tts.isSoundOn) {
                 let announcement = `Odpocznij. Następnie: ${upcomingExercise.name}.`;
                 speak(announcement, true);
-                startTimer(state.timer.timeLeft, startNextExercise, syncStateToChromecast);
+                // Przerwa liczy w dół (countUp = false / undefined)
+                startTimer(state.timer.timeLeft, startNextExercise, syncStateToChromecast, false);
             } else {
-                startTimer(state.timer.timeLeft, startNextExercise, syncStateToChromecast);
+                startTimer(state.timer.timeLeft, startNextExercise, syncStateToChromecast, false);
             }
         }
     }

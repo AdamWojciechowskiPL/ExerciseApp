@@ -39,12 +39,23 @@ const dataStore = {
             const token = await getToken();
             const headers = { 'Content-Type': 'application/json' };
             if (token) headers['Authorization'] = `Bearer ${token}`;
+            
             const response = await fetch('/.netlify/functions/get-app-content', { headers });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            
             const data = await response.json();
             state.exerciseLibrary = data.exercises || {};
             state.trainingPlans = data.training_plans || {};
-            console.log(token ? '📦 Zasoby PERSONALIZOWANE załadowane.' : '📦 Zasoby PUBLICZNE załadowane.');
+            
+            // --- DIAGNOSTYKA WHITE-LIST PATTERN ---
+            const total = Object.keys(state.exerciseLibrary).length;
+            const blocked = Object.values(state.exerciseLibrary).filter(ex => ex.isAllowed === false).length;
+            const allowed = total - blocked;
+            
+            console.log(token 
+                ? `📦 Zasoby PERSONALIZOWANE: ${allowed} dostępnych, ${blocked} zablokowanych (Sprzęt/Zdrowie).` 
+                : '📦 Zasoby PUBLICZNE załadowane (Brak personalizacji).');
+                
         } catch (error) {
             console.error("Critical: Failed to load app content:", error);
         }
@@ -183,13 +194,11 @@ const dataStore = {
     updatePreference: async (exerciseId, action, value = null) => {
         if (!state.userPreferences[exerciseId]) state.userPreferences[exerciseId] = { score: 0, difficulty: 0 };
         
-        // Optimistic Update
         if (action === 'set') {
             state.userPreferences[exerciseId].score = value;
         } else if (action === 'set_difficulty') {
             state.userPreferences[exerciseId].difficulty = value;
         } else {
-            // Delta logic
             let delta = 0;
             if (action === 'like') delta = 20; else if (action === 'dislike') delta = -20;
             else if (action === 'hard') { delta = -10; state.userPreferences[exerciseId].difficulty = 1; }

@@ -4,13 +4,31 @@ import { state } from './state.js';
 import { focus } from './dom.js';
 import { getIsCasting, sendTrainingStateUpdate } from './cast.js';
 
-// --- TIMER (Odliczanie w dół) ---
+// --- FORMATOWANIE CZASU (m:ss) ---
+// Helper zapewniający spójny format: minuty bez zera wiodącego, sekundy z zerem.
+const formatTime = (totalSeconds) => {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    // Format: m:ss (np. 0:05, 1:30, 10:00)
+    return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+};
+
+// --- TIMER (Odliczanie w dół lub w górę z limitem) ---
 
 export const updateTimerDisplay = () => {
-    const minutes = Math.floor(state.timer.timeLeft / 60);
-    const seconds = state.timer.timeLeft % 60;
+    let timeToDisplay = state.timer.timeLeft;
+
+    // Jeśli tryb countUp jest aktywny (dla ćwiczeń na czas), obliczamy czas upływający
+    if (state.timer.countUp && state.timer.initialDuration) {
+        timeToDisplay = state.timer.initialDuration - state.timer.timeLeft;
+        // Zabezpieczenie przed ujemnym wynikiem przy lagach
+        if (timeToDisplay < 0) timeToDisplay = 0;
+    }
+
+    const formattedTime = formatTime(timeToDisplay);
+
     if (focus.timerDisplay) {
-        focus.timerDisplay.textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+        focus.timerDisplay.textContent = formattedTime;
     }
 };
 
@@ -20,16 +38,26 @@ export const stopTimer = () => {
         state.timer.interval = null;
     }
     state.timer.isActive = false;
+    state.timer.countUp = false; // Reset trybu
+    state.timer.initialDuration = 0;
 };
 
-export const startTimer = (seconds, onEndCallback) => {
+/**
+ * Uruchamia timer.
+ * @param {number} seconds - Czas trwania
+ * @param {function} onEndCallback - Funkcja wywoływana po zakończeniu
+ * @param {function} onTickCallback - Funkcja wywoływana co sekundę (np. sync do Cast)
+ * @param {boolean} countUp - Czy wizualnie liczyć od 0 w górę (domyślnie false = odliczanie w dół)
+ */
+export const startTimer = (seconds, onEndCallback, onTickCallback = null, countUp = false) => {
     stopTimer();
     state.timer.timeLeft = seconds;
+    state.timer.initialDuration = seconds; // Zapamiętujemy start dla trybu countUp
     state.timer.isActive = true;
+    state.timer.countUp = countUp;
     state.timer.onTimerEnd = onEndCallback;
 
     // Jeśli jest pauza i wznawiamy, ikona powinna być już ustawiona na Pauzę w togglePauseTimer
-    // Ale dla bezpieczeństwa przy starcie nowej rundy:
     if (focus.pauseResumeBtn) {
         focus.pauseResumeBtn.innerHTML = `<img src="/icons/control-pause.svg" alt="Pauza">`;
         focus.pauseResumeBtn.classList.remove('paused-state');
@@ -45,6 +73,8 @@ export const startTimer = (seconds, onEndCallback) => {
         if (getIsCasting()) {
             sendTrainingStateUpdate({ timerValue: focus.timerDisplay.textContent });
         }
+        
+        if (onTickCallback) onTickCallback();
 
         if (state.timer.timeLeft <= 0) {
             stopTimer(); // Ważne, żeby zatrzymać interwał
@@ -57,15 +87,14 @@ export const startTimer = (seconds, onEndCallback) => {
     }, 1000);
 };
 
-// --- STOPER (Odliczanie w górę) ---
+// --- STOPER (Odliczanie w górę bez limitu - dla powtórzeń) ---
 
 export const updateStopwatchDisplay = () => {
-    const minutes = Math.floor(state.stopwatch.seconds / 60);
-    const seconds = state.stopwatch.seconds % 60;
+    const formattedTime = formatTime(state.stopwatch.seconds);
 
     if (focus.timerDisplay) {
         focus.timerDisplay.classList.remove('rep-based-text');
-        focus.timerDisplay.textContent = `${minutes < 10 ? '0' : ''}${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+        focus.timerDisplay.textContent = formattedTime;
     }
 
     if (getIsCasting()) {
@@ -76,8 +105,7 @@ export const updateStopwatchDisplay = () => {
 export const startStopwatch = () => {
     stopStopwatch();
     // UWAGA: Nie zerujemy tutaj seconds, jeśli wznawiamy z pauzy.
-    // Zerowanie powinno odbywać się w training.js przy starcie nowego ćwiczenia.
-    // Tutaj po prostu uruchamiamy interwał.
+    // Zerowanie odbywa się w training.js przy starcie nowego ćwiczenia.
 
     if (state.stopwatch.seconds === undefined) state.stopwatch.seconds = 0;
 
@@ -140,19 +168,15 @@ export const togglePauseTimer = async () => {
             state.lastPauseStartTime = null;
         }
 
-        // SCENARIUSZ 1: Wznawiamy Timer (Odliczanie w dół)
+        // SCENARIUSZ 1: Wznawiamy Timer (Odliczanie w dół lub w górę z limitem)
         if (state.timer.timeLeft > 0) {
-            startTimer(state.timer.timeLeft, state.timer.onTimerEnd);
+            // Przekazujemy true dla countUp, jeśli był wcześniej ustawiony
+            startTimer(state.timer.timeLeft, state.timer.onTimerEnd, null, state.timer.countUp);
         }
 
         // SCENARIUSZ 2: Wznawiamy przerwę typu "START..."
-        // Sprawdzamy, czy na ekranie jest tekst "START..." i czy to faza przerwy
         else if (currentStep && currentStep.isRest && focus.timerDisplay?.textContent?.includes("START")) {
-
-            // Dynamiczny import, aby uniknąć cyklicznej zależności z training.js
             const { moveToNextExercise } = await import('./training.js');
-
-            // Przywracamy timeout przejścia (dajemy 2 sekundy na przygotowanie)
             state.breakTimeoutId = setTimeout(() => {
                 state.breakTimeoutId = null;
                 moveToNextExercise({ skipped: false });
@@ -161,7 +185,6 @@ export const togglePauseTimer = async () => {
 
         // SCENARIUSZ 3: Wznawiamy Stoper (Ćwiczenie na powtórzenia)
         else if (currentStep && !currentStep.isRest) {
-            // Po prostu uruchamiamy interwał, startStopwatch nie zeruje stanu jeśli seconds > 0
             startStopwatch();
         }
 

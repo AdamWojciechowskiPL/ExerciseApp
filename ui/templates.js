@@ -43,7 +43,6 @@ export const getAffinityBadge = (exerciseId) => {
 
     let badge = null;
 
-    // Próg wizualny obniżony do 10 dla kompatybilności wstecznej
     if (score >= 10) {
         badge = { icon: '⭐', label: 'Często', color: '#047857', bg: '#ecfdf5', border: '#6ee7b7' };
     } else if (score <= -10) {
@@ -120,7 +119,6 @@ export function generateMissionCardHTML(dayData, estimatedMinutes, wizardData = 
         aiTagsHTML = `<div class="ai-mini-tags">${smartTags.map(t => `<div class="ai-mini-tag"><span>${t.icon}</span> ${t.text}</div>`).join('')}</div>`; 
     } 
     
-    // ZMIANA: Domyślnie wybrany poziom 3 (Dobrze)
     return `
     <div class="mission-card ${aiClass}">
         ${aiHeaderHTML}
@@ -147,7 +145,81 @@ export function generateMissionCardHTML(dayData, estimatedMinutes, wizardData = 
 }
 
 // --- PRE-TRAINING / LIBRARY CARD ---
-export function generatePreTrainingCardHTML(ex, index) { const uniqueId = `ex-${index}`; const exerciseId = ex.id || ex.exerciseId; const lvl = ex.difficultyLevel || 1; const categoryName = formatCategoryName(ex.categoryId); const equipment = ex.equipment || 'Brak sprzętu'; const hasAnimation = !!ex.animationSvg; const affinityBadge = getAffinityBadge(exerciseId); const previewBtnHTML = hasAnimation ? `<button class="preview-anim-btn nav-btn" data-exercise-id="${exerciseId}" title="Podgląd animacji" style="padding: 4px 8px; display: flex; align-items: center; gap: 5px; border-color: var(--secondary-color);"><img src="/icons/eye.svg" width="20" height="20" alt="Podgląd" style="display: block;"><span style="font-size: 0.75rem; font-weight: 600; color: var(--secondary-color);">Podgląd</span></button>` : ''; let badgeHTML = ''; if (ex.isPersonalized) badgeHTML = `<span class="meta-badge" style="background:var(--gold-color); color:#000; border:none;">✨ Personalizacja</span>`; else if (ex.isDynamicSwap) badgeHTML = `<span class="meta-badge" style="background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd;">🎲 Mix</span>`; else if (ex.isSwapped) badgeHTML = `<span class="meta-badge" style="background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0;">🔄 Wybór</span>`; const showOriginalInfo = ex.originalName && ex.originalName !== ex.name; const originalInfo = showOriginalInfo ? `<div style="font-size:0.75rem; color:#999; margin-top:-5px; margin-bottom:5px;">Zamiast: ${ex.originalName}</div>` : ''; return `<div class="training-card" data-exercise-id="${exerciseId || ''}" data-category-id="${ex.categoryId || ''}"><div class="training-card-header"><div style="flex-grow: 1; padding-right: 10px;"><h4 style="display:inline;">${ex.name}</h4>${affinityBadge}${originalInfo}</div><div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">${previewBtnHTML}<button class="swap-btn" title="Wymień ćwiczenie" data-exercise-index="${index}"><img src="/icons/swap.svg" width="20" height="20" alt="Wymień"></button></div></div><div class="training-meta">${badgeHTML}<span class="meta-badge badge-lvl-${lvl}">⚡ ${getLevelLabel(lvl)}</span><span class="meta-badge badge-category">📂 ${categoryName}</span><span class="meta-badge badge-equipment">🏋️ ${equipment}</span></div><p class="pre-training-description" style="padding-left:10px; opacity:0.8;">${ex.description || 'Brak opisu.'}</p><div class="training-inputs-grid"><div class="input-wrapper"><label for="sets-${uniqueId}" class="input-label">Serie</label><input type="number" id="sets-${uniqueId}" class="modern-input" value="${ex.sets}" data-exercise-index="${index}"></div><div class="input-wrapper"><label for="reps-${uniqueId}" class="input-label">Powtórzenia / Czas</label><input type="text" id="reps-${uniqueId}" class="modern-input" value="${ex.reps_or_time}" data-exercise-index="${index}"></div></div><div class="training-footer"><div>${ex.youtube_url ? `<a href="${ex.youtube_url}" target="_blank" class="video-link">▶ Zobacz wideo</a>` : ''}</div>${ex.tempo_or_iso ? `<span class="tempo-badge">Tempo: ${ex.tempo_or_iso}</span>` : ''}</div></div>`; }
+export function generatePreTrainingCardHTML(ex, index) { 
+    const uniqueId = `ex-${index}`; 
+    const exerciseId = ex.id || ex.exerciseId; 
+    const lvl = ex.difficultyLevel || 1; 
+    const categoryName = formatCategoryName(ex.categoryId); 
+    const equipment = ex.equipment || 'Brak sprzętu'; 
+    const hasAnimation = !!ex.animationSvg; 
+    const affinityBadge = getAffinityBadge(exerciseId); 
+    const previewBtnHTML = hasAnimation ? `<button class="preview-anim-btn nav-btn" data-exercise-id="${exerciseId}" title="Podgląd animacji" style="padding: 4px 8px; display: flex; align-items: center; gap: 5px; border-color: var(--secondary-color);"><img src="/icons/eye.svg" width="20" height="20" alt="Podgląd" style="display: block;"><span style="font-size: 0.75rem; font-weight: 600; color: var(--secondary-color);">Podgląd</span></button>` : ''; 
+    
+    let badgeHTML = ''; 
+    if (ex.isPersonalized) badgeHTML = `<span class="meta-badge" style="background:var(--gold-color); color:#000; border:none;">✨ Personalizacja</span>`; 
+    else if (ex.isDynamicSwap) badgeHTML = `<span class="meta-badge" style="background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd;">🎲 Mix</span>`; 
+    else if (ex.isSwapped) badgeHTML = `<span class="meta-badge" style="background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0;">🔄 Wybór</span>`; 
+    
+    const showOriginalInfo = ex.originalName && ex.originalName !== ex.name; 
+    const originalInfo = showOriginalInfo ? `<div style="font-size:0.75rem; color:#999; margin-top:-5px; margin-bottom:5px;">Zamiast: ${ex.originalName}</div>` : ''; 
+
+    // --- NOWY KOD: MODIFICATION BADGE ---
+    let modBadge = '';
+    if (ex.modification) {
+        // Koloryzacja w zależności od typu
+        let bg = '#eee';
+        let color = '#333';
+        let border = '#ccc';
+
+        if (ex.modification.type === 'boost') {
+            bg = '#ecfdf5'; color = '#047857'; border = '#6ee7b7'; // Green
+        } else if (ex.modification.type === 'eco') {
+            bg = '#eff6ff'; color = '#1d4ed8'; border = '#93c5fd'; // Blue
+        } else if (ex.modification.type === 'care' || ex.modification.type === 'sos') {
+            bg = '#fff7ed'; color = '#c2410c'; border = '#fdba74'; // Orange
+        }
+
+        modBadge = `<span class="meta-badge" style="background:${bg}; color:${color}; border:1px solid ${border}; white-space:nowrap;">${ex.modification.label}</span>`;
+    }
+    // ------------------------------------
+
+    return `
+    <div class="training-card" data-exercise-id="${exerciseId || ''}" data-category-id="${ex.categoryId || ''}">
+        <div class="training-card-header">
+            <div style="flex-grow: 1; padding-right: 10px;">
+                <h4 style="display:inline;">${ex.name}</h4>
+                ${affinityBadge}
+                ${originalInfo}
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                ${previewBtnHTML}
+                <button class="swap-btn" title="Wymień ćwiczenie" data-exercise-index="${index}"><img src="/icons/swap.svg" width="20" height="20" alt="Wymień"></button>
+            </div>
+        </div>
+        <div class="training-meta">
+            ${badgeHTML}
+            ${modBadge} <!-- NOWY BADGE -->
+            <span class="meta-badge badge-lvl-${lvl}">⚡ ${getLevelLabel(lvl)}</span>
+            <span class="meta-badge badge-category">📂 ${categoryName}</span>
+            <span class="meta-badge badge-equipment">🏋️ ${equipment}</span>
+        </div>
+        <p class="pre-training-description" style="padding-left:10px; opacity:0.8;">${ex.description || 'Brak opisu.'}</p>
+        <div class="training-inputs-grid">
+            <div class="input-wrapper">
+                <label for="sets-${uniqueId}" class="input-label">Serie</label>
+                <input type="number" id="sets-${uniqueId}" class="modern-input" value="${ex.sets}" data-exercise-index="${index}">
+            </div>
+            <div class="input-wrapper">
+                <label for="reps-${uniqueId}" class="input-label">Powtórzenia / Czas</label>
+                <input type="text" id="reps-${uniqueId}" class="modern-input" value="${ex.reps_or_time}" data-exercise-index="${index}">
+            </div>
+        </div>
+        <div class="training-footer">
+            <div>${ex.youtube_url ? `<a href="${ex.youtube_url}" target="_blank" class="video-link">▶ Zobacz wideo</a>` : ''}</div>
+            ${ex.tempo_or_iso ? `<span class="tempo-badge">Tempo: ${ex.tempo_or_iso}</span>` : ''}
+        </div>
+    </div>`; 
+}
 
 // --- SESSION CARD (HISTORY) ---
 

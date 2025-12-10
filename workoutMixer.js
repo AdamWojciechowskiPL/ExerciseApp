@@ -3,8 +3,8 @@ import { getISODate, getAvailableMinutesForToday, parseSetCount } from './utils.
 import { assistant } from './assistantEngine.js';
 
 /**
- * WORKOUT MIXER v3.1 (Clinical Logic Integrated)
- * Teraz zawiera pełną logikę walidacji bezpieczeństwa zgodną z _clinical-rule-engine.js
+ * WORKOUT MIXER v3.2 (Anti-Collision Fix)
+ * Zapobiega duplikatom, gdy mixer wylosuje ćwiczenie, które występuje w dalszej części planu.
  */
 
 const CACHE_FRESHNESS_DAYS = 60;
@@ -24,25 +24,30 @@ export const workoutMixer = {
         const dynamicPlan = JSON.parse(JSON.stringify(staticDayPlan));
         const sessionUsedIds = new Set();
 
-        // Budujemy kontekst kliniczny na podstawie danych z Wizarda (frontend state)
         const clinicalCtx = buildClinicalContext();
-        
-        // Jeśli stan jest ostry (Severe), wyłączamy losowe tasowanie dla bezpieczeństwa
         const effectiveForceShuffle = clinicalCtx.isSevere ? false : forceShuffle;
 
-        // 1. Prehab (Wstrzykiwanie ćwiczeń na strefy bólu)
+        // 1. Prehab
         if (state.settings.painZones && state.settings.painZones.length > 0) {
             injectPrehabExercises(dynamicPlan, sessionUsedIds, clinicalCtx);
         }
 
-        // 2. Iteracja po sekcjach (Warmup, Main, Cooldown)
+        // 2. Iteracja po sekcjach
         ['warmup', 'main', 'cooldown'].forEach(section => {
             if (!dynamicPlan[section]) return;
 
             dynamicPlan[section] = dynamicPlan[section].map(originalExercise => {
+                const originalId = originalExercise.id || originalExercise.exerciseId;
+
+                // --- DETEKCJA KOLIZJI (FIX) ---
+                // Sprawdzamy, czy to ćwiczenie (oryginał) zostało już użyte w tej sesji
+                // (np. jako zamiennik w poprzednim slocie).
+                const isCollision = sessionUsedIds.has(originalId);
 
                 const hasEquipmentForOriginal = checkEquipment(originalExercise);
-                const mustSwap = !hasEquipmentForOriginal;
+                
+                // Jeśli jest kolizja, MUSIMY wymienić, nawet jeśli sprzęt się zgadza.
+                const mustSwap = !hasEquipmentForOriginal || isCollision;
 
                 const criteria = {
                     categoryId: originalExercise.categoryId,
@@ -51,7 +56,8 @@ export const workoutMixer = {
 
                 const shouldShuffle = effectiveForceShuffle || mustSwap;
 
-                const freshVariant = findBestVariant(
+                // A. Szukamy idealnego wariantu
+                let variant = findBestVariant(
                     originalExercise,
                     criteria,
                     sessionUsedIds,
@@ -60,23 +66,32 @@ export const workoutMixer = {
                     clinicalCtx
                 );
 
-                // Jeśli znaleziono lepszy wariant i jest inny niż oryginał
-                if (freshVariant && (freshVariant.id !== originalExercise.exerciseId && freshVariant.id !== originalExercise.id)) {
-                    sessionUsedIds.add(freshVariant.id);
-                    return mergeExerciseData(originalExercise, freshVariant);
+                // B. Fallback awaryjny (jeśli MUSIMY wymienić, a nic nie znaleziono)
+                if (!variant && mustSwap) {
+                    console.warn(`[Mixer] Awaryjne szukanie dla ${originalExercise.name} (Kolizja/Sprzęt)`);
+                    // Szukamy czegokolwiek z tej kategorii, ignorując poziom trudności
+                    variant = findEmergencyVariant(
+                        originalExercise,
+                        sessionUsedIds,
+                        clinicalCtx
+                    );
                 }
 
-                // Jeśli musieliśmy wymienić (brak sprzętu), a nie znaleźliśmy alternatywy
-                if (mustSwap) {
-                    originalExercise.equipmentWarning = true;
+                if (variant && (variant.id !== originalId)) {
+                    sessionUsedIds.add(variant.id);
+                    return mergeExerciseData(originalExercise, variant);
                 }
 
-                sessionUsedIds.add(originalExercise.id || originalExercise.exerciseId);
+                if (mustSwap && !variant) {
+                    originalExercise.equipmentWarning = true; // Ostateczna porażka (rzadkie)
+                }
+
+                sessionUsedIds.add(originalId);
                 return originalExercise;
             });
         });
 
-        // 3. Kompresja czasu (jeśli plan przekracza dostępne minuty)
+        // 3. Kompresja czasu
         const availableMinutes = getAvailableMinutesForToday();
         const estimatedMinutes = assistant.estimateDuration(dynamicPlan);
 
@@ -159,20 +174,17 @@ function findBestVariant(originalEx, criteria, usedIds, forceShuffle = false, mu
             // 1. Zgodność kategorii
             if (ex.categoryId !== criteria.categoryId) return false;
             
-            // 2. Poziom trudności (chyba że musimy wymienić za wszelką cenę)
+            // 2. Poziom trudności (chyba że musimy wymienić za wszelką cenę - wtedy to pominie emergency fallback)
+            // W standardowym szukaniu trzymamy rygor +/- 1 level
             if (!mustSwap) {
                 const lvl = ex.difficultyLevel || 1;
                 if (Math.abs(lvl - criteria.targetLevel) > 1) return false;
             }
             
-            // 3. Wykluczenia podstawowe
             if (state.blacklist.includes(ex.id)) return false;
             if (usedIds.has(ex.id)) return false;
-            
-            // 4. Sprzęt
             if (!checkEquipment(ex)) return false;
             
-            // 5. WALIDACJA KLINICZNA (KLUCZOWE!)
             if (!passesMixerClinicalRules(ex, clinicalCtx)) return false;
             
             return true;
@@ -183,7 +195,7 @@ function findBestVariant(originalEx, criteria, usedIds, forceShuffle = false, mu
     const scoredCandidates = candidates.map(ex => {
         let score = 0;
 
-        // A. Świeżość (-100 do +60)
+        // A. Świeżość
         const lastDate = getLastPerformedDate(ex.id, ex.name);
         if (!lastDate) {
             score += 100 * WEIGHT_FRESHNESS;
@@ -194,16 +206,16 @@ function findBestVariant(originalEx, criteria, usedIds, forceShuffle = false, mu
             else score += freshnessScore * WEIGHT_FRESHNESS;
         }
 
-        // B. Affinity (Freq) -50 do +50
+        // B. Affinity
         const userPref = state.userPreferences[ex.id] || { score: 0 };
         score += (userPref.score || 0) * WEIGHT_AFFINITY;
 
-        // C. Bonus za oryginał (stabilność planu)
-        if (!forceShuffle && !mustSwap && (ex.id === originalEx.exerciseId || ex.id === originalEx.id)) {
+        // C. Bonus za oryginał (jeśli nie wymuszamy zmian)
+        const originalId = originalEx.exerciseId || originalEx.id;
+        if (!forceShuffle && !mustSwap && (ex.id === originalId)) {
             score += 60;
         }
 
-        // D. Random Factor
         const randomFactor = forceShuffle ? (Math.random() * 50) : (Math.random() * 10);
         score += randomFactor;
 
@@ -220,21 +232,50 @@ function findBestVariant(originalEx, criteria, usedIds, forceShuffle = false, mu
     return null;
 }
 
+/**
+ * Szukanie awaryjne: Gdy MUSIMY wymienić (bo oryginał jest zajęty/brak sprzętu),
+ * a standardowe szukanie (z limitem trudności) nic nie dało.
+ * Luzujemy kryteria trudności.
+ */
+function findEmergencyVariant(originalEx, usedIds, clinicalCtx) {
+    const categoryId = originalEx.categoryId;
+    if (!categoryId) return null;
+
+    const candidates = Object.entries(state.exerciseLibrary)
+        .map(([id, data]) => ({ id: id, ...data }))
+        .filter(ex => {
+            if (ex.categoryId !== categoryId) return false;
+            if (usedIds.has(ex.id)) return false;
+            if (state.blacklist.includes(ex.id)) return false;
+            if (!checkEquipment(ex)) return false;
+            
+            // Nadal sprawdzamy bezpieczeństwo kliniczne! (Tego nie luzujemy)
+            if (!passesMixerClinicalRules(ex, clinicalCtx)) return false;
+            
+            return true;
+        });
+
+    if (candidates.length === 0) return null;
+
+    // Sortujemy tylko po Affinity i Świeżości (prościej)
+    candidates.sort((a, b) => {
+        const prefA = (state.userPreferences[a.id]?.score || 0);
+        const prefB = (state.userPreferences[b.id]?.score || 0);
+        return prefB - prefA;
+    });
+
+    return candidates[0];
+}
+
 // ============================================================
 // CLINICAL RULE ENGINE (FRONTEND PORT)
 // ============================================================
 
-/**
- * Buduje kontekst kliniczny na podstawie danych z Wizarda (state.settings.wizardData).
- * Odzwierciedla logikę z backendu (_clinical-rule-engine.js).
- */
 function buildClinicalContext() {
     const wizardData = state.settings.wizardData || {};
     
-    // 1. Wzorce ruchu (Flexion/Extension intolerance)
     const tolerancePattern = detectTolerancePattern(wizardData.trigger_movements, wizardData.relief_movements);
 
-    // 2. Analiza bólu i Severity
     const painChar = wizardData.pain_character || [];
     const isPainSharp = painChar.includes('sharp') || painChar.includes('burning') || painChar.includes('radiating');
     const painInt = parseInt(wizardData.pain_intensity) || 0;
@@ -244,12 +285,10 @@ function buildClinicalContext() {
     if (isPainSharp) severityScore *= 1.2;
     const isSevere = severityScore >= 6.5;
 
-    // 3. Filtry bólu (strefy)
     const painLocs = wizardData.pain_locations || [];
     const painFilters = new Set(painLocs);
     if (painLocs.includes('si_joint') || painLocs.includes('hip')) painFilters.add('lumbar_general');
 
-    // 4. Restrykcje fizyczne
     const physicalRestrictions = wizardData.physical_restrictions || [];
 
     return {
@@ -261,38 +300,21 @@ function buildClinicalContext() {
     };
 }
 
-/**
- * Główna funkcja walidująca bezpieczeństwo ćwiczenia w Mixerze.
- * Łączy flagę serwerową (isAllowed) z lokalną walidacją kontekstu.
- */
 function passesMixerClinicalRules(ex, ctx) {
     if (!ex || !ctx) return true;
 
-    // A. WALIDACJA SERWEROWA (Safety Net)
-    // Jeśli backend uznał ćwiczenie za niedozwolone (np. brak sprzętu lub ciężki stan), odrzucamy.
-    // Uwaga: 'isAllowed' może być undefined dla starych danych, wtedy zakładamy true (i polegamy na lokalnej walidacji).
     if (ex.isAllowed === false) {
-        // Wyjątek: Jeśli powód to sprzęt, a my w mixerze pozwalamy na brak sprzętu (co jest sprawdzane wcześniej),
-        // to moglibyśmy to przepuścić. Ale funkcja checkEquipment w mixerze już to obsłużyła.
-        // Tutaj respektujemy decyzję medyczną serwera.
         return false;
     }
 
-    // B. WALIDACJA LOKALNA (Biomechanika & Wzorce)
-    // Nawet jeśli serwer pozwolił, sprawdzamy czy ćwiczenie pasuje do aktualnych restrykcji
-    // (np. jeśli użytkownik zmienił ustawienia, a nie przeładował całej aplikacji).
-
-    // 1. Restrykcje fizyczne (np. brak klękania)
     if (violatesRestrictions(ex, ctx.physicalRestrictions)) {
         return false;
     }
 
-    // 2. Wzorce tolerancji (Zgięcie/Wyprost)
     if (!passesTolerancePattern(ex, ctx.tolerancePattern)) {
         return false;
     }
 
-    // 3. Tryb Ostry (Severity) - Tylko ćwiczenia z tagiem ulgi
     if (ctx.isSevere) {
         const zones = ex.painReliefZones || [];
         const helpsZone = zones.some(z => ctx.painFilters.has(z));
@@ -330,7 +352,6 @@ function passesTolerancePattern(ex, tolerancePattern) {
     const zones = ex.painReliefZones || [];
 
     if (tolerancePattern === 'flexion_intolerant') {
-        // Jeśli to zgięcie, musi być oznaczone jako bezpieczne dla tej grupy
         if (plane === 'flexion' && !zones.includes('lumbar_flexion_intolerant')) return false;
     } else if (tolerancePattern === 'extension_intolerant') {
         if (plane === 'extension' && !zones.includes('lumbar_extension_intolerant')) return false;
@@ -365,7 +386,6 @@ function adaptVolumeInternal(originalEx, newEx) {
     const newMaxReps = newEx.maxReps || 0;
     let newVal = oldVal;
 
-    // Konwersja Czas <-> Powtórzenia
     if (isOldTimeBased && newMaxReps > 0 && newMaxDuration === 0) {
         const seconds = parseSeconds(oldVal);
         let reps = Math.round(seconds / SECONDS_PER_REP);
@@ -379,7 +399,6 @@ function adaptVolumeInternal(originalEx, newEx) {
         seconds = Math.max(15, seconds);
         newVal = `${seconds} s`;
     } else {
-        // Skalowanie w tej samej domenie
         if (isOldTimeBased && newMaxDuration > 0) {
             const seconds = parseSeconds(oldVal);
             if (seconds > newMaxDuration) newVal = `${newMaxDuration} s`;
@@ -409,7 +428,6 @@ function mergeExerciseData(original, variant) {
         originalName: (original.exerciseId !== variant.id) ? original.name : null
     };
 
-    // Obsługa Unilateral
     if (variant.isUnilateral && !merged.reps_or_time.includes("/str")) {
         if (merged.reps_or_time.includes("s")) merged.reps_or_time = merged.reps_or_time.replace("s", "s/str.");
         else merged.reps_or_time = `${merged.reps_or_time}/str.`;
@@ -433,7 +451,6 @@ function injectPrehabExercises(plan, usedIds, clinicalCtx) {
             if (usedIds.has(ex.id)) return false;
             if (!checkEquipment(ex)) return false;
             
-            // Walidacja kliniczna dla prehaby
             if (!passesMixerClinicalRules(ex, clinicalCtx)) return false;
             
             return true;

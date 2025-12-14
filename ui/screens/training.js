@@ -30,17 +30,23 @@ export const renderProtocolStart = (protocol) => {
 
     const screen = screens.preTraining;
 
-    // Dobór koloru akcentującego w zależności od trybu (SOS/Booster/Reset)
+    // Dobór koloru akcentującego w zależności od trybu
     let accentColor = 'var(--primary-color)';
     if (protocol.mode === 'sos') accentColor = '#8b5cf6';      // Fiolet
     if (protocol.mode === 'booster') accentColor = '#fb7185';  // Róż
     if (protocol.mode === 'reset') accentColor = '#34d399';    // Zieleń
+    
+    // Nowe tryby
+    if (protocol.mode === 'calm') accentColor = '#3b82f6';     // Blue
+    if (protocol.mode === 'flow') accentColor = '#22d3ee';     // Cyan
+    if (protocol.mode === 'neuro') accentColor = '#facc15';    // Yellow
+    if (protocol.mode === 'ladder') accentColor = '#fb923c';   // Orange
 
     // Generowanie HTML nagłówka
     screen.innerHTML = `
         <div style="text-align:center; padding: 1.5rem 0; background: linear-gradient(to bottom, ${accentColor} 0%, transparent 100%); margin: -1.5rem -1.5rem 1rem -1.5rem; border-radius: 0 0 20px 20px;">
             <div style="background: rgba(255,255,255,0.2); width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 10px auto; font-size: 2rem;">
-                ${protocol.mode === 'sos' ? '💊' : (protocol.mode === 'booster' ? '🔥' : '🍃')}
+                ${protocol.mode === 'sos' ? '💊' : (protocol.mode === 'booster' ? '🔥' : (protocol.mode === 'calm' ? '🌙' : (protocol.mode === 'neuro' ? '⚡' : '🍃')))}
             </div>
             <h2 style="margin:0; color: #fff; text-shadow: 0 2px 4px rgba(0,0,0,0.2);">${protocol.title}</h2>
             <p style="margin: 5px 0 0 0; color: rgba(255,255,255,0.9); font-size: 0.9rem; padding: 0 1rem;">${protocol.description}</p>
@@ -94,7 +100,7 @@ export const renderProtocolStart = (protocol) => {
             }
             listContainer.innerHTML += tempContainer.innerHTML;
         });
-        
+
         // Aktualizacja czasu na przycisku
         if (totalTimeDisplay) {
             totalTimeDisplay.textContent = Math.round(currentProtocol.totalDuration / 60);
@@ -121,7 +127,7 @@ export const renderProtocolStart = (protocol) => {
             if (ex.duration) {
                 const newDuration = Math.round(ex.duration * timeFactor);
                 ex.duration = newDuration;
-                
+
                 // Jeśli to ćwiczenie (WORK), aktualizujemy też tekst wyświetlany
                 if (ex.isWork) {
                     ex.reps_or_time = `${newDuration} s`;
@@ -143,7 +149,7 @@ export const renderProtocolStart = (protocol) => {
 
         // Pobieramy indeks (odnosi się on do workExercises, bo tylko te są renderowane)
         const index = parseInt(btn.dataset.exerciseIndex, 10);
-        
+
         // Filtrujemy ćwiczenia robocze w oryginalnym obiekcie protokołu
         const workExercises = protocol.flatExercises.filter(ex => ex.isWork);
         const exerciseToSwap = workExercises[index];
@@ -154,7 +160,7 @@ export const renderProtocolStart = (protocol) => {
             renderSwapModal(exerciseToSwap, (newExerciseDef, swapType) => {
                 // Aktualizujemy obiekt ćwiczenia w miejscu (przez referencję)
                 // WAŻNE: W protokołach ZACHOWUJEMY czas trwania oryginalnego slotu!
-                
+
                 exerciseToSwap.id = newExerciseDef.id;
                 exerciseToSwap.exerciseId = newExerciseDef.id;
                 exerciseToSwap.name = newExerciseDef.name;
@@ -163,7 +169,7 @@ export const renderProtocolStart = (protocol) => {
                 exerciseToSwap.categoryId = newExerciseDef.categoryId;
                 exerciseToSwap.equipment = newExerciseDef.equipment;
                 exerciseToSwap.youtube_url = newExerciseDef.youtube_url;
-                
+
                 // Oznaczamy jako wymienione wizualnie
                 exerciseToSwap.isSwapped = true;
                 exerciseToSwap.isDynamicSwap = true;
@@ -172,17 +178,17 @@ export const renderProtocolStart = (protocol) => {
                 // Obsługa Czarnej Listy
                 if (swapType === 'blacklist') {
                      if (confirm(`Dodać poprzednie ćwiczenie do czarnej listy?`)) {
-                         dataStore.addToBlacklist(oldId, newExerciseDef.id); 
+                         dataStore.addToBlacklist(oldId, newExerciseDef.id);
                      }
                 }
 
                 // Odświeżamy listę, aby pokazać nowe ćwiczenie (z uwzględnieniem aktualnego suwaka)
                 // Musimy zasymulować event input suwaka lub ręcznie wywołać logikę przeliczania
                 const timeFactor = parseFloat(slider.value) || 1.0;
-                
+
                 // Generujemy podgląd na nowo z zaktualizowanym 'protocol' i aktualnym timeFactorem
                 const previewProtocol = JSON.parse(JSON.stringify(protocol));
-                
+
                 previewProtocol.flatExercises.forEach(ex => {
                     if (ex.duration) {
                         const newDuration = Math.round(ex.duration * timeFactor);
@@ -190,7 +196,7 @@ export const renderProtocolStart = (protocol) => {
                         if (ex.isWork) ex.reps_or_time = `${newDuration} s`;
                     }
                 });
-                
+
                 renderList(previewProtocol);
             });
         }
@@ -207,7 +213,7 @@ export const renderProtocolStart = (protocol) => {
 
         // Tutaj musimy zastosować zmiany na "ostrym" obiekcie, który trafi do silnika
         const scaledProtocol = JSON.parse(JSON.stringify(protocol));
-        
+
         scaledProtocol.flatExercises.forEach(ex => {
             if (ex.duration) {
                 ex.duration = Math.round(ex.duration * timeFactor);

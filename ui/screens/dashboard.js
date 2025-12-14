@@ -294,9 +294,9 @@ export const renderMainScreen = (isLoading = false) => {
                 opt.addEventListener('click', () => {
                     painOptions.forEach(o => o.classList.remove('selected'));
                     opt.classList.add('selected');
-                    
+
                     const painLevel = parseInt(opt.dataset.level, 10);
-                    
+
                     // 1. Sprawdzamy czy to tryb SOS (Level 8+)
                     // Używamy helpera z assistantEngine, żeby zasymulować odpowiedź
                     const checkPlan = assistant.adjustTrainingVolume(finalPlan, painLevel);
@@ -313,12 +313,12 @@ export const renderMainScreen = (isLoading = false) => {
                         // Standardowa aktualizacja czasu
                         const newDuration = assistant.estimateDuration(checkPlan);
                         timeBadge.textContent = `${newDuration} min`;
-                        
+
                         startBtn.textContent = "Start Misji";
                         startBtn.style.backgroundColor = ""; // Reset do domyślnego
                         startBtn.dataset.mode = 'normal';
                     }
-                    
+
                     startBtn.dataset.initialPain = painLevel;
                 });
             });
@@ -326,7 +326,7 @@ export const renderMainScreen = (isLoading = false) => {
             startBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const pain = parseInt(startBtn.dataset.initialPain, 10) || 0;
-                
+
                 // Obsługa przekierowania SOS
                 if (startBtn.dataset.mode === 'sos') {
                     if (confirm("Wykryto wysoki poziom bólu. Czy uruchomić bezpieczny Protokół SOS zamiast głównego planu?")) {
@@ -352,7 +352,7 @@ export const renderMainScreen = (isLoading = false) => {
     }
 
     // ============================================================
-    // B. LABORATORIUM REGENERACJI
+    // B. LABORATORIUM REGENERACJI (z nowymi trybami)
     // ============================================================
     const bioHubContainer = document.createElement('div');
     bioHubContainer.className = 'bio-hub-container';
@@ -360,20 +360,37 @@ export const renderMainScreen = (isLoading = false) => {
     const wz = state.settings.wizardData || {};
     const protocols = [];
 
-    protocols.push({ mode: 'booster', zone: 'core', time: 5, title: 'Brzuch ze stali', desc: 'Szybki obwód wzmacniający', icon: '🔥' });
-    protocols.push({ mode: 'reset', zone: 'sleep', time: 8, title: 'Dobry Sen', desc: 'Wyciszenie przed nocą', icon: '🌙' });
+    // 1. ZAWSZE DOSTĘPNE (Baza)
+    protocols.push({ mode: 'booster', zone: 'core', time: 5, title: 'Brzuch ze stali', desc: 'Szybki obwód', icon: '🔥' });
+    protocols.push({ mode: 'flow', zone: 'full_body', time: 8, title: 'Mobility Flow', desc: 'Płynny ruch całego ciała', icon: '🌊' });
+    protocols.push({ mode: 'calm', zone: 'sleep', time: 10, title: 'Głęboki Reset', desc: 'Oddech i wyciszenie', icon: '🌙' });
 
+    // 2. KONTEKSTOWE (Na podstawie Wizarda)
+    
+    // Praca siedząca -> Anty-Biuro (Flow lub Reset)
     if (wz.work_type === 'sedentary') {
-        protocols.unshift({ mode: 'reset', zone: 'office', time: 5, title: 'Anty-Biuro', desc: 'Rozprostuj się po pracy', icon: '🪑' });
+        protocols.unshift({ mode: 'flow', zone: 'office', time: 5, title: 'Anty-Biuro', desc: 'Rozprostuj się po pracy', icon: '🪑' });
     }
 
+    // Szyja -> SOS lub Flow
     if (wz.pain_locations?.includes('cervical')) {
         protocols.unshift({ mode: 'sos', zone: 'cervical', time: 4, title: 'Szyja: Ratunek', desc: 'Ulga w napięciu karku', icon: '💊' });
     }
-    if (wz.medical_diagnosis?.includes('sciatica') || wz.pain_locations?.includes('sciatica')) {
-        protocols.unshift({ mode: 'sos', zone: 'sciatica', time: 6, title: 'Rwa Kulszowa', desc: 'Bezpieczne flossingi', icon: '⚡' });
+
+    // Rwa kulszowa / Biodra -> NEURO
+    const hasSciatica = wz.medical_diagnosis?.includes('sciatica') || wz.pain_locations?.includes('sciatica');
+    const hasHipIssues = wz.pain_locations?.includes('hip') || wz.medical_diagnosis?.includes('piriformis');
+    
+    if (hasSciatica || hasHipIssues) {
+        protocols.unshift({ mode: 'neuro', zone: 'sciatica', time: 6, title: 'Neuro-Ślizgi', desc: 'Mobilizacja nerwów', icon: '⚡' });
     }
 
+    // Jeśli użytkownik jest zaawansowany -> LADDER
+    if (wz.exercise_experience === 'advanced' || wz.exercise_experience === 'regular') {
+        protocols.push({ mode: 'ladder', zone: 'full_body', time: 12, title: 'Drabina Progresji', desc: 'Buduj technikę', icon: '🧗' });
+    }
+
+    // Fallback: Glute Pump jeśli mało kart
     if (protocols.length < 3) {
         protocols.push({ mode: 'booster', zone: 'glute', time: 6, title: 'Glute Pump', desc: 'Aktywacja pośladków', icon: '🍑' });
     }
@@ -394,7 +411,7 @@ export const renderMainScreen = (isLoading = false) => {
     `).join('');
 
     bioHubContainer.innerHTML = `
-        <div class="section-title" style="margin-top:1.5rem; margin-bottom:0.8rem; padding-left:4px;">LABORATORIUM REGENERACJI</div>
+        <div class="section-title" style="margin-top:1.5rem; margin-bottom:0.8rem; padding-left:4px;">PROTOKOŁY CELOWANE</div>
         <div class="bio-hub-scroll">${cardsHTML}</div>
     `;
 

@@ -7,15 +7,15 @@ export function renderSwapModal(currentExercise, onConfirm) {
     const libraryExercise = state.exerciseLibrary[currentId];
     if (!categoryId && libraryExercise) categoryId = libraryExercise.categoryId;
     if (!categoryId) { alert("Błąd danych: brak kategorii."); return; }
-    
+
     const alternatives = Object.entries(state.exerciseLibrary)
         .map(([id, data]) => ({ id, ...data }))
         .filter(ex => ex.categoryId === categoryId && String(ex.id) !== String(currentId));
-    
+
     if (alternatives.length === 0) { alert(`Brak alternatyw dla kategorii "${categoryId}".`); return; }
-    
+
     const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
-    
+
     const altsHtml = alternatives.map(alt => `
         <div class="alt-exercise-card" data-id="${alt.id}">
             <div class="alt-info">
@@ -24,7 +24,7 @@ export function renderSwapModal(currentExercise, onConfirm) {
             </div>
         </div>
     `).join('');
-    
+
     overlay.innerHTML = `
         <div class="swap-modal">
             <h3>Wymień: ${currentExercise.name || libraryExercise?.name}</h3>
@@ -36,47 +36,50 @@ export function renderSwapModal(currentExercise, onConfirm) {
                     <button class="toggle-btn active" data-type="today">Tylko dziś</button>
                     <button class="toggle-btn" data-type="blacklist">🚫 Nie lubię</button>
                 </div>
-                <div style="display:flex; gap:10px; margin-top:10px;">
-                    <button id="cancel-swap" class="nav-btn" style="flex:1">Anuluj</button>
-                    <button id="confirm-swap" class="action-btn" style="flex:1" disabled>Wymień</button>
+                
+                <!-- POPRAWIONA SEKCJA PRZYCISKÓW -->
+                <div style="display:flex; gap:10px; margin-top:1.5rem;">
+                    <button id="cancel-swap" class="nav-btn" style="flex:1; padding: 0.8rem; justify-content: center; height: auto;">Anuluj</button>
+                    <button id="confirm-swap" class="action-btn" style="flex:1; margin-top: 0;" disabled>Wymień</button>
                 </div>
             </div>
         </div>
     `;
-    
+
     document.body.appendChild(overlay);
-    
-    let selectedAltId = null; 
+
+    let selectedAltId = null;
     let swapType = 'today';
-    
-    const cards = overlay.querySelectorAll('.alt-exercise-card'); 
-    const confirmBtn = overlay.querySelector('#confirm-swap'); 
+
+    const cards = overlay.querySelectorAll('.alt-exercise-card');
+    const confirmBtn = overlay.querySelector('#confirm-swap');
     const toggleBtns = overlay.querySelectorAll('.toggle-btn');
-    
-    cards.forEach(card => { 
-        card.addEventListener('click', () => { 
-            cards.forEach(c => c.classList.remove('selected')); 
-            card.classList.add('selected'); 
-            selectedAltId = card.dataset.id; 
-            confirmBtn.disabled = false; 
-            confirmBtn.textContent = `Wymień na: ${state.exerciseLibrary[selectedAltId]?.name}`; 
-        }); 
+
+    cards.forEach(card => {
+        card.addEventListener('click', () => {
+            cards.forEach(c => c.classList.remove('selected'));
+            card.classList.add('selected');
+            selectedAltId = card.dataset.id;
+            confirmBtn.disabled = false;
+            // Opcjonalnie: zmiana tekstu na przycisku
+            // confirmBtn.textContent = `Wymień`; 
+        });
     });
-    
-    toggleBtns.forEach(btn => { 
-        btn.addEventListener('click', () => { 
-            toggleBtns.forEach(b => b.classList.remove('active')); 
-            btn.classList.add('active'); 
-            swapType = btn.dataset.type; 
-        }); 
+
+    toggleBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            toggleBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            swapType = btn.dataset.type;
+        });
     });
-    
+
     overlay.querySelector('#cancel-swap').addEventListener('click', () => overlay.remove());
-    confirmBtn.addEventListener('click', () => { 
-        if (selectedAltId) { 
-            onConfirm({ id: selectedAltId, ...state.exerciseLibrary[selectedAltId] }, swapType); 
-            overlay.remove(); 
-        } 
+    confirmBtn.addEventListener('click', () => {
+        if (selectedAltId) {
+            onConfirm({ id: selectedAltId, ...state.exerciseLibrary[selectedAltId] }, swapType);
+            overlay.remove();
+        }
     });
 }
 
@@ -89,18 +92,18 @@ export function renderPreviewModal(svgContent, title) {
             <button id="close-preview" class="nav-btn" style="width: 100%">Zamknij</button>
         </div>
     `;
-    document.body.appendChild(overlay); 
+    document.body.appendChild(overlay);
     overlay.querySelector('#close-preview').addEventListener('click', () => overlay.remove());
 }
 
 export function renderEvolutionModal(adaptation, onCheck) {
     const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
     const isEvo = adaptation.type === 'evolution';
-    
-    const config = isEvo 
-        ? { title: "Ewolucja!", desc: "Twoja stabilność osiągnęła 100%. System odblokował trudniejszy wariant.", icon: "🏆", color: "var(--gold-color)", btnText: "Przyjmuję Wyzwanie" } 
+
+    const config = isEvo
+        ? { title: "Ewolucja!", desc: "Twoja stabilność osiągnęła 100%. System odblokował trudniejszy wariant.", icon: "🏆", color: "var(--gold-color)", btnText: "Przyjmuję Wyzwanie" }
         : { title: "Korekta", desc: "Wykryto przeciążenie. System tymczasowo cofa trudność.", icon: "🛡️", color: "var(--secondary-color)", btnText: "Zrozumiałem" };
-    
+
     overlay.innerHTML = `
         <div class="evolution-modal" style="--glow-color: ${config.color}">
             <div class="evo-icon-wrapper"><span style="font-size: 3rem;">${config.icon}</span></div>
@@ -114,25 +117,25 @@ export function renderEvolutionModal(adaptation, onCheck) {
             <button id="close-evo" class="action-btn" style="background: ${config.color}; color: #000; border: none;">${config.btnText}</button>
         </div>
     `;
-    
+
     document.body.appendChild(overlay);
     if (state.completionSound && isEvo) state.finalCompletionSound();
-    
-    overlay.querySelector('#close-evo').onclick = () => { 
-        overlay.querySelector('.evolution-modal').style.transform = 'scale(0.8)'; 
-        overlay.querySelector('.evolution-modal').style.opacity = '0'; 
-        setTimeout(() => { overlay.remove(); if (onCheck) onCheck(); }, 200); 
+
+    overlay.querySelector('#close-evo').onclick = () => {
+        overlay.querySelector('.evolution-modal').style.transform = 'scale(0.8)';
+        overlay.querySelector('.evolution-modal').style.opacity = '0';
+        setTimeout(() => { overlay.remove(); if (onCheck) onCheck(); }, 200);
     };
 }
 
 export function renderSessionRecoveryModal(backup, timeGapFormatted, onRestore, onDiscard) {
-    const overlay = document.createElement('div'); 
+    const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
-    
-    const totalSteps = backup.flatExercises?.length || 0; 
-    const currentStep = backup.currentExerciseIndex || 0; 
+
+    const totalSteps = backup.flatExercises?.length || 0;
+    const currentStep = backup.currentExerciseIndex || 0;
     const progressPercent = totalSteps > 0 ? Math.round((currentStep / totalSteps) * 100) : 0;
-    
+
     overlay.innerHTML = `
         <div class="swap-modal" style="max-width: 380px;">
             <div style="text-align: center; margin-bottom: 1.5rem;">
@@ -140,11 +143,11 @@ export function renderSessionRecoveryModal(backup, timeGapFormatted, onRestore, 
                 <h2 style="margin: 0.5rem 0;">Przerwana sesja</h2>
                 <p style="opacity: 0.7; font-size: 0.9rem;">Wykryto niezakończony trening</p>
             </div>
-            
+
             <div style="background: var(--card-color); border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem;">
                 <div style="font-weight: 600; margin-bottom: 0.5rem;">${backup.trainingTitle || 'Trening'}</div>
                 <div style="font-size: 0.85rem; opacity: 0.7; margin-bottom: 0.75rem;">Przerwa: ${timeGapFormatted} temu</div>
-                
+
                 <div style="background: var(--bg-color); border-radius: 8px; padding: 0.5rem;">
                     <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.25rem;">
                         <span>Postęp</span>
@@ -155,26 +158,26 @@ export function renderSessionRecoveryModal(backup, timeGapFormatted, onRestore, 
                     </div>
                 </div>
             </div>
-            
+
             <p style="font-size: 0.85rem; opacity: 0.8; margin-bottom: 1.5rem; text-align: center;">
                 Czas przerwy zostanie dodany do całkowitego czasu pauzy.
             </p>
-            
+
             <div style="display: flex; gap: 12px;">
-                <button id="discard-session" class="nav-btn" 
+                <button id="discard-session" class="nav-btn"
                     style="flex: 1; padding: 12px; font-size: 1rem; display: flex; align-items: center; justify-content: center;">
                     Porzuć
                 </button>
-                <button id="restore-session" class="action-btn" 
+                <button id="restore-session" class="action-btn"
                     style="flex: 1; margin: 0; padding: 12px; font-size: 1rem; display: flex; align-items: center; justify-content: center;">
                     Przywróć
                 </button>
             </div>
         </div>
     `;
-    
+
     document.body.appendChild(overlay);
-    
+
     overlay.querySelector('#restore-session').addEventListener('click', () => { overlay.remove(); if (onRestore) onRestore(); });
     overlay.querySelector('#discard-session').addEventListener('click', () => { overlay.remove(); if (onDiscard) onDiscard(); });
 }
@@ -233,13 +236,13 @@ export function renderTunerModal(exerciseId, onUpdate) {
             .tuner-header { text-align: center; margin-bottom: 1.5rem; }
             .tuner-header h3 { margin: 0; font-size: 1.3rem; color: #f3f4f6; border: none; }
             .tuner-badge-preview { font-size: 0.8rem; opacity: 0.7; margin-top: 5px; text-transform: uppercase; letter-spacing: 1px; }
-            
+
             .tuner-section { margin-bottom: 1.5rem; }
             .tuner-section label { display: block; font-size: 0.85rem; font-weight: 700; color: #9ca3af; margin-bottom: 10px; text-transform: uppercase; }
-            
+
             /* Custom Range Slider */
             .slider-wrapper { position: relative; height: 10px; margin: 20px 0; }
-            .tuner-slider { 
+            .tuner-slider {
                 -webkit-appearance: none; width: 100%; height: 10px; background: transparent; position: absolute; z-index: 2; margin: 0; cursor: pointer;
             }
             .slider-track {
@@ -248,7 +251,7 @@ export function renderTunerModal(exerciseId, onUpdate) {
             .tuner-slider::-webkit-slider-thumb {
                 -webkit-appearance: none; width: 24px; height: 24px; background: #fff; border-radius: 50%; box-shadow: 0 0 10px rgba(0,0,0,0.5); margin-top: -7px;
             }
-            
+
             .tuner-labels { display: flex; justify-content: space-between; font-size: 0.7rem; color: #6b7280; margin-top: 5px; }
             .tuner-val { text-align: center; font-size: 1.5rem; font-weight: 800; margin-top: 5px; color: #fff; font-variant-numeric: tabular-nums; }
 
@@ -273,13 +276,13 @@ export function renderTunerModal(exerciseId, onUpdate) {
     const updateUI = () => {
         const val = parseInt(slider.value);
         valDisplay.textContent = val > 0 ? `+${val}` : val;
-        
+
         let tier = 'Neutral (B)';
         let color = '#9ca3af';
         if (val >= 20) { tier = 'Supreme (S)'; color = '#f59e0b'; }
         else if (val >= 10) { tier = 'Great (A)'; color = '#2dd4bf'; }
         else if (val <= -10) { tier = 'Avoid (C)'; color = '#ef4444'; }
-        
+
         tierDisplay.textContent = tier;
         tierDisplay.style.color = color;
 
@@ -304,14 +307,14 @@ export function renderTunerModal(exerciseId, onUpdate) {
 
     overlay.querySelector('#save-tuner').addEventListener('click', async () => {
         const newScore = parseInt(slider.value);
-        
+
         // Zapisz do store
         await dataStore.updatePreference(exerciseId, 'set', newScore);
         await dataStore.updatePreference(exerciseId, 'set_difficulty', currentDiff);
-        
+
         // Wywołaj callback odświeżający
         if (onUpdate) onUpdate();
-        
+
         overlay.remove();
     });
 }

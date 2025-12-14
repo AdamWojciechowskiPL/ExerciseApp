@@ -2,7 +2,7 @@
 
 // ⚠️ WAŻNE: Zmieniaj ten numer wersji przy KAŻDYM wdrożeniu (deployu) na produkcję!
 // To sygnał dla przeglądarki, że są nowe pliki.
-const STATIC_CACHE_NAME = 'static-assets-v12.2.1'; // np. v11, v12, v13...
+const STATIC_CACHE_NAME = 'static-assets-v12.3.0'; // np. v11, v12, v13...
 const DYNAMIC_CACHE_NAME = 'dynamic-content-v1';
 
 const APP_SHELL_ASSETS = [

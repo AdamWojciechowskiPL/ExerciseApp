@@ -11,6 +11,7 @@ import dataStore from '../../dataStore.js';
 import { renderMainScreen, clearPlanFromStorage } from './dashboard.js';
 import { workoutMixer } from '../../workoutMixer.js';
 import { getUserPayload } from '../../auth.js';
+import { generateBioProtocol } from '../../protocolGenerator.js';
 
 const savePlanToStorage = (plan) => {
     try {
@@ -21,14 +22,14 @@ const savePlanToStorage = (plan) => {
     } catch (e) { console.error("Błąd zapisu planu:", e); }
 };
 
-// --- NOWOŚĆ: EKRAN STARTOWY BIO-PROTOKOŁU ---
+// --- EKRAN STARTOWY BIO-PROTOKOŁU ---
 export const renderProtocolStart = (protocol) => {
     // Ustawiamy protokół jako "aktualny plan" w stanie
-    state.todaysDynamicPlan = protocol; 
-    state.currentTrainingDayId = protocol.id; 
-    
+    state.todaysDynamicPlan = protocol;
+    state.currentTrainingDayId = protocol.id;
+
     const screen = screens.preTraining;
-    
+
     // Dobór koloru akcentującego w zależności od trybu (SOS/Booster/Reset)
     let accentColor = 'var(--primary-color)';
     if (protocol.mode === 'sos') accentColor = '#8b5cf6';      // Fiolet
@@ -45,42 +46,154 @@ export const renderProtocolStart = (protocol) => {
             <p style="margin: 5px 0 0 0; color: rgba(255,255,255,0.9); font-size: 0.9rem; padding: 0 1rem;">${protocol.description}</p>
         </div>
 
+        <!-- SUWAK INTENSYWNOŚCI (TIME FACTOR) -->
+        <div class="adjustment-panel" style="margin-bottom: 1rem;">
+            <div class="adjustment-header">
+                <h3>Dostosuj Czas</h3>
+                <span id="time-factor-display" class="time-factor-display">100%</span>
+            </div>
+            <div class="slider-container">
+                <span style="font-size:0.8rem">Szybko (50%)</span>
+                <input type="range" id="time-slider" min="0.5" max="1.5" step="0.1" value="1.0">
+                <span style="font-size:0.8rem">Długo (150%)</span>
+            </div>
+        </div>
+
         <div id="pre-training-list">
             <!-- Lista ćwiczeń -->
         </div>
-        
+
         <div class="pre-training-nav">
             <button id="proto-cancel-btn" class="nav-btn">Wróć</button>
             <button id="proto-start-btn" class="action-btn" style="background: ${accentColor}; border:none; color: white; font-weight: 800;">
-                Rozpocznij (${Math.round(protocol.totalDuration / 60)} min)
+                Rozpocznij (<span id="total-time-display">${Math.round(protocol.totalDuration / 60)}</span> min)
             </button>
         </div>
     `;
 
     const listContainer = screen.querySelector('#pre-training-list');
-    
-    // Filtrujemy listę, aby pokazać tylko ćwiczenia (bez przerw technicznych)
-    const workExercises = protocol.flatExercises.filter(ex => ex.isWork);
-    
-    workExercises.forEach((ex, index) => {
-        // Używamy standardowego generatora kart
-        const cardHTML = generatePreTrainingCardHTML(ex, index);
-        
-        // NAPRAWA: Zamiast Regexa (który psuł strukturę HTML przez zagnieżdżone divy),
-        // używamy tymczasowego elementu DOM do bezpiecznej podmiany środka karty.
-        const tempContainer = document.createElement('div');
-        tempContainer.innerHTML = cardHTML;
+    const totalTimeDisplay = screen.querySelector('#total-time-display');
 
-        const inputsGrid = tempContainer.querySelector('.training-inputs-grid');
-        if (inputsGrid) {
-            // Podmieniamy sekcję inputów na statyczny badge, zachowując resztę karty (w tym footer) nienaruszoną
-            inputsGrid.outerHTML = `
-                <div style="text-align:center; padding:8px; font-weight:bold; color:${accentColor}; background:rgba(0,0,0,0.03); border-radius:8px; margin-top:10px; font-size: 0.9rem;">
-                    ⏱ Czas pracy: ${ex.reps_or_time}
-                </div>`;
-        }
+    // Funkcja renderująca listę (do odświeżania po zmianie suwaka lub wymianie ćwiczenia)
+    const renderList = (currentProtocol) => {
+        listContainer.innerHTML = '';
+        const workExercises = currentProtocol.flatExercises.filter(ex => ex.isWork);
+
+        workExercises.forEach((ex, index) => {
+            const cardHTML = generatePreTrainingCardHTML(ex, index);
+            const tempContainer = document.createElement('div');
+            tempContainer.innerHTML = cardHTML;
+
+            const inputsGrid = tempContainer.querySelector('.training-inputs-grid');
+            if (inputsGrid) {
+                // Podmieniamy sekcję inputów na statyczny badge z AKTUALNYM czasem
+                inputsGrid.outerHTML = `
+                    <div style="text-align:center; padding:8px; font-weight:bold; color:${accentColor}; background:rgba(0,0,0,0.03); border-radius:8px; margin-top:10px; font-size: 0.9rem;">
+                        ⏱ Czas pracy: ${ex.reps_or_time}
+                    </div>`;
+            }
+            listContainer.innerHTML += tempContainer.innerHTML;
+        });
         
-        listContainer.innerHTML += tempContainer.innerHTML;
+        // Aktualizacja czasu na przycisku
+        if (totalTimeDisplay) {
+            totalTimeDisplay.textContent = Math.round(currentProtocol.totalDuration / 60);
+        }
+    };
+
+    // Render startowy (oryginalny protokół)
+    renderList(protocol);
+
+    // Obsługa suwaka czasu
+    const slider = screen.querySelector('#time-slider');
+    const display = screen.querySelector('#time-factor-display');
+
+    slider.addEventListener('input', (e) => {
+        const timeFactor = parseFloat(e.target.value);
+        display.textContent = `${Math.round(timeFactor * 100)}%`;
+
+        // 1. Tworzymy kopię protokołu dla podglądu UI
+        const previewProtocol = JSON.parse(JSON.stringify(protocol));
+
+        // 2. Aktualizujemy czasy w kopii
+        previewProtocol.flatExercises.forEach(ex => {
+            // Skalujemy tylko jeśli ćwiczenie ma zdefiniowane duration (protokoły mają)
+            if (ex.duration) {
+                const newDuration = Math.round(ex.duration * timeFactor);
+                ex.duration = newDuration;
+                
+                // Jeśli to ćwiczenie (WORK), aktualizujemy też tekst wyświetlany
+                if (ex.isWork) {
+                    ex.reps_or_time = `${newDuration} s`;
+                }
+            }
+        });
+
+        // 3. Aktualizujemy całkowity czas w kopii
+        previewProtocol.totalDuration = Math.round(protocol.totalDuration * timeFactor);
+
+        // 4. Przerysowujemy listę z nowymi wartościami
+        renderList(previewProtocol);
+    });
+
+    // --- NOWOŚĆ: OBSŁUGA WYMIANY ĆWICZEŃ W PROTOKOLE ---
+    listContainer.addEventListener('click', (e) => {
+        const btn = e.target.closest('.swap-btn');
+        if (!btn) return;
+
+        // Pobieramy indeks (odnosi się on do workExercises, bo tylko te są renderowane)
+        const index = parseInt(btn.dataset.exerciseIndex, 10);
+        
+        // Filtrujemy ćwiczenia robocze w oryginalnym obiekcie protokołu
+        const workExercises = protocol.flatExercises.filter(ex => ex.isWork);
+        const exerciseToSwap = workExercises[index];
+
+        if (exerciseToSwap) {
+            const oldId = exerciseToSwap.id || exerciseToSwap.exerciseId;
+
+            renderSwapModal(exerciseToSwap, (newExerciseDef, swapType) => {
+                // Aktualizujemy obiekt ćwiczenia w miejscu (przez referencję)
+                // WAŻNE: W protokołach ZACHOWUJEMY czas trwania oryginalnego slotu!
+                
+                exerciseToSwap.id = newExerciseDef.id;
+                exerciseToSwap.exerciseId = newExerciseDef.id;
+                exerciseToSwap.name = newExerciseDef.name;
+                exerciseToSwap.description = newExerciseDef.description;
+                exerciseToSwap.animationSvg = newExerciseDef.animationSvg;
+                exerciseToSwap.categoryId = newExerciseDef.categoryId;
+                exerciseToSwap.equipment = newExerciseDef.equipment;
+                exerciseToSwap.youtube_url = newExerciseDef.youtube_url;
+                
+                // Oznaczamy jako wymienione wizualnie
+                exerciseToSwap.isSwapped = true;
+                exerciseToSwap.isDynamicSwap = true;
+                exerciseToSwap.originalName = (oldId !== newExerciseDef.id) ? exerciseToSwap.name : null; // Hack na nazwę
+
+                // Obsługa Czarnej Listy
+                if (swapType === 'blacklist') {
+                     if (confirm(`Dodać poprzednie ćwiczenie do czarnej listy?`)) {
+                         dataStore.addToBlacklist(oldId, newExerciseDef.id); 
+                     }
+                }
+
+                // Odświeżamy listę, aby pokazać nowe ćwiczenie (z uwzględnieniem aktualnego suwaka)
+                // Musimy zasymulować event input suwaka lub ręcznie wywołać logikę przeliczania
+                const timeFactor = parseFloat(slider.value) || 1.0;
+                
+                // Generujemy podgląd na nowo z zaktualizowanym 'protocol' i aktualnym timeFactorem
+                const previewProtocol = JSON.parse(JSON.stringify(protocol));
+                
+                previewProtocol.flatExercises.forEach(ex => {
+                    if (ex.duration) {
+                        const newDuration = Math.round(ex.duration * timeFactor);
+                        ex.duration = newDuration;
+                        if (ex.isWork) ex.reps_or_time = `${newDuration} s`;
+                    }
+                });
+                
+                renderList(previewProtocol);
+            });
+        }
     });
 
     // Obsługa przycisku Wróć
@@ -90,10 +203,25 @@ export const renderProtocolStart = (protocol) => {
 
     // Obsługa przycisku Start
     screen.querySelector('#proto-start-btn').addEventListener('click', () => {
-        // Resetujemy parametry sesji (brak skalowania bólem dla protokołów, chyba że wbudowane)
-        state.sessionParams = { initialPainLevel: 0, timeFactor: 1.0 };
+        const timeFactor = parseFloat(slider.value) || 1.0;
+
+        // Tutaj musimy zastosować zmiany na "ostrym" obiekcie, który trafi do silnika
+        const scaledProtocol = JSON.parse(JSON.stringify(protocol));
         
-        // Uruchamiamy logikę startu (teraz obsługuje ona typ 'protocol' w training.js)
+        scaledProtocol.flatExercises.forEach(ex => {
+            if (ex.duration) {
+                ex.duration = Math.round(ex.duration * timeFactor);
+                if (ex.isWork) {
+                    ex.reps_or_time = `${ex.duration} s`;
+                }
+            }
+        });
+        scaledProtocol.totalDuration = Math.round(protocol.totalDuration * timeFactor);
+
+        // Ustawiamy stan
+        state.todaysDynamicPlan = scaledProtocol;
+        state.sessionParams = { initialPainLevel: 0, timeFactor: timeFactor };
+
         startModifiedTraining();
     });
 
@@ -112,7 +240,7 @@ export const renderProtocolStart = (protocol) => {
         }
     });
 
-    navigateTo('preTraining'); // Używamy tego samego kontenera DOM co pre-training
+    navigateTo('preTraining');
 };
 
 // --- STANDARDOWY PRE-TRAINING (Dla Planów Dziennych) ---
@@ -120,8 +248,8 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
     state.currentTrainingDayId = dayId;
     state.currentTrainingDate = getISODate(new Date());
 
-    const activePlan = getActiveTrainingPlan(); 
-    
+    const activePlan = getActiveTrainingPlan();
+
     let rawDayData = null;
     let isCurrentDynamicDay = false;
 
@@ -133,15 +261,15 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
             rawDayData = state.todaysDynamicPlan;
             isCurrentDynamicDay = true;
         }
-    } 
-    
+    }
+
     // 2. Fallback do danych z settings (tryb dynamiczny - struktura tygodniowa)
     if (!rawDayData && useDynamicPlan && state.settings.dynamicPlanData && state.settings.dynamicPlanData.days) {
         const dynDays = state.settings.dynamicPlanData.days;
         // Obliczamy indeks modulo, bo dni mogą się zapętlać
         const arrayIndex = (dayId - 1) % dynDays.length;
         rawDayData = dynDays[arrayIndex];
-        
+
         // Nadpisujemy dayNumber, żeby pasował do requested dayId
         if (rawDayData) {
             rawDayData = { ...rawDayData, dayNumber: dayId };
@@ -170,16 +298,16 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
     // Przyciski akcji w nagłówku (Reset / Shuffle)
     const actionButtonsHTML = `
         <div style="display:flex; gap:12px;">
-            ${showResetButton ? 
-                `<button id="reset-workout-btn" class="icon-btn" title="Przywróć Plan Bazowy" 
-                    style="background:var(--card-background); border:1px solid var(--danger-color); 
+            ${showResetButton ?
+                `<button id="reset-workout-btn" class="icon-btn" title="Przywróć Plan Bazowy"
+                    style="background:var(--card-background); border:1px solid var(--danger-color);
                     width: 42px; height: 42px; padding: 0; flex-shrink: 0;
                     display:flex; align-items:center; justify-content:center; border-radius: 50%;">
-                    <img src="/icons/control-reset.svg" width="20" height="20" alt="Reset" 
+                    <img src="/icons/control-reset.svg" width="20" height="20" alt="Reset"
                          style="filter: invert(56%) sepia(69%) saturate(408%) hue-rotate(314deg) brightness(88%) contrast(93%); display:block;">
                 </button>` : ''
             }
-            <button id="shuffle-workout-btn" class="icon-btn" title="Przelosuj Trening" 
+            <button id="shuffle-workout-btn" class="icon-btn" title="Przelosuj Trening"
                 style="background:var(--card-background); border:1px solid var(--border-color); color:var(--primary-color);
                 width: 42px; height: 42px; padding: 0; flex-shrink: 0;
                 display:flex; align-items:center; justify-content:center; border-radius: 50%;">
@@ -193,7 +321,7 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
             <h2 id="pre-training-title" style="margin:0;">Podgląd: ${currentAdjustedPlan.title}</h2>
             ${actionButtonsHTML}
         </div>
-        
+
         <div class="adjustment-panel">
             <div class="adjustment-header">
                 <h3>Dostosuj Czas</h3>
@@ -208,7 +336,7 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
         </div>
 
         <div id="pre-training-list"></div>
-        
+
         <div class="pre-training-nav">
             <button id="pre-training-back-btn" class="nav-btn">Anuluj</button>
             <button id="start-modified-training-btn" class="action-btn">Start Treningu</button>
@@ -264,13 +392,13 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
                 const freshStatic = getHydratedDay(rawDayData);
                 // Wymuszamy mieszanie (forceShuffle = true)
                 const mixedPlan = workoutMixer.mixWorkout(freshStatic, true);
-                
+
                 state.todaysDynamicPlan = mixedPlan;
                 savePlanToStorage(mixedPlan);
-                isCurrentDynamicDay = true; 
-                
+                isCurrentDynamicDay = true;
+
                 // Przeładowujemy ekran z nowym planem
-                renderPreTrainingScreen(dayId, initialPainLevel, useDynamicPlan); 
+                renderPreTrainingScreen(dayId, initialPainLevel, useDynamicPlan);
             }
         });
     }
@@ -281,7 +409,7 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
         resetBtn.addEventListener('click', () => {
             if (confirm("Czy na pewno chcesz cofnąć wszystkie losowania i wrócić do oryginalnego planu?")) {
                 if (isCurrentDynamicDay) {
-                    clearPlanFromStorage(); 
+                    clearPlanFromStorage();
                     state.todaysDynamicPlan = null;
                 }
                 renderPreTrainingScreen(dayId, initialPainLevel, useDynamicPlan);
@@ -295,7 +423,7 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
         if (!btn) return;
 
         const globalIndex = parseInt(btn.dataset.exerciseIndex, 10);
-        
+
         // Znajdź ćwiczenie w strukturze sekcji
         let counter = 0;
         let targetSection = null;
@@ -319,7 +447,7 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
                 if (!state.todaysDynamicPlan) {
                     state.todaysDynamicPlan = JSON.parse(JSON.stringify(getHydratedDay(rawDayData)));
                 }
-                
+
                 let planToModify = state.todaysDynamicPlan;
 
                 // Aktualizujemy ćwiczenie w planie
@@ -342,7 +470,7 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
                 }
 
                 savePlanToStorage(planToModify);
-                
+
                 // Odświeżamy widok
                 renderPreTrainingScreen(dayId, initialPainLevel, true);
 
@@ -364,7 +492,7 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
             e.stopPropagation();
             const exId = btn.dataset.exerciseId;
             const ex = state.exerciseLibrary[exId];
-            
+
             if (ex && ex.animationSvg) {
                 if (typeof renderPreviewModal === 'function') {
                     renderPreviewModal(ex.animationSvg, ex.name);
@@ -378,12 +506,12 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
 
     // Nawigacja
     screen.querySelector('#pre-training-back-btn').addEventListener('click', () => { navigateTo('main'); renderMainScreen(); });
-    
+
     screen.querySelector('#start-modified-training-btn').addEventListener('click', () => {
         // Logika: Jeśli plan jest z przyszłości i w trybie dynamicznym, zapytaj o nadpisanie
         if (!isCurrentDynamicDay && useDynamicPlan) {
             if (confirm("To jest trening z przyszłości. Czy chcesz ustawić go jako dzisiejszy plan i rozpocząć?")) {
-                state.todaysDynamicPlan = currentAdjustedPlan; 
+                state.todaysDynamicPlan = currentAdjustedPlan;
                 savePlanToStorage(currentAdjustedPlan);
             } else {
                 return;
@@ -392,7 +520,7 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
 
         state.sessionParams.initialPainLevel = initialPainLevel;
         state.sessionParams.timeFactor = parseFloat(slider.value) || 1.0;
-        
+
         startModifiedTraining();
     });
 
@@ -408,17 +536,17 @@ export const renderTrainingScreen = () => {
             <button id="exit-training-btn">Zakończ</button>
             <p id="focus-progress"></p>
         </div>
-        
+
         <div class="focus-timer-container">
             <p id="focus-timer-display"></p>
         </div>
-        
+
         <div class="focus-exercise-info" style="margin-bottom: 0.5rem;">
             <div class="exercise-title-container">
                 <h2 id="focus-exercise-name"></h2>
                 <!-- NOWE: Kontener na badge preferencji -->
-                <span id="focus-affinity-badge"></span> 
-                
+                <span id="focus-affinity-badge"></span>
+
                 <button id="tts-toggle-btn" class="tts-button">
                     <img id="tts-icon" src="/icons/sound-on.svg" alt="Dźwięk">
                 </button>
@@ -433,7 +561,7 @@ export const renderTrainingScreen = () => {
                 <img src="/icons/info.svg" alt="Info">
             </div>
         </div>
-        
+
         <div class="focus-controls-wrapper">
              <div class="focus-main-action">
                 <button id="rep-based-done-btn" class="control-btn action-btn hidden">GOTOWE</button>
@@ -451,7 +579,7 @@ export const renderTrainingScreen = () => {
     </div>`;
 
     initializeFocusElements();
-    
+
     // Dodajemy referencję do nowego elementu w obiekcie focus
     focus.affinityBadge = document.getElementById('focus-affinity-badge');
 

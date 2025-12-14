@@ -1,4 +1,4 @@
-// training.js
+// === WAŻNE: To jest plik LOGIKI w głównym folderze: ExerciseApp/training.js ===
 
 import { state } from './state.js';
 import { focus, screens, initializeFocusElements } from './dom.js';
@@ -20,7 +20,7 @@ function fitText(element) {
              const style = window.getComputedStyle(element);
              const currentSize = parseFloat(style.fontSize);
              const ratio = element.offsetWidth / element.scrollWidth;
-             const newSize = Math.max(currentSize * ratio * 0.95, 12); 
+             const newSize = Math.max(currentSize * ratio * 0.95, 12);
              element.style.fontSize = `${newSize}px`;
         }
     });
@@ -52,7 +52,7 @@ function logCurrentStep(status) {
     const exercise = state.flatExercises[state.currentExerciseIndex];
     if (!exercise || !exercise.isWork) return;
     let duration = state.stopwatch.seconds > 0 ? state.stopwatch.seconds : 0;
-    
+
     // Jeśli był timer (ćwiczenie na czas), pobierz czas z timera (przybliżony czas wykonania)
     if (state.timer.isActive || state.timer.initialDuration > 0) {
         duration = state.timer.initialDuration;
@@ -79,7 +79,7 @@ function triggerSessionBackup() {
 
     if (state.todaysDynamicPlan && state.todaysDynamicPlan.type === 'protocol') {
         trainingTitle = state.todaysDynamicPlan.title;
-    } 
+    }
     else if (isDynamicMode && state.settings.dynamicPlanData) {
         const days = state.settings.dynamicPlanData.days || [];
         const day = days.find(d => d.dayNumber === state.currentTrainingDayId);
@@ -136,7 +136,15 @@ export function startExercise(index) {
     const exercise = state.flatExercises[index];
 
     if (focus.ttsIcon) focus.ttsIcon.src = state.tts.isSoundOn ? '/icons/sound-on.svg' : '/icons/sound-off.svg';
-    if (focus.prevStepBtn) focus.prevStepBtn.disabled = (index === 0);
+    
+    // --- FIX: Wyszarzanie przycisku wstecz ---
+    if (focus.prevStepBtn) {
+        const isFirst = index === 0;
+        focus.prevStepBtn.disabled = isFirst;
+        focus.prevStepBtn.style.opacity = isFirst ? '0.3' : '1';
+        focus.prevStepBtn.style.pointerEvents = isFirst ? 'none' : 'auto';
+    }
+
     if (focus.progress) focus.progress.textContent = `${index + 1} / ${state.flatExercises.length}`;
 
     // PAUSE STATE HANDLING
@@ -159,15 +167,13 @@ export function startExercise(index) {
     // ============================================================
     if (exercise.isWork) {
         focus.sectionName.textContent = exercise.sectionName;
-        
-        // ZMIANA: Usunięcie tekstu "Seria X/Y" z głównego nagłówka
+
         focus.exerciseName.textContent = exercise.name;
         fitText(focus.exerciseName);
-        
-        // ZMIANA: Usunięto spacje wokół ukośnika (Seria X/Y)
+
         focus.exerciseDetails.textContent = `Seria ${exercise.currentSet}/${exercise.totalSets} | Cel: ${exercise.reps_or_time}`;
         focus.focusDescription.textContent = exercise.description || '';
-        
+
         if (focus.affinityBadge) focus.affinityBadge.innerHTML = getAffinityBadge(exercise.exerciseId || exercise.id);
 
         if (exercise.animationSvg && animContainer && descContainer) {
@@ -191,16 +197,15 @@ export function startExercise(index) {
         if (!state.isPaused) {
             // DETEKCJA: Ćwiczenie na czas (Time-Based)
             const isTimeBased = exercise.reps_or_time.includes('s') && !exercise.reps_or_time.includes('/str');
-            
+
             if (isTimeBased) {
                 const duration = getExerciseDuration(exercise);
-                
+
                 if (state.tts.isSoundOn) {
                     speak(`Ćwicz: ${exercise.name}, ${exercise.reps_or_time}`, true, () => { speak(formatForTTS(exercise.description), false); });
                 }
-                
-                // ZMIANA: Timer w trybie CountUp (true jako ostatni parametr)
-                // Czas liczy się w górę (0 -> duration), ale kończy się automatycznie
+
+                // Timer w trybie CountUp
                 startTimer(duration, () => moveToNextExercise({ skipped: false }), syncStateToChromecast, true);
             } else {
                 // Ćwiczenie na powtórzenia (Stoper w górę bez limitu)
@@ -225,7 +230,7 @@ export function startExercise(index) {
         const upcomingExercise = state.flatExercises[index + 1];
         if (!upcomingExercise) { moveToNextExercise({ skipped: false }); return; }
 
-        focus.repBasedDoneBtn.classList.add('hidden'); 
+        focus.repBasedDoneBtn.classList.add('hidden');
         focus.pauseResumeBtn.classList.remove('hidden');
 
         let afterUpcomingExercise = null;
@@ -240,7 +245,7 @@ export function startExercise(index) {
         focus.timerDisplay.classList.remove('rep-based-text');
 
         const startNextExercise = () => moveToNextExercise({ skipped: false });
-        const restDuration = exercise.duration || 5; 
+        const restDuration = exercise.duration || 5;
         state.timer.timeLeft = restDuration;
         updateTimerDisplay();
 
@@ -248,7 +253,6 @@ export function startExercise(index) {
             if (state.tts.isSoundOn) {
                 let announcement = `Odpocznij. Następnie: ${upcomingExercise.name}.`;
                 speak(announcement, true);
-                // Przerwa liczy w dół (countUp = false / undefined)
                 startTimer(state.timer.timeLeft, startNextExercise, syncStateToChromecast, false);
             } else {
                 startTimer(state.timer.timeLeft, startNextExercise, syncStateToChromecast, false);
@@ -256,7 +260,7 @@ export function startExercise(index) {
         }
     }
     syncStateToChromecast();
-    triggerSessionBackup(); 
+    triggerSessionBackup();
 }
 
 export function generateFlatExercises(dayData) {
@@ -336,13 +340,13 @@ export async function startModifiedTraining() {
     navigateTo('training');
     initializeFocusElements();
     startExercise(0);
-    triggerSessionBackup(); 
+    triggerSessionBackup();
 }
 
 export function resumeFromBackup(backup, timeGapMs) {
     console.log('[Training] 🔄 Resuming session from backup...');
     state.sessionStartTime = backup.sessionStartTime ? new Date(backup.sessionStartTime) : new Date();
-    state.totalPausedTime = (backup.totalPausedTime || 0) + timeGapMs; 
+    state.totalPausedTime = (backup.totalPausedTime || 0) + timeGapMs;
     state.isPaused = false;
     state.lastPauseStartTime = null;
     state.currentTrainingDayId = backup.currentTrainingDayId;

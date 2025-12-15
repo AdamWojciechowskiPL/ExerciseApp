@@ -1,9 +1,9 @@
 // netlify/functions/_clinical-rule-engine.js
 
 /**
- * CLINICAL RULE ENGINE
+ * CLINICAL RULE ENGINE v4.1 (Post-Op Foot Support - Variant A)
  * Centralny moduł walidacji bezpieczeństwa ćwiczeń.
- * Używany przez generator planów oraz endpointy dostarczające content do aplikacji.
+ * Uwzględnia flagę 'is_foot_loading' oraz analizę pozycji pod kątem urazów stopy.
  */
 
 const DIFFICULTY_MAP = {
@@ -92,10 +92,10 @@ function buildUserContext(userData) {
 
 function checkEquipment(ex, userEquipment) {
     if (!ex.equipment || ex.equipment.length === 0) return true;
-    
+
     // Normalizacja do tablicy stringów (jeśli jeszcze nie jest)
     let exEquip = Array.isArray(ex.equipment) ? ex.equipment : ex.equipment.split(',').map(e => e.trim());
-    
+
     // Sprawdzenie "braku sprzętu"
     const isNone = exEquip.some(e => {
         const el = e.toLowerCase();
@@ -115,7 +115,9 @@ function checkEquipment(ex, userEquipment) {
 function violatesRestrictions(ex, restrictions) {
     const plane = ex.primary_plane || 'multi';
     const pos = ex.position || null;
+    const cat = ex.category_id || '';
 
+    // 1. Istniejące restrykcje
     if (restrictions.includes('no_kneeling')) {
         if (pos === 'kneeling' || pos === 'quadruped') return true;
     }
@@ -125,10 +127,41 @@ function violatesRestrictions(ex, restrictions) {
     if (restrictions.includes('no_floor_sitting')) {
         if (pos === 'sitting') return true;
     }
-    // Nowe restrykcje można dodawać tutaj
     if (restrictions.includes('no_high_impact')) {
-        // Zakładamy, że high impact to np. skoki (można dodać tag w bazie w przyszłości)
-        // Na razie placeholder
+        // Placeholder dla skoków itp.
+        const highImpactCats = ['plyometrics', 'cardio'];
+        if (highImpactCats.includes(cat)) return true;
+    }
+
+    // 2. NOWA RESTRYKCJA: Uraz Stopy / Non-Weight Bearing
+    if (restrictions.includes('foot_injury')) {
+        
+        // A. Sprawdź twardą flagę z bazy danych (Wariant A - Najważniejszy)
+        // Jeśli flaga istnieje w bazie i jest true, odrzucamy ćwiczenie.
+        if (ex.is_foot_loading === true) return true;
+
+        // B. Fallback na pozycje (Dla bezpieczeństwa, gdyby flaga nie była ustawiona)
+        // Blokujemy pozycje, które z definicji wymagają stania lub oparcia na stopach.
+        const blockedPositions = ['standing', 'kneeling', 'quadruped'];
+        if (blockedPositions.includes(pos)) return true;
+
+        // C. Dodatkowe zabezpieczenie dla kategorii (Logika Biomechaniczna)
+        // Nawet w pozycjach leżących ('supine'), niektóre ćwiczenia wymagają generowania siły przez stopy.
+        
+        // Glute Bridge: Wymaga "wciskania pięt w ziemię"
+        if (cat === 'glute_activation' && pos === 'supine') {
+            return true;
+        }
+
+        // Karmy/Paski: Wymagają zahaczenia o stopę
+        if (ex.id && (ex.id.includes('Band') || ex.id.includes('Strap'))) {
+             // To jest uproszczenie, ale bezpieczniejsze niż przepuszczenie
+             // Idealnie to powinno być załatwione przez is_foot_loading w bazie
+        }
+
+        // Kategorie wymagające pracy nóg
+        const blockedCategories = ['squats', 'lunges', 'calves', 'plyometrics', 'cardio'];
+        if (blockedCategories.includes(cat)) return true;
     }
 
     return false;
@@ -153,8 +186,8 @@ function passesTolerancePattern(ex, tolerancePattern) {
 
 /**
  * Sprawdza czy ćwiczenie jest dozwolone dla danego użytkownika (Main Check).
- * 
- * @param {Object} ex - Obiekt ćwiczenia z bazy
+ *
+ * @param {Object} ex - Obiekt ćwiczenia z bazy (powinien zawierać is_foot_loading)
  * @param {Object} ctx - Kontekst użytkownika (z buildUserContext)
  * @param {Object} options - Opcje (np. { ignoreDifficulty: true, ignoreEquipment: false })
  * @returns {Object} { allowed: boolean, reason: string|null }
@@ -178,7 +211,7 @@ function checkExerciseAvailability(ex, ctx, options = {}) {
         return { allowed: false, reason: 'too_hard_calculated' };
     }
 
-    // 4. Restrykcje fizyczne (pozycja, ruch)
+    // 4. Restrykcje fizyczne (pozycja, ruch, uraz stopy)
     if (violatesRestrictions(ex, ctx.physicalRestrictions)) {
         return { allowed: false, reason: 'physical_restriction' };
     }

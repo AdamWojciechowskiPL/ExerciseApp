@@ -3,8 +3,8 @@ import { getISODate, getAvailableMinutesForToday, parseSetCount } from './utils.
 import { assistant } from './assistantEngine.js';
 
 /**
- * WORKOUT MIXER v3.2 (Anti-Collision Fix)
- * Zapobiega duplikatom, gdy mixer wylosuje ćwiczenie, które występuje w dalszej części planu.
+ * WORKOUT MIXER v3.3 (Post-Op Foot Support)
+ * Zapobiega duplikatom oraz obsługuje nowe restrykcje kliniczne (np. uraz stopy).
  */
 
 const CACHE_FRESHNESS_DAYS = 60;
@@ -45,7 +45,7 @@ export const workoutMixer = {
                 const isCollision = sessionUsedIds.has(originalId);
 
                 const hasEquipmentForOriginal = checkEquipment(originalExercise);
-                
+
                 // Jeśli jest kolizja, MUSIMY wymienić, nawet jeśli sprzęt się zgadza.
                 const mustSwap = !hasEquipmentForOriginal || isCollision;
 
@@ -112,7 +112,7 @@ export const workoutMixer = {
     },
 
     adaptVolume: (oldEx, newDef) => adaptVolumeInternal(oldEx, newDef),
-    
+
     getExerciseTempo: (exerciseId) => {
         const ex = state.exerciseLibrary[exerciseId];
         return ex ? (ex.defaultTempo || "Kontrolowane") : "Kontrolowane";
@@ -121,7 +121,7 @@ export const workoutMixer = {
     applyMicroDosing: (exercise) => {
         const originalSets = parseSetCount(exercise.sets);
         let newSets = originalSets + 2;
-        if (newSets > 6) newSets = 6; 
+        if (newSets > 6) newSets = 6;
 
         let newVal = 0;
         let isTime = false;
@@ -129,12 +129,12 @@ export const workoutMixer = {
         const rawText = String(exercise.reps_or_time).toLowerCase();
         if (rawText.includes('s') || rawText.includes('min')) {
             isTime = true;
-            const num = parseInt(rawText) || 30; 
-            newVal = Math.round(num * 0.4); 
+            const num = parseInt(rawText) || 30;
+            newVal = Math.round(num * 0.4);
             if (newVal < 5) newVal = 5;
         } else {
             const num = parseInt(rawText) || 10;
-            newVal = Math.round(num * 0.35); 
+            newVal = Math.round(num * 0.35);
             if (newVal < 2) newVal = 2;
         }
 
@@ -173,20 +173,20 @@ function findBestVariant(originalEx, criteria, usedIds, forceShuffle = false, mu
         .filter(ex => {
             // 1. Zgodność kategorii
             if (ex.categoryId !== criteria.categoryId) return false;
-            
+
             // 2. Poziom trudności (chyba że musimy wymienić za wszelką cenę - wtedy to pominie emergency fallback)
             // W standardowym szukaniu trzymamy rygor +/- 1 level
             if (!mustSwap) {
                 const lvl = ex.difficultyLevel || 1;
                 if (Math.abs(lvl - criteria.targetLevel) > 1) return false;
             }
-            
+
             if (state.blacklist.includes(ex.id)) return false;
             if (usedIds.has(ex.id)) return false;
             if (!checkEquipment(ex)) return false;
-            
+
             if (!passesMixerClinicalRules(ex, clinicalCtx)) return false;
-            
+
             return true;
         });
 
@@ -248,10 +248,10 @@ function findEmergencyVariant(originalEx, usedIds, clinicalCtx) {
             if (usedIds.has(ex.id)) return false;
             if (state.blacklist.includes(ex.id)) return false;
             if (!checkEquipment(ex)) return false;
-            
+
             // Nadal sprawdzamy bezpieczeństwo kliniczne! (Tego nie luzujemy)
             if (!passesMixerClinicalRules(ex, clinicalCtx)) return false;
-            
+
             return true;
         });
 
@@ -273,7 +273,7 @@ function findEmergencyVariant(originalEx, usedIds, clinicalCtx) {
 
 function buildClinicalContext() {
     const wizardData = state.settings.wizardData || {};
-    
+
     const tolerancePattern = detectTolerancePattern(wizardData.trigger_movements, wizardData.relief_movements);
 
     const painChar = wizardData.pain_character || [];
@@ -319,7 +319,7 @@ function passesMixerClinicalRules(ex, ctx) {
         const zones = ex.painReliefZones || [];
         const helpsZone = zones.some(z => ctx.painFilters.has(z));
         if (!helpsZone) {
-            return false; 
+            return false;
         }
     }
 
@@ -339,16 +339,34 @@ function detectTolerancePattern(triggers, reliefs) {
 function violatesRestrictions(ex, restrictions) {
     const plane = ex.primaryPlane || 'multi';
     const pos = ex.position || null;
+    const cat = ex.categoryId || '';
 
+    // 1. Istniejące restrykcje
     if (restrictions.includes('no_kneeling') && (pos === 'kneeling' || pos === 'quadruped')) return true;
     if (restrictions.includes('no_twisting') && plane === 'rotation') return true;
     if (restrictions.includes('no_floor_sitting') && pos === 'sitting') return true;
-    
+
+    // 2. NOWA RESTRYKCJA: Uraz Stopy / Non-Weight Bearing
+    if (restrictions.includes('foot_injury')) {
+        // A. Blokada pozycji obciążających stopy
+        const blockedPositions = ['standing', 'kneeling', 'quadruped'];
+        if (blockedPositions.includes(pos)) return true;
+
+        // B. Blokada specyficznych kategorii (np. Glute Bridge wymaga pchania stopami w podłogę)
+        if (cat === 'glute_activation' && pos === 'supine') {
+            return true;
+        }
+
+        // C. Blokada całych kategorii ćwiczeń nóg
+        const blockedCategories = ['squats', 'lunges', 'calves', 'plyometrics', 'cardio'];
+        if (blockedCategories.includes(cat)) return true;
+    }
+
     return false;
 }
 
 function passesTolerancePattern(ex, tolerancePattern) {
-    const plane = ex.primaryPlane || 'multi';
+    const plane = ex.primary_plane || 'multi';
     const zones = ex.painReliefZones || [];
 
     if (tolerancePattern === 'flexion_intolerant') {
@@ -366,16 +384,16 @@ function passesTolerancePattern(ex, tolerancePattern) {
 function checkEquipment(exercise) {
     if (!state.settings.equipment || state.settings.equipment.length === 0) return true;
     if (!exercise.equipment) return true;
-    
-    const reqEq = Array.isArray(exercise.equipment) 
-        ? exercise.equipment.join(',').toLowerCase() 
+
+    const reqEq = Array.isArray(exercise.equipment)
+        ? exercise.equipment.join(',').toLowerCase()
         : exercise.equipment.toLowerCase();
 
     if (reqEq.includes('brak') || reqEq.includes('none') || reqEq.includes('bodyweight') || reqEq === '') return true;
-    
+
     const userEq = state.settings.equipment.map(e => e.toLowerCase());
     const requirements = reqEq.split(',').map(s => s.trim());
-    
+
     return requirements.every(req => userEq.some(owned => owned.includes(req) || req.includes(owned)));
 }
 
@@ -431,7 +449,7 @@ function mergeExerciseData(original, variant) {
     if (variant.isUnilateral && !merged.reps_or_time.includes("/str")) {
         if (merged.reps_or_time.includes("s")) merged.reps_or_time = merged.reps_or_time.replace("s", "s/str.");
         else merged.reps_or_time = `${merged.reps_or_time}/str.`;
-        
+
         if (parseSetCount(original.sets) === 1) merged.sets = "2";
     }
 
@@ -444,29 +462,29 @@ function parseReps(val) { return parseInt(val) || 10; }
 function injectPrehabExercises(plan, usedIds, clinicalCtx) {
     if (!plan.warmup) plan.warmup = [];
     const libraryArray = Object.entries(state.exerciseLibrary).map(([id, data]) => ({ id, ...data }));
-    
+
     state.settings.painZones.forEach(zone => {
         const rehabCandidates = libraryArray.filter(ex => {
             if (!ex.painReliefZones || !ex.painReliefZones.includes(zone)) return false;
             if (usedIds.has(ex.id)) return false;
             if (!checkEquipment(ex)) return false;
-            
+
             if (!passesMixerClinicalRules(ex, clinicalCtx)) return false;
-            
+
             return true;
         });
-        
+
         if (rehabCandidates.length > 0) {
             const chosen = rehabCandidates[Math.floor(Math.random() * rehabCandidates.length)];
-            plan.warmup.unshift({ 
-                ...chosen, 
-                exerciseId: chosen.id, 
-                sets: "1", 
-                reps_or_time: "45 s", 
-                tempo_or_iso: chosen.defaultTempo || "Izometria", 
-                isPersonalized: true, 
-                section: "warmup", 
-                isUnilateral: chosen.isUnilateral 
+            plan.warmup.unshift({
+                ...chosen,
+                exerciseId: chosen.id,
+                sets: "1",
+                reps_or_time: "45 s",
+                tempo_or_iso: chosen.defaultTempo || "Izometria",
+                isPersonalized: true,
+                section: "warmup",
+                isUnilateral: chosen.isUnilateral
             });
             usedIds.add(chosen.id);
         }

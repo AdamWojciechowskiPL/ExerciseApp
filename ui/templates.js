@@ -103,22 +103,22 @@ export function generateSkeletonDashboardHTML() {
 // --- MISSION CARD ---
 function getSmartAiTags(wizardData) { let tags = []; if (wizardData.work_type === 'sedentary') tags.push({ icon: '🪑', text: 'Anti-Office' }); else if (wizardData.work_type === 'standing') tags.push({ icon: '🧍', text: 'Odciążenie' }); if (wizardData.hobby?.includes('running')) tags.push({ icon: '🏃', text: 'Miednica' }); else if (wizardData.hobby?.includes('cycling')) tags.push({ icon: '🚴', text: 'Biodra' }); else if (wizardData.hobby?.includes('gym')) tags.push({ icon: '🏋️', text: 'Mobility' }); if (wizardData.pain_locations?.includes('sciatica') || wizardData.medical_diagnosis?.includes('piriformis')) tags.unshift({ icon: '⚡', text: 'Neuro' }); else if (wizardData.medical_diagnosis?.includes('disc_herniation')) tags.unshift({ icon: '🛡️', text: 'Bezpieczne' }); else if (wizardData.pain_locations?.includes('cervical')) tags.push({ icon: '🦒', text: 'Szyja' }); if (wizardData.physical_restrictions?.includes('no_kneeling')) tags.push({ icon: '🚫', text: 'Bez klękania' }); if (tags.length < 2 && wizardData.primary_goal === 'pain_relief') tags.push({ icon: '💊', text: 'Redukcja bólu' }); return tags.slice(0, 4); }
 
-export function generateMissionCardHTML(dayData, estimatedMinutes, wizardData = null) { 
-    const equipmentSet = new Set(); 
-    [...(dayData.warmup || []), ...(dayData.main || []), ...(dayData.cooldown || [])].forEach(ex => { if (ex.equipment) ex.equipment.split(',').forEach(item => equipmentSet.add(item.trim())); }); 
-    const equipmentText = equipmentSet.size > 0 ? [...equipmentSet].join(', ') : 'Brak sprzętu'; 
-    let aiHeaderHTML = ''; 
-    let aiTagsHTML = ''; 
-    let aiClass = ''; 
-    
-    if (wizardData) { 
-        aiClass = 'ai-mode'; 
-        const smartTags = getSmartAiTags(wizardData); 
-        if (smartTags.length === 0) smartTags.push({ icon: '🧬', text: 'Personalizacja' }); 
-        aiHeaderHTML = `<div class="ai-header-strip"><div class="ai-header-left"><span class="ai-dna-icon">🧬</span><span>Virtual Physio</span></div><span style="opacity:0.9; font-size:0.6rem; letter-spacing:0.5px;">DOPASOWANO DO CIEBIE</span></div>`; 
-        aiTagsHTML = `<div class="ai-mini-tags">${smartTags.map(t => `<div class="ai-mini-tag"><span>${t.icon}</span> ${t.text}</div>`).join('')}</div>`; 
-    } 
-    
+export function generateMissionCardHTML(dayData, estimatedMinutes, wizardData = null) {
+    const equipmentSet = new Set();
+    [...(dayData.warmup || []), ...(dayData.main || []), ...(dayData.cooldown || [])].forEach(ex => { if (ex.equipment) ex.equipment.split(',').forEach(item => equipmentSet.add(item.trim())); });
+    const equipmentText = equipmentSet.size > 0 ? [...equipmentSet].join(', ') : 'Brak sprzętu';
+    let aiHeaderHTML = '';
+    let aiTagsHTML = '';
+    let aiClass = '';
+
+    if (wizardData) {
+        aiClass = 'ai-mode';
+        const smartTags = getSmartAiTags(wizardData);
+        if (smartTags.length === 0) smartTags.push({ icon: '🧬', text: 'Personalizacja' });
+        aiHeaderHTML = `<div class="ai-header-strip"><div class="ai-header-left"><span class="ai-dna-icon">🧬</span><span>Virtual Physio</span></div><span style="opacity:0.9; font-size:0.6rem; letter-spacing:0.5px;">DOPASOWANO DO CIEBIE</span></div>`;
+        aiTagsHTML = `<div class="ai-mini-tags">${smartTags.map(t => `<div class="ai-mini-tag"><span>${t.icon}</span> ${t.text}</div>`).join('')}</div>`;
+    }
+
     return `
     <div class="mission-card ${aiClass}">
         ${aiHeaderHTML}
@@ -128,7 +128,7 @@ export function generateMissionCardHTML(dayData, estimatedMinutes, wizardData = 
         </div>
         ${aiTagsHTML}
         <p style="font-size:0.8rem; opacity:0.7; margin:0; margin-bottom: 0.8rem; border-top: 1px solid rgba(0,0,0,0.05); padding-top: 8px;"><strong>Sprzęt:</strong> ${equipmentText}</p>
-        
+
         <div class="wellness-section">
             <div class="wellness-label"><span>Wellness Check-in</span><span style="font-weight:400">Jak się czujesz?</span></div>
             <div class="pain-selector">
@@ -139,49 +139,61 @@ export function generateMissionCardHTML(dayData, estimatedMinutes, wizardData = 
                 <div class="pain-option" data-level="9">🛑 <span>Krytycznie</span></div>
             </div>
         </div>
-        
+
         <button id="start-mission-btn" class="action-btn" data-initial-pain="3">Start Misji</button>
-    </div>`; 
+    </div>`;
 }
 
 // --- PRE-TRAINING / LIBRARY CARD ---
-export function generatePreTrainingCardHTML(ex, index) { 
-    const uniqueId = `ex-${index}`; 
-    const exerciseId = ex.id || ex.exerciseId; 
-    const lvl = ex.difficultyLevel || 1; 
-    const categoryName = formatCategoryName(ex.categoryId); 
-    const equipment = ex.equipment || 'Brak sprzętu'; 
-    const hasAnimation = !!ex.animationSvg; 
-    const affinityBadge = getAffinityBadge(exerciseId); 
-    const previewBtnHTML = hasAnimation ? `<button class="preview-anim-btn nav-btn" data-exercise-id="${exerciseId}" title="Podgląd animacji" style="padding: 4px 8px; display: flex; align-items: center; gap: 5px; border-color: var(--secondary-color);"><img src="/icons/eye.svg" width="20" height="20" alt="Podgląd" style="display: block;"><span style="font-size: 0.75rem; font-weight: 600; color: var(--secondary-color);">Podgląd</span></button>` : ''; 
-    
-    let badgeHTML = ''; 
-    if (ex.isPersonalized) badgeHTML = `<span class="meta-badge" style="background:var(--gold-color); color:#000; border:none;">✨ Personalizacja</span>`; 
-    else if (ex.isDynamicSwap) badgeHTML = `<span class="meta-badge" style="background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd;">🎲 Mix</span>`; 
-    else if (ex.isSwapped) badgeHTML = `<span class="meta-badge" style="background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0;">🔄 Wybór</span>`; 
-    
-    const showOriginalInfo = ex.originalName && ex.originalName !== ex.name; 
-    const originalInfo = showOriginalInfo ? `<div style="font-size:0.75rem; color:#999; margin-top:-5px; margin-bottom:5px;">Zamiast: ${ex.originalName}</div>` : ''; 
+export function generatePreTrainingCardHTML(ex, index) {
+    const uniqueId = `ex-${index}`;
+    const exerciseId = ex.id || ex.exerciseId;
+    const lvl = ex.difficultyLevel || 1;
+    const categoryName = formatCategoryName(ex.categoryId);
+    const equipment = ex.equipment || 'Brak sprzętu';
+    const hasAnimation = !!ex.animationSvg;
+    const affinityBadge = getAffinityBadge(exerciseId);
+    const previewBtnHTML = hasAnimation ? `<button class="preview-anim-btn nav-btn" data-exercise-id="${exerciseId}" title="Podgląd animacji" style="padding: 4px 8px; display: flex; align-items: center; gap: 5px; border-color: var(--secondary-color);"><img src="/icons/eye.svg" width="20" height="20" alt="Podgląd" style="display: block;"><span style="font-size: 0.75rem; font-weight: 600; color: var(--secondary-color);">Podgląd</span></button>` : '';
 
-    // --- NOWY KOD: MODIFICATION BADGE ---
+    let badgeHTML = '';
+    if (ex.isPersonalized) badgeHTML = `<span class="meta-badge" style="background:var(--gold-color); color:#000; border:none;">✨ Personalizacja</span>`;
+    else if (ex.isDynamicSwap) badgeHTML = `<span class="meta-badge" style="background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd;">🎲 Mix</span>`;
+    else if (ex.isSwapped) badgeHTML = `<span class="meta-badge" style="background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0;">🔄 Wybór</span>`;
+
+    const showOriginalInfo = ex.originalName && ex.originalName !== ex.name;
+    const originalInfo = showOriginalInfo ? `<div style="font-size:0.75rem; color:#999; margin-top:-5px; margin-bottom:5px;">Zamiast: ${ex.originalName}</div>` : '';
+
     let modBadge = '';
     if (ex.modification) {
-        // Koloryzacja w zależności od typu
         let bg = '#eee';
         let color = '#333';
         let border = '#ccc';
 
         if (ex.modification.type === 'boost') {
-            bg = '#ecfdf5'; color = '#047857'; border = '#6ee7b7'; // Green
+            bg = '#ecfdf5'; color = '#047857'; border = '#6ee7b7';
         } else if (ex.modification.type === 'eco') {
-            bg = '#eff6ff'; color = '#1d4ed8'; border = '#93c5fd'; // Blue
+            bg = '#eff6ff'; color = '#1d4ed8'; border = '#93c5fd';
         } else if (ex.modification.type === 'care' || ex.modification.type === 'sos') {
-            bg = '#fff7ed'; color = '#c2410c'; border = '#fdba74'; // Orange
+            bg = '#fff7ed'; color = '#c2410c'; border = '#fdba74';
         }
 
         modBadge = `<span class="meta-badge" style="background:${bg}; color:${color}; border:1px solid ${border}; white-space:nowrap;">${ex.modification.label}</span>`;
     }
-    // ------------------------------------
+
+    // --- ZMIANA: Zamiast inputów, wyświetlamy statyczne kafelki z danymi (ReadOnly) ---
+    // Usunięto klasę 'training-inputs-grid' i 'modern-input'
+    const targetsHTML = `
+        <div class="target-stats-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; padding-top: 15px; border-top: 1px dashed var(--border-color);">
+            <div style="background: var(--background-color); padding: 8px; border-radius: 8px; text-align: center; border: 1px solid rgba(0,0,0,0.05);">
+                <span style="display: block; font-size: 0.7rem; color: var(--muted-text-color); text-transform: uppercase; font-weight: 700;">Serie</span>
+                <span class="set-val" style="display: block; font-size: 1.1rem; font-weight: 700; color: var(--primary-color);">${ex.sets}</span>
+            </div>
+            <div style="background: var(--background-color); padding: 8px; border-radius: 8px; text-align: center; border: 1px solid rgba(0,0,0,0.05);">
+                <span style="display: block; font-size: 0.7rem; color: var(--muted-text-color); text-transform: uppercase; font-weight: 700;">Cel</span>
+                <span class="rep-val" style="display: block; font-size: 1.1rem; font-weight: 700; color: var(--primary-color);">${ex.reps_or_time}</span>
+            </div>
+        </div>
+    `;
 
     return `
     <div class="training-card" data-exercise-id="${exerciseId || ''}" data-category-id="${ex.categoryId || ''}">
@@ -198,27 +210,20 @@ export function generatePreTrainingCardHTML(ex, index) {
         </div>
         <div class="training-meta">
             ${badgeHTML}
-            ${modBadge} <!-- NOWY BADGE -->
+            ${modBadge}
             <span class="meta-badge badge-lvl-${lvl}">⚡ ${getLevelLabel(lvl)}</span>
             <span class="meta-badge badge-category">📂 ${categoryName}</span>
             <span class="meta-badge badge-equipment">🏋️ ${equipment}</span>
         </div>
         <p class="pre-training-description" style="padding-left:10px; opacity:0.8;">${ex.description || 'Brak opisu.'}</p>
-        <div class="training-inputs-grid">
-            <div class="input-wrapper">
-                <label for="sets-${uniqueId}" class="input-label">Serie</label>
-                <input type="number" id="sets-${uniqueId}" class="modern-input" value="${ex.sets}" data-exercise-index="${index}">
-            </div>
-            <div class="input-wrapper">
-                <label for="reps-${uniqueId}" class="input-label">Powtórzenia / Czas</label>
-                <input type="text" id="reps-${uniqueId}" class="modern-input" value="${ex.reps_or_time}" data-exercise-index="${index}">
-            </div>
-        </div>
+
+        ${targetsHTML}
+
         <div class="training-footer">
             <div>${ex.youtube_url ? `<a href="${ex.youtube_url}" target="_blank" class="video-link">▶ Zobacz wideo</a>` : ''}</div>
             ${ex.tempo_or_iso ? `<span class="tempo-badge">Tempo: ${ex.tempo_or_iso}</span>` : ''}
         </div>
-    </div>`; 
+    </div>`;
 }
 
 // --- SESSION CARD (HISTORY) ---

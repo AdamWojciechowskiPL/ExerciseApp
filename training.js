@@ -53,7 +53,6 @@ function logCurrentStep(status) {
     if (!exercise || !exercise.isWork) return;
     let duration = state.stopwatch.seconds > 0 ? state.stopwatch.seconds : 0;
 
-    // Jeśli był timer (ćwiczenie na czas), pobierz czas z timera (przybliżony czas wykonania)
     if (state.timer.isActive || state.timer.initialDuration > 0) {
         duration = state.timer.initialDuration;
     }
@@ -136,8 +135,7 @@ export function startExercise(index) {
     const exercise = state.flatExercises[index];
 
     if (focus.ttsIcon) focus.ttsIcon.src = state.tts.isSoundOn ? '/icons/sound-on.svg' : '/icons/sound-off.svg';
-    
-    // --- FIX: Wyszarzanie przycisku wstecz ---
+
     if (focus.prevStepBtn) {
         const isFirst = index === 0;
         focus.prevStepBtn.disabled = isFirst;
@@ -147,7 +145,6 @@ export function startExercise(index) {
 
     if (focus.progress) focus.progress.textContent = `${index + 1} / ${state.flatExercises.length}`;
 
-    // PAUSE STATE HANDLING
     if (state.isPaused) {
         state.lastPauseStartTime = Date.now();
         if (focus.pauseResumeBtn) { focus.pauseResumeBtn.innerHTML = `<img src="/icons/control-play.svg" alt="Wznów">`; focus.pauseResumeBtn.classList.add('paused-state'); focus.pauseResumeBtn.classList.remove('hidden'); }
@@ -162,15 +159,13 @@ export function startExercise(index) {
     const flipIndicator = document.querySelector('.flip-indicator');
     if (animContainer) animContainer.innerHTML = '';
 
-    // ============================================================
-    // SCENARIUSZ A: ĆWICZENIE (WORK)
-    // ============================================================
     if (exercise.isWork) {
         focus.sectionName.textContent = exercise.sectionName;
-
         focus.exerciseName.textContent = exercise.name;
         fitText(focus.exerciseName);
 
+        // Wyświetlamy aktualny numer serii w kontekście całkowitej liczby serii
+        // (W przypadku splitu to będzie np. Seria 1/1 jeśli były 2 total)
         focus.exerciseDetails.textContent = `Seria ${exercise.currentSet}/${exercise.totalSets} | Cel: ${exercise.reps_or_time}`;
         focus.focusDescription.textContent = exercise.description || '';
 
@@ -195,22 +190,17 @@ export function startExercise(index) {
         focus.timerDisplay.classList.remove('rep-based-text');
 
         if (!state.isPaused) {
-            // DETEKCJA: Ćwiczenie na czas (Time-Based)
-            const isTimeBased = exercise.reps_or_time.includes('s') && !exercise.reps_or_time.includes('/str');
+            const isTimeBased = (exercise.duration && exercise.duration > 0) || (exercise.reps_or_time.includes('s') && !exercise.reps_or_time.includes('/str'));
 
             if (isTimeBased) {
-                const duration = getExerciseDuration(exercise);
+                const duration = exercise.duration ? exercise.duration : getExerciseDuration(exercise);
 
                 if (state.tts.isSoundOn) {
                     speak(`Ćwicz: ${exercise.name}, ${exercise.reps_or_time}`, true, () => { speak(formatForTTS(exercise.description), false); });
                 }
-
-                // Timer w trybie CountUp
                 startTimer(duration, () => moveToNextExercise({ skipped: false }), syncStateToChromecast, true);
             } else {
-                // Ćwiczenie na powtórzenia (Stoper w górę bez limitu)
                 startStopwatch();
-
                 if (state.tts.isSoundOn) {
                     let announcement = `Wykonaj: ${exercise.name}, seria ${exercise.currentSet} z ${exercise.totalSets}. Cel: ${formatForTTS(exercise.reps_or_time)}.`;
                     speak(announcement, true, () => { speak(formatForTTS(exercise.description), false); });
@@ -218,9 +208,6 @@ export function startExercise(index) {
             }
         }
     }
-    // ============================================================
-    // SCENARIUSZ B: PRZERWA (REST)
-    // ============================================================
     else {
         if (animContainer) animContainer.classList.add('hidden');
         if (descContainer) descContainer.classList.remove('hidden');
@@ -263,21 +250,155 @@ export function startExercise(index) {
     triggerSessionBackup();
 }
 
+/**
+ * Generuje płaską listę kroków.
+ * ZMIANA v5: Jeśli liczba serii jest PARZYSTA i ćwiczenie UNILATERAL, dzielimy serie na pół.
+ * Np. 2 serie -> 1 Lewa, 1 Prawa. 4 serie -> 2 Lewe, 2 Prawe (w 2 blokach L/P).
+ */
 export function generateFlatExercises(dayData) {
     const plan = [];
     const FIXED_REST_DURATION = 5;
-    const sections = [{ name: 'Rozgrzewka', exercises: dayData.warmup || [] }, { name: 'Część główna', exercises: dayData.main || [] }, { name: 'Schłodzenie', exercises: dayData.cooldown || [] }];
+    const TRANSITION_DURATION = 5;
+    let unilateralGlobalIndex = 0;
+
+    const sections = [
+        { name: 'Rozgrzewka', exercises: dayData.warmup || [] },
+        { name: 'Część główna', exercises: dayData.main || [] },
+        { name: 'Schłodzenie', exercises: dayData.cooldown || [] }
+    ];
+
     sections.forEach(section => {
         section.exercises.forEach((exercise, exerciseIndex) => {
-            const setCount = parseSetCount(exercise.sets);
-            for (let i = 1; i <= setCount; i++) {
-                plan.push({ ...exercise, isWork: true, sectionName: section.name, currentSet: i, totalSets: setCount });
-                if (i < setCount) { plan.push({ name: 'Odpoczynek', isRest: true, isWork: false, duration: FIXED_REST_DURATION, sectionName: 'Przerwa między seriami' }); }
+            const totalSetsDeclared = parseSetCount(exercise.sets);
+
+            // Wykrywanie czy ćwiczenie jest jednostronne
+            const isUnilateral = exercise.isUnilateral ||
+                                 exercise.is_unilateral ||
+                                 String(exercise.reps_or_time).includes('/str') ||
+                                 String(exercise.reps_or_time).includes('stron');
+
+            // --- LOGIKA PĘTLI SERII ---
+            // Jeśli unilateral i parzyście: robimy tylko połowę powtórzeń pętli, bo każda pętla to (L+P)
+            // Jeśli unilateral i nieparzyście: fallback do "per side" (robimy zadeklarowaną liczbę L+P)
+            // Jeśli bilateral: robimy zadeklarowaną liczbę
+            let loopLimit = totalSetsDeclared;
+            let displayTotalSets = totalSetsDeclared;
+
+            if (isUnilateral && totalSetsDeclared % 2 === 0 && totalSetsDeclared > 0) {
+                loopLimit = totalSetsDeclared / 2;
+                displayTotalSets = loopLimit; // Użytkownik zobaczy "Seria 1/1" zamiast "1/2"
             }
-            if (exerciseIndex < section.exercises.length - 1) { plan.push({ name: 'Przerwa', isRest: true, isWork: false, duration: FIXED_REST_DURATION, sectionName: 'Przerwa' }); }
+
+            // Ustalanie kolejności stron (Alternacja)
+            let startSide = 'Lewa';
+            let secondSide = 'Prawa';
+
+            if (isUnilateral) {
+                if (unilateralGlobalIndex % 2 !== 0) {
+                    startSide = 'Prawa';
+                    secondSide = 'Lewa';
+                }
+                unilateralGlobalIndex++;
+            }
+
+            // Obliczanie czasu trwania pojedynczej strony
+            let singleSideDuration = 0;
+            let singleSideRepsOrTime = exercise.reps_or_time;
+
+            if (isUnilateral) {
+                const text = String(exercise.reps_or_time).toLowerCase();
+                singleSideRepsOrTime = exercise.reps_or_time.replace(/\/str\.?|\s*stron.*/gi, '').trim();
+
+                if (text.includes('s') || text.includes('min')) {
+                    const minMatch = text.match(/(\d+(?:[.,]\d+)?)\s*min/);
+                    if (minMatch) {
+                        singleSideDuration = parseFloat(minMatch[1].replace(',', '.')) * 60;
+                    } else {
+                        const secMatch = text.match(/(\d+)/);
+                        if (secMatch) singleSideDuration = parseInt(secMatch[0], 10);
+                    }
+                }
+            }
+
+            for (let i = 1; i <= loopLimit; i++) {
+                if (isUnilateral) {
+                    // --- KROK 1: STRONA PIERWSZA ---
+                    plan.push({
+                        ...exercise,
+                        isWork: true,
+                        sectionName: section.name,
+                        currentSet: i,
+                        totalSets: displayTotalSets, // Zaktualizowana liczba
+                        name: `${exercise.name} (${startSide})`,
+                        reps_or_time: singleSideRepsOrTime,
+                        duration: singleSideDuration > 0 ? singleSideDuration : undefined,
+                        uniqueId: `${exercise.id || exercise.exerciseId}_s${i}_${startSide}`
+                    });
+
+                    // --- KROK 2: ZMIANA STRONY ---
+                    plan.push({
+                        name: "Zmiana Strony",
+                        isRest: true,
+                        isWork: false,
+                        duration: TRANSITION_DURATION,
+                        sectionName: "Przejście",
+                        description: `Przygotuj stronę: ${secondSide}`
+                    });
+
+                    // --- KROK 3: STRONA DRUGA ---
+                    plan.push({
+                        ...exercise,
+                        isWork: true,
+                        sectionName: section.name,
+                        currentSet: i,
+                        totalSets: displayTotalSets,
+                        name: `${exercise.name} (${secondSide})`,
+                        reps_or_time: singleSideRepsOrTime,
+                        duration: singleSideDuration > 0 ? singleSideDuration : undefined,
+                        uniqueId: `${exercise.id || exercise.exerciseId}_s${i}_${secondSide}`
+                    });
+
+                } else {
+                    // --- STANDARDOWE (Bilateral) ---
+                    plan.push({
+                        ...exercise,
+                        isWork: true,
+                        sectionName: section.name,
+                        currentSet: i,
+                        totalSets: totalSetsDeclared,
+                        uniqueId: `${exercise.id || exercise.exerciseId}_s${i}`
+                    });
+                }
+
+                // PRZERWA MIĘDZY SERIAMI (jeśli to nie ostatnia seria)
+                if (i < loopLimit) {
+                    plan.push({
+                        name: 'Odpoczynek',
+                        isRest: true,
+                        isWork: false,
+                        duration: FIXED_REST_DURATION,
+                        sectionName: 'Przerwa między seriami'
+                    });
+                }
+            }
+
+            // PRZERWA MIĘDZY ĆWICZENIAMI
+            if (exerciseIndex < section.exercises.length - 1) {
+                plan.push({
+                    name: 'Przerwa',
+                    isRest: true,
+                    isWork: false,
+                    duration: FIXED_REST_DURATION,
+                    sectionName: 'Przerwa'
+                });
+            }
         });
     });
-    if (plan.length > 0 && plan[plan.length - 1].isRest) { plan.pop(); }
+
+    if (plan.length > 0 && plan[plan.length - 1].isRest) {
+        plan.pop();
+    }
+
     return plan;
 }
 
@@ -289,7 +410,6 @@ export async function startModifiedTraining() {
 
     let sourcePlan;
 
-    // A. SCENARIUSZ PROTOKOŁU (BIO-HUB)
     if (state.todaysDynamicPlan && state.todaysDynamicPlan.type === 'protocol') {
         console.log("🚀 Start treningu: Używam BIO-PROTOKOŁU");
         state.flatExercises = state.todaysDynamicPlan.flatExercises;
@@ -301,7 +421,6 @@ export async function startModifiedTraining() {
         return;
     }
 
-    // B. SCENARIUSZ STANDARDOWY
     if (state.todaysDynamicPlan && state.todaysDynamicPlan.dayNumber === state.currentTrainingDayId) {
         console.log("🚀 Start treningu: Używam DYNAMICZNEGO planu");
         sourcePlan = state.todaysDynamicPlan;

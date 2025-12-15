@@ -2,12 +2,13 @@
 import { state } from './state.js';
 
 /**
- * PROTOCOL GENERATOR v4.0 (Enhanced Modes)
+ * PROTOCOL GENERATOR v4.1 (Unilateral Fix)
  * Moduł odpowiedzialny za dynamiczne tworzenie sesji "Bio-Protocols".
  *
- * ZMIANY v4.0:
- * - Fix: TimeFactor zmienia tempo, a nie długość sesji.
- * - Nowe tryby: CALM, FLOW, NEURO, LADDER.
+ * ZMIANY v4.1:
+ * - Fix: Globalna obsługa ćwiczeń jednostronnych (isUnilateral).
+ *   Każde takie ćwiczenie jest teraz rozbijane na L/P we wszystkich trybach,
+ *   a algorytm time-boxingu uwzględnia podwójny czas trwania.
  */
 
 // Konfiguracja mapowania stref na kategorie/tagi
@@ -19,7 +20,7 @@ const ZONE_MAP = {
     'sciatica': { type: 'zone', keys: ['sciatica', 'piriformis', 'nerve_flossing', 'lumbar_radiculopathy'] },
     'hips': { type: 'cat', keys: ['hip_mobility', 'glute_activation', 'femoral_nerve'] },
     'legs': { type: 'cat', keys: ['stretching', 'nerve_flossing'] },
-    
+
     // MIXED
     'office': { type: 'mixed', keys: ['thoracic', 'hip_mobility', 'neck'] },
     'sleep': { type: 'cat', keys: ['breathing', 'muscle_relaxation', 'stretching'] },
@@ -36,7 +37,7 @@ const TIMING_CONFIG = {
     'sos': { work: 60, rest: 15, tempo: 'Wolne / Oddechowe' },
     'reset': { work: 45, rest: 10, tempo: 'Płynne' },
     'booster': { work: 40, rest: 20, tempo: 'Dynamiczne' },
-    
+
     // Nowe
     'calm': { work: 150, rest: 10, tempo: 'Wolne / nos / przepona' }, // work średnio 120-180s
     'flow': { work: 40, rest: 5, tempo: 'Płynne / kontrola zakresu' },
@@ -45,13 +46,11 @@ const TIMING_CONFIG = {
 };
 
 export function generateBioProtocol({ mode, focusZone, durationMin, userContext, timeFactor = 1.0 }) {
-    console.log(`🧪 [ProtocolGenerator] Generowanie v4.0: ${mode} / ${focusZone} (${durationMin} min, TimeFactor=${timeFactor})`);
+    console.log(`🧪 [ProtocolGenerator] Generowanie v4.1: ${mode} / ${focusZone} (${durationMin} min, TimeFactor=${timeFactor})`);
 
     // 1. POPRAWKA TIMINGU (Time Factor Fix)
-    // TimeFactor zmienia tempo (długość ćwiczeń), ale NIE zmienia całkowitego czasu trwania sesji.
-    // Dzięki temu 5 minut to zawsze 5 minut, ale przy timeFactor=1.5 robimy mniej ćwiczeń, wolniej.
-    const targetSeconds = durationMin * 60; 
-    
+    const targetSeconds = durationMin * 60;
+
     const config = TIMING_CONFIG[mode] || TIMING_CONFIG['reset'];
 
     // 2. Pobierz Kandydatów
@@ -79,7 +78,7 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext,
     // 4. Wybór ćwiczeń zgodnie ze strategią trybu
     const selectedExercises = selectExercisesByMode(candidates, mode, targetSeconds, config, timeFactor);
 
-    // 5. Budowa Kroków (Timeline)
+    // 5. Budowa Kroków (Timeline) - Teraz z obsługą Unilateral dla wszystkich trybów
     const flatExercises = buildSteps(selectedExercises, config, mode, timeFactor);
 
     // 6. Obliczenie realnego czasu
@@ -104,35 +103,39 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext,
 // ============================================================
 
 function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFactor) {
-    // Obliczamy cykl skalowany przez TimeFactor, aby wiedzieć ile ćwiczeń się zmieści
-    const cycleTime = (config.work + config.rest) * timeFactor;
-    
-    const maxSteps = Math.ceil(targetSeconds / cycleTime) + 2;
+    // Obliczamy cykl bazowy
+    const baseCycleTime = (config.work + config.rest) * timeFactor;
+
+    const maxSteps = Math.ceil(targetSeconds / baseCycleTime) + 2;
     let sequence = [];
     let currentSeconds = 0;
+
+    // Helper do liczenia czasu z uwzględnieniem unilateral
+    const addTime = (ex) => {
+        const isUnilateral = ex.isUnilateral || String(ex.reps_or_time).includes('/str') || String(ex.reps_or_time).includes('stron');
+        // Jeśli unilateral, to mamy: Work(L) + Switch(5s) + Work(R) + Rest
+        // Aproksymacja: 2 * baseCycleTime (trochę nadmiarowe, ale bezpieczne)
+        const mult = isUnilateral ? 2 : 1;
+        currentSeconds += baseCycleTime * mult;
+    };
 
     // --- STRATEGIA: CALM (Downshift) ---
     if (mode === 'calm') {
         const breathing = candidates.filter(ex => ['breathing_control', 'breathing'].includes(ex.categoryId));
         const relax = candidates.filter(ex => ex.categoryId === 'muscle_relaxation');
-        
-        // Pula zapasowa
+
         const poolA = breathing.length > 0 ? breathing : candidates.slice(0, 3);
         const poolB = relax.length > 0 ? relax : candidates.slice(0, 3);
 
-        // Proporcja 70/30 (ale Calm ma długie czasy, więc mało kroków)
-        // Po prostu przeplatamy: A, A, B...
         let safetyLoop = 0;
         while (currentSeconds < targetSeconds && safetyLoop < maxSteps) {
-            const isRelaxPhase = (sequence.length + 1) % 3 === 0; // co trzeci to B
+            const isRelaxPhase = (sequence.length + 1) % 3 === 0;
             const pool = isRelaxPhase ? poolB : poolA;
-            
-            // Losuj z top 3
             const subPool = pool.slice(0, 3);
             const ex = subPool[Math.floor(Math.random() * subPool.length)];
-            
+
             sequence.push(ex);
-            currentSeconds += cycleTime;
+            addTime(ex);
             safetyLoop++;
         }
     }
@@ -141,52 +144,36 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
     else if (mode === 'flow') {
         let safetyLoop = 0;
         while (currentSeconds < targetSeconds && safetyLoop < maxSteps) {
-            // Reguła: Unikaj powtórzenia tej samej płaszczyzny (plane) i pozycji
             const last = sequence.length > 0 ? sequence[sequence.length - 1] : null;
-            
             let valid = candidates.filter(ex => {
-                if (last && ex.id === last.id) return false; // Bez bezpośrednich powtórzeń
-                
-                // Unikaj tej samej płaszczyzny pod rząd
+                if (last && ex.id === last.id) return false;
                 if (last && ex.primaryPlane && last.primaryPlane && ex.primaryPlane === last.primaryPlane && ex.primaryPlane !== 'multi') {
-                    return false; 
+                    return false;
                 }
                 return true;
             });
-
-            // Jeśli filtr zbyt restrykcyjny, poluzuj
             if (valid.length === 0) valid = candidates.filter(ex => !last || ex.id !== last.id);
             if (valid.length === 0) valid = candidates;
 
-            // Losuj z Top 5
             const subPool = valid.slice(0, 5);
             const ex = subPool[Math.floor(Math.random() * subPool.length)];
-            
+
             sequence.push(ex);
-            currentSeconds += cycleTime;
+            addTime(ex);
             safetyLoop++;
         }
     }
 
     // --- STRATEGIA: NEURO (Nerve Glide) ---
     else if (mode === 'neuro') {
-        // Wybierz 2 główne ćwiczenia (najlepiej dopasowane do strefy)
-        const mainPool = candidates.slice(0, 3); // Top 3 scored (scoring promuje strefę)
-        
+        const mainPool = candidates.slice(0, 3);
         let poolIndex = 0;
         let safetyLoop = 0;
-        
+
         while (currentSeconds < targetSeconds && safetyLoop < maxSteps) {
             const ex = mainPool[poolIndex % mainPool.length];
-            
-            // Jeśli unilateralne, zajmuje "więcej czasu" w percepcji użytkownika (L+P)
-            // W buildSteps rozbijemy to na 2 kroki, ale tutaj liczymy czas logicznie
-            const durationMult = (ex.isUnilateral || String(ex.reps_or_time).includes('/str')) ? 2 : 1;
-            
             sequence.push(ex);
-            currentSeconds += cycleTime * durationMult;
-            
-            // Nie powtarzaj tego samego częściej niż co 2 kroki (chyba że pula mała)
+            addTime(ex);
             if (mainPool.length > 1) poolIndex++;
             safetyLoop++;
         }
@@ -194,41 +181,29 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
 
     // --- STRATEGIA: LADDER (Progression) ---
     else if (mode === 'ladder') {
-        // Znajdź bazę (najłatwiejsze z topki)
         const baseEx = candidates.slice(0, 5).sort((a,b) => (a.difficultyLevel || 1) - (b.difficultyLevel || 1))[0];
-        
-        if (!baseEx) {
-            // Fallback do Boostera jeśli pusto
-            return selectExercisesByMode(candidates, 'booster', targetSeconds, config, timeFactor);
-        }
+        if (!baseEx) return selectExercisesByMode(candidates, 'booster', targetSeconds, config, timeFactor);
 
         let currentEx = baseEx;
         let safetyLoop = 0;
 
         while (currentSeconds < targetSeconds && safetyLoop < maxSteps) {
             sequence.push(currentEx);
-            currentSeconds += cycleTime;
+            addTime(currentEx);
 
-            // Próba progresji
             if (currentEx.nextProgressionId) {
                 const nextEx = state.exerciseLibrary[currentEx.nextProgressionId];
-                // Sprawdź czy nextEx istnieje, jest dozwolone i nie za trudne
                 if (nextEx && nextEx.isAllowed !== false && (nextEx.difficultyLevel || 1) <= (currentEx.difficultyLevel + 1)) {
-                    // Sprawdź czy mamy sprzęt do progresji (używając simple check, bo ex z library nie ma przefiltrowanych flag)
-                    // Zakładamy optymistycznie lub sprawdzamy w candidates
                     const inCandidates = candidates.find(c => c.id === nextEx.id);
                     if (inCandidates) {
-                        currentEx = inCandidates; // Awansuj
+                        currentEx = inCandidates;
                     } else {
-                        // Zostań przy obecnym lub weź inne bazowe
-                        // Reset do innego bazowego co jakiś czas dla urozmaicenia
                         if (Math.random() > 0.6 && candidates.length > 2) {
                              currentEx = candidates[Math.floor(Math.random() * 3)];
                         }
                     }
                 }
             } else {
-                // Koniec drabiny, losuj nowe
                 currentEx = candidates[Math.floor(Math.random() * Math.min(5, candidates.length))];
             }
             safetyLoop++;
@@ -241,8 +216,9 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
         let poolIndex = 0;
         let safetyLoop = 0;
         while (currentSeconds < targetSeconds && safetyLoop < maxSteps) {
-            sequence.push(topN[poolIndex % topN.length]);
-            currentSeconds += cycleTime;
+            const ex = topN[poolIndex % topN.length];
+            sequence.push(ex);
+            addTime(ex);
             poolIndex++;
             safetyLoop++;
         }
@@ -267,7 +243,7 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
                 if (currentSeconds >= targetSeconds) return;
                 const ex = getNextUnique(pool, sequence);
                 sequence.push(ex);
-                currentSeconds += cycleTime;
+                addTime(ex);
             }
         };
         fillPhase(poolA, stepsA);
@@ -285,7 +261,7 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
                if (easier) ex = easier;
             }
             sequence.push(ex);
-            currentSeconds += cycleTime;
+            addTime(ex);
             safetyLoop++;
         }
     }
@@ -332,10 +308,13 @@ function buildSteps(exercises, config, mode, timeFactor) {
         const workDuration = Math.round(config.work * timeFactor);
         const restDuration = Math.round(config.rest * timeFactor);
 
-        // Obsługa Unilateral dla NEURO (Rozbicie na L i P)
-        const isUnilateral = ex.isUnilateral || String(ex.reps_or_time).includes('/str');
-        
-        if (mode === 'neuro' && isUnilateral) {
+        // Obsługa Unilateral dla WSZYSTKICH trybów
+        // (Wcześniej było ograniczone tylko do 'neuro', co powodowało błąd asymetrii w innych trybach)
+        const isUnilateral = ex.isUnilateral ||
+                             String(ex.reps_or_time).includes('/str') ||
+                             String(ex.reps_or_time).includes('stron');
+
+        if (isUnilateral) {
             // Krok LEWA
             steps.push({
                 ...ex,
@@ -352,8 +331,8 @@ function buildSteps(exercises, config, mode, timeFactor) {
                 tempo_or_iso: config.tempo,
                 uniqueId: `${ex.id}_p${index}_L`
             });
-            
-            // Krótka przerwa na zmianę strony (opcjonalna, dajemy 5s hardcoded)
+
+            // Krótka przerwa na zmianę strony (5s hardcoded)
             steps.push({
                 name: "Zmiana Strony",
                 isWork: false,
@@ -381,7 +360,7 @@ function buildSteps(exercises, config, mode, timeFactor) {
             });
 
         } else {
-            // Standardowy Krok
+            // Standardowy Krok (Bilateral)
             steps.push({
                 ...ex,
                 exerciseId: ex.id,
@@ -449,13 +428,13 @@ function getCandidates(mode, focusZone, ctx = { ignoreEquipment: false }) {
         if (mode === 'reset') {
             if (difficulty > 3) return false;
         }
-        
+
         // NOWE TRYBY
         if (mode === 'calm') {
             if (difficulty > 2) return false;
             if (!['breathing_control', 'breathing', 'muscle_relaxation'].includes(ex.categoryId)) return false;
             // Preferuj pozycje leżące/siedzące dla Calm
-            if (ex.position && !['supine', 'sitting'].includes(ex.position)) return false; 
+            if (ex.position && !['supine', 'sitting'].includes(ex.position)) return false;
         }
         if (mode === 'flow') {
             if (difficulty > 3) return false;
@@ -468,24 +447,24 @@ function getCandidates(mode, focusZone, ctx = { ignoreEquipment: false }) {
             if (difficulty > 3) return false; // Neuro może być trudniejsze technicznie, ale nie siłowo
             // Jeśli focus to rwa/biodra, szukamy nerve_flossing
             const isFlossing = ex.categoryId === 'nerve_flossing';
-            const matchesZone = ex.painReliefZones && ex.painReliefZones.some(z => 
+            const matchesZone = ex.painReliefZones && ex.painReliefZones.some(z =>
                 ['sciatica', 'lumbar_radiculopathy', 'femoral_nerve'].includes(z)
             );
-            
+
             // Jeśli nie flossing i nie pasuje do strefy neuro, odrzuć
             if (!isFlossing && !matchesZone) return false;
         }
         if (mode === 'ladder') {
             // Startujemy od łatwych/średnich
-            if (difficulty > 3) return false; 
+            if (difficulty > 3) return false;
         }
 
         // 3. DOPASOWANIE DO STREFY (Zone Logic)
-        // Dla trybów ogólnych (Calm/Flow) strefa ma mniejsze znaczenie jako hard-filter, 
+        // Dla trybów ogólnych (Calm/Flow) strefa ma mniejsze znaczenie jako hard-filter,
         // ale wciąż używamy jej do zawężenia puli jeśli zdefiniowana.
-        
+
         if (mode === 'calm') return true; // Calm ignoruje strefy anatomiczne (działa systemowo)
-        
+
         if (zoneConfig.type === 'zone') {
             const reliefZones = ex.painReliefZones || [];
             return reliefZones.some(z => zoneConfig.keys.includes(z));
@@ -587,16 +566,16 @@ function generateTitle(mode, zone) {
         'legs': 'Nogi'
     }[zone] || 'Bio-Protokół';
 
-    const suffix = { 
-        'sos': 'Ratunkowy', 
-        'booster': 'Power', 
+    const suffix = {
+        'sos': 'Ratunkowy',
+        'booster': 'Power',
         'reset': 'Flow',
         'calm': 'Wyciszenie',
         'flow': 'Mobility Flow',
         'neuro': 'Neuro-Ślizgi',
         'ladder': 'Progresja'
     }[mode] || '';
-    
+
     return `${zoneName}: ${suffix}`;
 }
 

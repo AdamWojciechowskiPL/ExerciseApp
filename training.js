@@ -53,11 +53,16 @@ function logCurrentStep(status) {
     if (!exercise || !exercise.isWork) return;
     let duration = state.stopwatch.seconds > 0 ? state.stopwatch.seconds : 0;
 
+    // Jeśli był aktywny timer (np. w starym trybie), bierzemy z initialDuration
     if (state.timer.isActive || state.timer.initialDuration > 0) {
         duration = state.timer.initialDuration;
     }
 
+    // Zabezpieczenie przed brakiem ID
+    const entryUniqueId = exercise.uniqueId || `${exercise.id}_${Date.now()}`;
+
     const newLogEntry = {
+        uniqueId: entryUniqueId, // KLUCZOWE: Unikalny identyfikator kroku
         name: exercise.name,
         exerciseId: exercise.id || exercise.exerciseId,
         currentSet: exercise.currentSet,
@@ -67,9 +72,15 @@ function logCurrentStep(status) {
         status: status,
         duration: duration > 0 ? duration : '-'
     };
-    const existingEntryIndex = state.sessionLog.findIndex(entry => entry.name === newLogEntry.name && entry.currentSet === newLogEntry.currentSet);
-    if (existingEntryIndex > -1) state.sessionLog[existingEntryIndex] = newLogEntry;
-    else state.sessionLog.push(newLogEntry);
+
+    // Szukamy wpisu po uniqueId, aby uniknąć nadpisywania L/P jako tego samego ćwiczenia
+    const existingEntryIndex = state.sessionLog.findIndex(entry => entry.uniqueId === newLogEntry.uniqueId);
+    
+    if (existingEntryIndex > -1) {
+        state.sessionLog[existingEntryIndex] = newLogEntry;
+    } else {
+        state.sessionLog.push(newLogEntry);
+    }
 }
 
 function triggerSessionBackup() {
@@ -111,10 +122,15 @@ function triggerSessionBackup() {
 export function moveToNextExercise(options = { skipped: false }) {
     stopStopwatch(); stopTimer();
     if (state.tts.isSupported) state.tts.synth.cancel();
+    
+    // Logujemy status. Dzięki uniqueId, Skip na Lewej zapisze się jako osobny wpis.
     if (options.skipped) logCurrentStep('skipped'); else logCurrentStep('completed');
+    
     if (state.breakTimeoutId) { clearTimeout(state.breakTimeoutId); state.breakTimeoutId = null; }
-    if (state.currentExerciseIndex < state.flatExercises.length - 1) startExercise(state.currentExerciseIndex + 1);
-    else {
+    
+    if (state.currentExerciseIndex < state.flatExercises.length - 1) {
+        startExercise(state.currentExerciseIndex + 1);
+    } else {
         state.finalCompletionSound();
         if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
         renderSummaryScreen();
@@ -160,12 +176,12 @@ export function startExercise(index) {
     if (animContainer) animContainer.innerHTML = '';
 
     if (exercise.isWork) {
+        // --- TRYB PRACY (ZAWSZE STOPER + MANUALNE POTWIERDZENIE) ---
         focus.sectionName.textContent = exercise.sectionName;
         focus.exerciseName.textContent = exercise.name;
         fitText(focus.exerciseName);
 
         // Wyświetlamy aktualny numer serii w kontekście całkowitej liczby serii
-        // (W przypadku splitu to będzie np. Seria 1/1 jeśli były 2 total)
         focus.exerciseDetails.textContent = `Seria ${exercise.currentSet}/${exercise.totalSets} | Cel: ${exercise.reps_or_time}`;
         focus.focusDescription.textContent = exercise.description || '';
 
@@ -181,34 +197,40 @@ export function startExercise(index) {
         for (let i = index + 1; i < state.flatExercises.length; i++) { if (state.flatExercises[i].isWork) { nextWorkExercise = state.flatExercises[i]; break; } }
         focus.nextExerciseName.textContent = nextWorkExercise ? nextWorkExercise.name : "Koniec treningu";
 
+        // Resetujemy i zatrzymujemy timer (odliczanie w dół)
         stopTimer();
+        
+        // Resetujemy stoper
         state.stopwatch.seconds = 0;
         updateStopwatchDisplay();
 
+        // ZAWSZE pokazujemy przycisk GOTOWE (niezależnie czy to czas czy powtórzenia)
         focus.repBasedDoneBtn.classList.remove('hidden');
         focus.pauseResumeBtn.classList.remove('hidden');
         focus.timerDisplay.classList.remove('rep-based-text');
 
         if (!state.isPaused) {
-            const isTimeBased = (exercise.duration && exercise.duration > 0) || (exercise.reps_or_time.includes('s') && !exercise.reps_or_time.includes('/str'));
+            // ZAWSZE uruchamiamy stoper (liczenie w górę)
+            startStopwatch();
 
-            if (isTimeBased) {
-                const duration = exercise.duration ? exercise.duration : getExerciseDuration(exercise);
+            // Obsługa TTS
+            if (state.tts.isSoundOn) {
+                // Budujemy komunikat
+                let announcement = `Ćwicz: ${exercise.name}. `;
+                
+                // Dodajemy informację o celu, żeby użytkownik wiedział ile ma robić
+                if (exercise.reps_or_time) {
+                    announcement += `Cel: ${formatForTTS(exercise.reps_or_time)}.`;
+                }
 
-                if (state.tts.isSoundOn) {
-                    speak(`Ćwicz: ${exercise.name}, ${exercise.reps_or_time}`, true, () => { speak(formatForTTS(exercise.description), false); });
-                }
-                startTimer(duration, () => moveToNextExercise({ skipped: false }), syncStateToChromecast, true);
-            } else {
-                startStopwatch();
-                if (state.tts.isSoundOn) {
-                    let announcement = `Wykonaj: ${exercise.name}, seria ${exercise.currentSet} z ${exercise.totalSets}. Cel: ${formatForTTS(exercise.reps_or_time)}.`;
-                    speak(announcement, true, () => { speak(formatForTTS(exercise.description), false); });
-                }
+                speak(announcement, true, () => { 
+                    if (exercise.description) speak(formatForTTS(exercise.description), false); 
+                });
             }
         }
     }
     else {
+        // --- TRYB PRZERWY (ODLICZANIE W DÓŁ) ---
         if (animContainer) animContainer.classList.add('hidden');
         if (descContainer) descContainer.classList.remove('hidden');
         if (flipIndicator) flipIndicator.classList.add('hidden');
@@ -252,14 +274,14 @@ export function startExercise(index) {
 
 /**
  * Generuje płaską listę kroków.
- * ZMIANA v5: Jeśli liczba serii jest PARZYSTA i ćwiczenie UNILATERAL, dzielimy serie na pół.
- * Np. 2 serie -> 1 Lewa, 1 Prawa. 4 serie -> 2 Lewe, 2 Prawe (w 2 blokach L/P).
+ * ZMIANA: Poprawiona generacja uniqueId i obsługa pojedynczych serii unilateralnych.
  */
 export function generateFlatExercises(dayData) {
     const plan = [];
     const FIXED_REST_DURATION = 5;
     const TRANSITION_DURATION = 5;
     let unilateralGlobalIndex = 0;
+    let globalStepCounter = 0; // Licznik dla uniqueId, aby każdy krok był unikalny
 
     const sections = [
         { name: 'Rozgrzewka', exercises: dayData.warmup || [] },
@@ -278,15 +300,19 @@ export function generateFlatExercises(dayData) {
                                  String(exercise.reps_or_time).includes('stron');
 
             // --- LOGIKA PĘTLI SERII ---
-            // Jeśli unilateral i parzyście: robimy tylko połowę powtórzeń pętli, bo każda pętla to (L+P)
-            // Jeśli unilateral i nieparzyście: fallback do "per side" (robimy zadeklarowaną liczbę L+P)
-            // Jeśli bilateral: robimy zadeklarowaną liczbę
+            // ZMIANA: Jeśli ćwiczenie jest unilateralne, ZAWSZE rozbijamy je na L/P,
+            // nawet jeśli liczba serii jest 1. Wtedy robimy 1 pętlę (L+P).
             let loopLimit = totalSetsDeclared;
             let displayTotalSets = totalSetsDeclared;
 
-            if (isUnilateral && totalSetsDeclared % 2 === 0 && totalSetsDeclared > 0) {
-                loopLimit = totalSetsDeclared / 2;
-                displayTotalSets = loopLimit; // Użytkownik zobaczy "Seria 1/1" zamiast "1/2"
+            if (isUnilateral && totalSetsDeclared > 0) {
+                // Jeśli parzyście: robimy połowę pętli (np. 4 serie = 2 pętle L+P)
+                if (totalSetsDeclared % 2 === 0) {
+                    loopLimit = totalSetsDeclared / 2;
+                    displayTotalSets = loopLimit; 
+                } 
+                // Jeśli nieparzyście (np. 1 seria): robimy tyle pętli ile serii (1 seria = 1 pętla L+P)
+                // Wtedy displayTotalSets zostaje jak jest (np. Seria 1/1)
             }
 
             // Ustalanie kolejności stron (Alternacja)
@@ -328,11 +354,12 @@ export function generateFlatExercises(dayData) {
                         isWork: true,
                         sectionName: section.name,
                         currentSet: i,
-                        totalSets: displayTotalSets, // Zaktualizowana liczba
+                        totalSets: displayTotalSets, 
                         name: `${exercise.name} (${startSide})`,
                         reps_or_time: singleSideRepsOrTime,
                         duration: singleSideDuration > 0 ? singleSideDuration : undefined,
-                        uniqueId: `${exercise.id || exercise.exerciseId}_s${i}_${startSide}`
+                        // Unikalne ID oparte o licznik
+                        uniqueId: `${exercise.id || exercise.exerciseId}_step${globalStepCounter++}`
                     });
 
                     // --- KROK 2: ZMIANA STRONY ---
@@ -342,7 +369,8 @@ export function generateFlatExercises(dayData) {
                         isWork: false,
                         duration: TRANSITION_DURATION,
                         sectionName: "Przejście",
-                        description: `Przygotuj stronę: ${secondSide}`
+                        description: `Przygotuj stronę: ${secondSide}`,
+                        uniqueId: `rest_transition_${globalStepCounter++}`
                     });
 
                     // --- KROK 3: STRONA DRUGA ---
@@ -355,7 +383,7 @@ export function generateFlatExercises(dayData) {
                         name: `${exercise.name} (${secondSide})`,
                         reps_or_time: singleSideRepsOrTime,
                         duration: singleSideDuration > 0 ? singleSideDuration : undefined,
-                        uniqueId: `${exercise.id || exercise.exerciseId}_s${i}_${secondSide}`
+                        uniqueId: `${exercise.id || exercise.exerciseId}_step${globalStepCounter++}`
                     });
 
                 } else {
@@ -366,7 +394,7 @@ export function generateFlatExercises(dayData) {
                         sectionName: section.name,
                         currentSet: i,
                         totalSets: totalSetsDeclared,
-                        uniqueId: `${exercise.id || exercise.exerciseId}_s${i}`
+                        uniqueId: `${exercise.id || exercise.exerciseId}_step${globalStepCounter++}`
                     });
                 }
 
@@ -377,7 +405,8 @@ export function generateFlatExercises(dayData) {
                         isRest: true,
                         isWork: false,
                         duration: FIXED_REST_DURATION,
-                        sectionName: 'Przerwa między seriami'
+                        sectionName: 'Przerwa między seriami',
+                        uniqueId: `rest_set_${globalStepCounter++}`
                     });
                 }
             }
@@ -389,7 +418,8 @@ export function generateFlatExercises(dayData) {
                     isRest: true,
                     isWork: false,
                     duration: FIXED_REST_DURATION,
-                    sectionName: 'Przerwa'
+                    sectionName: 'Przerwa',
+                    uniqueId: `rest_exercise_${globalStepCounter++}`
                 });
             }
         });
@@ -452,7 +482,7 @@ export async function startModifiedTraining() {
 
     state.sessionLog = [];
     state.flatExercises = [
-        { name: "Przygotuj się", isRest: true, isWork: false, duration: 5, sectionName: "Start" },
+        { name: "Przygotuj się", isRest: true, isWork: false, duration: 5, sectionName: "Start", uniqueId: "start_prep_0" },
         ...generateFlatExercises(modifiedDay)
     ];
 

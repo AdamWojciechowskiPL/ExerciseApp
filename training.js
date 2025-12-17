@@ -274,7 +274,8 @@ export function startExercise(index) {
 
 /**
  * Generuje płaską listę kroków.
- * ZMIANA: Poprawiona generacja uniqueId i obsługa pojedynczych serii unilateralnych.
+ * ZMIANA: Usunięto dzielenie przez 2 dla parzystych serii unilateralnych.
+ * Teraz 'Sets' = liczba pełnych pętli (L+P).
  */
 export function generateFlatExercises(dayData) {
     const plan = [];
@@ -300,20 +301,10 @@ export function generateFlatExercises(dayData) {
                                  String(exercise.reps_or_time).includes('stron');
 
             // --- LOGIKA PĘTLI SERII ---
-            // ZMIANA: Jeśli ćwiczenie jest unilateralne, ZAWSZE rozbijamy je na L/P,
-            // nawet jeśli liczba serii jest 1. Wtedy robimy 1 pętlę (L+P).
+            // Liczba serii = liczba pełnych pętli (L+P).
+            // Bez kombinowania z parzystością. 4 serie = 4 razy (L+P).
             let loopLimit = totalSetsDeclared;
             let displayTotalSets = totalSetsDeclared;
-
-            if (isUnilateral && totalSetsDeclared > 0) {
-                // Jeśli parzyście: robimy połowę pętli (np. 4 serie = 2 pętle L+P)
-                if (totalSetsDeclared % 2 === 0) {
-                    loopLimit = totalSetsDeclared / 2;
-                    displayTotalSets = loopLimit; 
-                } 
-                // Jeśli nieparzyście (np. 1 seria): robimy tyle pętli ile serii (1 seria = 1 pętla L+P)
-                // Wtedy displayTotalSets zostaje jak jest (np. Seria 1/1)
-            }
 
             // Ustalanie kolejności stron (Alternacja)
             let startSide = 'Lewa';

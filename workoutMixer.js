@@ -3,8 +3,8 @@ import { getISODate, getAvailableMinutesForToday, parseSetCount } from './utils.
 import { assistant } from './assistantEngine.js';
 
 /**
- * WORKOUT MIXER v3.3 (Post-Op Foot Support)
- * Zapobiega duplikatom oraz obsługuje nowe restrykcje kliniczne (np. uraz stopy).
+ * WORKOUT MIXER v3.4 (Breathing Awareness)
+ * Zapobiega duplikatom, obsługuje restrykcje stopy oraz dba o czas trwania ćwiczeń oddechowych.
  */
 
 const CACHE_FRESHNESS_DAYS = 60;
@@ -398,6 +398,20 @@ function checkEquipment(exercise) {
 }
 
 function adaptVolumeInternal(originalEx, newEx) {
+    // --- NOWA LOGIKA DLA ODDYCHANIA ---
+    // Jeśli nowe ćwiczenie to relaks/oddech, wymuś sensowny czas trwania (min. 60s)
+    if (['breathing', 'breathing_control', 'muscle_relaxation'].includes(newEx.categoryId)) {
+        let minDuration = 60; // Domyślne minimum
+        
+        // Próba odczytania maxDuration z bazy, ale z podłogą 60s
+        if (newEx.maxDuration) {
+            minDuration = Math.max(60, Math.min(newEx.maxDuration, 120));
+        }
+        
+        return `${minDuration} s`;
+    }
+
+    // --- STARA LOGIKA ---
     const oldVal = (originalEx.reps_or_time || "").toString();
     const isOldTimeBased = /s\b|min\b|:/.test(oldVal);
     const newMaxDuration = newEx.maxDuration || 0;

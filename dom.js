@@ -30,11 +30,12 @@ focus.progress = document.getElementById('focus-progress');
 focus.timerDisplay = document.getElementById('focus-timer-display');
 focus.exerciseName = document.getElementById('focus-exercise-name');
 focus.exerciseDetails = document.getElementById('focus-exercise-details');
+focus.tempo = document.getElementById('focus-tempo'); // NOWE: Referencja do tempa
 focus.exerciseInfoContainer = document.querySelector('.focus-exercise-info');
 focus.focusDescription = document.getElementById('focus-description');
 
 focus.ttsToggleBtn = document.getElementById('tts-toggle-btn');
-focus.ttsIcon = document.getElementById('tts-icon'); 
+focus.ttsIcon = document.getElementById('tts-icon');
 
 focus.nextExerciseName = document.getElementById('next-exercise-name');
 focus.exitTrainingBtn = document.getElementById('exit-training-btn');

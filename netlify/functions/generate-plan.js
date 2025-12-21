@@ -4,13 +4,14 @@ const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
 const { buildUserContext, checkExerciseAvailability } = require('./_clinical-rule-engine.js');
 
 /**
- * GENERATOR PLANU TRENINGOWEGO (VIRTUAL PHYSIO) v4.0 (Refactored)
- * - Logika kliniczna przeniesiona do _clinical-rule-engine.js
+ * GENERATOR PLANU TRENINGOWEGO (VIRTUAL PHYSIO) v4.3 (Fix ReferenceError)
+ * - Logika kliniczna w _clinical-rule-engine.js
+ * - Fix: Naprawiono błąd 'original is not defined' w funkcji pickOne.
  */
 
 const SECONDS_PER_REP = 4;
-const REST_BETWEEN_SETS = 5; 
-const REST_BETWEEN_EXERCISES = 5; 
+const REST_BETWEEN_SETS = 5;
+const REST_BETWEEN_EXERCISES = 5;
 
 const MAX_MAIN_OCCURRENCES_PER_WEEK = 4;
 const MAX_ROTATIONAL_CORE_WITH_DISC_HERNIATION = 3;
@@ -62,17 +63,14 @@ exports.handler = async (event) => {
                 position: ex.position || null
             }));
 
-            // 2. BUDOWANIE KONTEKSTU UŻYTKOWNIKA (Przy użyciu nowego silnika)
+            // 2. BUDOWANIE KONTEKSTU UŻYTKOWNIKA
             const ctx = buildUserContext(userData);
-            
-            // Dodajemy blacklistę do kontekstu
             blacklistResult.rows.forEach(row => ctx.blockedIds.add(row.exercise_id));
 
-            // --- SEKCJA WAG (Pozostaje tutaj, bo jest specyficzna dla generatora planów, a nie walidacji pojedynczego ćwiczenia) ---
+            // --- SEKCJA WAG ---
             let weights = { ...CATEGORY_WEIGHTS };
             const diagnosis = userData.medical_diagnosis || [];
-            
-            // (Logika wag - bez zmian merytorycznych, tylko dostosowanie zmiennych)
+
             if (diagnosis.includes('scoliosis')) {
                 weights['core_anti_rotation'] += 0.6; weights['glute_activation'] += 0.4; weights['spine_mobility'] += 0.3;
             }
@@ -86,7 +84,7 @@ exports.handler = async (event) => {
             if (ctx.painFilters.has('sciatica') || diagnosis.includes('piriformis')) {
                 weights['nerve_flossing'] = 2.5; weights['glute_activation'] += 0.3;
             }
-            
+
             const painChar = userData.pain_character || [];
             const painLocs = userData.pain_locations || [];
             if (painChar.includes('radiating') && (painLocs.includes('sciatica') || painLocs.includes('lumbar_radiculopathy'))) {
@@ -94,7 +92,7 @@ exports.handler = async (event) => {
             }
 
             const workType = userData.work_type;
-            if (workType === 'sedentary') { weights['hip_mobility'] += 0.5; weights['spine_mobility'] += 0.4; weights['glute_activation'] += 0.4; } 
+            if (workType === 'sedentary') { weights['hip_mobility'] += 0.5; weights['spine_mobility'] += 0.4; weights['glute_activation'] += 0.4; }
             else if (workType === 'standing' || workType === 'physical') { weights['core_anti_extension'] += 0.4; weights['breathing'] += 0.3; }
 
             const hobbies = userData.hobby || [];
@@ -108,22 +106,15 @@ exports.handler = async (event) => {
             if (userPriorities.includes('breathing') || userPriorities.includes('pain_relief')) { weights['breathing'] += 0.7; }
             if (userPriorities.includes('posture')) { weights['core_anti_extension'] += 0.5; weights['spine_mobility'] += 0.3; }
 
-            // 4. FILTROWANIE KANDYDATÓW (Użycie silnika)
+            // 4. FILTROWANIE KANDYDATÓW
             let candidates = exerciseDB.filter(ex => {
                 const result = checkExerciseAvailability(ex, ctx, { strictSeverity: true });
                 return result.allowed;
             });
 
-            // 4.1. Fallback (Jeśli za mało kandydatów, poluzuj rygor severity/difficulty)
             if (candidates.length < 5) {
-                // Poluzowujemy difficulty cap (ignoreDifficulty: true) i severity
-                // Ale NADAL sprawdzamy restrykcje biomechaniczne i sprzęt!
                 candidates = exerciseDB.filter(ex => {
-                    // Tutaj robimy custom check, bo checkExerciseAvailability domyślnie używa strictSeverity=true
-                    // W fallbacku chcemy strictSeverity=false (chyba że to super critical case, ale engine to obsłuży)
-                    
-                    // W fallbacku manualnie ustawiamy luźniejszy cap w locie lub używamy opcji
-                    const fallbackCtx = { ...ctx, isSevere: false }; // Hack: udajemy że nie jest severe żeby puścić więcej
+                    const fallbackCtx = { ...ctx, isSevere: false };
                     const result = checkExerciseAvailability(ex, fallbackCtx, { ignoreDifficulty: true });
                     return result.allowed;
                 });
@@ -136,7 +127,7 @@ exports.handler = async (event) => {
             const weeklyPlan = {
                 id: `dynamic-${Date.now()}`,
                 name: "Terapia Personalizowana",
-                description: "Plan wygenerowany przez Asystenta AI (v4.0)",
+                description: "Plan wygenerowany przez Asystenta AI (v4.3 - Refactored)",
                 days: []
             };
 
@@ -144,7 +135,18 @@ exports.handler = async (event) => {
             const weeklyRotationMobilityUsage = new Map();
 
             for (let i = 1; i <= sessionsPerWeek; i++) {
-                let session = generateSession(i, candidates, weights, ctx.severityScore, userData.exercise_experience, weeklyUsage, sessionsPerWeek, userData, weeklyRotationMobilityUsage);
+                let session = generateSession(
+                    i, candidates, weights, ctx.severityScore, 
+                    userData.exercise_experience, weeklyUsage, sessionsPerWeek, 
+                    userData, weeklyRotationMobilityUsage
+                );
+                
+                ['warmup', 'main', 'cooldown'].forEach(section => {
+                    session[section].forEach(ex => {
+                        applyVolume(ex, calculateLoadFactor(ctx.severityScore, userData.exercise_experience, sessionsPerWeek), section, targetDurationMin);
+                    });
+                });
+
                 expandSessionDuration(session, targetDurationMin);
                 optimizeSessionDuration(session, targetDurationMin);
                 session = sanitizeForStorage(session);
@@ -161,7 +163,7 @@ exports.handler = async (event) => {
             currentSettings.wizardData = userData;
 
             await client.query(
-                `INSERT INTO user_settings (user_id, settings, updated_at) 
+                `INSERT INTO user_settings (user_id, settings, updated_at)
                  VALUES ($1, $2, CURRENT_TIMESTAMP)
                  ON CONFLICT (user_id) DO UPDATE SET settings = EXCLUDED.settings, updated_at = CURRENT_TIMESTAMP`,
                 [userId, JSON.stringify(currentSettings)]
@@ -182,7 +184,7 @@ exports.handler = async (event) => {
     }
 };
 
-// --- HELPERY LOGIKI (Pozostałe, specyficzne dla budowy sesji) ---
+// --- HELPERY LOGIKI ---
 
 function generateSession(dayNum, candidates, weights, severity, experience, weeklyUsage, sessionsPerWeek, userData, weeklyRotationMobilityUsage) {
     const session = {
@@ -230,14 +232,6 @@ function generateSession(dayNum, candidates, weights, severity, experience, week
     session.main = session.main.filter(Boolean);
     session.cooldown = session.cooldown.filter(Boolean);
 
-    const loadFactor = calculateLoadFactor(severity, experience, sessionsPerWeek);
-
-    ['warmup', 'main', 'cooldown'].forEach(section => {
-        session[section].forEach(ex => {
-            applyVolume(ex, loadFactor, section);
-        });
-    });
-
     return session;
 }
 
@@ -279,6 +273,7 @@ function pickOne(pool, category, usedIds, weeklyUsage, sectionName, userData, we
         }
 
         if (weeklyRotationMobilityUsage && sectionName !== 'main' && hasDisc) {
+            // FIX: Używamy 'ex' a nie 'original', bo 'original' jeszcze nie istnieje
             const plane = ex.primary_plane || 'multi';
             if (plane === 'rotation') {
                 const usedRot = weeklyRotationMobilityUsage.get(ex.id) || 0;
@@ -328,7 +323,35 @@ function calculateLoadFactor(severity, experience, sessionsPerWeek) {
     return base;
 }
 
-function applyVolume(ex, factor, sectionName) {
+function applyVolume(ex, factor, sectionName, targetDurationMin = 30) {
+    const isBreathing = BREATHING_CATEGORIES.includes(ex.category_id);
+
+    if (isBreathing) {
+        ex.sets = "1"; 
+        
+        let baseDuration = 90;
+
+        if (targetDurationMin < 25) {
+            baseDuration = 60;
+        } else if (targetDurationMin > 45) {
+            baseDuration = 120;
+        }
+
+        if (sectionName === 'warmup') {
+            baseDuration = Math.max(60, baseDuration - 30); 
+        }
+
+        let calcDuration = Math.round(baseDuration * factor);
+        calcDuration = Math.max(60, calcDuration);
+
+        calcDuration = Math.ceil(calcDuration / 15) * 15;
+
+        ex.reps_or_time = `${calcDuration} s`;
+        ex.exerciseId = ex.id;
+        ex.tempo_or_iso = "Spokojnie";
+        return;
+    }
+
     let sets = 2;
     if (sectionName === 'warmup' || sectionName === 'cooldown') {
         sets = 1;
@@ -397,26 +420,38 @@ function estimateDurationSeconds(session) {
 function optimizeSessionDuration(session, targetMin) {
     const targetSeconds = targetMin * 60;
     let estimatedSeconds = estimateDurationSeconds(session);
+    
     if (estimatedSeconds > targetSeconds + 300) {
         while (session.main.length > 1 && estimatedSeconds > targetSeconds + 300) {
             session.main.pop();
             estimatedSeconds = estimateDurationSeconds(session);
         }
     }
+
     let attempts = 0;
     while (estimatedSeconds > targetSeconds * 1.15 && attempts < 5) {
         let reductionMade = false;
+        
         for (let ex of session.main) {
+            if (BREATHING_CATEGORIES.includes(ex.category_id)) continue;
+
             const sets = parseInt(ex.sets);
             if (ex.is_unilateral) { if (sets >= 4) { ex.sets = String(sets - 2); reductionMade = true; } }
             else { if (sets > 1) { ex.sets = String(sets - 1); reductionMade = true; } }
         }
+
         if (!reductionMade) {
             [...session.warmup, ...session.main, ...session.cooldown].forEach(ex => {
                 const text = String(ex.reps_or_time);
                 const val = parseInt(text);
                 if (!isNaN(val)) {
-                    const newVal = Math.max(5, Math.floor(val * 0.8));
+                    const isBreathing = BREATHING_CATEGORIES.includes(ex.category_id);
+                    const minLimit = isBreathing ? 45 : 5; 
+
+                    let newVal = Math.max(minLimit, Math.floor(val * 0.85));
+                    
+                    if (isBreathing) newVal = Math.ceil(newVal / 15) * 15;
+
                     ex.reps_or_time = text.replace(val, newVal);
                 }
             });
@@ -431,17 +466,19 @@ function expandSessionDuration(session, targetMin) {
     let estimatedSeconds = estimateDurationSeconds(session);
     if (estimatedSeconds < targetSeconds * 0.8) {
         let attempts = 0;
-        const maxSets = 5; 
+        const maxSets = 5;
         while (estimatedSeconds < targetSeconds * 0.9 && attempts < 10) {
             let expansionMade = false;
             for (let ex of session.main) {
+                if (BREATHING_CATEGORIES.includes(ex.category_id)) continue;
+
                 const sets = parseInt(ex.sets);
                 if (sets < maxSets) {
                     if (ex.is_unilateral) { if (sets + 2 <= maxSets) { ex.sets = String(sets + 2); expansionMade = true; } }
                     else { ex.sets = String(sets + 1); expansionMade = true; }
                 }
             }
-            if (!expansionMade) break; 
+            if (!expansionMade) break;
             estimatedSeconds = estimateDurationSeconds(session);
             attempts++;
         }

@@ -75,7 +75,7 @@ function logCurrentStep(status) {
 
     // Szukamy wpisu po uniqueId, aby uniknąć nadpisywania L/P jako tego samego ćwiczenia
     const existingEntryIndex = state.sessionLog.findIndex(entry => entry.uniqueId === newLogEntry.uniqueId);
-    
+
     if (existingEntryIndex > -1) {
         state.sessionLog[existingEntryIndex] = newLogEntry;
     } else {
@@ -122,12 +122,12 @@ function triggerSessionBackup() {
 export function moveToNextExercise(options = { skipped: false }) {
     stopStopwatch(); stopTimer();
     if (state.tts.isSupported) state.tts.synth.cancel();
-    
+
     // Logujemy status. Dzięki uniqueId, Skip na Lewej zapisze się jako osobny wpis.
     if (options.skipped) logCurrentStep('skipped'); else logCurrentStep('completed');
-    
+
     if (state.breakTimeoutId) { clearTimeout(state.breakTimeoutId); state.breakTimeoutId = null; }
-    
+
     if (state.currentExerciseIndex < state.flatExercises.length - 1) {
         startExercise(state.currentExerciseIndex + 1);
     } else {
@@ -183,6 +183,14 @@ export function startExercise(index) {
 
         // Wyświetlamy aktualny numer serii w kontekście całkowitej liczby serii
         focus.exerciseDetails.textContent = `Seria ${exercise.currentSet}/${exercise.totalSets} | Cel: ${exercise.reps_or_time}`;
+        
+        // NOWE: Wyświetlanie Tempa
+        if (focus.tempo) {
+            const tempoVal = exercise.tempo_or_iso || "Kontrolowane";
+            focus.tempo.textContent = `Tempo: ${tempoVal}`;
+            focus.tempo.classList.remove('hidden');
+        }
+
         focus.focusDescription.textContent = exercise.description || '';
 
         if (focus.affinityBadge) focus.affinityBadge.innerHTML = getAffinityBadge(exercise.exerciseId || exercise.id);
@@ -199,7 +207,7 @@ export function startExercise(index) {
 
         // Resetujemy i zatrzymujemy timer (odliczanie w dół)
         stopTimer();
-        
+
         // Resetujemy stoper
         state.stopwatch.seconds = 0;
         updateStopwatchDisplay();
@@ -217,14 +225,14 @@ export function startExercise(index) {
             if (state.tts.isSoundOn) {
                 // Budujemy komunikat
                 let announcement = `Ćwicz: ${exercise.name}. `;
-                
+
                 // Dodajemy informację o celu, żeby użytkownik wiedział ile ma robić
                 if (exercise.reps_or_time) {
                     announcement += `Cel: ${formatForTTS(exercise.reps_or_time)}.`;
                 }
 
-                speak(announcement, true, () => { 
-                    if (exercise.description) speak(formatForTTS(exercise.description), false); 
+                speak(announcement, true, () => {
+                    if (exercise.description) speak(formatForTTS(exercise.description), false);
                 });
             }
         }
@@ -235,6 +243,9 @@ export function startExercise(index) {
         if (descContainer) descContainer.classList.remove('hidden');
         if (flipIndicator) flipIndicator.classList.add('hidden');
         if (focus.affinityBadge) focus.affinityBadge.innerHTML = '';
+        
+        // Ukryj tempo podczas przerwy
+        if (focus.tempo) focus.tempo.classList.add('hidden');
 
         const upcomingExercise = state.flatExercises[index + 1];
         if (!upcomingExercise) { moveToNextExercise({ skipped: false }); return; }
@@ -309,8 +320,8 @@ export function generateFlatExercises(dayData) {
                 // Jeśli parzyście: robimy połowę pętli (np. 4 serie = 2 pętle L+P)
                 if (totalSetsDeclared % 2 === 0) {
                     loopLimit = totalSetsDeclared / 2;
-                    displayTotalSets = loopLimit; 
-                } 
+                    displayTotalSets = loopLimit;
+                }
                 // Jeśli nieparzyście (np. 1 seria): robimy tyle pętli ile serii (1 seria = 1 pętla L+P)
                 // Wtedy displayTotalSets zostaje jak jest (np. Seria 1/1)
             }
@@ -354,7 +365,7 @@ export function generateFlatExercises(dayData) {
                         isWork: true,
                         sectionName: section.name,
                         currentSet: i,
-                        totalSets: displayTotalSets, 
+                        totalSets: displayTotalSets,
                         name: `${exercise.name} (${startSide})`,
                         reps_or_time: singleSideRepsOrTime,
                         duration: singleSideDuration > 0 ? singleSideDuration : undefined,

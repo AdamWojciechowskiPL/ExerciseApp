@@ -29,7 +29,7 @@ export const renderSummaryScreen = () => {
 
     selectedFeedback = { type: isSafetyMode ? 'symptom' : 'tension', value: 0 };
     const summaryScreen = screens.summary;
-    
+
     // Global Feedback HTML (Bez zmian)
     let globalOptionsHtml = isSafetyMode ? `
         <div class="feedback-option" data-type="symptom" data-value="1"><div class="fb-icon">🍃</div><div class="fb-text"><h4>Ulga</h4></div></div>
@@ -56,7 +56,11 @@ export const renderSummaryScreen = () => {
         exercisesListHtml = uniqueExercises.map(ex => {
             const id = ex.exerciseId || ex.id;
             const pref = state.userPreferences[id] || { score: 0 };
-            
+
+            // --- FIX: CZYSZCZENIE NAZWY Z DOPISKÓW STRON ---
+            // Usuwamy "(Lewa)", "(Prawa)" oraz ewentualne spacje przed nimi
+            let displayName = ex.name.replace(/\s*\((Lewa|Prawa)\)/gi, '').trim();
+
             // Nowa logika stanów (50 / -50)
             const isLike = pref.score >= 50 ? 'active' : '';
             const isDislike = pref.score <= -50 ? 'active' : '';
@@ -64,16 +68,16 @@ export const renderSummaryScreen = () => {
 
             return `
             <div class="rating-card" data-id="${id}">
-                <div class="rating-name">${ex.name}</div>
+                <div class="rating-name">${displayName}</div>
                 <div class="rating-actions-group">
                     <!-- SEKCJA 1: CZĘSTOTLIWOŚĆ (Radio) -->
                     <div class="btn-group-affinity">
                         <button type="button" class="rate-btn affinity-btn ${isLike}" data-action="like" title="Róbmy to częściej">👍</button>
                         <button type="button" class="rate-btn affinity-btn ${isDislike}" data-action="dislike" title="Róbmy to rzadziej">👎</button>
                     </div>
-                    
+
                     <div class="sep"></div>
-                    
+
                     <!-- SEKCJA 2: TRUDNOŚĆ (Action) -->
                     <div class="btn-group-difficulty">
                         <button type="button" class="rate-btn diff-btn" data-action="easy" title="Za łatwe - Awansuj mnie">💤</button>
@@ -105,7 +109,7 @@ export const renderSummaryScreen = () => {
             </div>
             <div class="form-group" style="margin-top:1.5rem;">
                 <label style="display:block; margin-bottom:5px; font-weight:700;">Kalibracja Ćwiczeń</label>
-                
+
                 <!-- POPRAWIONE NAGŁÓWKI KOLUMN -->
                 <div style="display:flex; justify-content: flex-end; padding-right: 4px; margin-bottom: 6px;">
                     <div style="display:flex; gap: 10px; font-size: 0.6rem; color: #888; font-weight: 700; text-transform: uppercase;">
@@ -124,7 +128,31 @@ export const renderSummaryScreen = () => {
             <button type="submit" class="action-btn" style="margin-top:1.5rem;">Zapisz i Zakończ</button>
         </form>
         <style>
-            .rating-actions-group { display: flex; align-items: center; gap: 8px; justify-content: flex-end; width: 100%; }
+            /* FIX LAYOUT: Nazwa zajmuje więcej miejsca */
+            .rating-card {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 10px; /* Odstęp między nazwą a przyciskami */
+            }
+            .rating-name {
+                flex: 1; /* Nazwa zajmuje całą dostępną przestrzeń */
+                max-width: unset; /* Usuwamy limit 50% */
+                padding-right: 5px;
+                font-size: 0.9rem;
+                font-weight: 600;
+                line-height: 1.2;
+            }
+            /* Kontener akcji zajmuje tylko tyle ile potrzebuje */
+            .rating-actions-group {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                justify-content: flex-end;
+                width: auto;
+                flex-shrink: 0;
+            }
+
             .btn-group-affinity { display: flex; gap: 4px; background: #f0fdfa; padding: 3px; border-radius: 8px; width: 82px; justify-content: center; }
             .btn-group-difficulty { display: flex; gap: 4px; background: #fff7ed; padding: 3px; border-radius: 8px; width: 82px; justify-content: center; }
             .rate-btn {
@@ -134,13 +162,13 @@ export const renderSummaryScreen = () => {
                 filter: grayscale(100%); opacity: 0.5;
             }
             .rate-btn:hover { opacity: 1; filter: grayscale(0%); background: rgba(0,0,0,0.05); }
-            
+
             /* Aktywne Affinity */
             .affinity-btn.active { opacity: 1; filter: grayscale(0%); background: #fff; border-color: #2dd4bf; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-            
+
             /* Kliknięte Difficulty (Zablokowane) */
             .diff-btn.selected { opacity: 1; filter: grayscale(0%); background: #ea580c; color: white; border-color: #ea580c; cursor: default; transform: scale(0.95); }
-            
+
             .sep { width: 1px; height: 24px; background: #e5e7eb; }
         </style>
     `;
@@ -159,7 +187,7 @@ export const renderSummaryScreen = () => {
 
     // Exercise Ratings
     summaryScreen.querySelectorAll('.rating-card').forEach(card => {
-        
+
         // A. Affinity (Radio Logic)
         const affinityBtns = card.querySelectorAll('.affinity-btn');
         affinityBtns.forEach(btn => {
@@ -167,7 +195,7 @@ export const renderSummaryScreen = () => {
                 const isActive = btn.classList.contains('active');
                 // Reset grupy
                 affinityBtns.forEach(b => b.classList.remove('active'));
-                
+
                 // Toggle (jeśli nie był aktywny, to włącz, jeśli był - to wyłączyliśmy wyżej i zostaje wyłączony = neutral)
                 if (!isActive) {
                     btn.classList.add('active');
@@ -183,7 +211,7 @@ export const renderSummaryScreen = () => {
                 diffBtns.forEach(b => b.classList.remove('selected'));
                 // Oznacz jako wybrane
                 btn.classList.add('selected');
-                
+
                 // Wizualny feedback
                 const action = btn.dataset.action;
                 const originalTitle = btn.title;
@@ -205,10 +233,10 @@ export async function handleSummarySubmit(e) {
 
     const ratingsArray = [];
     const ratingCards = document.querySelectorAll('.rating-card');
-    
+
     ratingCards.forEach(card => {
         const id = card.dataset.id;
-        
+
         // 1. Pobierz stan Affinity
         const activeAffinity = card.querySelector('.affinity-btn.active');
         if (activeAffinity) {
@@ -225,12 +253,21 @@ export async function handleSummarySubmit(e) {
         }
     });
 
-    // ... Reszta logiki zapisu (sessionPayload, dataStore.saveSession) pozostaje bez zmian ...
-    // (Kod poniżej kopiuje logikę z poprzedniego pliku dla kompletności)
-    
     const now = new Date();
     const durationSeconds = Math.round(Math.max(0, now - state.sessionStartTime - (state.totalPausedTime || 0)) / 1000);
-    const planId = (state.todaysDynamicPlan?.type === 'protocol') ? state.todaysDynamicPlan.id : state.settings.activePlanId;
+    
+    // --- FIX: POPRAWNE ID PLANU DLA VIRTUAL PHYSIO ---
+    let planId = state.settings.activePlanId; // Domyślny fallback
+
+    if (state.todaysDynamicPlan && state.todaysDynamicPlan.type === 'protocol') {
+        // 1. Jeśli to Bio-Protokół (SOS/Booster)
+        planId = state.todaysDynamicPlan.id;
+    } else if (state.settings.planMode === 'dynamic' && state.settings.dynamicPlanData?.id) {
+        // 2. Jeśli to główny plan dynamiczny (Virtual Physio)
+        planId = state.settings.dynamicPlanData.id;
+    } 
+    // 3. W przeciwnym razie zostaje activePlanId (Static)
+
     const title = document.getElementById('summary-title').textContent;
 
     const sessionPayload = {
@@ -253,15 +290,15 @@ export async function handleSummarySubmit(e) {
         clearSessionBackup();
         await dataStore.loadRecentHistory(7);
         if (state.todaysDynamicPlan?.type === 'protocol') state.todaysDynamicPlan = null;
-        
+
         // Update stats locally
         if (response?.newStats) state.userStats = { ...state.userStats, ...response.newStats };
-        
+
         // Strava
         if (document.getElementById('strava-sync-checkbox')?.checked) dataStore.uploadToStrava(sessionPayload);
 
         // Reset App State
-        state.currentTrainingDate = null; 
+        state.currentTrainingDate = null;
         state.sessionLog = [];
         state.isPaused = false;
 

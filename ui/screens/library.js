@@ -68,7 +68,7 @@ export const renderLibraryScreen = async (searchTerm = '') => {
     <div class="atlas-grid" id="atlas-grid">
         <!-- Karty ćwiczeń -->
     </div>
-    
+
     <!-- STYLE LOKALNE DLA MODUŁU BEZPIECZEŃSTWA -->
     <style>
         /* Styl dla kart zablokowanych (Safety UI) */
@@ -79,7 +79,7 @@ export const renderLibraryScreen = async (searchTerm = '') => {
             filter: grayscale(30%);
             position: relative;
         }
-        
+
         .atlas-card.clinically-blocked:hover {
             opacity: 1;
             filter: grayscale(0%);
@@ -121,7 +121,7 @@ function renderChips() {
 
     // 1. Obliczanie liczników (POPRAWKA: Pobieramy ID z entries)
     const counts = { all: 0, safe: 0, blacklist: 0 };
-    
+
     // Mapujemy entries na obiekty z ID, tak samo jak w renderExerciseList
     const allExercises = Object.entries(state.exerciseLibrary).map(([id, data]) => ({ id, ...data }));
     const blacklist = state.blacklist || [];
@@ -132,7 +132,7 @@ function renderChips() {
         } else {
             // "Wszystkie" w kontekście UI oznacza "Wszystkie nie zablokowane"
             counts.all++;
-            
+
             // "Bezpieczne" to podzbiór "Wszystkich", które mają flagę isAllowed
             // (zakładamy, że isAllowed może być undefined dla starych danych = true)
             if (ex.isAllowed !== false) {
@@ -227,7 +227,7 @@ function renderExerciseList() {
     // 1. Filtrowanie
     if (atlasState.activeFilter === 'blacklist') {
         items = items.filter(ex => blacklist.includes(ex.id));
-    } 
+    }
     else if (atlasState.activeFilter === 'safe') {
         // Tylko bezpieczne (zgodnie z silnikiem klinicznym)
         items = items.filter(ex => ex.isAllowed !== false && !blacklist.includes(ex.id));
@@ -259,7 +259,7 @@ function renderExerciseList() {
         // A. Safety (Allowed first)
         const allowedA = a.isAllowed !== false;
         const allowedB = b.isAllowed !== false;
-        
+
         if (allowedA && !allowedB) return -1;
         if (!allowedA && allowedB) return 1;
 
@@ -291,11 +291,11 @@ function renderExerciseList() {
         // Sprawdzanie stanu klinicznego
         const isAllowed = ex.isAllowed !== false;
         const rejectionReason = ex.rejectionReason;
-        
+
         // Budowanie nagłówka restrykcji
         let restrictionBanner = '';
         let cardClass = '';
-        
+
         if (!isAllowed) {
             cardClass = 'clinically-blocked';
             const reasonConfig = REJECTION_CONFIG[rejectionReason] || { label: 'Niedostępne', icon: '🔒', color: '#666', bg: '#eee' };
@@ -308,12 +308,17 @@ function renderExerciseList() {
 
         const lvlLabel = getLevelLabel(ex.difficultyLevel);
         const catLabel = formatCategory(ex.categoryId).toUpperCase();
-        let equipLabel = 'BRAK SPRZĘTU';
+        
+        // --- LOGIKA WYŚWIETLANIA SPRZĘTU (UKRYWANIE NONE) ---
+        let equipLabel = '';
         if (ex.equipment) {
             if (Array.isArray(ex.equipment)) equipLabel = ex.equipment.join(', ').toUpperCase();
             else equipLabel = ex.equipment.toUpperCase();
         }
-        if (equipLabel === '') equipLabel = 'BRAK SPRZĘTU';
+        
+        // Lista wartości, które mają NIE wyświetlać badge'a
+        const hiddenEquipValues = ['BRAK', 'NONE', 'BRAK SPRZĘTU', 'MASA WŁASNA', 'BODYWEIGHT', ''];
+        const showEquipBadge = !hiddenEquipValues.includes(equipLabel.trim());
 
         let footerHtml = '';
         if (ex.youtube_url) {
@@ -339,13 +344,13 @@ function renderExerciseList() {
     <div class="atlas-card ${cardClass}" data-id="${ex.id}" data-tier="${tier}">
         <div class="ac-main">
             ${restrictionBanner}
-            
+
             <div class="ac-title">${ex.name} ${affinityBadge ? '<span style="margin-left:5px">' + affinityBadge + '</span>' : ''}</div>
 
             <div class="ac-tags">
                 <span class="meta-tag tag-level">⚡ ${lvlLabel}</span>
                 <span class="meta-tag tag-category">📂 ${catLabel}</span>
-                <span class="meta-tag tag-equipment">🏋️ ${equipLabel}</span>
+                ${showEquipBadge ? `<span class="meta-tag tag-equipment">🏋️ ${equipLabel}</span>` : ''}
             </div>
 
             <!-- OPIS ROZWIJANY -->
@@ -440,7 +445,7 @@ function calculateZoneStats() {
 
     exercises.forEach(ex => {
         // Count ONLY allowed exercises for zone stats to avoid misleading numbers
-        if (ex.isAllowed === false) return; 
+        if (ex.isAllowed === false) return;
 
         let zone = 'other';
         for (const [zId, zData] of Object.entries(ZONE_MAPPING)) {

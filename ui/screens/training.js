@@ -576,6 +576,9 @@ export const renderTrainingScreen = () => {
             <p id="focus-exercise-details"></p>
         </div>
 
+        <!-- NOWE: Informacja o tempie -->
+        <p id="focus-tempo" style="text-align: center; margin: -5px 0 10px 0; font-weight: 600; color: var(--accent-color); font-size: 0.9rem; opacity: 0.9;"></p>
+
         <div id="visual-toggle-card" class="visual-card-wrapper" title="Kliknij, aby przełączyć widok">
             <div id="focus-animation-container" class="visual-card-content focus-animation-container hidden"></div>
             <div id="focus-description" class="visual-card-content focus-description-container"></div>

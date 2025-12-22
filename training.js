@@ -184,7 +184,7 @@ export function startExercise(index) {
         // Wyświetlamy aktualny numer serii w kontekście całkowitej liczby serii
         focus.exerciseDetails.textContent = `Seria ${exercise.currentSet}/${exercise.totalSets} | Cel: ${exercise.reps_or_time}`;
         
-        // NOWE: Wyświetlanie Tempa
+        // Wyświetlanie Tempa
         if (focus.tempo) {
             const tempoVal = exercise.tempo_or_iso || "Kontrolowane";
             focus.tempo.textContent = `Tempo: ${tempoVal}`;
@@ -285,15 +285,15 @@ export function startExercise(index) {
 
 /**
  * Generuje płaską listę kroków.
- * ZMIANA: Usunięto dzielenie przez 2 dla parzystych serii unilateralnych.
- * Teraz 'Sets' = liczba pełnych pętli (L+P).
+ * FIX v2: Solidna logika pętli dla ćwiczeń unilateralnych.
+ * 2 serie w planie = 1 seria Lewa + 1 seria Prawa (1 pętla).
  */
 export function generateFlatExercises(dayData) {
     const plan = [];
     const FIXED_REST_DURATION = 5;
     const TRANSITION_DURATION = 5;
     let unilateralGlobalIndex = 0;
-    let globalStepCounter = 0; // Licznik dla uniqueId, aby każdy krok był unikalny
+    let globalStepCounter = 0;
 
     const sections = [
         { name: 'Rozgrzewka', exercises: dayData.warmup || [] },
@@ -312,19 +312,21 @@ export function generateFlatExercises(dayData) {
                                  String(exercise.reps_or_time).includes('stron');
 
             // --- LOGIKA PĘTLI SERII ---
-            // Liczba serii = liczba pełnych pętli (L+P).
-            // Bez kombinowania z parzystością. 4 serie = 4 razy (L+P).
             let loopLimit = totalSetsDeclared;
             let displayTotalSets = totalSetsDeclared;
 
             if (isUnilateral && totalSetsDeclared > 0) {
-                // Jeśli parzyście: robimy połowę pętli (np. 4 serie = 2 pętle L+P)
+                // Dla ćwiczeń jednostronnych, "Series" w planie oznacza CAŁKOWITĄ liczbę powtórzeń (L+P).
+                // Dzielimy przez 2, zaokrąglając w górę (żeby 1 seria dała 1 pętlę).
+                loopLimit = Math.ceil(totalSetsDeclared / 2);
+                
+                // Jeśli liczba serii była parzysta (np. 2), display też powinien być połową (1/1).
+                // Jeśli nieparzysta (np. 1), zostawiamy 1 (1/1).
                 if (totalSetsDeclared % 2 === 0) {
-                    loopLimit = totalSetsDeclared / 2;
-                    displayTotalSets = loopLimit; 
-                } 
-                // Jeśli nieparzyście (np. 1 seria): robimy tyle pętli ile serii (1 seria = 1 pętla L+P)
-                // Wtedy displayTotalSets zostaje jak jest (np. Seria 1/1)
+                    displayTotalSets = totalSetsDeclared / 2;
+                } else {
+                    displayTotalSets = loopLimit;
+                }
             }
 
             // Ustalanie kolejności stron (Alternacja)
@@ -370,11 +372,11 @@ export function generateFlatExercises(dayData) {
                         name: `${exercise.name} (${startSide})`,
                         reps_or_time: singleSideRepsOrTime,
                         duration: singleSideDuration > 0 ? singleSideDuration : undefined,
-                        // Unikalne ID oparte o licznik
                         uniqueId: `${exercise.id || exercise.exerciseId}_step${globalStepCounter++}`
                     });
 
-                    // --- KROK 2: ZMIANA STRONY ---
+                    // --- KROK 2: ZMIANA STRONY (Tylko jeśli to nie była pojedyncza nieparzysta seria bez pary - rzadki edge case) ---
+                    // W praktyce zawsze robimy obie strony.
                     plan.push({
                         name: "Zmiana Strony",
                         isRest: true,

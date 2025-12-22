@@ -2,12 +2,13 @@
 import { state } from './state.js';
 
 /**
- * PROTOCOL GENERATOR v4.2 (No-Repeat Fix)
+ * PROTOCOL GENERATOR v4.3 (Strict No-Repeat Fix)
  * Moduł odpowiedzialny za dynamiczne tworzenie sesji "Bio-Protocols".
  *
- * ZMIANY v4.2:
- * - Fix: Globalna unikalność ćwiczeń w sesji. Algorytm zapamiętuje użyte ID
- *   i nie losuje ich ponownie, dopóki nie wyczerpie puli kandydatów.
+ * ZMIANY v4.3:
+ * - Fix: Całkowita eliminacja duplikatów w jednej sesji (chyba że pula jest mniejsza niż wymagana liczba kroków).
+ * - Logic: Wprowadzono globalny `usedIds` Set dla całej sesji.
+ * - Strategy: Fallback najpierw szuka w ogólnej puli kandydatów, zanim pozwoli na powtórzenie.
  */
 
 // Konfiguracja mapowania stref na kategorie/tagi
@@ -45,7 +46,7 @@ const TIMING_CONFIG = {
 };
 
 export function generateBioProtocol({ mode, focusZone, durationMin, userContext, timeFactor = 1.0 }) {
-    console.log(`🧪 [ProtocolGenerator] Generowanie v4.2 (No-Repeat): ${mode} / ${focusZone} (${durationMin} min, TimeFactor=${timeFactor})`);
+    console.log(`🧪 [ProtocolGenerator] Generowanie v4.3 (Strict No-Repeat): ${mode} / ${focusZone} (${durationMin} min, TimeFactor=${timeFactor})`);
 
     // 1. POPRAWKA TIMINGU (Time Factor Fix)
     const targetSeconds = durationMin * 60;
@@ -110,11 +111,12 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
     let sequence = [];
     let currentSeconds = 0;
 
+    // KLUCZOWE: Globalny zbiór użytych ID w tej sesji
+    const usedIds = new Set();
+
     // Helper do liczenia czasu z uwzględnieniem unilateral
     const addTime = (ex) => {
         const isUnilateral = ex.isUnilateral || String(ex.reps_or_time).includes('/str') || String(ex.reps_or_time).includes('stron');
-        // Jeśli unilateral, to mamy: Work(L) + Switch(5s) + Work(R) + Rest
-        // Aproksymacja: 2 * baseCycleTime (trochę nadmiarowe, ale bezpieczne)
         const mult = isUnilateral ? 2 : 1;
         currentSeconds += baseCycleTime * mult;
     };
@@ -133,9 +135,24 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
             const isRelaxPhase = (sequence.length + 1) % 3 === 0; // Co trzecie ćwiczenie to relaks mięśni
             const currentPool = isRelaxPhase ? poolB : poolA;
 
-            const ex = getUniqueOrFallback(currentPool, sequence);
-            sequence.push(ex);
-            addTime(ex);
+            // 1. Próba znalezienia unikalnego w dedykowanej puli
+            let ex = getStrictUnique(currentPool, usedIds);
+
+            // 2. Jeśli brak, szukaj unikalnego w OGÓLNEJ puli (żeby nie powtarzać)
+            if (!ex) {
+                ex = getStrictUnique(candidates, usedIds);
+            }
+
+            // 3. Ostateczność: Powtórz (unikając ostatniego)
+            if (!ex) {
+                ex = getFallbackRepeating(currentPool, sequence);
+            }
+
+            if (ex) {
+                sequence.push(ex);
+                usedIds.add(ex.id);
+                addTime(ex);
+            }
             safetyLoop++;
         }
     }
@@ -146,41 +163,50 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
         while (currentSeconds < targetSeconds && safetyLoop < maxSteps) {
             const last = sequence.length > 0 ? sequence[sequence.length - 1] : null;
 
-            // Filtrujemy, aby nie powtarzać płaszczyzny ruchu pod rząd (jeśli to możliwe)
-            // Ale priorytetem jest unikalność ID
-            let valid = candidates.filter(ex => {
-                // Pomiń te, które już były w sesji (jeśli możliwe)
-                if (sequence.some(s => s.id === ex.id)) return false;
+            // 1. Próba znalezienia unikalnego + inna płaszczyzna
+            let ex = null;
+            if (last) {
+                const diversityPool = candidates.filter(c =>
+                    c.primaryPlane && last.primaryPlane && c.primaryPlane !== last.primaryPlane
+                );
+                ex = getStrictUnique(diversityPool, usedIds);
+            }
 
-                // Próba urozmaicenia płaszczyzny ruchu
-                if (last && ex.primaryPlane && last.primaryPlane && ex.primaryPlane === last.primaryPlane && ex.primaryPlane !== 'multi') {
-                    // To jest miękki filtr - jeśli zabraknie kandydatów, getUniqueOrFallback go zignoruje,
-                    // bo tutaj filtrujemy 'candidates' lokalnie.
-                    // W tym przypadku lepiej użyć getUniqueOrFallback na pełnej liście z logiką 'diverse'
-                    return true; 
-                }
-                return true;
-            });
+            // 2. Próba znalezienia unikalnego (dowolna płaszczyzna)
+            if (!ex) {
+                ex = getStrictUnique(candidates, usedIds);
+            }
 
-            // Jeśli filtr zbyt restrykcyjny, wróć do pełnej listy
-            if (valid.length === 0) valid = candidates;
+            // 3. Ostateczność: Powtórz (unikając ostatniego)
+            if (!ex) {
+                ex = getFallbackRepeating(candidates, sequence);
+            }
 
-            const ex = getUniqueOrFallback(valid, sequence);
-            sequence.push(ex);
-            addTime(ex);
+            if (ex) {
+                sequence.push(ex);
+                usedIds.add(ex.id);
+                addTime(ex);
+            }
             safetyLoop++;
         }
     }
 
     // --- STRATEGIA: NEURO (Nerve Glide) ---
     else if (mode === 'neuro') {
-        // Neuro często ma mało ćwiczeń (np. 3 flossingi).
-        // Staramy się dać unikalne, ale jak braknie, to zapętlamy w sposób inteligentny.
         let safetyLoop = 0;
         while (currentSeconds < targetSeconds && safetyLoop < maxSteps) {
-            const ex = getUniqueOrFallback(candidates, sequence);
-            sequence.push(ex);
-            addTime(ex);
+            // Neuro ma małą pulę, więc najpierw unikalne, potem fallback
+            let ex = getStrictUnique(candidates, usedIds);
+
+            if (!ex) {
+                ex = getFallbackRepeating(candidates, sequence);
+            }
+
+            if (ex) {
+                sequence.push(ex);
+                usedIds.add(ex.id);
+                addTime(ex);
+            }
             safetyLoop++;
         }
     }
@@ -199,26 +225,27 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
 
         while (currentSeconds < targetSeconds && safetyLoop < maxSteps) {
             sequence.push(currentEx);
+            usedIds.add(currentEx.id); // Dodajemy do użytych, chociaż Ladder może łamać regułę
             addTime(currentEx);
 
             // Próba znalezienia progresji
             if (currentEx.nextProgressionId) {
                 const nextEx = state.exerciseLibrary[currentEx.nextProgressionId];
-                // Sprawdź czy progresja jest dozwolona i czy jest w kandydatach (bezpieczna)
-                // Jeśli nie ma w kandydatach, to znaczy że może być za trudna/niebezpieczna
+                // Sprawdź czy progresja jest w kandydatach (bezpieczna)
                 const inCandidates = candidates.find(c => c.id === nextEx?.id);
-                
+
                 if (inCandidates) {
                     currentEx = inCandidates;
                 } else {
                     // Brak progresji w bezpiecznej puli -> dobierz inne unikalne ćwiczenie
-                    // aby nie robić w kółko tego samego na tym samym poziomie
-                    const nextUnique = getUniqueOrFallback(candidates, sequence);
+                    let nextUnique = getStrictUnique(candidates, usedIds);
+                    if (!nextUnique) nextUnique = getFallbackRepeating(candidates, sequence);
                     if (nextUnique) currentEx = nextUnique;
                 }
             } else {
                 // Brak zdefiniowanej progresji -> dobierz inne unikalne
-                const nextUnique = getUniqueOrFallback(candidates, sequence);
+                let nextUnique = getStrictUnique(candidates, usedIds);
+                if (!nextUnique) nextUnique = getFallbackRepeating(candidates, sequence);
                 if (nextUnique) currentEx = nextUnique;
             }
             safetyLoop++;
@@ -227,12 +254,20 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
 
     // --- STRATEGIA: SOS i RESET i BOOSTER (Standard Uniqueness) ---
     else {
-        // Dla SOS, Reset i Booster stosujemy ogólną zasadę unikalności
+        // Dla SOS, Reset i Booster stosujemy ścisłą zasadę unikalności
         let safetyLoop = 0;
         while (currentSeconds < targetSeconds && safetyLoop < maxSteps) {
-            const ex = getUniqueOrFallback(candidates, sequence);
-            sequence.push(ex);
-            addTime(ex);
+            let ex = getStrictUnique(candidates, usedIds);
+
+            if (!ex) {
+                ex = getFallbackRepeating(candidates, sequence);
+            }
+
+            if (ex) {
+                sequence.push(ex);
+                usedIds.add(ex.id);
+                addTime(ex);
+            }
             safetyLoop++;
         }
     }
@@ -241,23 +276,19 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
 }
 
 // ============================================================
-// HELPERY UNIKALNOŚCI (NO-REPEAT LOGIC)
+// HELPERY UNIKALNOŚCI (NO-REPEAT LOGIC FIXED)
 // ============================================================
 
 /**
- * Wybiera unikalne ćwiczenie z puli.
- * Jeśli pula unikalnych się wyczerpie, wybiera cokolwiek, co nie było OSTATNIE (unika A-A).
+ * Zwraca ćwiczenie z puli, które NIE znajduje się w zbiorze `usedIds`.
+ * Wybiera losowo z najlepszych (top 3) dostępnych.
  */
-function getUniqueOrFallback(pool, currentSequence) {
+function getStrictUnique(pool, usedIds) {
     if (!pool || pool.length === 0) return null;
 
-    // 1. Zbiór użytych ID w tej sesji
-    const usedIds = new Set(currentSequence.map(s => s.id));
-
-    // 2. Filtrujemy pulę o te, których nie ma w użytych
+    // Filtrujemy pulę o te, których nie ma w użytych
     const available = pool.filter(ex => !usedIds.has(ex.id));
 
-    // A. Mamy unikalne kandydatury
     if (available.length > 0) {
         // Wybieramy losowo z najlepszych (top 3 lub cała pula jeśli mała)
         // Zakładamy, że pool jest już posortowany po wyniku (Score)
@@ -266,10 +297,18 @@ function getUniqueOrFallback(pool, currentSequence) {
         return topPool[Math.floor(Math.random() * topPool.length)];
     }
 
-    // B. Brak unikalnych (wyczerpaliśmy pulę) -> Fallback
-    // Wybieramy cokolwiek, co nie jest identyczne z ostatnim ćwiczeniem
+    return null;
+}
+
+/**
+ * Fallback: Wybiera cokolwiek, unikając tylko bezpośredniego powtórzenia (A-A).
+ * Używane tylko gdy wyczerpiemy wszystkie unikalne możliwości.
+ */
+function getFallbackRepeating(pool, currentSequence) {
+    if (!pool || pool.length === 0) return null;
+
     const last = currentSequence.length > 0 ? currentSequence[currentSequence.length - 1] : null;
-    
+
     let fallbackPool = pool;
     if (last) {
         const notLast = pool.filter(ex => ex.id !== last.id);
@@ -279,7 +318,7 @@ function getUniqueOrFallback(pool, currentSequence) {
     // Z fallbacku też bierzemy "najlepsze" (początek listy)
     const topFallbackCount = Math.min(3, fallbackPool.length);
     const topFallback = fallbackPool.slice(0, topFallbackCount);
-    
+
     return topFallback[Math.floor(Math.random() * topFallback.length)];
 }
 
@@ -439,7 +478,7 @@ function getCandidates(mode, focusZone, ctx = { ignoreEquipment: false }) {
             }
         }
         if (mode === 'neuro') {
-            if (difficulty > 3) return false; 
+            if (difficulty > 3) return false;
             const isFlossing = ex.categoryId === 'nerve_flossing';
             const matchesZone = ex.painReliefZones && ex.painReliefZones.some(z =>
                 ['sciatica', 'lumbar_radiculopathy', 'femoral_nerve'].includes(z)

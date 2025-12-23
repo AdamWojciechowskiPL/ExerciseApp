@@ -2,13 +2,14 @@
 import { state } from './state.js';
 
 /**
- * PROTOCOL GENERATOR v4.5 (Full & Safe)
+ * PROTOCOL GENERATOR v4.7 (Time-Stretch Strategy)
  * Moduł odpowiedzialny za dynamiczne tworzenie sesji "Bio-Protocols".
  *
  * CECHY:
  * - Time-Boxing: Dopychanie ćwiczeń do zadanego czasu.
- * - Clinical Safety: Twarda walidacja restrykcji z Wizarda (np. stopa).
- * - No-Repeat: Globalna unikalność ćwiczeń w ramach jednej sesji.
+ * - Strict No-Repeat: Absolutny zakaz powtarzania ćwiczeń (A-A ani A-B-A).
+ * - Time-Stretch: Jeśli brakuje unikalnych ćwiczeń, wydłużamy te już wylosowane,
+ *   zamiast powtarzać lub kończyć przed czasem.
  */
 
 // ============================================================
@@ -52,17 +53,16 @@ const TIMING_CONFIG = {
 // ============================================================
 
 export function generateBioProtocol({ mode, focusZone, durationMin, userContext, timeFactor = 1.0 }) {
-    console.log(`🧪 [ProtocolGenerator] Generowanie v4.5: ${mode} / ${focusZone} (${durationMin} min, x${timeFactor})`);
+    console.log(`🧪 [ProtocolGenerator] Generowanie v4.7 (Stretch): ${mode} / ${focusZone} (${durationMin} min, x${timeFactor})`);
 
     // 1. Obliczenie docelowego czasu w sekundach
     const targetSeconds = durationMin * 60;
     const config = TIMING_CONFIG[mode] || TIMING_CONFIG['reset'];
 
     // 2. Pobranie kandydatów z uwzględnieniem restrykcji klinicznych (userContext)
-    // Przekazujemy userContext, aby odfiltrować niebezpieczne ćwiczenia (np. na stojąco przy chorej stopie)
     let candidates = getCandidates(mode, focusZone, { ignoreEquipment: false, userContext });
 
-    // Fallback 1: Poluzowanie wymogów sprzętowych (ale NIE klinicznych)
+    // Fallback 1: Poluzowanie wymogów sprzętowych
     if (candidates.length === 0) {
         console.warn("[ProtocolGenerator] Brak kandydatów. Poluzowanie wymogów sprzętowych.");
         candidates = getCandidates(mode, focusZone, { ignoreEquipment: true, userContext });
@@ -81,16 +81,33 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext,
     // 3. Ocena i sortowanie kandydatów (Affinity, Freshness)
     scoreCandidates(candidates, mode, userContext);
 
-    // 4. Selekcja ćwiczeń (Algorytm Time-Boxing + Unikalność)
-    const selectedExercises = selectExercisesByMode(candidates, mode, targetSeconds, config, timeFactor);
+    // 4. Selekcja ćwiczeń (Zwraca obiekt: { sequence, generatedSeconds })
+    const selectionResult = selectExercisesByMode(candidates, mode, targetSeconds, config, timeFactor);
+    const sequence = selectionResult.sequence;
+    const generatedSeconds = selectionResult.generatedSeconds;
 
-    // 5. Budowa osi czasu (Timeline) - obsługa stron L/P i przerw
-    const flatExercises = buildSteps(selectedExercises, config, mode, timeFactor);
+    // 5. OBSŁUGA "TIME STRETCH" (WYPEŁNIANIE CZASU)
+    // Jeśli wygenerowany czas jest krótszy niż cel (bo zabrakło unikalnych ćwiczeń),
+    // zwiększamy mnożnik czasu dla wszystkich ćwiczeń.
+    let finalTimeFactor = timeFactor;
 
-    // 6. Obliczenie finalnego czasu trwania
+    if (generatedSeconds > 0 && generatedSeconds < targetSeconds) {
+        // Obliczamy ile razy musimy wydłużyć, żeby wypełnić czas
+        const stretchRatio = targetSeconds / generatedSeconds;
+
+        // Aplikujemy to do bazowego timeFactor
+        finalTimeFactor = timeFactor * stretchRatio;
+
+        console.log(`⏱️ [ProtocolGenerator] Time Stretch Active: Generated ${Math.round(generatedSeconds)}s vs Target ${targetSeconds}s. Applying stretch ratio: ${stretchRatio.toFixed(2)}x`);
+    }
+
+    // 6. Budowa osi czasu (Timeline) z nowym, potencjalnie wydłużonym czasem
+    const flatExercises = buildSteps(sequence, config, mode, finalTimeFactor);
+
+    // 7. Obliczenie finalnego czasu trwania (powinien być bliski targetSeconds)
     const realTotalDuration = flatExercises.reduce((sum, step) => sum + (step.duration || 0), 0);
 
-    // 7. Zwrócenie gotowego obiektu protokołu
+    // 8. Zwrócenie gotowego obiektu protokołu
     return {
         id: `proto_${mode}_${focusZone}_${Date.now()}`,
         title: generateTitle(mode, focusZone),
@@ -122,12 +139,19 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
     const usedIds = new Set();
 
     // Helper do dodawania czasu (uwzględnia x2 dla unilateral)
-    const addTime = (ex) => {
+    const calculateExDuration = (ex) => {
         const isUnilateral = ex.isUnilateral ||
                              String(ex.reps_or_time).includes('/str') ||
                              String(ex.reps_or_time).includes('stron');
         const mult = isUnilateral ? 2 : 1;
-        currentSeconds += baseCycleTime * mult;
+        return baseCycleTime * mult;
+    };
+
+    // Helper pętli - dodaje ćwiczenie i aktualizuje czas
+    const addToSequence = (ex) => {
+        sequence.push(ex);
+        usedIds.add(ex.id);
+        currentSeconds += calculateExDuration(ex);
     };
 
     // --- STRATEGIA: CALM (Przeplatanka Oddech / Relaks) ---
@@ -135,7 +159,6 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
         const breathing = candidates.filter(ex => ['breathing_control', 'breathing'].includes(ex.categoryId));
         const relax = candidates.filter(ex => ex.categoryId === 'muscle_relaxation');
 
-        // Upewniamy się, że pule nie są puste
         const poolA = breathing.length > 0 ? breathing : candidates;
         const poolB = relax.length > 0 ? relax : candidates;
 
@@ -148,17 +171,13 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
             // 1. Szukamy unikalnego w dedykowanej puli
             let ex = getStrictUnique(currentPool, usedIds);
 
-            // 2. Jeśli brak, szukamy w ogólnej puli (by nie powtarzać)
+            // 2. Jeśli brak, szukamy w ogólnej puli
             if (!ex) ex = getStrictUnique(candidates, usedIds);
 
-            // 3. Ostateczność: Powtórzenie (unikając A-A)
-            if (!ex) ex = getFallbackRepeating(currentPool, sequence);
+            // 3. STRICT NO-REPEAT: Jeśli nadal brak, przerywamy pętlę
+            if (!ex) break;
 
-            if (ex) {
-                sequence.push(ex);
-                usedIds.add(ex.id);
-                addTime(ex);
-            }
+            addToSequence(ex);
             safetyLoop++;
         }
     }
@@ -181,73 +200,56 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
             // 2. Próba znalezienia dowolnego unikalnego
             if (!ex) ex = getStrictUnique(candidates, usedIds);
 
-            // 3. Fallback
-            if (!ex) ex = getFallbackRepeating(candidates, sequence);
+            if (!ex) break;
 
-            if (ex) {
-                sequence.push(ex);
-                usedIds.add(ex.id);
-                addTime(ex);
-            }
+            addToSequence(ex);
             safetyLoop++;
         }
     }
 
-    // --- STRATEGIA: NEURO (Nerve Glides - Mała Pula) ---
+    // --- STRATEGIA: NEURO (Nerve Glides) ---
     else if (mode === 'neuro') {
         let safetyLoop = 0;
         while (currentSeconds < targetSeconds && safetyLoop < maxSteps) {
             let ex = getStrictUnique(candidates, usedIds);
-            if (!ex) ex = getFallbackRepeating(candidates, sequence);
+            if (!ex) break;
 
-            if (ex) {
-                sequence.push(ex);
-                usedIds.add(ex.id);
-                addTime(ex);
-            }
+            addToSequence(ex);
             safetyLoop++;
         }
     }
 
     // --- STRATEGIA: LADDER (Progresja Trudności) ---
     else if (mode === 'ladder') {
-        // Sortujemy od najłatwiejszych
         const sorted = candidates.sort((a,b) => (a.difficultyLevel || 1) - (b.difficultyLevel || 1));
         const baseEx = sorted[0];
 
-        if (!baseEx) {
-            // Fallback do standardowego boostera
-            return selectExercisesByMode(candidates, 'booster', targetSeconds, config, timeFactor);
-        }
+        if (baseEx) {
+            let currentEx = baseEx;
+            let safetyLoop = 0;
 
-        let currentEx = baseEx;
-        let safetyLoop = 0;
+            while (currentSeconds < targetSeconds && safetyLoop < maxSteps) {
+                if (usedIds.has(currentEx.id)) break;
 
-        while (currentSeconds < targetSeconds && safetyLoop < maxSteps) {
-            sequence.push(currentEx);
-            usedIds.add(currentEx.id); // Dodajemy do użytych
-            addTime(currentEx);
+                addToSequence(currentEx);
 
-            // Próba znalezienia progresji (następnego kroku)
-            if (currentEx.nextProgressionId) {
-                const nextEx = state.exerciseLibrary[currentEx.nextProgressionId];
-                const inCandidates = candidates.find(c => c.id === nextEx?.id);
-
-                if (inCandidates) {
-                    currentEx = inCandidates; // Idziemy drabiną w górę
-                } else {
-                    // Brak progresji w bezpiecznej puli -> dobierz inne unikalne ćwiczenie
-                    let nextUnique = getStrictUnique(candidates, usedIds);
-                    if (!nextUnique) nextUnique = getFallbackRepeating(candidates, sequence);
-                    if (nextUnique) currentEx = nextUnique;
+                let nextExCandidate = null;
+                if (currentEx.nextProgressionId) {
+                    const nextExDef = state.exerciseLibrary[currentEx.nextProgressionId];
+                    const inCandidates = candidates.find(c => c.id === nextExDef?.id);
+                    if (inCandidates && !usedIds.has(inCandidates.id)) {
+                        nextExCandidate = inCandidates;
+                    }
                 }
-            } else {
-                // Brak zdefiniowanej progresji -> dobierz inne unikalne
-                let nextUnique = getStrictUnique(candidates, usedIds);
-                if (!nextUnique) nextUnique = getFallbackRepeating(candidates, sequence);
-                if (nextUnique) currentEx = nextUnique;
+
+                if (!nextExCandidate) {
+                    nextExCandidate = getStrictUnique(candidates, usedIds);
+                }
+
+                if (!nextExCandidate) break;
+                currentEx = nextExCandidate;
+                safetyLoop++;
             }
-            safetyLoop++;
         }
     }
 
@@ -256,25 +258,18 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
         let safetyLoop = 0;
         while (currentSeconds < targetSeconds && safetyLoop < maxSteps) {
             let ex = getStrictUnique(candidates, usedIds);
+            if (!ex) break; // Kończymy, jeśli brak unikalnych
 
-            if (!ex) {
-                ex = getFallbackRepeating(candidates, sequence);
-            }
-
-            if (ex) {
-                sequence.push(ex);
-                usedIds.add(ex.id);
-                addTime(ex);
-            }
+            addToSequence(ex);
             safetyLoop++;
         }
     }
 
-    return sequence;
+    return { sequence, generatedSeconds: currentSeconds };
 }
 
 // ============================================================
-// HELPERY UNIKALNOŚCI (NO-REPEAT)
+// HELPERY UNIKALNOŚCI (STRICT UNIQUE)
 // ============================================================
 
 function getStrictUnique(pool, usedIds) {
@@ -284,30 +279,12 @@ function getStrictUnique(pool, usedIds) {
     const available = pool.filter(ex => !usedIds.has(ex.id));
 
     if (available.length > 0) {
-        // Losujemy z najlepszych dostępnych (top 3)
+        // Losujemy z najlepszych dostępnych (top 3 dla różnorodności)
         const topCount = Math.min(3, available.length);
         const topPool = available.slice(0, topCount);
         return topPool[Math.floor(Math.random() * topPool.length)];
     }
     return null;
-}
-
-function getFallbackRepeating(pool, currentSequence) {
-    if (!pool || pool.length === 0) return null;
-
-    const last = currentSequence.length > 0 ? currentSequence[currentSequence.length - 1] : null;
-
-    let fallbackPool = pool;
-    // Unikamy tylko bezpośredniego powtórzenia (A-A)
-    if (last) {
-        const notLast = pool.filter(ex => ex.id !== last.id);
-        if (notLast.length > 0) fallbackPool = notLast;
-    }
-
-    const topFallbackCount = Math.min(3, fallbackPool.length);
-    const topFallback = fallbackPool.slice(0, topFallbackCount);
-
-    return topFallback[Math.floor(Math.random() * topFallback.length)];
 }
 
 // ============================================================
@@ -328,6 +305,7 @@ function buildSteps(exercises, config, mode, timeFactor) {
     });
 
     exercises.forEach((ex, index) => {
+        // Aplikujemy timeFactor (który może być zwiększony przez stretch ratio)
         const workDuration = Math.round(config.work * timeFactor);
         const restDuration = Math.round(config.rest * timeFactor);
 
@@ -418,11 +396,6 @@ function buildSteps(exercises, config, mode, timeFactor) {
 // HELPERY DANYCH I RESTRYKCJE KLINICZNE
 // ============================================================
 
-/**
- * Sprawdza czy ćwiczenie narusza restrykcje biomechaniczne użytkownika.
- * @param {Object} ex - Ćwiczenie
- * @param {Array} restrictions - Tablica restrykcji z Wizarda (np. ['foot_injury', 'no_kneeling'])
- */
 function violatesProtocolRestrictions(ex, restrictions) {
     if (!restrictions || restrictions.length === 0) return false;
 
@@ -437,15 +410,12 @@ function violatesProtocolRestrictions(ex, restrictions) {
 
     // 2. URAZ STOPY (Krytyczne!)
     if (restrictions.includes('foot_injury')) {
-        // Blokada pozycji obciążających stopę
         const blockedPositions = ['standing', 'kneeling', 'quadruped', 'lunge'];
         if (blockedPositions.includes(pos)) return true;
 
-        // Blokada kategorii dynamicznych
         const blockedCategories = ['squats', 'lunges', 'cardio', 'plyometrics', 'calves'];
         if (blockedCategories.includes(cat)) return true;
 
-        // Safety Net: Blokada po słowach kluczowych
         const name = (ex.name || '').toLowerCase();
         if (name.includes('przysiad') || name.includes('wykrok') || name.includes('bieg')) return true;
     }
@@ -467,15 +437,13 @@ function getCandidates(mode, focusZone, ctx = {}) {
         // A. Blacklist check
         if (blacklist.includes(ex.id)) return false;
 
-        // B. Clinical Safety Check (KRYTYCZNE)
-        // Sprawdzamy restrykcje takie jak 'foot_injury' czy 'no_kneeling'
+        // B. Clinical Safety Check
         if (violatesProtocolRestrictions(ex, restrictions)) {
             return false;
         }
 
-        // C. Standard Checks (IsAllowed - z bazy)
+        // C. Standard Checks (IsAllowed)
         if (ex.isAllowed !== true) {
-            // Jeśli to tylko kwestia sprzętu i mamy tryb ignoreEquipment, to przepuszczamy
             if (ignoreEquipment && ex.isAllowed === false && ex.rejectionReason === 'missing_equipment') {
                 // Pass fallback
             } else {
@@ -489,8 +457,7 @@ function getCandidates(mode, focusZone, ctx = {}) {
         if (mode === 'sos') { if (difficulty > 2) return false; }
         if (mode === 'booster') { if (difficulty < 2) return false; }
         if (mode === 'reset') { if (difficulty > 3) return false; }
-        
-        // Specyfika nowych trybów
+
         if (mode === 'calm') {
             if (difficulty > 2) return false;
             if (!['breathing_control', 'breathing', 'muscle_relaxation'].includes(ex.categoryId)) return false;
@@ -540,8 +507,6 @@ function getCandidatesSafeFallback(mode, userContext) {
 
     return library.filter(ex => {
         if (ex.isAllowed !== true) return false;
-        
-        // Nawet w fallbacku musimy szanować restrykcje kliniczne!
         if (violatesProtocolRestrictions(ex, restrictions)) return false;
 
         const difficulty = parseInt(ex.difficultyLevel || 1, 10);

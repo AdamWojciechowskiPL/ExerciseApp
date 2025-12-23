@@ -55,7 +55,7 @@ function showUpdateNotification(worker) {
             <button id="reload-btn">Odśwież</button>
         </div>
     `;
-    
+
     document.body.appendChild(notification);
 
     document.getElementById('reload-btn').addEventListener('click', () => {
@@ -80,18 +80,18 @@ function initAppLogic() {
     }
 
     if (mainNav) {
-        mainNav.querySelector('#nav-main').addEventListener('click', () => { 
+        mainNav.querySelector('#nav-main').addEventListener('click', () => {
             if (!checkUnsavedSummaryNavigation()) return;
-            navigateTo('main'); 
-            renderMainScreen(); 
+            navigateTo('main');
+            renderMainScreen();
         });
-        mainNav.querySelector('#nav-history').addEventListener('click', () => { 
+        mainNav.querySelector('#nav-history').addEventListener('click', () => {
             if (!checkUnsavedSummaryNavigation()) return;
-            renderHistoryScreen(); 
+            renderHistoryScreen();
         });
-        mainNav.querySelector('#nav-library').addEventListener('click', () => { 
+        mainNav.querySelector('#nav-library').addEventListener('click', () => {
             if (!checkUnsavedSummaryNavigation()) return;
-            renderLibraryScreen(); 
+            renderLibraryScreen();
         });
         mainNav.querySelector('#nav-settings').addEventListener('click', () => {
             if (!checkUnsavedSummaryNavigation()) return;
@@ -121,7 +121,7 @@ function initAppLogic() {
             switch (screen) {
                 case 'main': renderMainScreen(); break;
                 case 'history': renderHistoryScreen(); break;
-                case 'library': renderLibraryScreen(); break; 
+                case 'library': renderLibraryScreen(); break;
                 case 'settings': renderSettingsScreen(); break;
             }
         });
@@ -132,7 +132,7 @@ function initAppLogic() {
     const nextMonthBtn = document.getElementById('next-month-btn');
     if (nextMonthBtn) nextMonthBtn.addEventListener('click', () => { state.currentCalendarView.setMonth(state.currentCalendarView.getMonth() + 1); renderHistoryScreen(); });
     if (containers.calendarGrid) { containers.calendarGrid.addEventListener('click', (e) => { const dayEl = e.target.closest('.calendar-day.has-entry'); if (dayEl && dayEl.dataset.date) { renderDayDetailsScreen(dayEl.dataset.date); } }); }
-    
+
     const searchInput = document.getElementById('library-search-input');
     if (searchInput) searchInput.addEventListener('input', (e) => { renderLibraryScreen(e.target.value); });
 
@@ -207,8 +207,6 @@ export async function main() {
     initializeCastApi();
 
     try {
-        const resourcesPromise = dataStore.loadAppContent();
-
         if (loginBtn && !loginBtn.dataset.listenerAttached) { loginBtn.addEventListener('click', login); loginBtn.dataset.listenerAttached = 'true'; }
         if (logoutBtn && !logoutBtn.dataset.listenerAttached) { logoutBtn.addEventListener('click', logout); logoutBtn.dataset.listenerAttached = 'true'; }
 
@@ -219,6 +217,8 @@ export async function main() {
             window.history.replaceState({}, document.title, "/");
         }
 
+        // --- FIX KOLEJNOŚCI ŁADOWANIA (RACE CONDITION) ---
+        // Najpierw sprawdzamy autoryzację, aby wiedzieć czy pobierać content spersonalizowany
         const isAuth = await isAuthenticated();
 
         if (isAuth) {
@@ -227,18 +227,24 @@ export async function main() {
             if (userInfoContainer) userInfoContainer.classList.remove('hidden');
             if (mainNav) mainNav.classList.remove('hidden');
 
-            await getToken();
+            await getToken(); // Upewniamy się, że mamy token przed pobraniem treści
             const profile = getUserProfile();
             const nameEl = document.getElementById('user-display-name');
             if (nameEl) nameEl.textContent = profile.name || profile.email || 'Użytkownik';
 
-            await resourcesPromise;
+            // --- POBIERANIE TREŚCI (TERAZ Z GWARANCJĄ TOKENA) ---
+            // Backend otrzyma token i przefiltruje ćwiczenia (np. isAllowed: false dla kontuzji)
+            await dataStore.loadAppContent();
 
             initAppLogic();
 
             try {
                 localStorage.removeItem('cachedUserStats');
-                await dataStore.initialize();
+                
+                // --- POBIERANIE USTAWIEŃ UŻYTKOWNIKA ---
+                // Tutaj pobieramy wizardData (restrykcje), które frontendowy generator też używa
+                await dataStore.initialize(); 
+                
                 state.isAppInitialized = true;
 
                 if (bottomNav) bottomNav.classList.remove('hidden');
@@ -287,11 +293,13 @@ export async function main() {
                 }
             } catch (initError) {
                 console.error("Błąd inicjalizacji:", initError);
-                hideLoader(); 
+                hideLoader();
             }
 
         } else {
-            await resourcesPromise;
+            // Jeśli nie ma autoryzacji, pobieramy wersję publiczną (bez personalizacji)
+            await dataStore.loadAppContent();
+            
             document.getElementById('welcome-screen').classList.remove('hidden');
             document.querySelector('main').classList.add('hidden');
             if (userInfoContainer) userInfoContainer.classList.add('hidden');

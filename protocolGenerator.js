@@ -2,12 +2,14 @@
 import { state } from './state.js';
 
 /**
- * PROTOCOL GENERATOR v5.1 (Deep Type Detection)
+ * PROTOCOL GENERATOR v5.2 (Smart Splitting)
  * Moduł odpowiedzialny za dynamiczne tworzenie sesji "Bio-Protocols".
  *
- * POPRAWKA v5.1:
- * - Naprawiono błędne klasyfikowanie ćwiczeń czasowych (np. Plank) jako powtórzeniowych.
- * - Dodano sprawdzanie flagi 'maxDuration' oraz 'isIso' (Izometria).
+ * CECHY:
+ * - Time-Boxing & Stretch: Dopychanie do czasu.
+ * - Organic Variance: Losowe fluktuacje czasu (+/- 30%).
+ * - Smart Splitting: Jeśli wyliczony czas/repsy przekraczają max zalecany dla ćwiczenia,
+ *   rozbija je na kilka serii z mikro-przerwami, zamiast tworzyć jedną gigantyczną serię.
  */
 
 // ============================================================
@@ -39,13 +41,16 @@ const TIMING_CONFIG = {
 };
 
 const SECONDS_PER_REP_ESTIMATE = 4;
+const DEFAULT_MAX_DURATION = 60; // Domyślny limit czasu (s)
+const DEFAULT_MAX_REPS = 15;     // Domyślny limit powtórzeń
+const INTRA_SET_REST = 15;       // Przerwa między seriami tego samego ćwiczenia (gdy podzielone)
 
 // ============================================================
 // GŁÓWNA FUNKCJA GENERUJĄCA
 // ============================================================
 
 export function generateBioProtocol({ mode, focusZone, durationMin, userContext, timeFactor = 1.0 }) {
-    console.log(`🧪 [ProtocolGenerator] Generowanie v5.1 (Fix Types): ${mode} / ${focusZone}`);
+    console.log(`🧪 [ProtocolGenerator] Generowanie v5.2 (Splitting): ${mode} / ${focusZone}`);
 
     const targetSeconds = durationMin * 60;
     const config = TIMING_CONFIG[mode] || TIMING_CONFIG['reset'];
@@ -53,29 +58,23 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext,
     // 1. Dobór kandydatów
     let candidates = getCandidates(mode, focusZone, { ignoreEquipment: false, userContext });
 
-    if (candidates.length === 0) {
-        candidates = getCandidates(mode, focusZone, { ignoreEquipment: true, userContext });
-    }
-    if (candidates.length === 0) {
-        candidates = getCandidatesSafeFallback(mode, userContext);
-    }
-    if (candidates.length === 0) {
-        throw new Error("Brak bezpiecznych ćwiczeń.");
-    }
+    if (candidates.length === 0) candidates = getCandidates(mode, focusZone, { ignoreEquipment: true, userContext });
+    if (candidates.length === 0) candidates = getCandidatesSafeFallback(mode, userContext);
+    if (candidates.length === 0) throw new Error("Brak bezpiecznych ćwiczeń.");
 
     scoreCandidates(candidates, mode, userContext);
 
     // 2. Selekcja sekwencji
     const { sequence, generatedSeconds } = selectExercisesByMode(candidates, mode, targetSeconds, config, timeFactor);
 
-    // 3. Time Stretch (Globalne skalowanie, jeśli brakuje czasu)
+    // 3. Time Stretch (Globalne skalowanie)
     let finalTimeFactor = timeFactor;
     if (generatedSeconds > 0 && generatedSeconds < targetSeconds) {
         const stretchRatio = targetSeconds / generatedSeconds;
-        finalTimeFactor = timeFactor * Math.min(stretchRatio, 2.0); // Max x2
+        finalTimeFactor = timeFactor * Math.min(stretchRatio, 2.5); // Pozwalamy na większy stretch, bo teraz mamy splitting
     }
 
-    // 4. Budowa finalnego planu
+    // 4. Budowa finalnego planu (z logiką dzielenia serii)
     const flatExercises = buildSteps(sequence, config, mode, finalTimeFactor);
 
     // 5. Finalny czas
@@ -149,7 +148,7 @@ function getStrictUnique(pool, usedIds) {
 }
 
 // ============================================================
-// BUDOWANIE KROKÓW (POPRAWIONA DETEKCJA TYPU)
+// BUDOWANIE KROKÓW (SMART SPLITTING)
 // ============================================================
 
 function buildSteps(exercises, config, mode, timeFactor) {
@@ -168,7 +167,7 @@ function buildSteps(exercises, config, mode, timeFactor) {
 
     exercises.forEach((ex, index) => {
         const baseWork = config.work * timeFactor;
-        const restDuration = Math.round(config.rest * timeFactor);
+        const transitionRest = Math.round(config.rest * timeFactor);
 
         // Organic Variance
         const randomJitter = 0.7 + (Math.random() * 0.6);
@@ -177,70 +176,109 @@ function buildSteps(exercises, config, mode, timeFactor) {
         if (lvl >= 4) difficultyMod = 0.85;
         if (lvl === 1) difficultyMod = 1.15;
 
-        let targetDurationRaw = (baseWork * randomJitter * difficultyMod) - (driftCompensation * 0.3);
-        targetDurationRaw = Math.max(15, Math.min(180, targetDurationRaw));
+        // Celowany czas całkowity dla tego ćwiczenia (może być bardzo duży przez Time Stretch)
+        let targetTotalSeconds = (baseWork * randomJitter * difficultyMod) - (driftCompensation * 0.3);
+        targetTotalSeconds = Math.max(15, targetTotalSeconds); // Bez górnego limitu, bo będziemy dzielić
 
-        // --- GŁĘBOKA DETEKCJA TYPU (FIX v5.1) ---
+        // Detekcja Typu
         const rawReps = String(ex.reps_or_time || "").toLowerCase();
         const hasTimeUnits = rawReps.includes('s') || rawReps.includes('min');
         const tempoStr = (ex.defaultTempo || ex.tempo_or_iso || "").toLowerCase();
         const isIso = tempoStr.includes("izo") || tempoStr.includes("iso");
-
-        // Jeśli ma zdefiniowane maxDuration > 0, to jest ćwiczenie na czas (Plank, Stretch)
-        // Nawet jeśli w polu reps_or_time wpisano głupoty.
         const hasMaxDuration = (ex.maxDuration > 0) || (ex.max_recommended_duration > 0);
 
-        // Decyzja: Czas czy Repsy?
         const isTimeBased = hasTimeUnits || isIso || hasMaxDuration;
         const isRepBased = !isTimeBased;
 
-        let finalDurationForTimer = 0;
+        // --- SMART SPLITTING LOGIC ---
+        let sets = 1;
+        let valuePerSet = 0; // Sekundy lub Repsy
         let displayValue = "";
+        let durationPerSet = 0; // Zawsze w sekundach dla timera
 
         if (isRepBased) {
-            // REPSY
-            let estimatedReps = Math.round(targetDurationRaw / SECONDS_PER_REP_ESTIMATE);
-            estimatedReps = Math.max(4, estimatedReps);
-            finalDurationForTimer = Math.round(estimatedReps * SECONDS_PER_REP_ESTIMATE * 1.1);
-            displayValue = `${estimatedReps}`;
+            // Obliczamy całkowitą liczbę powtórzeń
+            let totalReps = Math.round(targetTotalSeconds / SECONDS_PER_REP_ESTIMATE);
+            totalReps = Math.max(4, totalReps);
+
+            // Sprawdzamy limit
+            const maxReps = ex.maxReps || ex.max_recommended_reps || DEFAULT_MAX_REPS;
+
+            // Dzielimy na serie
+            sets = Math.ceil(totalReps / maxReps);
+            const repsPerSet = Math.max(4, Math.round(totalReps / sets));
+
+            valuePerSet = repsPerSet;
+            displayValue = `${repsPerSet}`;
+            durationPerSet = Math.round(repsPerSet * SECONDS_PER_REP_ESTIMATE * 1.1); // Bufor czasowy dla timera
         } else {
-            // CZAS
-            finalDurationForTimer = Math.round(targetDurationRaw / 5) * 5;
-            displayValue = `${finalDurationForTimer} s`;
+            // Czas
+            let totalSeconds = Math.round(targetTotalSeconds);
+
+            // Sprawdzamy limit
+            const maxDuration = ex.maxDuration || ex.max_recommended_duration || DEFAULT_MAX_DURATION;
+
+            // Dzielimy na serie
+            sets = Math.ceil(totalSeconds / maxDuration);
+            const secondsPerSet = Math.round(totalSeconds / sets / 5) * 5; // Zaokrąglenie do 5s
+
+            valuePerSet = secondsPerSet;
+            displayValue = `${secondsPerSet} s`;
+            durationPerSet = secondsPerSet;
         }
 
-        driftCompensation += (finalDurationForTimer - baseWork);
+        // Aktualizacja dryfu (o ile przesunęliśmy się względem planu)
+        // Musimy uwzględnić wszystkie serie i przerwy między nimi
+        const totalDurationCreated = (durationPerSet * sets) + ((sets - 1) * INTRA_SET_REST);
+        driftCompensation += (totalDurationCreated - baseWork);
 
         const isUnilateral = ex.isUnilateral || String(ex.reps_or_time).includes('/str');
         const tempoDisplay = config.tempo;
 
-        const createWorkStep = (suffix, setId, totalSets) => ({
-            ...ex,
-            exerciseId: ex.id,
-            name: `${ex.name}${suffix}`,
-            isWork: true,
-            isRest: false,
-            currentSet: setId,
-            totalSets: totalSets,
-            sectionName: mapModeToSectionName(mode),
-            reps_or_time: displayValue,
-            duration: finalDurationForTimer,
-            sets: "1",
-            tempo_or_iso: tempoDisplay,
-            uniqueId: `${ex.id}_p${index}${suffix ? suffix.replace(/[\s()]/g, '') : ''}`
-        });
+        // --- GENEROWANIE SERII ---
+        for (let s = 1; s <= sets; s++) {
+            const createWorkStep = (suffix, sideSetNum, sideTotalSets) => ({
+                ...ex,
+                exerciseId: ex.id,
+                name: `${ex.name}${suffix}`,
+                isWork: true,
+                isRest: false,
+                currentSet: s, // Numer serii w ramach tego ćwiczenia
+                totalSets: sets,
+                sectionName: mapModeToSectionName(mode),
+                reps_or_time: displayValue,
+                duration: durationPerSet,
+                sets: "1",
+                tempo_or_iso: tempoDisplay,
+                uniqueId: `${ex.id}_p${index}_s${s}${suffix ? suffix.replace(/[\s()]/g, '') : ''}`
+            });
 
-        if (isUnilateral) {
-            steps.push(createWorkStep(' (Lewa)', 1, 2));
-            steps.push({ name: "Zmiana Strony", isWork: false, isRest: true, duration: 5, sectionName: "Przejście", description: "Druga strona" });
-            steps.push(createWorkStep(' (Prawa)', 2, 2));
-        } else {
-            steps.push(createWorkStep('', 1, 1));
+            if (isUnilateral) {
+                // Dla jednostronnych: L -> P (to jest jedna pełna seria)
+                steps.push(createWorkStep(' (Lewa)', s, sets));
+                steps.push({ name: "Zmiana Strony", isWork: false, isRest: true, duration: 5, sectionName: "Przejście", description: "Druga strona" });
+                steps.push(createWorkStep(' (Prawa)', s, sets));
+            } else {
+                steps.push(createWorkStep('', s, sets));
+            }
+
+            // Jeśli to nie jest ostatnia seria tego ćwiczenia, dodaj mikro-przerwę
+            if (s < sets) {
+                steps.push({
+                    name: "Mikro-przerwa",
+                    isWork: false,
+                    isRest: true,
+                    duration: INTRA_SET_REST,
+                    sectionName: "Odpoczynek",
+                    description: `Odpocznij przed serią ${s + 1}/${sets}`
+                });
+            }
         }
 
-        if (index < exercises.length - 1 && restDuration > 0) {
+        // Przejście do NASTĘPNEGO ćwiczenia (tylko jeśli to nie koniec całego treningu)
+        if (index < exercises.length - 1 && transitionRest > 0) {
             steps.push({
-                name: getRestName(mode), isWork: false, isRest: true, duration: restDuration, sectionName: "Przejście", description: `Następnie: ${exercises[index + 1].name}`
+                name: getRestName(mode), isWork: false, isRest: true, duration: transitionRest, sectionName: "Przejście", description: `Następnie: ${exercises[index + 1].name}`
             });
         }
     });

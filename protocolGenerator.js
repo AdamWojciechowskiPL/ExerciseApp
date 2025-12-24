@@ -2,14 +2,12 @@
 import { state } from './state.js';
 
 /**
- * PROTOCOL GENERATOR v5.0 (Natural Reps & Variance)
+ * PROTOCOL GENERATOR v5.1 (Deep Type Detection)
  * Moduł odpowiedzialny za dynamiczne tworzenie sesji "Bio-Protocols".
  *
- * ZMIANY v5.0:
- * - Natural Reps: Powtórzenia są liczone z dokładnego czasu (bez zaokrąglania do 5s),
- *   co daje większą różnorodność (np. 11, 12, 13 powt zamiast tylko 10, 15).
- * - Stronger Jitter: Zwiększona losowość czasowa (+/- 30%).
- * - Smart Rounding: Zaokrąglanie czasu tylko dla ćwiczeń "na czas".
+ * POPRAWKA v5.1:
+ * - Naprawiono błędne klasyfikowanie ćwiczeń czasowych (np. Plank) jako powtórzeniowych.
+ * - Dodano sprawdzanie flagi 'maxDuration' oraz 'isIso' (Izometria).
  */
 
 // ============================================================
@@ -47,7 +45,7 @@ const SECONDS_PER_REP_ESTIMATE = 4;
 // ============================================================
 
 export function generateBioProtocol({ mode, focusZone, durationMin, userContext, timeFactor = 1.0 }) {
-    console.log(`🧪 [ProtocolGenerator] Generowanie v5.0 (Natural): ${mode} / ${focusZone}`);
+    console.log(`🧪 [ProtocolGenerator] Generowanie v5.1 (Fix Types): ${mode} / ${focusZone}`);
 
     const targetSeconds = durationMin * 60;
     const config = TIMING_CONFIG[mode] || TIMING_CONFIG['reset'];
@@ -77,7 +75,7 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext,
         finalTimeFactor = timeFactor * Math.min(stretchRatio, 2.0); // Max x2
     }
 
-    // 4. Budowa finalnego planu (Organic Variance w środku)
+    // 4. Budowa finalnego planu
     const flatExercises = buildSteps(sequence, config, mode, finalTimeFactor);
 
     // 5. Finalny czas
@@ -121,9 +119,9 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
             let ex = null;
             if (poolMain) ex = getStrictUnique(poolMain, usedIds);
             if (!ex && poolFallback) ex = getStrictUnique(poolFallback, usedIds);
-            if (!ex) ex = getStrictUnique(candidates, usedIds); // Ostateczny fallback
+            if (!ex) ex = getStrictUnique(candidates, usedIds);
 
-            if (!ex) break; // Brak unikalnych -> koniec
+            if (!ex) break;
             addToSequence(ex);
             loop++;
         }
@@ -151,7 +149,7 @@ function getStrictUnique(pool, usedIds) {
 }
 
 // ============================================================
-// BUDOWANIE KROKÓW (Z NATURALNYM FORMATOWANIEM)
+// BUDOWANIE KROKÓW (POPRAWIONA DETEKCJA TYPU)
 // ============================================================
 
 function buildSteps(exercises, config, mode, timeFactor) {
@@ -172,46 +170,45 @@ function buildSteps(exercises, config, mode, timeFactor) {
         const baseWork = config.work * timeFactor;
         const restDuration = Math.round(config.rest * timeFactor);
 
-        // --- ORGANIC VARIANCE ---
-        // Losowość +/- 30% dla każdego ćwiczenia z osobna
-        const randomJitter = 0.7 + (Math.random() * 0.6); // 0.7 do 1.3
-
-        // Difficulty Nuance
+        // Organic Variance
+        const randomJitter = 0.7 + (Math.random() * 0.6);
         const lvl = parseInt(ex.difficultyLevel || 1);
         let difficultyMod = 1.0;
-        if (lvl >= 4) difficultyMod = 0.85; // Hard -> krócej/mniej
-        if (lvl === 1) difficultyMod = 1.15; // Easy -> dłużej/więcej
+        if (lvl >= 4) difficultyMod = 0.85;
+        if (lvl === 1) difficultyMod = 1.15;
 
-        // Celowany czas trwania (niezaokrąglony)
         let targetDurationRaw = (baseWork * randomJitter * difficultyMod) - (driftCompensation * 0.3);
         targetDurationRaw = Math.max(15, Math.min(180, targetDurationRaw));
 
-        // Sprawdzenie typu: Powtórzenia czy Czas?
-        const rawReps = String(ex.reps_or_time).toLowerCase();
-        const isRepBased = !rawReps.includes('s') && !rawReps.includes('min');
+        // --- GŁĘBOKA DETEKCJA TYPU (FIX v5.1) ---
+        const rawReps = String(ex.reps_or_time || "").toLowerCase();
+        const hasTimeUnits = rawReps.includes('s') || rawReps.includes('min');
+        const tempoStr = (ex.defaultTempo || ex.tempo_or_iso || "").toLowerCase();
+        const isIso = tempoStr.includes("izo") || tempoStr.includes("iso");
+
+        // Jeśli ma zdefiniowane maxDuration > 0, to jest ćwiczenie na czas (Plank, Stretch)
+        // Nawet jeśli w polu reps_or_time wpisano głupoty.
+        const hasMaxDuration = (ex.maxDuration > 0) || (ex.max_recommended_duration > 0);
+
+        // Decyzja: Czas czy Repsy?
+        const isTimeBased = hasTimeUnits || isIso || hasMaxDuration;
+        const isRepBased = !isTimeBased;
 
         let finalDurationForTimer = 0;
         let displayValue = "";
 
         if (isRepBased) {
-            // DLA POWTÓRZEŃ:
-            // 1. Wyliczamy liczbę powtórzeń z SUROWEGO czasu (bez zaokrąglania do 5s)
+            // REPSY
             let estimatedReps = Math.round(targetDurationRaw / SECONDS_PER_REP_ESTIMATE);
-            estimatedReps = Math.max(4, estimatedReps); // Min 4 powtórzenia
-
-            // 2. Ustalamy czas timera na podstawie powtórzeń (żeby timer był sensowny)
-            // Dodajemy mały bufor (np. 10%) żeby użytkownik zdążył
+            estimatedReps = Math.max(4, estimatedReps);
             finalDurationForTimer = Math.round(estimatedReps * SECONDS_PER_REP_ESTIMATE * 1.1);
-
-            displayValue = `${estimatedReps}`; // Czysta liczba
+            displayValue = `${estimatedReps}`;
         } else {
-            // DLA CZASU:
-            // 1. Zaokrąglamy czas do 5s dla estetyki (np. 45s, 50s)
+            // CZAS
             finalDurationForTimer = Math.round(targetDurationRaw / 5) * 5;
             displayValue = `${finalDurationForTimer} s`;
         }
 
-        // Aktualizacja dryfu (o ile przesunęliśmy się względem planu)
         driftCompensation += (finalDurationForTimer - baseWork);
 
         const isUnilateral = ex.isUnilateral || String(ex.reps_or_time).includes('/str');

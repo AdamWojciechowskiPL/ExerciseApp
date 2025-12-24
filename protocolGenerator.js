@@ -2,14 +2,14 @@
 import { state } from './state.js';
 
 /**
- * PROTOCOL GENERATOR v4.7 (Time-Stretch Strategy)
+ * PROTOCOL GENERATOR v4.8 (Smart Formats)
  * Moduł odpowiedzialny za dynamiczne tworzenie sesji "Bio-Protocols".
  *
  * CECHY:
  * - Time-Boxing: Dopychanie ćwiczeń do zadanego czasu.
- * - Strict No-Repeat: Absolutny zakaz powtarzania ćwiczeń (A-A ani A-B-A).
- * - Time-Stretch: Jeśli brakuje unikalnych ćwiczeń, wydłużamy te już wylosowane,
- *   zamiast powtarzać lub kończyć przed czasem.
+ * - Strict No-Repeat: Absolutny zakaz powtarzania ćwiczeń.
+ * - Time-Stretch: Wydłużanie sesji, gdy brakuje unikalnych ćwiczeń.
+ * - Smart Formats: Rozróżnianie ćwiczeń na czas (Plank) i na powtórzenia (Przysiad).
  */
 
 // ============================================================
@@ -48,18 +48,20 @@ const TIMING_CONFIG = {
     'ladder': { work: 50, rest: 20, tempo: 'Technika / kontrola' }
 };
 
+const SECONDS_PER_REP_ESTIMATE = 4; // Średni czas na 1 powtórzenie w tempie kontrolowanym
+
 // ============================================================
 // GŁÓWNA FUNKCJA GENERUJĄCA
 // ============================================================
 
 export function generateBioProtocol({ mode, focusZone, durationMin, userContext, timeFactor = 1.0 }) {
-    console.log(`🧪 [ProtocolGenerator] Generowanie v4.7 (Stretch): ${mode} / ${focusZone} (${durationMin} min, x${timeFactor})`);
+    console.log(`🧪 [ProtocolGenerator] Generowanie v4.8 (Smart Formats): ${mode} / ${focusZone} (${durationMin} min, x${timeFactor})`);
 
     // 1. Obliczenie docelowego czasu w sekundach
     const targetSeconds = durationMin * 60;
     const config = TIMING_CONFIG[mode] || TIMING_CONFIG['reset'];
 
-    // 2. Pobranie kandydatów z uwzględnieniem restrykcji klinicznych (userContext)
+    // 2. Pobranie kandydatów z uwzględnieniem restrykcji klinicznych
     let candidates = getCandidates(mode, focusZone, { ignoreEquipment: false, userContext });
 
     // Fallback 1: Poluzowanie wymogów sprzętowych
@@ -78,7 +80,7 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext,
         throw new Error("Brak bezpiecznych ćwiczeń w bazie dla Twoich restrykcji zdrowotnych.");
     }
 
-    // 3. Ocena i sortowanie kandydatów (Affinity, Freshness)
+    // 3. Ocena i sortowanie kandydatów
     scoreCandidates(candidates, mode, userContext);
 
     // 4. Selekcja ćwiczeń (Zwraca obiekt: { sequence, generatedSeconds })
@@ -87,27 +89,22 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext,
     const generatedSeconds = selectionResult.generatedSeconds;
 
     // 5. OBSŁUGA "TIME STRETCH" (WYPEŁNIANIE CZASU)
-    // Jeśli wygenerowany czas jest krótszy niż cel (bo zabrakło unikalnych ćwiczeń),
-    // zwiększamy mnożnik czasu dla wszystkich ćwiczeń.
     let finalTimeFactor = timeFactor;
 
     if (generatedSeconds > 0 && generatedSeconds < targetSeconds) {
         // Obliczamy ile razy musimy wydłużyć, żeby wypełnić czas
         const stretchRatio = targetSeconds / generatedSeconds;
-
-        // Aplikujemy to do bazowego timeFactor
-        finalTimeFactor = timeFactor * stretchRatio;
-
-        console.log(`⏱️ [ProtocolGenerator] Time Stretch Active: Generated ${Math.round(generatedSeconds)}s vs Target ${targetSeconds}s. Applying stretch ratio: ${stretchRatio.toFixed(2)}x`);
+        // Aplikujemy to do bazowego timeFactor. Limitujemy stretch do rozsądnych 200% (x2.0)
+        finalTimeFactor = timeFactor * Math.min(stretchRatio, 2.0);
+        console.log(`⏱️ [ProtocolGenerator] Time Stretch: x${stretchRatio.toFixed(2)} -> FinalFactor: ${finalTimeFactor.toFixed(2)}`);
     }
 
-    // 6. Budowa osi czasu (Timeline) z nowym, potencjalnie wydłużonym czasem
+    // 6. Budowa osi czasu (Timeline) - Tutaj dzieje się magia formatowania (Reps vs Time)
     const flatExercises = buildSteps(sequence, config, mode, finalTimeFactor);
 
-    // 7. Obliczenie finalnego czasu trwania (powinien być bliski targetSeconds)
+    // 7. Obliczenie finalnego czasu trwania
     const realTotalDuration = flatExercises.reduce((sum, step) => sum + (step.duration || 0), 0);
 
-    // 8. Zwrócenie gotowego obiektu protokołu
     return {
         id: `proto_${mode}_${focusZone}_${Date.now()}`,
         title: generateTitle(mode, focusZone),
@@ -122,23 +119,17 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext,
 }
 
 // ============================================================
-// LOGIKA SELEKCJI (STRATEGIE DOBORU)
+// LOGIKA SELEKCJI
 // ============================================================
 
 function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFactor) {
-    // Czas bazowy jednego cyklu (praca + przerwa)
     const baseCycleTime = (config.work + config.rest) * timeFactor;
-
-    // Zabezpieczenie przed nieskończoną pętlą
-    const maxSteps = Math.ceil(targetSeconds / baseCycleTime) + 10;
+    const maxSteps = Math.ceil(targetSeconds / baseCycleTime) + 15; // +15 marginesu
 
     let sequence = [];
     let currentSeconds = 0;
-
-    // KLUCZOWE: Zbiór użytych ID w tej sesji (dla unikalności)
     const usedIds = new Set();
 
-    // Helper do dodawania czasu (uwzględnia x2 dla unilateral)
     const calculateExDuration = (ex) => {
         const isUnilateral = ex.isUnilateral ||
                              String(ex.reps_or_time).includes('/str') ||
@@ -147,119 +138,88 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
         return baseCycleTime * mult;
     };
 
-    // Helper pętli - dodaje ćwiczenie i aktualizuje czas
     const addToSequence = (ex) => {
         sequence.push(ex);
         usedIds.add(ex.id);
         currentSeconds += calculateExDuration(ex);
     };
 
-    // --- STRATEGIA: CALM (Przeplatanka Oddech / Relaks) ---
+    // --- STRATEGIA: CALM ---
     if (mode === 'calm') {
         const breathing = candidates.filter(ex => ['breathing_control', 'breathing'].includes(ex.categoryId));
         const relax = candidates.filter(ex => ex.categoryId === 'muscle_relaxation');
-
         const poolA = breathing.length > 0 ? breathing : candidates;
         const poolB = relax.length > 0 ? relax : candidates;
 
         let safetyLoop = 0;
         while (currentSeconds < targetSeconds && safetyLoop < maxSteps) {
-            // Co trzecie ćwiczenie to głęboki relaks
             const isRelaxPhase = (sequence.length + 1) % 3 === 0;
             const currentPool = isRelaxPhase ? poolB : poolA;
-
-            // 1. Szukamy unikalnego w dedykowanej puli
             let ex = getStrictUnique(currentPool, usedIds);
-
-            // 2. Jeśli brak, szukamy w ogólnej puli
             if (!ex) ex = getStrictUnique(candidates, usedIds);
-
-            // 3. STRICT NO-REPEAT: Jeśli nadal brak, przerywamy pętlę
-            if (!ex) break;
+            if (!ex) break; // Strict No-Repeat
 
             addToSequence(ex);
             safetyLoop++;
         }
     }
-
-    // --- STRATEGIA: FLOW (Różnorodność Ruchu) ---
+    // --- STRATEGIA: FLOW ---
     else if (mode === 'flow') {
         let safetyLoop = 0;
         while (currentSeconds < targetSeconds && safetyLoop < maxSteps) {
             const last = sequence.length > 0 ? sequence[sequence.length - 1] : null;
             let ex = null;
-
-            // 1. Próba znalezienia unikalnego w INNEJ płaszczyźnie niż poprzednie
             if (last) {
-                const diversityPool = candidates.filter(c =>
-                    c.primaryPlane && last.primaryPlane && c.primaryPlane !== last.primaryPlane
-                );
+                const diversityPool = candidates.filter(c => c.primaryPlane && last.primaryPlane && c.primaryPlane !== last.primaryPlane);
                 ex = getStrictUnique(diversityPool, usedIds);
             }
-
-            // 2. Próba znalezienia dowolnego unikalnego
             if (!ex) ex = getStrictUnique(candidates, usedIds);
-
             if (!ex) break;
 
             addToSequence(ex);
             safetyLoop++;
         }
     }
-
-    // --- STRATEGIA: NEURO (Nerve Glides) ---
+    // --- STRATEGIA: NEURO ---
     else if (mode === 'neuro') {
         let safetyLoop = 0;
         while (currentSeconds < targetSeconds && safetyLoop < maxSteps) {
             let ex = getStrictUnique(candidates, usedIds);
             if (!ex) break;
-
             addToSequence(ex);
             safetyLoop++;
         }
     }
-
-    // --- STRATEGIA: LADDER (Progresja Trudności) ---
+    // --- STRATEGIA: LADDER ---
     else if (mode === 'ladder') {
         const sorted = candidates.sort((a,b) => (a.difficultyLevel || 1) - (b.difficultyLevel || 1));
         const baseEx = sorted[0];
-
         if (baseEx) {
             let currentEx = baseEx;
             let safetyLoop = 0;
-
             while (currentSeconds < targetSeconds && safetyLoop < maxSteps) {
                 if (usedIds.has(currentEx.id)) break;
-
                 addToSequence(currentEx);
 
                 let nextExCandidate = null;
                 if (currentEx.nextProgressionId) {
                     const nextExDef = state.exerciseLibrary[currentEx.nextProgressionId];
                     const inCandidates = candidates.find(c => c.id === nextExDef?.id);
-                    if (inCandidates && !usedIds.has(inCandidates.id)) {
-                        nextExCandidate = inCandidates;
-                    }
+                    if (inCandidates && !usedIds.has(inCandidates.id)) nextExCandidate = inCandidates;
                 }
-
-                if (!nextExCandidate) {
-                    nextExCandidate = getStrictUnique(candidates, usedIds);
-                }
-
+                if (!nextExCandidate) nextExCandidate = getStrictUnique(candidates, usedIds);
                 if (!nextExCandidate) break;
                 currentEx = nextExCandidate;
                 safetyLoop++;
             }
         }
     }
-
-    // --- STRATEGIA: STANDARD (SOS, RESET, BOOSTER) ---
+    // --- STRATEGIA: STANDARD ---
     else {
         let safetyLoop = 0;
         while (currentSeconds < targetSeconds && safetyLoop < maxSteps) {
             let ex = getStrictUnique(candidates, usedIds);
-            if (!ex) break; // Kończymy, jeśli brak unikalnych
-
+            if (!ex) break;
             addToSequence(ex);
             safetyLoop++;
         }
@@ -268,18 +228,10 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
     return { sequence, generatedSeconds: currentSeconds };
 }
 
-// ============================================================
-// HELPERY UNIKALNOŚCI (STRICT UNIQUE)
-// ============================================================
-
 function getStrictUnique(pool, usedIds) {
     if (!pool || pool.length === 0) return null;
-
-    // Filtrujemy tylko te, których ID nie ma w zbiorze użytych
     const available = pool.filter(ex => !usedIds.has(ex.id));
-
     if (available.length > 0) {
-        // Losujemy z najlepszych dostępnych (top 3 dla różnorodności)
         const topCount = Math.min(3, available.length);
         const topPool = available.slice(0, topCount);
         return topPool[Math.floor(Math.random() * topPool.length)];
@@ -288,13 +240,12 @@ function getStrictUnique(pool, usedIds) {
 }
 
 // ============================================================
-// BUDOWANIE KROKÓW (TIMELINE)
+// BUDOWANIE KROKÓW (TIMELINE Z INTELIGENTNYM FORMATOWANIEM)
 // ============================================================
 
 function buildSteps(exercises, config, mode, timeFactor) {
     const steps = [];
 
-    // Krok 0: Start
     steps.push({
         name: "Start Protokołu",
         isWork: false,
@@ -305,7 +256,7 @@ function buildSteps(exercises, config, mode, timeFactor) {
     });
 
     exercises.forEach((ex, index) => {
-        // Aplikujemy timeFactor (który może być zwiększony przez stretch ratio)
+        // Czas trwania wg konfiguracji i czynnika rozciągnięcia
         const workDuration = Math.round(config.work * timeFactor);
         const restDuration = Math.round(config.rest * timeFactor);
 
@@ -313,25 +264,40 @@ function buildSteps(exercises, config, mode, timeFactor) {
                              String(ex.reps_or_time).includes('/str') ||
                              String(ex.reps_or_time).includes('stron');
 
-        if (isUnilateral) {
-            // STRONA LEWA
-            steps.push({
-                ...ex,
-                exerciseId: ex.id,
-                name: `${ex.name} (Lewa)`,
-                isWork: true,
-                isRest: false,
-                currentSet: 1,
-                totalSets: 2,
-                sectionName: mapModeToSectionName(mode),
-                reps_or_time: `${workDuration} s`,
-                duration: workDuration,
-                sets: "1",
-                tempo_or_iso: config.tempo,
-                uniqueId: `${ex.id}_p${index}_L`
-            });
+        // --- SMART FORMATTING LOGIC ---
+        // Decydujemy czy pokazać "45 s" czy "12 powtórzeń"
+        let displayValue = `${workDuration} s`;
+        let tempoDisplay = config.tempo;
 
-            // ZMIANA STRONY
+        // Sprawdzamy definicję w bazie - jeśli nie ma 's' ani 'min', to powtórzenia
+        const rawReps = String(ex.reps_or_time).toLowerCase();
+        const isRepBased = !rawReps.includes('s') && !rawReps.includes('min');
+
+        if (isRepBased) {
+            // Przeliczamy czas na powtórzenia
+            const estimatedReps = Math.max(4, Math.floor(workDuration / SECONDS_PER_REP_ESTIMATE));
+            displayValue = `${estimatedReps}`; // Bez dopisków typu "/str" bo to jest w nazwie kroku L/P
+        }
+
+        // Helper budujący obiekt kroku
+        const createWorkStep = (suffix, setId, totalSets) => ({
+            ...ex,
+            exerciseId: ex.id,
+            name: `${ex.name}${suffix}`,
+            isWork: true,
+            isRest: false,
+            currentSet: setId,
+            totalSets: totalSets,
+            sectionName: mapModeToSectionName(mode),
+            reps_or_time: displayValue, // Tutaj trafia przeliczona wartość!
+            duration: workDuration,     // Timer zawsze liczy czas
+            sets: "1",
+            tempo_or_iso: tempoDisplay,
+            uniqueId: `${ex.id}_p${index}${suffix ? suffix.replace(/[\s()]/g, '') : ''}`
+        });
+
+        if (isUnilateral) {
+            steps.push(createWorkStep(' (Lewa)', 1, 2));
             steps.push({
                 name: "Zmiana Strony",
                 isWork: false,
@@ -340,43 +306,11 @@ function buildSteps(exercises, config, mode, timeFactor) {
                 sectionName: "Przejście",
                 description: "Przygotuj drugą stronę"
             });
-
-            // STRONA PRAWA
-            steps.push({
-                ...ex,
-                exerciseId: ex.id,
-                name: `${ex.name} (Prawa)`,
-                isWork: true,
-                isRest: false,
-                currentSet: 2,
-                totalSets: 2,
-                sectionName: mapModeToSectionName(mode),
-                reps_or_time: `${workDuration} s`,
-                duration: workDuration,
-                sets: "1",
-                tempo_or_iso: config.tempo,
-                uniqueId: `${ex.id}_p${index}_R`
-            });
-
+            steps.push(createWorkStep(' (Prawa)', 2, 2));
         } else {
-            // STANDARDOWE
-            steps.push({
-                ...ex,
-                exerciseId: ex.id,
-                isWork: true,
-                isRest: false,
-                currentSet: 1,
-                totalSets: 1,
-                sectionName: mapModeToSectionName(mode),
-                reps_or_time: `${workDuration} s`,
-                duration: workDuration,
-                sets: "1",
-                tempo_or_iso: config.tempo,
-                uniqueId: `${ex.id}_p${index}`
-            });
+            steps.push(createWorkStep('', 1, 1));
         }
 
-        // PRZERWA (jeśli nie ostatnie)
         if (index < exercises.length - 1 && restDuration > 0) {
             steps.push({
                 name: getRestName(mode),
@@ -393,40 +327,33 @@ function buildSteps(exercises, config, mode, timeFactor) {
 }
 
 // ============================================================
-// HELPERY DANYCH I RESTRYKCJE KLINICZNE
+// HELPERY DANYCH I RESTRYKCJE (BEZ ZMIAN)
 // ============================================================
 
 function violatesProtocolRestrictions(ex, restrictions) {
     if (!restrictions || restrictions.length === 0) return false;
-
     const plane = ex.primaryPlane || 'multi';
     const pos = ex.position || null;
     const cat = ex.categoryId || '';
 
-    // 1. Typowe restrykcje ruchowe
     if (restrictions.includes('no_kneeling') && (pos === 'kneeling' || pos === 'quadruped')) return true;
     if (restrictions.includes('no_twisting') && plane === 'rotation') return true;
     if (restrictions.includes('no_floor_sitting') && pos === 'sitting') return true;
 
-    // 2. URAZ STOPY (Krytyczne!)
     if (restrictions.includes('foot_injury')) {
         const blockedPositions = ['standing', 'kneeling', 'quadruped', 'lunge'];
         if (blockedPositions.includes(pos)) return true;
-
         const blockedCategories = ['squats', 'lunges', 'cardio', 'plyometrics', 'calves'];
         if (blockedCategories.includes(cat)) return true;
-
         const name = (ex.name || '').toLowerCase();
         if (name.includes('przysiad') || name.includes('wykrok') || name.includes('bieg')) return true;
     }
-
     return false;
 }
 
 function getCandidates(mode, focusZone, ctx = {}) {
     const { ignoreEquipment, userContext } = ctx;
     const restrictions = userContext?.physical_restrictions || [];
-
     const library = Object.entries(state.exerciseLibrary).map(([id, data]) => ({ id, ...data }));
     const zoneConfig = ZONE_MAP[focusZone];
     const blacklist = state.blacklist || [];
@@ -434,30 +361,17 @@ function getCandidates(mode, focusZone, ctx = {}) {
     if (!zoneConfig) return [];
 
     return library.filter(ex => {
-        // A. Blacklist check
         if (blacklist.includes(ex.id)) return false;
-
-        // B. Clinical Safety Check
-        if (violatesProtocolRestrictions(ex, restrictions)) {
-            return false;
-        }
-
-        // C. Standard Checks (IsAllowed)
+        if (violatesProtocolRestrictions(ex, restrictions)) return false;
         if (ex.isAllowed !== true) {
-            if (ignoreEquipment && ex.isAllowed === false && ex.rejectionReason === 'missing_equipment') {
-                // Pass fallback
-            } else {
-                return false;
-            }
+            if (ignoreEquipment && ex.isAllowed === false && ex.rejectionReason === 'missing_equipment') { /* pass */ }
+            else { return false; }
         }
 
         const difficulty = parseInt(ex.difficultyLevel || 1, 10);
-
-        // 2. FILTR TRYBU
-        if (mode === 'sos') { if (difficulty > 2) return false; }
-        if (mode === 'booster') { if (difficulty < 2) return false; }
-        if (mode === 'reset') { if (difficulty > 3) return false; }
-
+        if (mode === 'sos' && difficulty > 2) return false;
+        if (mode === 'booster' && difficulty < 2) return false;
+        if (mode === 'reset' && difficulty > 3) return false;
         if (mode === 'calm') {
             if (difficulty > 2) return false;
             if (!['breathing_control', 'breathing', 'muscle_relaxation'].includes(ex.categoryId)) return false;
@@ -471,32 +385,17 @@ function getCandidates(mode, focusZone, ctx = {}) {
         }
         if (mode === 'neuro') {
             if (difficulty > 3) return false;
-            const isFlossing = ex.categoryId === 'nerve_flossing';
-            const matchesZone = ex.painReliefZones && ex.painReliefZones.some(z => ['sciatica', 'lumbar_radiculopathy', 'femoral_nerve'].includes(z));
-            if (!isFlossing && !matchesZone) return false;
+            if (ex.categoryId !== 'nerve_flossing' && !(ex.painReliefZones && ex.painReliefZones.some(z => ['sciatica', 'lumbar_radiculopathy', 'femoral_nerve'].includes(z)))) return false;
         }
         if (mode === 'ladder') {
             if (difficulty > 3) return false;
         }
 
-        // 3. DOPASOWANIE DO STREFY
         if (mode === 'calm') return true;
-
-        if (zoneConfig.type === 'zone') {
-            const reliefZones = ex.painReliefZones || [];
-            return reliefZones.some(z => zoneConfig.keys.includes(z));
-        }
-        else if (zoneConfig.type === 'cat') {
-            return zoneConfig.keys.includes(ex.categoryId);
-        }
-        else if (zoneConfig.type === 'mixed') {
-            const reliefZones = ex.painReliefZones || [];
-            return zoneConfig.keys.includes(ex.categoryId) || reliefZones.some(z => zoneConfig.keys.includes(z));
-        }
-        else if (zoneConfig.type === 'all') {
-            return true;
-        }
-
+        if (zoneConfig.type === 'zone') return ex.painReliefZones && ex.painReliefZones.some(z => zoneConfig.keys.includes(z));
+        else if (zoneConfig.type === 'cat') return zoneConfig.keys.includes(ex.categoryId);
+        else if (zoneConfig.type === 'mixed') return zoneConfig.keys.includes(ex.categoryId) || (ex.painReliefZones && ex.painReliefZones.some(z => zoneConfig.keys.includes(z)));
+        else if (zoneConfig.type === 'all') return true;
         return false;
     });
 }
@@ -504,69 +403,29 @@ function getCandidates(mode, focusZone, ctx = {}) {
 function getCandidatesSafeFallback(mode, userContext) {
     const library = Object.entries(state.exerciseLibrary).map(([id, data]) => ({ id, ...data }));
     const restrictions = userContext?.physical_restrictions || [];
-
     return library.filter(ex => {
         if (ex.isAllowed !== true) return false;
         if (violatesProtocolRestrictions(ex, restrictions)) return false;
-
         const difficulty = parseInt(ex.difficultyLevel || 1, 10);
         if (mode === 'sos' && difficulty > 2) return false;
         if (mode === 'calm' && difficulty > 2) return false;
-        if (mode === 'reset' && difficulty > 3) return false;
         return true;
     }).slice(0, 15);
 }
 
 function scoreCandidates(candidates, mode, userContext) {
     const recentSessions = userContext?.recentSessionIds || [];
-
     candidates.forEach(ex => {
         let score = 0;
         const pref = state.userPreferences[ex.id] || { score: 0 };
-        const difficulty = parseInt(ex.difficultyLevel || 1, 10);
-
-        // Baza
         score += (pref.score || 0);
-
-        // Recent Penalty
-        if (recentSessions.includes(ex.id)) {
-            if (mode === 'calm') score -= 60;
-            else if (mode !== 'sos') score -= 50;
-        }
-
-        // Mode Specific Scoring
-        if (mode === 'booster') score += difficulty * 5;
-        else if (mode === 'sos') {
-            score -= difficulty * 20;
-            if (ex.animationSvg) score += 20;
-            if (ex.painReliefZones && ex.painReliefZones.length > 0) score += 15;
-        }
-        else if (mode === 'reset') {
-            if (ex.categoryId === 'breathing') score += 40;
-            if (difficulty > 2) score -= 10;
-        }
-        else if (mode === 'calm') {
-            if (ex.youtube_url || ex.animationSvg) score += 15;
-            if (ex.maxDuration && ex.maxDuration > 60) score += 10;
-        }
-        else if (mode === 'flow') {
-            if (ex.categoryId.includes('mobility')) score += 10;
-        }
-        else if (mode === 'neuro') {
-            if (ex.categoryId === 'nerve_flossing') score += 30;
-            if (ex.isUnilateral) score += 20;
-        }
-        else if (mode === 'ladder') {
-            if (ex.nextProgressionId) score += 20;
-        }
-
-        // Randomness
-        const randomFactor = (mode === 'sos' || mode === 'neuro' || mode === 'ladder') ? 5 : 20;
-        score += Math.random() * randomFactor;
-
+        if (recentSessions.includes(ex.id)) score -= (mode === 'calm' ? 60 : 50);
+        if (mode === 'booster') score += (parseInt(ex.difficultyLevel || 1) * 5);
+        else if (mode === 'sos') score -= (parseInt(ex.difficultyLevel || 1) * 20);
+        else if (mode === 'reset' && ex.categoryId === 'breathing') score += 40;
+        score += Math.random() * (mode === 'sos' ? 5 : 20);
         ex._genScore = score;
     });
-
     candidates.sort((a, b) => b._genScore - a._genScore);
 }
 
@@ -581,17 +440,10 @@ function generateTitle(mode, zone) {
         'office': 'Anty-Biuro', 'sleep': 'Sen', 'glute': 'Pośladki', 'full_body': 'Całe Ciało',
         'legs': 'Nogi'
     }[zone] || 'Bio-Protokół';
-
     const suffix = {
-        'sos': 'Ratunkowy',
-        'booster': 'Power',
-        'reset': 'Flow',
-        'calm': 'Wyciszenie',
-        'flow': 'Mobility Flow',
-        'neuro': 'Neuro-Ślizgi',
-        'ladder': 'Progresja'
+        'sos': 'Ratunkowy', 'booster': 'Power', 'reset': 'Flow',
+        'calm': 'Wyciszenie', 'flow': 'Mobility Flow', 'neuro': 'Neuro-Ślizgi', 'ladder': 'Progresja'
     }[mode] || '';
-
     return `${zoneName}: ${suffix}`;
 }
 

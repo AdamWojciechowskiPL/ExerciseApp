@@ -1,4 +1,4 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v12.5.6
+# Aplikacja Treningowa (Smart Rehab PWA) v12.5.7
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca trening siłowy z rehabilitacją kręgosłupa (metodyka McGill L5-S1). System wykorzystuje architekturę Serverless oraz autorski silnik **"Virtual Physio"** (v3.3), wspierany przez nowy moduł **"Exercise Affinity Engine"**, który personalizuje treningi na podstawie preferencji emocjonalnych i odczuwalnej trudności.
 

@@ -2,14 +2,15 @@
 import { state } from './state.js';
 
 /**
- * PROTOCOL GENERATOR v5.2 (Smart Splitting)
+ * PROTOCOL GENERATOR v5.3 (Compact Sets)
  * Moduł odpowiedzialny za dynamiczne tworzenie sesji "Bio-Protocols".
  *
  * CECHY:
  * - Time-Boxing & Stretch: Dopychanie do czasu.
- * - Organic Variance: Losowe fluktuacje czasu (+/- 30%).
- * - Smart Splitting: Jeśli wyliczony czas/repsy przekraczają max zalecany dla ćwiczenia,
- *   rozbija je na kilka serii z mikro-przerwami, zamiast tworzyć jedną gigantyczną serię.
+ * - Organic Variance: Losowe fluktuacje czasu.
+ * - Smart Sets Calculation: Obliczanie wymaganej liczby serii w celu wypełnienia czasu.
+ * - Compact Output: Zwraca pojedynczy obiekt ćwiczenia z zaktualizowanym atrybutem 'sets',
+ *   zamiast rozbijać go na wiele osobnych kroków w tablicy.
  */
 
 // ============================================================
@@ -41,16 +42,16 @@ const TIMING_CONFIG = {
 };
 
 const SECONDS_PER_REP_ESTIMATE = 4;
-const DEFAULT_MAX_DURATION = 60; // Domyślny limit czasu (s)
-const DEFAULT_MAX_REPS = 15;     // Domyślny limit powtórzeń
-const INTRA_SET_REST = 15;       // Przerwa między seriami tego samego ćwiczenia (gdy podzielone)
+const DEFAULT_MAX_DURATION = 60;
+const DEFAULT_MAX_REPS = 15;
+const INTRA_SET_REST = 15; // Czas przerwy doliczany do kompensacji dryfu
 
 // ============================================================
 // GŁÓWNA FUNKCJA GENERUJĄCA
 // ============================================================
 
 export function generateBioProtocol({ mode, focusZone, durationMin, userContext, timeFactor = 1.0 }) {
-    console.log(`🧪 [ProtocolGenerator] Generowanie v5.2 (Splitting): ${mode} / ${focusZone}`);
+    console.log(`🧪 [ProtocolGenerator] Generowanie v5.3 (Compact Sets): ${mode} / ${focusZone}`);
 
     const targetSeconds = durationMin * 60;
     const config = TIMING_CONFIG[mode] || TIMING_CONFIG['reset'];
@@ -71,14 +72,24 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext,
     let finalTimeFactor = timeFactor;
     if (generatedSeconds > 0 && generatedSeconds < targetSeconds) {
         const stretchRatio = targetSeconds / generatedSeconds;
-        finalTimeFactor = timeFactor * Math.min(stretchRatio, 2.5); // Pozwalamy na większy stretch, bo teraz mamy splitting
+        // Pozwalamy na większy stretch, bo teraz dzielimy na serie
+        finalTimeFactor = timeFactor * Math.min(stretchRatio, 3.0);
     }
 
-    // 4. Budowa finalnego planu (z logiką dzielenia serii)
+    // 4. Budowa finalnego planu
     const flatExercises = buildSteps(sequence, config, mode, finalTimeFactor);
 
-    // 5. Finalny czas
-    const realTotalDuration = flatExercises.reduce((sum, step) => sum + (step.duration || 0), 0);
+    // 5. Finalny czas (szacowany, bo sets > 1 mnoży czas w rzeczywistości, ale tu sumujemy duration kroku)
+    // UWAGA: Aby czas całkowity był poprawny w UI, musimy uwzględnić serie.
+    const realTotalDuration = flatExercises.reduce((sum, step) => {
+        const sets = parseInt(step.sets) || 1;
+        const duration = step.duration || 0;
+        // Jeśli to ćwiczenie (WORK), mnożymy przez serie. Jeśli przerwa (REST), liczymy raz.
+        if (step.isWork) {
+            return sum + (duration * sets) + ((sets - 1) * INTRA_SET_REST);
+        }
+        return sum + duration;
+    }, 0);
 
     return {
         id: `proto_${mode}_${focusZone}_${Date.now()}`,
@@ -148,7 +159,7 @@ function getStrictUnique(pool, usedIds) {
 }
 
 // ============================================================
-// BUDOWANIE KROKÓW (SMART SPLITTING)
+// BUDOWANIE KROKÓW (COMPACT SETS)
 // ============================================================
 
 function buildSteps(exercises, config, mode, timeFactor) {
@@ -176,11 +187,11 @@ function buildSteps(exercises, config, mode, timeFactor) {
         if (lvl >= 4) difficultyMod = 0.85;
         if (lvl === 1) difficultyMod = 1.15;
 
-        // Celowany czas całkowity dla tego ćwiczenia (może być bardzo duży przez Time Stretch)
+        // Target Total Time for this exercise block (all sets combined)
         let targetTotalSeconds = (baseWork * randomJitter * difficultyMod) - (driftCompensation * 0.3);
-        targetTotalSeconds = Math.max(15, targetTotalSeconds); // Bez górnego limitu, bo będziemy dzielić
+        targetTotalSeconds = Math.max(15, targetTotalSeconds);
 
-        // Detekcja Typu
+        // Type Detection
         const rawReps = String(ex.reps_or_time || "").toLowerCase();
         const hasTimeUnits = rawReps.includes('s') || rawReps.includes('min');
         const tempoStr = (ex.defaultTempo || ex.tempo_or_iso || "").toLowerCase();
@@ -190,92 +201,68 @@ function buildSteps(exercises, config, mode, timeFactor) {
         const isTimeBased = hasTimeUnits || isIso || hasMaxDuration;
         const isRepBased = !isTimeBased;
 
-        // --- SMART SPLITTING LOGIC ---
+        // --- CALCULATION (SETS & PER SET VALUE) ---
         let sets = 1;
-        let valuePerSet = 0; // Sekundy lub Repsy
         let displayValue = "";
-        let durationPerSet = 0; // Zawsze w sekundach dla timera
+        let durationPerSet = 0;
 
         if (isRepBased) {
-            // Obliczamy całkowitą liczbę powtórzeń
             let totalReps = Math.round(targetTotalSeconds / SECONDS_PER_REP_ESTIMATE);
             totalReps = Math.max(4, totalReps);
-
-            // Sprawdzamy limit
             const maxReps = ex.maxReps || ex.max_recommended_reps || DEFAULT_MAX_REPS;
 
-            // Dzielimy na serie
             sets = Math.ceil(totalReps / maxReps);
             const repsPerSet = Math.max(4, Math.round(totalReps / sets));
 
-            valuePerSet = repsPerSet;
             displayValue = `${repsPerSet}`;
-            durationPerSet = Math.round(repsPerSet * SECONDS_PER_REP_ESTIMATE * 1.1); // Bufor czasowy dla timera
+            durationPerSet = Math.round(repsPerSet * SECONDS_PER_REP_ESTIMATE * 1.1);
         } else {
-            // Czas
             let totalSeconds = Math.round(targetTotalSeconds);
-
-            // Sprawdzamy limit
             const maxDuration = ex.maxDuration || ex.max_recommended_duration || DEFAULT_MAX_DURATION;
 
-            // Dzielimy na serie
             sets = Math.ceil(totalSeconds / maxDuration);
-            const secondsPerSet = Math.round(totalSeconds / sets / 5) * 5; // Zaokrąglenie do 5s
+            const secondsPerSet = Math.round(totalSeconds / sets / 5) * 5;
 
-            valuePerSet = secondsPerSet;
             displayValue = `${secondsPerSet} s`;
             durationPerSet = secondsPerSet;
         }
 
-        // Aktualizacja dryfu (o ile przesunęliśmy się względem planu)
-        // Musimy uwzględnić wszystkie serie i przerwy między nimi
+        // Drift update
         const totalDurationCreated = (durationPerSet * sets) + ((sets - 1) * INTRA_SET_REST);
         driftCompensation += (totalDurationCreated - baseWork);
 
         const isUnilateral = ex.isUnilateral || String(ex.reps_or_time).includes('/str');
         const tempoDisplay = config.tempo;
 
-        // --- GENEROWANIE SERII ---
-        for (let s = 1; s <= sets; s++) {
-            const createWorkStep = (suffix, sideSetNum, sideTotalSets) => ({
-                ...ex,
-                exerciseId: ex.id,
-                name: `${ex.name}${suffix}`,
-                isWork: true,
-                isRest: false,
-                currentSet: s, // Numer serii w ramach tego ćwiczenia
-                totalSets: sets,
-                sectionName: mapModeToSectionName(mode),
-                reps_or_time: displayValue,
-                duration: durationPerSet,
-                sets: "1",
-                tempo_or_iso: tempoDisplay,
-                uniqueId: `${ex.id}_p${index}_s${s}${suffix ? suffix.replace(/[\s()]/g, '') : ''}`
-            });
+        // --- GENERATING COMPACT STEPS ---
+        // Zamiast pętli, tworzymy jeden wpis z zaktualizowanym atrybutem sets.
 
-            if (isUnilateral) {
-                // Dla jednostronnych: L -> P (to jest jedna pełna seria)
-                steps.push(createWorkStep(' (Lewa)', s, sets));
-                steps.push({ name: "Zmiana Strony", isWork: false, isRest: true, duration: 5, sectionName: "Przejście", description: "Druga strona" });
-                steps.push(createWorkStep(' (Prawa)', s, sets));
-            } else {
-                steps.push(createWorkStep('', s, sets));
-            }
+        const createCompactStep = (suffix) => ({
+            ...ex,
+            exerciseId: ex.id,
+            name: `${ex.name}${suffix}`,
+            isWork: true,
+            isRest: false,
+            // Ważne: ustawiamy sets na wyliczoną wartość!
+            sets: sets.toString(),
+            currentSet: 1,      // Startuje od 1
+            totalSets: sets,    // Informacja dla UI
+            sectionName: mapModeToSectionName(mode),
+            reps_or_time: displayValue,
+            duration: durationPerSet, // To jest czas JEDNEJ serii dla timera
+            tempo_or_iso: tempoDisplay,
+            uniqueId: `${ex.id}_p${index}${suffix ? suffix.replace(/[\s()]/g, '') : ''}`
+        });
 
-            // Jeśli to nie jest ostatnia seria tego ćwiczenia, dodaj mikro-przerwę
-            if (s < sets) {
-                steps.push({
-                    name: "Mikro-przerwa",
-                    isWork: false,
-                    isRest: true,
-                    duration: INTRA_SET_REST,
-                    sectionName: "Odpoczynek",
-                    description: `Odpocznij przed serią ${s + 1}/${sets}`
-                });
-            }
+        if (isUnilateral) {
+            steps.push(createCompactStep(' (Lewa)'));
+            steps.push({ name: "Zmiana Strony", isWork: false, isRest: true, duration: 5, sectionName: "Przejście", description: "Druga strona" });
+            steps.push(createCompactStep(' (Prawa)'));
+        } else {
+            steps.push(createCompactStep(''));
         }
 
-        // Przejście do NASTĘPNEGO ćwiczenia (tylko jeśli to nie koniec całego treningu)
+        // Przejście do NASTĘPNEGO ćwiczenia
         if (index < exercises.length - 1 && transitionRest > 0) {
             steps.push({
                 name: getRestName(mode), isWork: false, isRest: true, duration: transitionRest, sectionName: "Przejście", description: `Następnie: ${exercises[index + 1].name}`

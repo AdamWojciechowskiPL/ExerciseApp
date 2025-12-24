@@ -2,14 +2,14 @@
 import { state } from './state.js';
 
 /**
- * PROTOCOL GENERATOR v4.8 (Smart Formats)
+ * PROTOCOL GENERATOR v5.0 (Natural Reps & Variance)
  * Moduł odpowiedzialny za dynamiczne tworzenie sesji "Bio-Protocols".
  *
- * CECHY:
- * - Time-Boxing: Dopychanie ćwiczeń do zadanego czasu.
- * - Strict No-Repeat: Absolutny zakaz powtarzania ćwiczeń.
- * - Time-Stretch: Wydłużanie sesji, gdy brakuje unikalnych ćwiczeń.
- * - Smart Formats: Rozróżnianie ćwiczeń na czas (Plank) i na powtórzenia (Przysiad).
+ * ZMIANY v5.0:
+ * - Natural Reps: Powtórzenia są liczone z dokładnego czasu (bez zaokrąglania do 5s),
+ *   co daje większą różnorodność (np. 11, 12, 13 powt zamiast tylko 10, 15).
+ * - Stronger Jitter: Zwiększona losowość czasowa (+/- 30%).
+ * - Smart Rounding: Zaokrąglanie czasu tylko dla ćwiczeń "na czas".
  */
 
 // ============================================================
@@ -17,92 +17,70 @@ import { state } from './state.js';
 // ============================================================
 
 const ZONE_MAP = {
-    // SOS & RESET & NEURO
     'cervical': { type: 'zone', keys: ['cervical', 'neck', 'upper_traps'] },
     'thoracic': { type: 'zone', keys: ['thoracic', 'posture', 'shoulder_mobility'] },
     'lumbar': { type: 'zone', keys: ['lumbar_general', 'lumbar_extension_intolerant', 'lumbar_flexion_intolerant', 'lumbar_radiculopathy'] },
     'sciatica': { type: 'zone', keys: ['sciatica', 'piriformis', 'nerve_flossing', 'lumbar_radiculopathy'] },
     'hips': { type: 'cat', keys: ['hip_mobility', 'glute_activation', 'femoral_nerve'] },
     'legs': { type: 'cat', keys: ['stretching', 'nerve_flossing'] },
-
-    // MIXED
     'office': { type: 'mixed', keys: ['thoracic', 'hip_mobility', 'neck'] },
     'sleep': { type: 'cat', keys: ['breathing', 'muscle_relaxation', 'stretching'] },
-
-    // BOOSTER
     'core': { type: 'cat', keys: ['core_anti_extension', 'core_anti_rotation', 'core_anti_flexion'] },
     'glute': { type: 'cat', keys: ['glute_activation'] },
     'full_body': { type: 'all', keys: [] }
 };
 
 const TIMING_CONFIG = {
-    // Klasyczne
     'sos': { work: 60, rest: 15, tempo: 'Wolne / Oddechowe' },
     'reset': { work: 45, rest: 10, tempo: 'Płynne' },
     'booster': { work: 40, rest: 20, tempo: 'Dynamiczne' },
-
-    // Nowoczesne
     'calm': { work: 120, rest: 10, tempo: 'Wolne / nos / przepona' },
     'flow': { work: 40, rest: 5, tempo: 'Płynne / kontrola zakresu' },
     'neuro': { work: 25, rest: 20, tempo: 'Delikatne / bez bólu' },
     'ladder': { work: 50, rest: 20, tempo: 'Technika / kontrola' }
 };
 
-const SECONDS_PER_REP_ESTIMATE = 4; // Średni czas na 1 powtórzenie w tempie kontrolowanym
+const SECONDS_PER_REP_ESTIMATE = 4;
 
 // ============================================================
 // GŁÓWNA FUNKCJA GENERUJĄCA
 // ============================================================
 
 export function generateBioProtocol({ mode, focusZone, durationMin, userContext, timeFactor = 1.0 }) {
-    console.log(`🧪 [ProtocolGenerator] Generowanie v4.8 (Smart Formats): ${mode} / ${focusZone} (${durationMin} min, x${timeFactor})`);
+    console.log(`🧪 [ProtocolGenerator] Generowanie v5.0 (Natural): ${mode} / ${focusZone}`);
 
-    // 1. Obliczenie docelowego czasu w sekundach
     const targetSeconds = durationMin * 60;
     const config = TIMING_CONFIG[mode] || TIMING_CONFIG['reset'];
 
-    // 2. Pobranie kandydatów z uwzględnieniem restrykcji klinicznych
+    // 1. Dobór kandydatów
     let candidates = getCandidates(mode, focusZone, { ignoreEquipment: false, userContext });
 
-    // Fallback 1: Poluzowanie wymogów sprzętowych
     if (candidates.length === 0) {
-        console.warn("[ProtocolGenerator] Brak kandydatów. Poluzowanie wymogów sprzętowych.");
         candidates = getCandidates(mode, focusZone, { ignoreEquipment: true, userContext });
     }
-
-    // Fallback 2: Ostateczny ratunek (Dowolne bezpieczne z bazy)
     if (candidates.length === 0) {
-        console.warn("[ProtocolGenerator] Krytyczny brak. Fallback na dowolne bezpieczne.");
         candidates = getCandidatesSafeFallback(mode, userContext);
     }
-
     if (candidates.length === 0) {
-        throw new Error("Brak bezpiecznych ćwiczeń w bazie dla Twoich restrykcji zdrowotnych.");
+        throw new Error("Brak bezpiecznych ćwiczeń.");
     }
 
-    // 3. Ocena i sortowanie kandydatów
     scoreCandidates(candidates, mode, userContext);
 
-    // 4. Selekcja ćwiczeń (Zwraca obiekt: { sequence, generatedSeconds })
-    const selectionResult = selectExercisesByMode(candidates, mode, targetSeconds, config, timeFactor);
-    const sequence = selectionResult.sequence;
-    const generatedSeconds = selectionResult.generatedSeconds;
+    // 2. Selekcja sekwencji
+    const { sequence, generatedSeconds } = selectExercisesByMode(candidates, mode, targetSeconds, config, timeFactor);
 
-    // 5. OBSŁUGA "TIME STRETCH" (WYPEŁNIANIE CZASU)
+    // 3. Time Stretch (Globalne skalowanie, jeśli brakuje czasu)
     let finalTimeFactor = timeFactor;
-
     if (generatedSeconds > 0 && generatedSeconds < targetSeconds) {
-        // Obliczamy ile razy musimy wydłużyć, żeby wypełnić czas
         const stretchRatio = targetSeconds / generatedSeconds;
-        // Aplikujemy to do bazowego timeFactor. Limitujemy stretch do rozsądnych 200% (x2.0)
-        finalTimeFactor = timeFactor * Math.min(stretchRatio, 2.0);
-        console.log(`⏱️ [ProtocolGenerator] Time Stretch: x${stretchRatio.toFixed(2)} -> FinalFactor: ${finalTimeFactor.toFixed(2)}`);
+        finalTimeFactor = timeFactor * Math.min(stretchRatio, 2.0); // Max x2
     }
 
-    // 6. Budowa osi czasu (Timeline) - Tutaj dzieje się magia formatowania (Reps vs Time)
+    // 4. Budowa finalnego planu (Organic Variance w środku)
     const flatExercises = buildSteps(sequence, config, mode, finalTimeFactor);
 
-    // 7. Obliczenie finalnego czasu trwania
+    // 5. Finalny czas
     const realTotalDuration = flatExercises.reduce((sum, step) => sum + (step.duration || 0), 0);
 
     return {
@@ -124,123 +102,56 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext,
 
 function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFactor) {
     const baseCycleTime = (config.work + config.rest) * timeFactor;
-    const maxSteps = Math.ceil(targetSeconds / baseCycleTime) + 15; // +15 marginesu
+    const maxSteps = Math.ceil(targetSeconds / baseCycleTime) + 15;
 
     let sequence = [];
     let currentSeconds = 0;
     const usedIds = new Set();
 
-    const calculateExDuration = (ex) => {
-        const isUnilateral = ex.isUnilateral ||
-                             String(ex.reps_or_time).includes('/str') ||
-                             String(ex.reps_or_time).includes('stron');
-        const mult = isUnilateral ? 2 : 1;
-        return baseCycleTime * mult;
-    };
-
     const addToSequence = (ex) => {
         sequence.push(ex);
         usedIds.add(ex.id);
-        currentSeconds += calculateExDuration(ex);
+        const mult = (ex.isUnilateral || String(ex.reps_or_time).includes('/str')) ? 2 : 1;
+        currentSeconds += baseCycleTime * mult;
     };
 
-    // --- STRATEGIA: CALM ---
+    const runStrategy = (poolMain, poolFallback) => {
+        let loop = 0;
+        while (currentSeconds < targetSeconds && loop < maxSteps) {
+            let ex = null;
+            if (poolMain) ex = getStrictUnique(poolMain, usedIds);
+            if (!ex && poolFallback) ex = getStrictUnique(poolFallback, usedIds);
+            if (!ex) ex = getStrictUnique(candidates, usedIds); // Ostateczny fallback
+
+            if (!ex) break; // Brak unikalnych -> koniec
+            addToSequence(ex);
+            loop++;
+        }
+    };
+
     if (mode === 'calm') {
         const breathing = candidates.filter(ex => ['breathing_control', 'breathing'].includes(ex.categoryId));
         const relax = candidates.filter(ex => ex.categoryId === 'muscle_relaxation');
-        const poolA = breathing.length > 0 ? breathing : candidates;
-        const poolB = relax.length > 0 ? relax : candidates;
-
-        let safetyLoop = 0;
-        while (currentSeconds < targetSeconds && safetyLoop < maxSteps) {
-            const isRelaxPhase = (sequence.length + 1) % 3 === 0;
-            const currentPool = isRelaxPhase ? poolB : poolA;
-            let ex = getStrictUnique(currentPool, usedIds);
-            if (!ex) ex = getStrictUnique(candidates, usedIds);
-            if (!ex) break; // Strict No-Repeat
-
-            addToSequence(ex);
-            safetyLoop++;
-        }
-    }
-    // --- STRATEGIA: FLOW ---
-    else if (mode === 'flow') {
-        let safetyLoop = 0;
-        while (currentSeconds < targetSeconds && safetyLoop < maxSteps) {
-            const last = sequence.length > 0 ? sequence[sequence.length - 1] : null;
-            let ex = null;
-            if (last) {
-                const diversityPool = candidates.filter(c => c.primaryPlane && last.primaryPlane && c.primaryPlane !== last.primaryPlane);
-                ex = getStrictUnique(diversityPool, usedIds);
-            }
-            if (!ex) ex = getStrictUnique(candidates, usedIds);
-            if (!ex) break;
-
-            addToSequence(ex);
-            safetyLoop++;
-        }
-    }
-    // --- STRATEGIA: NEURO ---
-    else if (mode === 'neuro') {
-        let safetyLoop = 0;
-        while (currentSeconds < targetSeconds && safetyLoop < maxSteps) {
-            let ex = getStrictUnique(candidates, usedIds);
-            if (!ex) break;
-            addToSequence(ex);
-            safetyLoop++;
-        }
-    }
-    // --- STRATEGIA: LADDER ---
-    else if (mode === 'ladder') {
-        const sorted = candidates.sort((a,b) => (a.difficultyLevel || 1) - (b.difficultyLevel || 1));
-        const baseEx = sorted[0];
-        if (baseEx) {
-            let currentEx = baseEx;
-            let safetyLoop = 0;
-            while (currentSeconds < targetSeconds && safetyLoop < maxSteps) {
-                if (usedIds.has(currentEx.id)) break;
-                addToSequence(currentEx);
-
-                let nextExCandidate = null;
-                if (currentEx.nextProgressionId) {
-                    const nextExDef = state.exerciseLibrary[currentEx.nextProgressionId];
-                    const inCandidates = candidates.find(c => c.id === nextExDef?.id);
-                    if (inCandidates && !usedIds.has(inCandidates.id)) nextExCandidate = inCandidates;
-                }
-                if (!nextExCandidate) nextExCandidate = getStrictUnique(candidates, usedIds);
-                if (!nextExCandidate) break;
-                currentEx = nextExCandidate;
-                safetyLoop++;
-            }
-        }
-    }
-    // --- STRATEGIA: STANDARD ---
-    else {
-        let safetyLoop = 0;
-        while (currentSeconds < targetSeconds && safetyLoop < maxSteps) {
-            let ex = getStrictUnique(candidates, usedIds);
-            if (!ex) break;
-            addToSequence(ex);
-            safetyLoop++;
-        }
+        runStrategy([...breathing, ...relax], candidates);
+    } else {
+        runStrategy(candidates, null);
     }
 
     return { sequence, generatedSeconds: currentSeconds };
 }
 
 function getStrictUnique(pool, usedIds) {
-    if (!pool || pool.length === 0) return null;
+    if (!pool) return null;
     const available = pool.filter(ex => !usedIds.has(ex.id));
     if (available.length > 0) {
-        const topCount = Math.min(3, available.length);
-        const topPool = available.slice(0, topCount);
-        return topPool[Math.floor(Math.random() * topPool.length)];
+        const top = available.slice(0, Math.min(3, available.length));
+        return top[Math.floor(Math.random() * top.length)];
     }
     return null;
 }
 
 // ============================================================
-// BUDOWANIE KROKÓW (TIMELINE Z INTELIGENTNYM FORMATOWANIEM)
+// BUDOWANIE KROKÓW (Z NATURALNYM FORMATOWANIEM)
 // ============================================================
 
 function buildSteps(exercises, config, mode, timeFactor) {
@@ -255,31 +166,57 @@ function buildSteps(exercises, config, mode, timeFactor) {
         description: generateDescription(mode, 0)
     });
 
+    let driftCompensation = 0;
+
     exercises.forEach((ex, index) => {
-        // Czas trwania wg konfiguracji i czynnika rozciągnięcia
-        const workDuration = Math.round(config.work * timeFactor);
+        const baseWork = config.work * timeFactor;
         const restDuration = Math.round(config.rest * timeFactor);
 
-        const isUnilateral = ex.isUnilateral ||
-                             String(ex.reps_or_time).includes('/str') ||
-                             String(ex.reps_or_time).includes('stron');
+        // --- ORGANIC VARIANCE ---
+        // Losowość +/- 30% dla każdego ćwiczenia z osobna
+        const randomJitter = 0.7 + (Math.random() * 0.6); // 0.7 do 1.3
 
-        // --- SMART FORMATTING LOGIC ---
-        // Decydujemy czy pokazać "45 s" czy "12 powtórzeń"
-        let displayValue = `${workDuration} s`;
-        let tempoDisplay = config.tempo;
+        // Difficulty Nuance
+        const lvl = parseInt(ex.difficultyLevel || 1);
+        let difficultyMod = 1.0;
+        if (lvl >= 4) difficultyMod = 0.85; // Hard -> krócej/mniej
+        if (lvl === 1) difficultyMod = 1.15; // Easy -> dłużej/więcej
 
-        // Sprawdzamy definicję w bazie - jeśli nie ma 's' ani 'min', to powtórzenia
+        // Celowany czas trwania (niezaokrąglony)
+        let targetDurationRaw = (baseWork * randomJitter * difficultyMod) - (driftCompensation * 0.3);
+        targetDurationRaw = Math.max(15, Math.min(180, targetDurationRaw));
+
+        // Sprawdzenie typu: Powtórzenia czy Czas?
         const rawReps = String(ex.reps_or_time).toLowerCase();
         const isRepBased = !rawReps.includes('s') && !rawReps.includes('min');
 
+        let finalDurationForTimer = 0;
+        let displayValue = "";
+
         if (isRepBased) {
-            // Przeliczamy czas na powtórzenia
-            const estimatedReps = Math.max(4, Math.floor(workDuration / SECONDS_PER_REP_ESTIMATE));
-            displayValue = `${estimatedReps}`; // Bez dopisków typu "/str" bo to jest w nazwie kroku L/P
+            // DLA POWTÓRZEŃ:
+            // 1. Wyliczamy liczbę powtórzeń z SUROWEGO czasu (bez zaokrąglania do 5s)
+            let estimatedReps = Math.round(targetDurationRaw / SECONDS_PER_REP_ESTIMATE);
+            estimatedReps = Math.max(4, estimatedReps); // Min 4 powtórzenia
+
+            // 2. Ustalamy czas timera na podstawie powtórzeń (żeby timer był sensowny)
+            // Dodajemy mały bufor (np. 10%) żeby użytkownik zdążył
+            finalDurationForTimer = Math.round(estimatedReps * SECONDS_PER_REP_ESTIMATE * 1.1);
+
+            displayValue = `${estimatedReps}`; // Czysta liczba
+        } else {
+            // DLA CZASU:
+            // 1. Zaokrąglamy czas do 5s dla estetyki (np. 45s, 50s)
+            finalDurationForTimer = Math.round(targetDurationRaw / 5) * 5;
+            displayValue = `${finalDurationForTimer} s`;
         }
 
-        // Helper budujący obiekt kroku
+        // Aktualizacja dryfu (o ile przesunęliśmy się względem planu)
+        driftCompensation += (finalDurationForTimer - baseWork);
+
+        const isUnilateral = ex.isUnilateral || String(ex.reps_or_time).includes('/str');
+        const tempoDisplay = config.tempo;
+
         const createWorkStep = (suffix, setId, totalSets) => ({
             ...ex,
             exerciseId: ex.id,
@@ -289,8 +226,8 @@ function buildSteps(exercises, config, mode, timeFactor) {
             currentSet: setId,
             totalSets: totalSets,
             sectionName: mapModeToSectionName(mode),
-            reps_or_time: displayValue, // Tutaj trafia przeliczona wartość!
-            duration: workDuration,     // Timer zawsze liczy czas
+            reps_or_time: displayValue,
+            duration: finalDurationForTimer,
             sets: "1",
             tempo_or_iso: tempoDisplay,
             uniqueId: `${ex.id}_p${index}${suffix ? suffix.replace(/[\s()]/g, '') : ''}`
@@ -298,14 +235,7 @@ function buildSteps(exercises, config, mode, timeFactor) {
 
         if (isUnilateral) {
             steps.push(createWorkStep(' (Lewa)', 1, 2));
-            steps.push({
-                name: "Zmiana Strony",
-                isWork: false,
-                isRest: true,
-                duration: 5,
-                sectionName: "Przejście",
-                description: "Przygotuj drugą stronę"
-            });
+            steps.push({ name: "Zmiana Strony", isWork: false, isRest: true, duration: 5, sectionName: "Przejście", description: "Druga strona" });
             steps.push(createWorkStep(' (Prawa)', 2, 2));
         } else {
             steps.push(createWorkStep('', 1, 1));
@@ -313,12 +243,7 @@ function buildSteps(exercises, config, mode, timeFactor) {
 
         if (index < exercises.length - 1 && restDuration > 0) {
             steps.push({
-                name: getRestName(mode),
-                isWork: false,
-                isRest: true,
-                duration: restDuration,
-                sectionName: "Przejście",
-                description: `Przygotuj się do: ${exercises[index + 1].name}`
+                name: getRestName(mode), isWork: false, isRest: true, duration: restDuration, sectionName: "Przejście", description: `Następnie: ${exercises[index + 1].name}`
             });
         }
     });
@@ -327,7 +252,7 @@ function buildSteps(exercises, config, mode, timeFactor) {
 }
 
 // ============================================================
-// HELPERY DANYCH I RESTRYKCJE (BEZ ZMIAN)
+// HELPERY DANYCH (BEZ ZMIAN)
 // ============================================================
 
 function violatesProtocolRestrictions(ex, restrictions) {
@@ -419,11 +344,9 @@ function scoreCandidates(candidates, mode, userContext) {
         let score = 0;
         const pref = state.userPreferences[ex.id] || { score: 0 };
         score += (pref.score || 0);
-        if (recentSessions.includes(ex.id)) score -= (mode === 'calm' ? 60 : 50);
+        if (recentSessions.includes(ex.id)) score -= 50;
         if (mode === 'booster') score += (parseInt(ex.difficultyLevel || 1) * 5);
-        else if (mode === 'sos') score -= (parseInt(ex.difficultyLevel || 1) * 20);
-        else if (mode === 'reset' && ex.categoryId === 'breathing') score += 40;
-        score += Math.random() * (mode === 'sos' ? 5 : 20);
+        score += Math.random() * 20;
         ex._genScore = score;
     });
     candidates.sort((a, b) => b._genScore - a._genScore);

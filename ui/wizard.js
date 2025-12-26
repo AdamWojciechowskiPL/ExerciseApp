@@ -100,11 +100,11 @@ async function renderStep() {
     closeBtn.className = 'wizard-close-btn';
     closeBtn.title = 'Zamknij';
     closeBtn.innerHTML = '<img src="/icons/close.svg" alt="X" style="width:20px; height:20px;">';
-    
+
     closeBtn.onclick = () => {
         if (confirm("Przerwać konfigurację? Postęp zostanie utracony.")) closeWizardWithoutSaving();
     };
-    
+
     container.appendChild(closeBtn);
 
     // 2. ANIMOWANA TREŚĆ (Content)
@@ -127,7 +127,7 @@ async function renderStep() {
         <div class="wizard-progress-bar">
             <div class="wizard-progress-fill" style="width: ${progressPct}%;"></div>
         </div>
-        
+
         <h2 class="wizard-step-title">${step.title}</h2>
         <div id="step-body"></div>
         ${navHTML}
@@ -379,7 +379,7 @@ function renderP11(c) {
 function renderP12(c) {
     c.innerHTML = `
         <p class="wizard-step-desc">Ile masz czasu?</p>
-        
+
         <div style="padding: 0 10px;">
             <div class="form-group" style="margin-bottom:2.5rem;">
                 <label style="display:flex; justify-content:space-between; margin-bottom:10px;">
@@ -437,6 +437,7 @@ function renderP15(c) {
 
 function renderP16(c) {
     renderMultiSelect(c, 'Ograniczenia?', [
+        { val: 'foot_injury', label: '🦶 Uraz stopy (bez obciążania)' },
         { val: 'no_kneeling', label: 'Nie mogę klęczeć' },
         { val: 'no_floor_sitting', label: 'Nie usiądę na podłodze' },
         { val: 'no_twisting', label: 'Ból przy skrętach' },

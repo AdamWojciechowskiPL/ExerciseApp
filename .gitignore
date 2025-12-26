@@ -7,6 +7,7 @@
 # Pliki blokujące wersje zależności. W prostych projektach można ignorować.
 # W bardziej złożonych, gdzie spójność wersji jest krytyczna, usuń tę linię.
 /package-lock.json
+netlify.toml
 
 # Pliki generowane przez Netlify CLI
 # Zawierają lokalny stan środowiska deweloperskiego.
@@ -20,3 +21,5 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+

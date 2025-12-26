@@ -5,7 +5,11 @@ export const state = {
     isAppInitialized: false,
 
     userProgress: {},
-    masteryStats: null, // NOWE: Cache dla statystyk ćwiczeń
+    
+    // Struktura: { "deadBug": { score: 20, difficulty: 0 }, ... }
+    userPreferences: {},
+
+    masteryStats: null,
 
     settings: {
         appStartDate: null,
@@ -19,10 +23,23 @@ export const state = {
         painZones: [],
         equipment: [],
         schedule: {},
-        ttsEnabled: true
+        ttsEnabled: true,
+        wizardData: {} // Pełne dane z ankiety
     },
 
+    /**
+     * BAZA WIEDZY (Atlas Ćwiczeń)
+     * Teraz zawiera flagi walidacji serwerowej ("White List Pattern"):
+     * {
+     *   "id": {
+     *     ...pola_standardowe,
+     *     "isAllowed": boolean,       // Czy bezpieczne dla usera (sprzęt + zdrowie)
+     *     "rejectionReason": string   // np. "missing_equipment", "physical_restriction"
+     *   }
+     * }
+     */
     exerciseLibrary: {},
+    
     trainingPlans: {},
     blacklist: [],
 
@@ -44,7 +61,7 @@ export const state = {
     isPaused: false,
     breakTimeoutId: null,
 
-    todaysDynamicPlan: null,
+    todaysDynamicPlan: null, // Cache dla planu na dziś (Protocol lub Day)
 
     timer: {
         interval: null,
@@ -98,6 +115,6 @@ export const state = {
         synth: window.speechSynthesis,
         polishVoice: null,
         isSupported: 'speechSynthesis' in window,
-        isSoundOn: null // Wartość ustawiana w dataStore.initialize() z settings.ttsEnabled
+        isSoundOn: null
     }
 };

@@ -1,18 +1,17 @@
 // assistantEngine.js
 
 import { state } from './state.js';
-import { getISODate, parseSetCount, getExerciseDuration} from './utils.js';
+import { getISODate, parseSetCount, getExerciseDuration } from './utils.js';
 
 /**
- * MÓZG SYSTEMU (ASSISTANT ENGINE)
- * Centralny moduł odpowiedzialny za logikę adaptacyjną, analizę statystyk
- * i modyfikowanie planów treningowych w czasie rzeczywistym.
+ * MÓZG SYSTEMU (ASSISTANT ENGINE) v3.2
+ * Strategia: Unilateral Awareness (Parzystość Serii) + UI Badges
+ * Cel: Zachowanie symetrii oraz czyste przekazywanie informacji do UI (bez modyfikacji description).
  */
 
-// Stałe pomocnicze
-const SECONDS_PER_REP = 4; // Średni czas na 1 powtórzenie (tempo 2-0-2)
-const DEFAULT_REST_SETS = 60; // Domyślna przerwa między seriami (jeśli brak w planie)
-const DEFAULT_REST_EXERCISES = 90; // Domyślna przerwa między ćwiczeniami
+const SECONDS_PER_REP = 4;
+const DEFAULT_REST_SETS = 5;
+const DEFAULT_REST_EXERCISES = 5;
 
 export const assistant = {
 
@@ -23,21 +22,8 @@ export const assistant = {
         return { score: 0, status: 'Vulnerable', daysSinceLast: 0, sessionCount: 0 };
     },
 
-    // ============================================================
-    // TASK-05: Duration Estimator (Szacowanie Czasu)
-    // ============================================================
-    
-    /**
-     * Szacuje czas trwania treningu w minutach.
-     * Uwzględnia czas pracy, przerwy między seriami i przejścia między ćwiczeniami.
-     * 
-     * @param {Object} dayPlan - Nawodniony obiekt dnia (warmup, main, cooldown)
-     * @returns {number} Szacowany czas w minutach
-     */
     estimateDuration: (dayPlan) => {
         if (!dayPlan) return 0;
-
-        // Pobierz zasady globalne z aktywnego planu (dla czasów przerw)
         const activePlan = state.trainingPlans[state.settings.activePlanId];
         const globalRules = activePlan?.GlobalRules || {};
         const restBetweenSets = globalRules.defaultRestSecondsBetweenSets || DEFAULT_REST_SETS;
@@ -52,122 +38,172 @@ export const assistant = {
 
         allExercises.forEach((exercise, index) => {
             const sets = parseSetCount(exercise.sets);
-            
-            // 1. Czas pracy (Work)
-            // Sprawdzamy czy to ćwiczenie na czas (Duration) czy powtórzenia
-            // UWAGA: getExerciseDuration teraz poprawnie parsuje np. "30 s/str." jako 60s (30 * 2)
-            let workTimePerSet = getExerciseDuration(exercise); 
-            
+            let workTimePerSet = getExerciseDuration(exercise);
+
             if (workTimePerSet === null) {
-                // Jeśli to powtórzenia (brak "min" lub "s"), parsujemy liczbę
                 const repsString = String(exercise.reps_or_time).toLowerCase();
                 const repsMatch = repsString.match(/(\d+)/);
                 const reps = repsMatch ? parseInt(repsMatch[0], 10) : 10;
-                
-                // FIX: Obsługa jednostronności dla powtórzeń (np. "10/str.")
-                const isUnilateral = repsString.includes('/str') || repsString.includes('stron') || exercise.isUnilateral;
-                const multiplier = isUnilateral ? 2 : 1;
-
-                workTimePerSet = reps * SECONDS_PER_REP * multiplier;
+                workTimePerSet = reps * SECONDS_PER_REP;
             }
 
             totalSeconds += sets * workTimePerSet;
-
-            // 2. Przerwy między seriami (Rest)
-            if (sets > 1) {
-                totalSeconds += (sets - 1) * restBetweenSets;
-            }
-
-            // 3. Przerwa po ćwiczeniu (Transition)
-            // Dodajemy przerwę, chyba że to ostatnie ćwiczenie w całym treningu
-            if (index < allExercises.length - 1) {
-                totalSeconds += restBetweenExercises;
-            }
+            if (sets > 1) totalSeconds += (sets - 1) * restBetweenSets;
+            if (index < allExercises.length - 1) totalSeconds += restBetweenExercises;
         });
 
         return Math.ceil(totalSeconds / 60);
     },
 
-    // ============================================================
-    // TASK-06: Rule Engine (Silnik Regułowy / Modyfikator Planu)
-    // ============================================================
-
-    /**
-     * Modyfikuje plan treningowy na podstawie czynników zewnętrznych.
-     * 
-     * @param {Object} dayPlan - Oryginalny plan dnia
-     * @param {number} painLevel - Poziom bólu (0-10)
-     * @param {number} timeFactor - Suwak czasu (np. 0.5 = 50% czasu, 1.0 = norma)
-     * @returns {Object} Zmodyfikowana kopia planu
-     */
-   adjustTrainingVolume: (dayPlan, painLevel, timeFactor = 1.0) => {
+    adjustTrainingVolume: (dayPlan, painLevel, timeFactor = 1.0) => {
         if (!dayPlan) return null;
 
         const modifiedPlan = JSON.parse(JSON.stringify(dayPlan));
         
-        // Modyfikator objętości wynikający z bólu
-        let painModifier = 1.0;
+        let mode = 'standard';
         let painMessage = null;
+        
+        // Parametry Strategii
+        let targetSetsMode = 'normal'; // 'normal', 'minus_step', 'minimum'
+        let addBoostSet = false;
+        let intensityScale = 1.0;
 
-        if (painLevel >= 4 && painLevel <= 6) {
-            painModifier = 0.6; 
-            painMessage = "Zmniejszono objętość (umiarkowany ból).";
-        } else if (painLevel >= 7) {
-            painModifier = 0.3; 
-            painMessage = "Tryb minimum (silny ból).";
+        // 1. ANALIZA POZIOMU BÓLU
+        
+        // A. BOOST (0-1)
+        if (painLevel <= 1) {
+            mode = 'boost';
+            painMessage = "Tryb Progresji (Boost).";
+            addBoostSet = true;
+            intensityScale = 1.0;
+        } 
+        // B. STANDARD (2-3)
+        else if (painLevel >= 2 && painLevel <= 3) {
+            mode = 'standard';
+        } 
+        // C. ECO (4-5)
+        else if (painLevel >= 4 && painLevel <= 5) {
+            mode = 'eco'; 
+            painMessage = "Tryb Oszczędny (Eco).";
+            targetSetsMode = 'minus_step'; 
+            intensityScale = 1.0; 
+        } 
+        // D. CARE (6-7)
+        else if (painLevel >= 6 && painLevel <= 7) {
+            mode = 'care';
+            painMessage = "Tryb Ostrożny (Care).";
+            targetSetsMode = 'minimum'; 
+            intensityScale = 0.7; 
+        } 
+        // E. SOS (8+)
+        else {
+            mode = 'sos';
+            painMessage = "Zalecany tryb SOS.";
+            targetSetsMode = 'minimum';
+            intensityScale = 0.5; 
         }
-
-        // Łączny mnożnik (Ból * Suwak Czasu)
-        // np. Ból 0 (1.0) * Suwak 50% (0.5) = 0.5
-        const totalFactor = painModifier * timeFactor;
 
         ['warmup', 'main', 'cooldown'].forEach(section => {
             if (!modifiedPlan[section]) return;
 
             modifiedPlan[section].forEach(exercise => {
-                // 1. Skalowanie SERII
-                const originalSets = parseSetCount(exercise.sets);
-                // Jeśli mamy dużo serii (np. 3+), tniemy serie. Jeśli mało (1-2), staramy się utrzymać min. 1.
-                let newSets = Math.round(originalSets * totalFactor);
-                newSets = Math.max(1, newSets); 
-                exercise.sets = String(newSets);
+                let currentSets = parseSetCount(exercise.sets);
+                
+                // Wykrywanie jednostronności
+                const isUnilateral = exercise.isUnilateral || 
+                                     exercise.is_unilateral || 
+                                     String(exercise.reps_or_time).includes('/str') || 
+                                     String(exercise.reps_or_time).includes('stron');
 
-                // 2. Skalowanie POWTÓRZEŃ / CZASU
-                if (totalFactor < 0.9 || totalFactor > 1.1) {
-                    const duration = getExerciseDuration(exercise);
+                const stepSize = isUnilateral ? 2 : 1;
+                const minSets = isUnilateral ? 2 : 1;
+
+                // Obiekt modyfikacji dla UI (Badges)
+                let modificationBadge = null;
+
+                // --- KROK 1: MODYFIKACJA SERII ---
+                
+                if (addBoostSet) {
+                    const limit = isUnilateral ? 6 : 4;
+                    if (section === 'main' && currentSets >= minSets && currentSets < limit) {
+                        currentSets += stepSize;
+                        modificationBadge = { type: 'boost', label: `🚀 BOOST: +${stepSize} serii` };
+                    }
+                } 
+                else if (targetSetsMode === 'minus_step') {
+                    if (currentSets > minSets) {
+                        currentSets -= stepSize;
+                    } else {
+                        if (mode === 'eco') intensityScale = Math.min(intensityScale, 0.8);
+                    }
+                }
+                else if (targetSetsMode === 'minimum') {
+                    currentSets = minSets;
+                }
+
+                // --- KROK 2: SUWAK CZASU (Time Factor) ---
+                if (timeFactor < 0.9) {
+                    const rawCalc = currentSets * timeFactor;
                     
-                    if (duration !== null) {
-                        // Ćwiczenie na czas (np. 60s -> 30s)
-                        // Uwaga: getExerciseDuration zwraca czas całkowity (np. x2 dla stron). 
-                        // Tutaj musimy operować na surowym stringu, żeby go podmienić.
-                        // Ale łatwiej sparsować liczbę ze stringa i ją przeskalować.
-                        
-                        const timeMatch = String(exercise.reps_or_time).match(/(\d+)/);
-                        if (timeMatch) {
-                            const originalTime = parseInt(timeMatch[0], 10);
-                            const newTime = Math.max(5, Math.round(originalTime * totalFactor));
-                            // Zachowujemy jednostki i sufiksy (s, min, /str.)
-                            exercise.reps_or_time = exercise.reps_or_time.replace(originalTime, newTime);
+                    if (isUnilateral) {
+                        let reduced = Math.floor(rawCalc / 2) * 2;
+                        currentSets = Math.max(2, reduced);
+                    } else {
+                        currentSets = Math.max(1, Math.floor(rawCalc));
+                    }
+                }
+
+                exercise.sets = String(currentSets);
+
+                // --- KROK 3: REDUKCJA POWTÓRZEŃ/CZASU ---
+                if (intensityScale < 1.0) {
+                    const rawVal = String(exercise.reps_or_time);
+                    
+                    if (rawVal.includes('s') || rawVal.includes('min')) {
+                        const numMatch = rawVal.match(/(\d+)/);
+                        if (numMatch) {
+                            const rawNum = parseInt(numMatch[0]);
+                            const newNum = Math.max(5, Math.floor(rawNum * intensityScale));
+                            if (newNum < rawNum) {
+                                exercise.reps_or_time = rawVal.replace(rawNum, newNum);
+                            }
                         }
                     } else {
-                        // Ćwiczenie na powtórzenia (np. 10 -> 5)
-                        const repsMatch = String(exercise.reps_or_time).match(/(\d+)/);
+                        const repsMatch = rawVal.match(/(\d+)/);
                         if (repsMatch) {
-                            const originalReps = parseInt(repsMatch[0], 10);
-                            const newReps = Math.max(1, Math.round(originalReps * totalFactor));
-                            
-                            // Zachowujemy format (np. "10/str." -> "5/str.")
-                            exercise.reps_or_time = exercise.reps_or_time.replace(originalReps, newReps);
+                            const reps = parseInt(repsMatch[0]);
+                            const newReps = Math.max(3, Math.floor(reps * intensityScale));
+                            if (newReps < reps) {
+                                exercise.reps_or_time = rawVal.replace(reps, newReps);
+                            }
                         }
                     }
+                }
+
+                // Ustawienie Badge'a (jeśli nie został ustawiony przez Boost)
+                if (!modificationBadge) {
+                    if (mode === 'eco') {
+                        modificationBadge = { type: 'eco', label: `🍃 ECO: Oszczędzanie` };
+                    } else if (mode === 'care') {
+                        modificationBadge = { type: 'care', label: `🛡️ CARE: Redukcja` };
+                    } else if (mode === 'sos') {
+                        modificationBadge = { type: 'sos', label: `🏥 SOS: Minimum` };
+                    }
+                }
+
+                // Zapisujemy badge w obiekcie ćwiczenia, aby templates.js mógł go użyć
+                if (modificationBadge && mode !== 'standard') {
+                    exercise.modification = modificationBadge;
                 }
             });
         });
 
         modifiedPlan._modificationInfo = {
             originalPainLevel: painLevel,
-            appliedModifier: totalFactor,
-            message: painMessage
+            appliedMode: mode,
+            appliedModifier: intensityScale,
+            message: painMessage,
+            shouldSuggestSOS: (mode === 'sos')
         };
 
         return modifiedPlan;

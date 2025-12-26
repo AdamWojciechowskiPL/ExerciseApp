@@ -7,10 +7,11 @@ import { getGamificationState } from '../../gamification.js';
 import { assistant } from '../../assistantEngine.js';
 import { navigateTo } from '../core.js';
 import { generateHeroDashboardHTML, generateMissionCardHTML, generateCompletedMissionCardHTML, generateSkeletonDashboardHTML } from '../templates.js';
-import { renderPreTrainingScreen } from './training.js';
+import { renderPreTrainingScreen, renderProtocolStart } from './training.js';
 import { renderDayDetailsScreen } from './history.js';
 import { workoutMixer } from '../../workoutMixer.js';
 import { getUserPayload } from '../../auth.js';
+import { generateBioProtocol } from '../../protocolGenerator.js';
 
 // --- POMOCNICZE FUNKCJE STORAGE ---
 
@@ -121,7 +122,6 @@ export const renderMainScreen = (isLoading = false) => {
     // 2. RENDEROWANIE ZAWARTOŚCI GŁÓWNEJ
     containers.days.innerHTML = '';
 
-    // PRZYWRÓCONY EFEKT WOW (Zamiast paska tygodnia)
     const today = new Date();
     const todayISO = getISODate(today);
 
@@ -150,7 +150,9 @@ export const renderMainScreen = (isLoading = false) => {
 
     let currentSequenceDayNum = 1;
 
+    // ============================================================
     // A. SEKCJA "MISJA NA DZIŚ"
+    // ============================================================
     if (completedSession) {
         const missionWrapper = document.createElement('div');
         missionWrapper.className = 'mission-card-wrapper';
@@ -212,9 +214,11 @@ export const renderMainScreen = (isLoading = false) => {
                 console.log("CACHE HIT: Używam zapisanego planu z dysku.");
                 finalPlan = cachedPlan;
             } else {
-                console.log("CACHE MISS: Generuję plan na dziś.");
+                console.log("CACHE MISS: Generuję plan na dziś (z Mikserem).");
                 const hydratedDay = getHydratedDay(rawDay);
-                finalPlan = JSON.parse(JSON.stringify(hydratedDay));
+
+                finalPlan = workoutMixer.mixWorkout(hydratedDay, false);
+
                 finalPlan.dayNumber = currentSequenceDayNum;
                 finalPlan.planId = currentPlanId;
                 savePlanToStorage(finalPlan);
@@ -222,7 +226,7 @@ export const renderMainScreen = (isLoading = false) => {
             state.todaysDynamicPlan = finalPlan;
 
         }
-        // --- LOGIKA DLA TRYBU STATYCZNEGO (Z POPRAWIONYM MIXEREM) ---
+        // --- LOGIKA DLA TRYBU STATYCZNEGO (Z MIXEREM) ---
         else {
             const todayDataRaw = getNextLogicalDay();
             if (todayDataRaw) {
@@ -231,9 +235,7 @@ export const renderMainScreen = (isLoading = false) => {
 
                 let dynamicDayData = state.todaysDynamicPlan;
 
-                // Walidacja: czy zapisany plan jest z aktualnego trybu/planId?
                 if (dynamicDayData && dynamicDayData.planId !== currentPlanId) {
-                    console.log(`[Dashboard] Plan mismatch: ${dynamicDayData.planId} vs ${currentPlanId}. Resetuję.`);
                     dynamicDayData = null;
                     state.todaysDynamicPlan = null;
                     clearPlanFromStorage();
@@ -242,12 +244,10 @@ export const renderMainScreen = (isLoading = false) => {
                 if (!dynamicDayData) {
                     const cachedPlan = loadPlanFromStorage();
                     if (cachedPlan && cachedPlan.dayNumber === currentSequenceDayNum && cachedPlan.planId === currentPlanId) {
-                        // SPRAWDZAMY CZY PLAN JEST ZMIKSOWANY (_isDynamic)
                         if (cachedPlan._isDynamic) {
-                            console.log("CACHE HIT (Static-Mixed): Znaleziono zmiksowany plan.");
                             dynamicDayData = cachedPlan;
+                            state.todaysDynamicPlan = cachedPlan;
                         } else {
-                            console.log("CACHE STALE: Plan nie był miksowany. Usuwam i generuję nowy.");
                             clearPlanFromStorage();
                         }
                     }
@@ -262,7 +262,9 @@ export const renderMainScreen = (isLoading = false) => {
                 }
                 finalPlan = dynamicDayData || todayDataStatic;
 
-                if (state.todaysDynamicPlan) state.todaysDynamicPlan = finalPlan;
+                if (finalPlan && finalPlan._isDynamic) {
+                    state.todaysDynamicPlan = finalPlan;
+                }
             }
         }
 
@@ -287,14 +289,36 @@ export const renderMainScreen = (isLoading = false) => {
                 timeBadge.textContent = `${estimatedMinutes} min (limit)`;
             }
 
+            // --- WELLNESS LOGIC V2.1 ---
             painOptions.forEach(opt => {
                 opt.addEventListener('click', () => {
                     painOptions.forEach(o => o.classList.remove('selected'));
                     opt.classList.add('selected');
+
                     const painLevel = parseInt(opt.dataset.level, 10);
-                    const adjustedPlan = assistant.adjustTrainingVolume(finalPlan, painLevel);
-                    const newDuration = assistant.estimateDuration(adjustedPlan);
-                    timeBadge.textContent = `${newDuration} min`;
+
+                    // 1. Sprawdzamy czy to tryb SOS (Level 8+)
+                    // Używamy helpera z assistantEngine, żeby zasymulować odpowiedź
+                    const checkPlan = assistant.adjustTrainingVolume(finalPlan, painLevel);
+                    const isSOS = checkPlan?._modificationInfo?.shouldSuggestSOS;
+
+                    // Aktualizacja przycisku Start
+                    if (isSOS) {
+                        startBtn.textContent = "🏥 Aktywuj Protokół SOS";
+                        startBtn.style.backgroundColor = "var(--danger-color)";
+                        startBtn.dataset.mode = 'sos';
+                        // FIX: Aktualizujemy czas na sztywno dla SOS (protokół trwa ok 10 min)
+                        timeBadge.textContent = "10 min";
+                    } else {
+                        // Standardowa aktualizacja czasu
+                        const newDuration = assistant.estimateDuration(checkPlan);
+                        timeBadge.textContent = `${newDuration} min`;
+
+                        startBtn.textContent = "Start Misji";
+                        startBtn.style.backgroundColor = ""; // Reset do domyślnego
+                        startBtn.dataset.mode = 'normal';
+                    }
+
                     startBtn.dataset.initialPain = painLevel;
                 });
             });
@@ -302,12 +326,117 @@ export const renderMainScreen = (isLoading = false) => {
             startBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const pain = parseInt(startBtn.dataset.initialPain, 10) || 0;
+
+                // Obsługa przekierowania SOS
+                if (startBtn.dataset.mode === 'sos') {
+                    if (confirm("Wykryto wysoki poziom bólu. Czy uruchomić bezpieczny Protokół SOS zamiast głównego planu?")) {
+                        try {
+                            const protocol = generateBioProtocol({
+                                mode: 'sos',
+                                focusZone: state.settings.wizardData?.pain_locations?.[0] || 'lumbar_general',
+                                durationMin: 10,
+                                userContext: state.settings.wizardData || {}
+                            });
+                            renderProtocolStart(protocol);
+                            return;
+                        } catch (err) {
+                            console.error("SOS Gen Error:", err);
+                            // Fallback do normalnego startu
+                        }
+                    }
+                }
+
                 renderPreTrainingScreen(finalPlan.dayNumber, pain, isDynamicMode);
             });
         }
     }
 
-    // C. SEKCJA "KOLEJNE W CYKLU" (Horyzontalna Karuzela)
+    // ============================================================
+    // B. LABORATORIUM REGENERACJI (z nowymi trybami)
+    // ============================================================
+    const bioHubContainer = document.createElement('div');
+    bioHubContainer.className = 'bio-hub-container';
+
+    const wz = state.settings.wizardData || {};
+    const protocols = [];
+
+    // 1. ZAWSZE DOSTĘPNE (Baza)
+    protocols.push({ mode: 'booster', zone: 'core', time: 5, title: 'Brzuch ze stali', desc: 'Szybki obwód', icon: '🔥' });
+    protocols.push({ mode: 'flow', zone: 'full_body', time: 8, title: 'Mobility Flow', desc: 'Płynny ruch całego ciała', icon: '🌊' });
+    protocols.push({ mode: 'calm', zone: 'sleep', time: 10, title: 'Głęboki Reset', desc: 'Oddech i wyciszenie', icon: '🌙' });
+
+    // 2. KONTEKSTOWE (Na podstawie Wizarda)
+    
+    // Praca siedząca -> Anty-Biuro (Flow lub Reset)
+    if (wz.work_type === 'sedentary') {
+        protocols.unshift({ mode: 'flow', zone: 'office', time: 5, title: 'Anty-Biuro', desc: 'Rozprostuj się po pracy', icon: '🪑' });
+    }
+
+    // Szyja -> SOS lub Flow
+    if (wz.pain_locations?.includes('cervical')) {
+        protocols.unshift({ mode: 'sos', zone: 'cervical', time: 4, title: 'Szyja: Ratunek', desc: 'Ulga w napięciu karku', icon: '💊' });
+    }
+
+    // Rwa kulszowa / Biodra -> NEURO
+    const hasSciatica = wz.medical_diagnosis?.includes('sciatica') || wz.pain_locations?.includes('sciatica');
+    const hasHipIssues = wz.pain_locations?.includes('hip') || wz.medical_diagnosis?.includes('piriformis');
+    
+    if (hasSciatica || hasHipIssues) {
+        protocols.unshift({ mode: 'neuro', zone: 'sciatica', time: 6, title: 'Neuro-Ślizgi', desc: 'Mobilizacja nerwów', icon: '⚡' });
+    }
+
+    // Jeśli użytkownik jest zaawansowany -> LADDER
+    if (wz.exercise_experience === 'advanced' || wz.exercise_experience === 'regular') {
+        protocols.push({ mode: 'ladder', zone: 'full_body', time: 12, title: 'Drabina Progresji', desc: 'Buduj technikę', icon: '🧗' });
+    }
+
+    // Fallback: Glute Pump jeśli mało kart
+    if (protocols.length < 3) {
+        protocols.push({ mode: 'booster', zone: 'glute', time: 6, title: 'Glute Pump', desc: 'Aktywacja pośladków', icon: '🍑' });
+    }
+
+    const cardsHTML = protocols.map(p => `
+        <div class="bio-card bio-card-${p.mode}"
+             data-mode="${p.mode}" data-zone="${p.zone}" data-time="${p.time}">
+            <div class="bio-bg-icon">${p.icon}</div>
+            <div class="bio-header">
+                <span class="bio-tag">${p.mode.toUpperCase()}</span>
+                <span class="bio-duration">⏱ ${p.time} min</span>
+            </div>
+            <div>
+                <div class="bio-title">${p.title}</div>
+                <div class="bio-desc">${p.desc}</div>
+            </div>
+        </div>
+    `).join('');
+
+    bioHubContainer.innerHTML = `
+        <div class="section-title" style="margin-top:1.5rem; margin-bottom:0.8rem; padding-left:4px;">PROTOKOŁY CELOWANE</div>
+        <div class="bio-hub-scroll">${cardsHTML}</div>
+    `;
+
+    containers.days.appendChild(bioHubContainer);
+
+    bioHubContainer.querySelectorAll('.bio-card').forEach(card => {
+        card.addEventListener('click', () => {
+            try {
+                const protocol = generateBioProtocol({
+                    mode: card.dataset.mode,
+                    focusZone: card.dataset.zone,
+                    durationMin: parseInt(card.dataset.time),
+                    userContext: state.settings.wizardData || {}
+                });
+                renderProtocolStart(protocol);
+            } catch (err) {
+                console.error("Błąd generowania protokołu:", err);
+                alert("Nie udało się utworzyć tej sesji: " + err.message);
+            }
+        });
+    });
+
+    // ============================================================
+    // C. SEKCJA "KOLEJNE W CYKLU"
+    // ============================================================
     let upcomingHTML = '';
     const planDays = getPlanDaysArray(activePlan);
     const totalDaysInPlan = planDays.length;

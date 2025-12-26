@@ -8,7 +8,7 @@ const formatDescription = (sessionLog) => {
   if (!sessionLog || sessionLog.length === 0) {
     return 'Brak szczegółowego logu ćwiczeń.';
   }
-  
+
   // Krok 1: Filtruj log, aby zostawić tylko wykonane ćwiczenia
   const completedExercises = sessionLog.filter(item => item.status !== 'skipped');
 
@@ -29,7 +29,7 @@ const formatDescription = (sessionLog) => {
 const getValidAccessToken = async (integrationData) => {
   const { STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET } = process.env;
   const nowInSeconds = Math.floor(Date.now() / 1000);
-  
+
   if (integrationData.expires_at > nowInSeconds + 300) {
     console.log('Access token is valid.');
     return decrypt(integrationData.access_token);
@@ -46,7 +46,7 @@ const getValidAccessToken = async (integrationData) => {
   });
 
   const { access_token, refresh_token: new_refresh_token, expires_at } = response.data;
-  
+
   const encryptedAccessToken = encrypt(access_token);
   const encryptedRefreshToken = encrypt(new_refresh_token);
 
@@ -72,14 +72,28 @@ exports.handler = async (event) => {
 
   try {
     const userId = await getUserIdFromEvent(event);
+    const body = JSON.parse(event.body);
 
-    // --- TUTAJ BYŁ BŁĄD ---
-    // Poprawiona nazwa zmiennej z `totalDurationSecond` na `totalDurationSeconds`
-    const { sessionLog, title, totalDurationSeconds, startedAt } = JSON.parse(event.body);
-    // --- KONIEC POPRAWKI ---
+    // --- FIX: OBSŁUGA RÓŻNYCH NAZW PÓŁ (trainingTitle vs title) ---
+    const { sessionLog, startedAt } = body;
+    
+    // 1. Ustalanie tytułu (frontend wysyła 'trainingTitle', stara wersja 'title')
+    const finalTitle = body.trainingTitle || body.title;
 
-    if (!sessionLog || !title || totalDurationSeconds === undefined || !startedAt) {
-      return { statusCode: 400, body: JSON.stringify({ error: 'Missing required session data.' }) };
+    // 2. Ustalanie czasu trwania (frontend wysyła 'netDurationSeconds', stara wersja 'totalDurationSeconds')
+    const duration = (body.netDurationSeconds !== undefined) 
+        ? body.netDurationSeconds 
+        : body.totalDurationSeconds;
+
+    // Walidacja
+    if (!sessionLog || !finalTitle || duration === undefined || !startedAt) {
+      console.error('[Strava] Missing fields:', { 
+          hasLog: !!sessionLog, 
+          title: finalTitle, 
+          duration, 
+          startedAt 
+      });
+      return { statusCode: 400, body: JSON.stringify({ error: 'Missing required session data (title or duration mismatch).' }) };
     }
 
     const client = await pool.connect();
@@ -96,18 +110,18 @@ exports.handler = async (event) => {
     } finally {
       client.release();
     }
-    
+
     const accessToken = await getValidAccessToken(integrationData);
     const description = formatDescription(sessionLog);
 
     const stravaPayload = {
-      name: title,
+      name: finalTitle,
       type: 'Workout',
       start_date_local: startedAt,
-      elapsed_time: totalDurationSeconds, // Teraz ta zmienna będzie poprawnie zdefiniowana
+      elapsed_time: duration,
       description: description,
     };
-    
+
     const stravaResponse = await axios.post('https://www.strava.com/api/v3/activities', stravaPayload, {
       headers: {
         Authorization: `Bearer ${accessToken}`,

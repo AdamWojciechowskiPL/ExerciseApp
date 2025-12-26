@@ -1,6 +1,6 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v10.1.0
+# Aplikacja Treningowa (Smart Rehab PWA) v12.5.7
 
-Zaawansowana aplikacja PWA (Progressive Web App) łącząca trening siłowy z rehabilitacją kręgosłupa (metodyka McGill L5-S1). System wykorzystuje architekturę Serverless oraz autorski silnik **"Virtual Physio"** (v3.3), który generuje spersonalizowane plany treningowe na podstawie szczegółowej ankiety medycznej i biomechanicznej.
+Zaawansowana aplikacja PWA (Progressive Web App) łącząca trening siłowy z rehabilitacją kręgosłupa (metodyka McGill L5-S1). System wykorzystuje architekturę Serverless oraz autorski silnik **"Virtual Physio"** (v3.3), wspierany przez nowy moduł **"Exercise Affinity Engine"**, który personalizuje treningi na podstawie preferencji emocjonalnych i odczuwalnej trudności.
 
 ---
 
@@ -12,11 +12,28 @@ Zaawansowana aplikacja PWA (Progressive Web App) łącząca trening siłowy z re
 *   **Walidacja kliniczna:** Blokada generacji planu dla przypadków wykluczonych regułami klinicznymi (`can_generate_plan`).
 *   **Ograniczenie powtarzalności:** Mechanizm `weeklyUsage` limitujący częstość pojawiania się tego samego ćwiczenia w tygodniu.
 
+### ❤️ Exercise Affinity Engine
+*   **Ranking Preferencji (Tiers):** System klasyfikacji ćwiczeń oparty na odczuciach użytkownika, a nie tylko liczbach.
+    *   💎 **Tier S (Supreme):** Ulubione ćwiczenia, najwyższy priorytet w losowaniu.
+    *   🔥 **Tier A (Great):** Solidne i lubiane ćwiczenia.
+    *   🛡️ **Tier B (Neutral):** Standardowa baza.
+    *   ⚠️ **Tier C (Warning):** Ćwiczenia oznaczone jako "Za trudne" lub "Nielubiane".
+*   **Synaptic Tuner:** Innowacyjny interfejs kalibracji (suwak gradientowy), pozwalający precyzyjnie określić stosunek emocjonalny do ćwiczenia.
+*   **Chirurgiczna Ewolucja:** Oznaczenie ćwiczenia jako "Za łatwe" (💤) lub "Za trudne" (🔥) natychmiast wpływa na algorytm progresji/regresji dla tego konkretnego ruchu.
+
+### 🧬 Bio-Protocols & SOS Hub
+Inteligentne "Laboratorium Regeneracji" dostępne na żądanie, niezależnie od głównego planu treningowego.
+*   **On-Demand Generator:** Algorytm działający po stronie klienta (`protocolGenerator.js`), który w ułamku sekundy tworzy mikro-sesję (4-15 min) dopasowaną do aktualnej potrzeby.
+*   **3 Tryby Pracy:**
+    *   🚑 **SOS (Ratunek):** Filtruje ćwiczenia pod kątem ulgi w bólu (`pain_relief_zones`), wymusza wolne tempo i niską trudność.
+    *   🔥 **Booster (Wycisk):** Celowany trening uzupełniający (np. "Brzuch ze stali"), promujący ćwiczenia z wysokim `Affinity Score`.
+    *   🍃 **Reset (Równowaga):** Sesje "Anty-Biuro" lub "Sen", oparte na mobilności i oddechu.
+*   **Time-Boxing:** Algorytm "dopycha" ćwiczenia tak, aby idealnie wypełnić zadeklarowany przez użytkownika czas (np. równe 5 minut).
+
 ### 🏆 Gamifikacja i Analityka
-*   **Exercise Mastery (Karty Mistrzostwa):** System RPG dla ćwiczeń. Każde wykonane ćwiczenie dodaje XP. Karty ewoluują wizualnie (Brąz → Srebro → Złoto → Neon) wraz z postępami.
-*   **Resilience Shield ("Tarcza"):** Wskaźnik ciągłości treningów i odporności na nawroty bólu.
 *   **Hero Dashboard:** Nowoczesny panel z kafelkami statystyk (Seria, Tarcza, Łączny Czas Treningów).
-*   **Streak:** Licznik dni treningowych z rzędu.
+*   **Resilience Shield ("Tarcza"):** Wskaźnik ciągłości treningów i odporności na nawroty bólu.
+*   **Live Affinity Badges:** Widoczne w trakcie treningu odznaki rangi ćwiczenia (np. Tier S), budujące świadomość treningową.
 
 ### 📱 Nowoczesny Dashboard (UI & UX)
 *   **Mission Card:** Karta "Twoja Misja na Dziś" z gradientowym nagłówkiem i statusem bólu.
@@ -26,19 +43,19 @@ Zaawansowana aplikacja PWA (Progressive Web App) łącząca trening siłowy z re
 ### 🏋️ Tryby Treningowe
 1.  **Tryb Dynamiczny:** Plan "szyty na miarę" przez generator AI.
 2.  **Tryb Statyczny:** Klasyczne, sztywne plany treningowe (np. "Fundamenty L5-S1").
-3.  **Focus Mode:** Ekran treningu z dużym zegarem, obsługą TTS (lektora) i animacjami SVG (karta z efektem flip).
+3.  **Focus Mode:** Ekran treningu z dużym zegarem, obsługą TTS (lektora) i animacjami SVG.
 
-### 💾 Session Recovery (Nowość v10.1)
+### 💾 Session Recovery
 *   **Auto-backup:** Stan treningu zapisywany do `localStorage` w czasie rzeczywistym przy każdej zmianie ćwiczenia.
 *   **Wykrywanie przerwanej sesji:** Po awarii/zamknięciu przeglądarki aplikacja wykrywa niezakończony trening.
 *   **Modal przywracania:** Opcja "Przywróć" lub "Porzuć" z informacją o czasie przerwy i postępie.
 *   **Luka czasowa jako pauza:** Czas nieobecności doliczany do `totalPausedTime`.
 
-### ⚙️ Mechanizmy Adaptacyjne
-*   **Workout Mixer:** Rotuje ćwiczenia w ramach tej samej kategorii biomechanicznej, aby uniknąć monotonii.
-*   **Assistant Engine:** Silnik regułowy modyfikujący objętość w czasie rzeczywistym (np. skrócenie treningu przy wysokim poziomie bólu).
+### ⚙️ Mechanizmy Adaptacyjne (Workout Mixer v2.0)
+*   **Mixer z priorytetem Affinity:** Algorytm doboru ćwiczeń uwzględnia teraz nie tylko świeżość i sprzęt, ale także punkty preferencji (+20 za Like, -50 za "Za trudne").
+*   **Safety First:** Preferencje użytkownika działają tylko w obrębie ćwiczeń bezpiecznych klinicznie (zgodnych z mapą bólu).
 *   **Smart Swap:** Możliwość ręcznej wymiany ćwiczenia na alternatywę z tej samej kategorii.
-*   **Obsługa Czarnej Listy:** Blokowanie nielubianych ćwiczeń.
+*   **Obsługa Czarnej Listy:** Blokowanie nielubianych ćwiczeń (Tier F).
 
 ### 📺 Integracja z TV (Google Cast)
 *   **Custom Receiver:** Dedykowana aplikacja na telewizor (Chromecast).
@@ -56,15 +73,16 @@ Zaawansowana aplikacja PWA (Progressive Web App) łącząca trening siłowy z re
 ├── style.css                   # Globalne style (CSS Variables, Dark/Glass Mode)
 ├── app.js                      # Punkt wejścia, routing, init, session recovery check
 ├── auth.js                     # Obsługa logowania (Auth0 SDK + JWT)
-├── state.js                    # Globalny stan aplikacji (Reactive Store)
-├── dataStore.js                # Warstwa API (Fetch, Cache, Sync)
+├── state.js                    # Globalny stan aplikacji (+ userPreferences)
+├── dataStore.js                # Warstwa API (Fetch, Cache, Sync, Preferences)
 ├── utils.js                    # Helpery (Daty, Parsowanie, Hydracja)
-├── sessionRecovery.js          # [NOWOŚĆ] Backup/restore sesji treningowej
+├── sessionRecovery.js          # Backup/restore sesji treningowej
 │
 ├── LOGIKA BIZNESOWA (FRONTEND):
-│   ├── workoutMixer.js         # Logika rotacji ćwiczeń i Smart Swap
+│   ├── protocolGenerator.js    # Generator Bio-Protokołów (Time-Boxing logic)
+│   ├── workoutMixer.js         # Mixer v2.0 (Affinity Scoring Logic)
 │   ├── assistantEngine.js      # Skalowanie objętości (Ból/Czas)
-│   ├── training.js             # Kontroler przebiegu treningu + triggerSessionBackup
+│   ├── training.js             # Kontroler przebiegu treningu + backup
 │   ├── timer.js                # Obsługa stopera i timera
 │   ├── tts.js                  # Text-to-Speech (Synteza mowy)
 │   ├── cast.js                 # Google Cast Sender SDK
@@ -75,32 +93,34 @@ Zaawansowana aplikacja PWA (Progressive Web App) łącząca trening siłowy z re
 │   ├── ui.js                   # Eksporter modułów UI
 │   ├── ui/
 │   │   ├── core.js             # Loader, WakeLock, Nawigacja
-│   │   ├── templates.js        # Generatory HTML (Karty, Hero Dashboard)
-│   │   ├── modals.js           # Okna dialogowe (Swap, Evolution, Session Recovery)
+│   │   ├── templates.js        # Generatory HTML (Affinity Badges, Karty)
+│   │   ├── modals.js           # Okna dialogowe (Tuner Synaptyczny, Swap, Evolution)
 │   │   ├── wizard.js           # Kreator konfiguracji (Ankieta medyczna, SVG Body Map)
 │   │   └── screens/            # Widoki poszczególnych ekranów:
-│   │       ├── dashboard.js    # Ekran Główny (Hero Stats, Karuzela) + plan mode validation
-│   │       ├── training.js     # Ekran Treningu (Focus Mode)
-│   │       ├── history.js      # Kalendarz i Historia
-│   │       ├── library.js      # Baza Ćwiczeń i Filtry
+│   │       ├── dashboard.js    # Ekran Główny
+│   │       ├── training.js     # Ekran Treningu (Live Affinity Badge update)
+│   │       ├── history.js      # Historia + edycja ocen
+│   │       ├── library.js      # Baza Ćwiczeń + filtry Tierów
 │   │       ├── settings.js     # Ustawienia i Integracje
-│   │       ├── summary.js      # Podsumowanie i Feedback + clearSessionBackup
-│   │       ├── help.js         # Ekran Pomocy
-│   │       └── analytics.js    # Ekran Kart Mistrzostwa (Mastery)
-│
+│   │       ├── summary.js      # Podsumowanie z kafelkami ocen
+│   │       └── help.js         # Ekran Pomocy
+│   │  
 ├── BACKEND (NETLIFY FUNCTIONS):
 │   ├── netlify/functions/
-│   │   ├── generate-plan.js        # Generator planów dynamicznych (v3.3)
-│   │   ├── get-app-content.js      # Pobieranie bazy wiedzy (+ primaryPlane, position)
-│   │   ├── get-or-create-user.js   # Inicjalizacja usera
-│   │   ├── save-session.js         # Zapis treningu + Ewolucja planu
-│   │   ├── save-settings.js        # Zapis ustawień i planów
-│   │   ├── get-user-stats.js       # Statystyki (Streak, Resilience, Time)
-│   │   ├── get-exercise-mastery.js # Agregacja statystyk XP dla ćwiczeń
-│   │   ├── manage-blacklist.js     # Zarządzanie czarną listą
-│   │   ├── strava-*.js             # Integracja OAuth ze Strava
-│   │   ├── _auth-helper.js         # Weryfikacja JWT i połączenie DB
-│   │   └── _stats-helper.js        # Logika statystyk (współdzielona)
+│   │   ├── generate-plan.js         # Generator planów dynamicznych (v3.3)
+│   │   ├── _clinical-rule-engine.js # Walidator logiki medycznej i sprzętowej
+│   │   ├── get-app-content.js       # Pobieranie bazy wiedzy
+│   │   ├── get-or-create-user.js    # Inicjalizacja usera
+│   │   ├── get-user-preferences.js  # Pobieranie affinity score/difficulty
+│   │   ├── update-preference.js     # Aktualizacja pojedynczej oceny
+│   │   ├── save-session.js          # Zapis treningu + Batch Update ocen + Ewolucja
+│   │   ├── save-settings.js         # Zapis ustawień i planów
+│   │   ├── get-user-stats.js        # Statystyki (Streak, Resilience)
+│   │   ├── get-exercise-mastery.js  # (Legacy/Support) Agregacja statystyk
+│   │   ├── manage-blacklist.js      # Zarządzanie czarną listą
+│   │   ├── strava-*.js              # Integracja OAuth ze Strava
+│   │   ├── _auth-helper.js          # Weryfikacja JWT i połączenie DB
+│   │   └── _stats-helper.js         # Logika statystyk (współdzielona)
 │
 ├── RECEIVER (APLIKACJA TV):
 │   └── receiver/
@@ -112,9 +132,8 @@ Zaawansowana aplikacja PWA (Progressive Web App) łącząca trening siłowy z re
     ├── netlify.toml            # Config hostingu
     ├── package.json            # Zależności Node.js
     ├── manifest.json           # PWA Manifest
-    └── service-worker.js       # Cache PWA (Offline support)
+    └── service-worker.js       # Cache PWA
 ```
-
 ---
 
 ## 🗄 Struktura Bazy Danych (PostgreSQL)
@@ -177,6 +196,13 @@ Przechowuje trwałe zamiany ćwiczeń (Ewolucja/Dewolucja) dokonane przez algory
 *   `replacement_exercise_id` (FK).
 *   `reason` (TEXT): np. "flare-up", "monotony", "progression".
 
+### 9. `user_exercise_preferences` (NOWOŚĆ)
+Przechowuje relację emocjonalną i percepcyjną użytkownika z ćwiczeniem.
+*   `user_id` (PK, FK): Kto ocenia.
+*   `exercise_id` (PK, FK): Co ocenia.
+*   `affinity_score` (INT): Punkty od -100 do +100. Wpływają na częstotliwość losowania.
+*   `difficulty_rating` (INT): Flaga trudności (-1: Za łatwe, 0: OK, 1: Za trudne).
+*   `updated_at` (TIMESTAMP).
 ---
 
 ## 🚀 Instalacja i Uruchomienie
@@ -209,6 +235,27 @@ Przechowuje trwałe zamiany ćwiczeń (Ewolucja/Dewolucja) dokonane przez algory
     ```
 
 Aplikacja dostępna pod: `http://localhost:8888`
+
+---
+## 🚀 Logika Exercise Affinity Engine (Mixer v2.0)
+
+Nowy algorytm doboru ćwiczeń (`workoutMixer.js`) łączy twarde dane kliniczne z miękkimi preferencjami użytkownika.
+
+### Wzór Rankingu Kandydata
+```javascript
+FinalScore = (FreshnessScore * 1.0) 
+           + (AffinityScore * 1.5) 
+           + RandomFactor 
+           - DifficultyPenalty
+```
+
+1.  **Freshness (Świeżość):** Ćwiczenia nierobione dawno mają wyższy priorytet. Kara -100 pkt za ćwiczenia robione wczoraj/dziś.
+2.  **Affinity (Preferencje):**
+    *   **Like (👍):** +20 pkt (Boostuje szansę wylosowania).
+    *   **Dislike (👎):** -20 pkt (Obniża szansę, ale nie blokuje całkowicie, jeśli brak alternatyw).
+3.  **Difficulty Penalty (Bezpiecznik):**
+    *   **Za trudne (🔥):** -50 pkt. Ćwiczenie spada na dno listy kandydatów. System dąży do jego wymiany (Dewolucji).
+4.  **Priorytet Kliniczny:** Niezależnie od punktów, ćwiczenie musi najpierw przejść walidację Wizarda (np. zakaz rotacji przy przepuklinie).
 
 ---
 
@@ -365,3 +412,28 @@ Gotowy plan tygodniowy jest „sanityzowany" – w sesjach zapisywane są tylko:
 * `equipment` (w formie tekstowej).
 
 Struktura jest zapisywana w `user_settings.settings.dynamicPlanData` jako aktualny plan dynamiczny użytkownika.
+
+## 🧠 Logika Bio-Protocol Generator
+
+Nowy moduł `protocolGenerator.js` działa całkowicie po stronie klienta, zapewniając natychmiastową reakcję interfejsu.
+
+### 1. Wejście (Input)
+Generator przyjmuje obiekt konfiguracyjny:
+*   `mode`: `'sos'` | `'booster'` | `'reset'`
+*   `focusZone`: np. `'cervical'`, `'core'`, `'office'`
+*   `durationMin`: Czas całkowity (np. 5 min)
+*   `userContext`: Dostępny sprzęt, czarna lista.
+
+### 2. Selekcja Kandydatów
+*   Dla trybu **SOS**: Szuka ćwiczeń z tagiem `pain_relief_zones` zgodnym z `focusZone` oraz `difficulty_level <= 2`.
+*   Dla trybu **Booster**: Szuka ćwiczeń z kategorii biomechanicznej (np. `core_anti_rotation`) i sortuje je według `Affinity Score` (ulubione ćwiczenia użytkownika mają priorytet).
+
+### 3. Time-Boxing (Dopychanie Czasu)
+Algorytm buduje linię czasu (Timeline):
+1.  Pobiera kandydata z puli.
+2.  Dodaje czas pracy (np. 60s dla SOS, 40s dla Booster) + czas przejścia (15s).
+3.  Sprawdza, czy `aktualnyCzas + nowyBlok <= durationMin`.
+4.  Powtarza proces aż do wypełnienia zadanego okna czasowego.
+
+### 4. Wyjście (Output)
+Zwraca obiekt sesji kompatybilny z `training.js`, ale ze spłaszczoną strukturą (`flatExercises` gotowe do odtworzenia), co pomija etap standardowej hydracji planu dziennego.

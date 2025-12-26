@@ -10,7 +10,6 @@ import {
     renderLibraryScreen,
     renderTrainingScreen,
     renderHelpScreen,
-    renderAnalyticsScreen, // NOWY IMPORT
     navigateTo,
     showLoader,
     hideLoader,
@@ -25,7 +24,47 @@ import { getSessionBackup, clearSessionBackup, calculateTimeGap, formatTimeGap }
 import { renderSessionRecoveryModal } from './ui/modals.js';
 
 
-// === 2. GŁÓWNE FUNKCJE APLIKACJI ===
+// === 2. POMOCNICZE FUNKCJE NAWIGACJI ===
+
+/**
+ * Sprawdza, czy można bezpiecznie opuścić obecny ekran.
+ * Jeśli użytkownik jest na ekranie podsumowania (niezapisany trening),
+ * pyta o potwierdzenie i czyści backup w razie zgody.
+ */
+function checkUnsavedSummaryNavigation() {
+    const summaryScreen = document.getElementById('summary-screen');
+    // Sprawdzamy czy ekran podsumowania jest aktywny
+    if (summaryScreen && summaryScreen.classList.contains('active')) {
+        const confirmed = confirm("Twoja sesja nie została zapisana. Czy na pewno chcesz wyjść? Dane tego treningu zostaną bezpowrotnie utracone.");
+        if (confirmed) {
+            clearSessionBackup(); // Użytkownik świadomie porzuca sesję -> czyścimy backup
+            return true; // Pozwalamy na nawigację
+        }
+        return false; // Blokujemy nawigację
+    }
+    return true; // Inny ekran, droga wolna
+}
+
+// Funkcja wyświetlająca powiadomienie o aktualizacji PWA
+function showUpdateNotification(worker) {
+    const notification = document.createElement('div');
+    notification.className = 'update-notification';
+    notification.innerHTML = `
+        <div class="update-content">
+            <span>Dostępna nowa wersja aplikacji!</span>
+            <button id="reload-btn">Odśwież</button>
+        </div>
+    `;
+
+    document.body.appendChild(notification);
+
+    document.getElementById('reload-btn').addEventListener('click', () => {
+        worker.postMessage({ type: 'SKIP_WAITING' });
+    });
+}
+
+
+// === 3. GŁÓWNE FUNKCJE APLIKACJI ===
 
 function initAppLogic() {
     renderTrainingScreen();
@@ -34,22 +73,30 @@ function initAppLogic() {
     const brandContainer = document.querySelector('.brand-container');
     if (brandContainer) {
         brandContainer.addEventListener('click', () => {
+            if (!checkUnsavedSummaryNavigation()) return;
             navigateTo('main');
             renderMainScreen();
         });
     }
 
     if (mainNav) {
-        mainNav.querySelector('#nav-main').addEventListener('click', () => { navigateTo('main'); renderMainScreen(); });
-        mainNav.querySelector('#nav-history').addEventListener('click', () => renderHistoryScreen());
-        mainNav.querySelector('#nav-library').addEventListener('click', () => renderLibraryScreen());
-        mainNav.querySelector('#nav-settings').addEventListener('click', renderSettingsScreen);
-
-        // NOWY PRZYCISK W GÓRNYM MENU (opcjonalny, jeśli dodasz do HTML, tutaj obsługa)
-        const statsBtn = mainNav.querySelector('#nav-analytics');
-        if (statsBtn) {
-            statsBtn.addEventListener('click', renderAnalyticsScreen);
-        }
+        mainNav.querySelector('#nav-main').addEventListener('click', () => {
+            if (!checkUnsavedSummaryNavigation()) return;
+            navigateTo('main');
+            renderMainScreen();
+        });
+        mainNav.querySelector('#nav-history').addEventListener('click', () => {
+            if (!checkUnsavedSummaryNavigation()) return;
+            renderHistoryScreen();
+        });
+        mainNav.querySelector('#nav-library').addEventListener('click', () => {
+            if (!checkUnsavedSummaryNavigation()) return;
+            renderLibraryScreen();
+        });
+        mainNav.querySelector('#nav-settings').addEventListener('click', () => {
+            if (!checkUnsavedSummaryNavigation()) return;
+            renderSettingsScreen();
+        });
     }
 
     const bottomNav = document.getElementById('app-bottom-nav');
@@ -58,13 +105,21 @@ function initAppLogic() {
             const button = e.target.closest('.bottom-nav-btn');
             if (!button) return;
 
+            // Sprawdzamy czy to nie jest ten sam ekran (opcjonalna optymalizacja)
+            // ale ważniejsze: sprawdzamy czy można wyjść z summary
+            if (!checkUnsavedSummaryNavigation()) {
+                // Jeśli użytkownik anulował, musimy upewnić się, że wizualnie
+                // aktywny przycisk na dole nie przeskoczył (jeśli dany framework UI to robi automatycznie).
+                // W Twoim kodzie klasa 'active' jest nadawana poniżej, więc return wystarczy.
+                return;
+            }
+
             const screen = button.dataset.screen;
             bottomNav.querySelectorAll('.bottom-nav-btn').forEach(btn => btn.classList.remove('active'));
             button.classList.add('active');
 
             switch (screen) {
                 case 'main': renderMainScreen(); break;
-                case 'analytics': renderAnalyticsScreen(); break; // NOWA OBSŁUGA
                 case 'history': renderHistoryScreen(); break;
                 case 'library': renderLibraryScreen(); break;
                 case 'settings': renderSettingsScreen(); break;
@@ -77,6 +132,7 @@ function initAppLogic() {
     const nextMonthBtn = document.getElementById('next-month-btn');
     if (nextMonthBtn) nextMonthBtn.addEventListener('click', () => { state.currentCalendarView.setMonth(state.currentCalendarView.getMonth() + 1); renderHistoryScreen(); });
     if (containers.calendarGrid) { containers.calendarGrid.addEventListener('click', (e) => { const dayEl = e.target.closest('.calendar-day.has-entry'); if (dayEl && dayEl.dataset.date) { renderDayDetailsScreen(dayEl.dataset.date); } }); }
+
     const searchInput = document.getElementById('library-search-input');
     if (searchInput) searchInput.addEventListener('input', (e) => { renderLibraryScreen(e.target.value); });
 
@@ -85,7 +141,6 @@ function initAppLogic() {
         e.preventDefault();
         state.settings.appStartDate = e.target['setting-start-date'].value;
 
-        // Jeśli jesteśmy w trybie dynamicznym, selector może być ukryty, więc nie nadpisujemy activePlanId jeśli nie istnieje w formularzu
         if (e.target['setting-training-plan']) {
             state.settings.activePlanId = e.target['setting-training-plan'].value;
         }
@@ -152,9 +207,6 @@ export async function main() {
     initializeCastApi();
 
     try {
-        // Równoległe ładowanie planów (Public)
-        const resourcesPromise = dataStore.loadAppContent();
-
         if (loginBtn && !loginBtn.dataset.listenerAttached) { loginBtn.addEventListener('click', login); loginBtn.dataset.listenerAttached = 'true'; }
         if (logoutBtn && !logoutBtn.dataset.listenerAttached) { logoutBtn.addEventListener('click', logout); logoutBtn.dataset.listenerAttached = 'true'; }
 
@@ -165,6 +217,8 @@ export async function main() {
             window.history.replaceState({}, document.title, "/");
         }
 
+        // --- FIX KOLEJNOŚCI ŁADOWANIA (RACE CONDITION) ---
+        // Najpierw sprawdzamy autoryzację, aby wiedzieć czy pobierać content spersonalizowany
         const isAuth = await isAuthenticated();
 
         if (isAuth) {
@@ -173,41 +227,31 @@ export async function main() {
             if (userInfoContainer) userInfoContainer.classList.remove('hidden');
             if (mainNav) mainNav.classList.remove('hidden');
 
-            await getToken();
+            await getToken(); // Upewniamy się, że mamy token przed pobraniem treści
             const profile = getUserProfile();
             const nameEl = document.getElementById('user-display-name');
             if (nameEl) nameEl.textContent = profile.name || profile.email || 'Użytkownik';
 
-            // Czekamy na plany
-            await resourcesPromise;
+            // --- POBIERANIE TREŚCI (TERAZ Z GWARANCJĄ TOKENA) ---
+            // Backend otrzyma token i przefiltruje ćwiczenia (np. isAllowed: false dla kontuzji)
+            await dataStore.loadAppContent();
 
             initAppLogic();
 
-            // --- ETAP 1: SZYBKI START (Ustawienia + Szkielet) ---
             try {
                 localStorage.removeItem('cachedUserStats');
-                // Pobieramy ustawienia i profil (bardzo szybkie zapytanie)
-                await dataStore.initialize();
+                
+                // --- POBIERANIE USTAWIEŃ UŻYTKOWNIKA ---
+                // Tutaj pobieramy wizardData (restrykcje), które frontendowy generator też używa
+                await dataStore.initialize(); 
+                
                 state.isAppInitialized = true;
 
-                // Natychmiast renderujemy nawigację i szkielet Dashboardu
                 if (bottomNav) bottomNav.classList.remove('hidden');
-
-                // UKRYWAMY LOADER TERAZ, ABY POKAZAĆ SZKIELET
                 hideLoader();
-
-                // Wywołujemy renderMainScreen z flagą isLoading=true
-                // To wyświetli migoczący szkielet zamiast pustki
                 renderMainScreen(true);
 
-                console.log("DEBUG: Render szkieletu zakończony. Pobieram historię...");
-
-                // --- ETAP 2: ŁADOWANIE CIĘŻKICH DANYCH (W TLE) ---
-                // Pobieramy historię dla ostatnich 90 dni, aby mieć dane do Kart Mistrzostwa
                 await dataStore.loadRecentHistory(90);
-
-                console.log("DEBUG: Historia gotowa. Przeliczam widok...");
-
                 const wizardStarted = initWizard();
 
                 if (!wizardStarted) {
@@ -219,7 +263,6 @@ export async function main() {
                         renderSettingsScreen();
                         window.history.replaceState({}, document.title, window.location.pathname + "#settings");
                     } else {
-                        // Sprawdź czy jest backup sesji do odzyskania
                         const backup = getSessionBackup();
                         if (backup) {
                             const timeGap = calculateTimeGap(backup);
@@ -229,38 +272,34 @@ export async function main() {
                                 backup,
                                 timeGapFormatted,
                                 () => {
-                                    // Przywróć sesję
                                     resumeFromBackup(backup, timeGap);
                                 },
                                 () => {
-                                    // Porzuć sesję
                                     clearSessionBackup();
                                     renderMainScreen(false);
                                 }
                             );
                         } else {
-                            // Odświeżamy Dashboard, teraz już z pełnymi danymi
                             renderMainScreen(false);
                         }
                     }
                 }
 
                 checkAndMigrateLocalData();
-
-                // Statystyki pobierane na samym końcu (nie blokują UI)
-                const newStats = await dataStore.fetchDetailedStats();
+                await dataStore.fetchDetailedStats();
                 const mainScreen = document.getElementById('main-screen');
                 if (mainScreen && mainScreen.classList.contains('active')) {
-                    // Delikatne odświeżenie tylko jeśli jesteśmy na Dashboardzie
                     renderMainScreen(false);
                 }
             } catch (initError) {
                 console.error("Błąd inicjalizacji:", initError);
-                hideLoader(); // Safety fallback
+                hideLoader();
             }
 
         } else {
-            await resourcesPromise;
+            // Jeśli nie ma autoryzacji, pobieramy wersję publiczną (bez personalizacji)
+            await dataStore.loadAppContent();
+            
             document.getElementById('welcome-screen').classList.remove('hidden');
             document.querySelector('main').classList.add('hidden');
             if (userInfoContainer) userInfoContainer.classList.add('hidden');
@@ -279,7 +318,31 @@ window.addEventListener('DOMContentLoaded', main);
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('/service-worker.js')
-            .then(registration => console.log('SW OK:', registration.scope))
+            .then(registration => {
+                console.log('SW OK:', registration.scope);
+
+                if (registration.waiting) {
+                    showUpdateNotification(registration.waiting);
+                    return;
+                }
+
+                registration.addEventListener('updatefound', () => {
+                    const newWorker = registration.installing;
+                    newWorker.addEventListener('statechange', () => {
+                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                            showUpdateNotification(newWorker);
+                        }
+                    });
+                });
+            })
             .catch(err => console.error('SW Fail:', err));
+
+        let refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (!refreshing) {
+                window.location.reload();
+                refreshing = true;
+            }
+        });
     });
 }

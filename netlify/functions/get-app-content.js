@@ -1,57 +1,45 @@
-// netlify/functions/get-app-content.js
 const { Pool } = require('@neondatabase/serverless');
 const { getUserIdFromEvent } = require('./_auth-helper.js');
 const { buildUserContext, checkExerciseAvailability } = require('./_clinical-rule-engine.js');
 
-// --- HELPER: NORMALIZACJA SPRZĘTU (POPRAWIONA) ---
+// --- HELPER: NORMALIZACJA SPRZĘTU (BEZ TŁUMACZENIA) ---
 const normalizeEquipment = (rawEquipment) => {
-    // 1. Obsługa null/undefined
     if (!rawEquipment) return [];
 
     let items = [];
-
-    // 2. Obsługa TABLICY (Nowy format z bazy)
     if (Array.isArray(rawEquipment)) {
-        items = rawEquipment.map(item => String(item).trim().toLowerCase());
-    } 
-    // 3. Obsługa STRINGA (Stary format lub CSV)
-    else if (typeof rawEquipment === 'string') {
-        items = rawEquipment.split(',').map(item => item.trim().toLowerCase());
-    } 
-    else {
+        items = rawEquipment.map(item => String(item).trim());
+    } else if (typeof rawEquipment === 'string') {
+        items = rawEquipment.split(',').map(item => item.trim());
+    } else {
         return [];
     }
 
-    const MAPPING = {
-        'mata': 'mata', 'mat': 'mata', 'yoga mat': 'mata',
-        'hantle': 'hantle', 'dumbbell': 'hantle', 'dumbbells': 'hantle', 'ciężarki': 'hantle',
-        'guma': 'guma oporowa', 'miniband': 'guma oporowa', 'mini band': 'guma oporowa', 'resistance band': 'guma oporowa', 'taśma': 'guma oporowa',
-        'drążek': 'drążek', 'pull-up bar': 'drążek',
-        'piłka': 'piłka gimnastyczna', 'swiss ball': 'piłka gimnastyczna', 'gym ball': 'piłka gimnastyczna', 'fitball': 'piłka gimnastyczna',
-        'krzesło': 'krzesło', 'chair': 'krzesło',
-        'ściana': 'ściana', 'wall': 'ściana',
-        'wałek': 'roller', 'roller': 'roller',
-        'kettlebell': 'kettlebell', 'kettle': 'kettlebell',
-        'ławka': 'ławka', 'bench': 'ławka'
-    };
-
+    // Lista ignorowanych wartości (techniczne braki sprzętu)
     const IGNORE_LIST = ['brak', 'none', 'brak sprzętu', 'masa własna', 'bodyweight', ''];
     const normalizedSet = new Set();
 
     items.forEach(item => {
-        if (IGNORE_LIST.includes(item)) return;
-        const canonical = MAPPING[item] || item;
-        // Formatowanie: pierwsza litera duża
-        const formatted = canonical.charAt(0).toUpperCase() + canonical.slice(1);
+        // Sprawdzamy ignorowane (case-insensitive)
+        if (IGNORE_LIST.includes(item.toLowerCase())) return;
+
+        // FORMATOWANIE: Tylko pierwsza litera duża, reszta bez zmian (zachowujemy oryginał z bazy)
+        // Jeśli nazwa w bazie to "dumbbell", wynik to "Dumbbell".
+        // Jeśli "Jump Rope", wynik to "Jump Rope".
+        const formatted = item.charAt(0).toUpperCase() + item.slice(1);
         normalizedSet.add(formatted);
     });
 
     return Array.from(normalizedSet);
 };
 
-// --- HELPER: NORMALIZACJA STREF BÓLU ---
 const normalizePainZones = (zones) => {
     if (Array.isArray(zones)) return zones;
+    return [];
+};
+
+const normalizeArray = (arr) => {
+    if (Array.isArray(arr)) return arr;
     return [];
 };
 
@@ -76,7 +64,7 @@ exports.handler = async (event) => {
     // 1. Pobierz Ćwiczenia
     const exercisesResult = await client.query('SELECT * FROM exercises;');
 
-    // 2. Pobierz Personalizację (Overrides, Blacklist, Settings/WizardData)
+    // 2. Pobierz Personalizację
     let overrides = {};
     let blockedIds = new Set();
     let clinicalContext = null;
@@ -111,10 +99,10 @@ exports.handler = async (event) => {
 
     // 3. Transformacja Ćwiczeń z Walidacją i Normalizacją
     const exercises = exercisesResult.rows.reduce((acc, ex) => {
-      // Normalizacja sprzętu DO TABLICY STRINGÓW (Teraz działa poprawnie dla array i string)
       const normalizedEquipment = normalizeEquipment(ex.equipment);
       const normalizedZones = normalizePainZones(ex.pain_relief_zones);
 
+      // --- NEW SCHEMA MAPPING ---
       const exForCheck = {
           ...ex,
           is_unilateral: !!ex.is_unilateral,
@@ -123,7 +111,10 @@ exports.handler = async (event) => {
           default_tempo: ex.default_tempo,
           primary_plane: ex.primary_plane || 'multi',
           position: ex.position || null,
-          is_foot_loading: !!ex.is_foot_loading
+          is_foot_loading: !!ex.is_foot_loading,
+          // New Fields for Clinical Engine
+          impact_level: ex.impact_level || 'low',
+          spine_load_level: ex.spine_load_level || 'low'
       };
 
       let isAllowed = true;
@@ -138,7 +129,7 @@ exports.handler = async (event) => {
       acc[ex.id] = {
         name: ex.name,
         description: ex.description,
-        equipment: normalizedEquipment, // Przekazujemy poprawną tablicę
+        equipment: normalizedEquipment,
         youtube_url: ex.youtube_url,
         categoryId: ex.category_id,
         difficultyLevel: ex.difficulty_level,
@@ -146,7 +137,7 @@ exports.handler = async (event) => {
         maxReps: ex.max_recommended_reps,
         nextProgressionId: ex.next_progression_id,
         painReliefZones: normalizedZones,
-        
+
         hasAnimation: !!ex.animation_svg && ex.animation_svg.length > 10,
 
         defaultTempo: ex.default_tempo || null,
@@ -155,13 +146,21 @@ exports.handler = async (event) => {
         position: ex.position || null,
         isFootLoading: !!ex.is_foot_loading,
 
+        // --- NEW SCHEMA FRONTEND PROPERTIES ---
+        goalTags: normalizeArray(ex.goal_tags),
+        metabolicIntensity: ex.metabolic_intensity || 1, // 1-5
+        impactLevel: ex.impact_level || 'low', // low, moderate, high
+        spineLoadLevel: ex.spine_load_level || 'low', // low, moderate, high
+        conditioningStyle: ex.conditioning_style || 'none', // steady, interval, circuit
+        recommendedInterval: ex.recommended_interval_sec || null, // { work, rest, rounds }
+
         isAllowed: isAllowed,
         rejectionReason: rejectionReason
       };
       return acc;
     }, {});
 
-    // 4. Pobierz i Zbuduj Plan
+    // 4. Pobierz i Zbuduj Plan (bez zmian)
     const plansQuery = `
       SELECT
         tp.id as plan_id, tp.name as plan_name, tp.description as plan_description, tp.global_rules,

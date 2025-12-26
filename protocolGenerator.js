@@ -3,8 +3,7 @@ import { state } from './state.js';
 import { checkExerciseAvailability, buildClinicalContext } from './clinicalEngine.js';
 
 /**
- * PROTOCOL GENERATOR v5.5 (Unified Clinical Logic)
- * Zaktualizowano o import `clinicalEngine.js`.
+ * PROTOCOL GENERATOR v5.6 (Added Metabolic Burn Support)
  */
 
 // ============================================================
@@ -20,9 +19,10 @@ const ZONE_MAP = {
     'legs': { type: 'cat', keys: ['stretching', 'nerve_flossing'] },
     'office': { type: 'mixed', keys: ['thoracic', 'hip_mobility', 'neck'] },
     'sleep': { type: 'cat', keys: ['breathing', 'muscle_relaxation', 'stretching'] },
-    'core': { type: 'cat', keys: ['core_anti_extension', 'core_anti_rotation', 'core_anti_flexion'] },
+    'core': { type: 'cat', keys: ['core_anti_extension', 'core_anti_rotation', 'core_anti_flexion', 'core_anti_lateral_flexion'] }, // ADDED NEW CAT
     'glute': { type: 'cat', keys: ['glute_activation'] },
-    'full_body': { type: 'all', keys: [] }
+    'full_body': { type: 'all', keys: [] },
+    'metabolic': { type: 'tag', keys: ['fat_loss', 'conditioning'] } // NOWY TYP DLA BURN
 };
 
 const TIMING_CONFIG = {
@@ -32,7 +32,9 @@ const TIMING_CONFIG = {
     'calm': { work: 120, rest: 10, tempo: 'Wolne / nos / przepona' },
     'flow': { work: 40, rest: 5, tempo: 'Płynne / kontrola zakresu' },
     'neuro': { work: 25, rest: 20, tempo: 'Delikatne / bez bólu' },
-    'ladder': { work: 50, rest: 20, tempo: 'Technika / kontrola' }
+    'ladder': { work: 50, rest: 20, tempo: 'Technika / kontrola' },
+    // NOWY CONFIG DLA SPALANIA
+    'burn': { work: 30, rest: 15, tempo: 'Żwawe (Low Impact)' }
 };
 
 const SECONDS_PER_REP_ESTIMATE = 4;
@@ -45,7 +47,7 @@ const INTRA_SET_REST = 15;
 // ============================================================
 
 export function generateBioProtocol({ mode, focusZone, durationMin, userContext, timeFactor = 1.0 }) {
-    console.log(`🧪 [ProtocolGenerator] Generowanie v5.5: ${mode} / ${focusZone}`);
+    console.log(`🧪 [ProtocolGenerator] Generowanie v5.6: ${mode} / ${focusZone}`);
 
     const targetSeconds = durationMin * 60;
     const config = TIMING_CONFIG[mode] || TIMING_CONFIG['reset'];
@@ -114,7 +116,15 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
         sequence.push(ex);
         usedIds.add(ex.id);
         const mult = (ex.isUnilateral || String(ex.reps_or_time).includes('/str')) ? 2 : 1;
-        currentSeconds += baseCycleTime * mult;
+        
+        // Obsługa recommendedInterval dla trybu BURN
+        let cycleDuration = baseCycleTime;
+        if (mode === 'burn' && ex.recommendedInterval) {
+            // Jeśli ćwiczenie ma własny interwał (np. 40/20)
+            const rec = ex.recommendedInterval;
+            cycleDuration = (rec.work + rec.rest) * timeFactor;
+        }
+        currentSeconds += cycleDuration * mult;
     };
 
     const runStrategy = (poolMain, poolFallback) => {
@@ -135,7 +145,14 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
         const breathing = candidates.filter(ex => ['breathing_control', 'breathing'].includes(ex.categoryId));
         const relax = candidates.filter(ex => ex.categoryId === 'muscle_relaxation');
         runStrategy([...breathing, ...relax], candidates);
-    } else {
+    } 
+    else if (mode === 'burn') {
+        // Tryb BURN preferuje wysoką intensywność metaboliczną
+        const highIntensity = candidates.filter(ex => (ex.metabolicIntensity || 1) >= 3);
+        const mediumIntensity = candidates.filter(ex => (ex.metabolicIntensity || 1) === 2);
+        runStrategy(highIntensity, mediumIntensity);
+    }
+    else {
         runStrategy(candidates, null);
     }
 
@@ -171,8 +188,14 @@ function buildSteps(exercises, config, mode, timeFactor) {
     let driftCompensation = 0;
 
     exercises.forEach((ex, index) => {
-        const baseWork = config.work * timeFactor;
-        const transitionRest = Math.round(config.rest * timeFactor);
+        let baseWork = config.work * timeFactor;
+        let transitionRest = Math.round(config.rest * timeFactor);
+
+        // Obsługa recommendedInterval (BURN)
+        if (mode === 'burn' && ex.recommendedInterval) {
+            baseWork = ex.recommendedInterval.work * timeFactor;
+            transitionRest = Math.round(ex.recommendedInterval.rest * timeFactor);
+        }
 
         const randomJitter = 0.7 + (Math.random() * 0.6);
         const lvl = parseInt(ex.difficultyLevel || 1);
@@ -180,7 +203,11 @@ function buildSteps(exercises, config, mode, timeFactor) {
         if (lvl >= 4) difficultyMod = 0.85;
         if (lvl === 1) difficultyMod = 1.15;
 
-        let targetTotalSeconds = (baseWork * randomJitter * difficultyMod) - (driftCompensation * 0.3);
+        // W trybie BURN trzymamy się sztywno czasów (Interval Timer)
+        let targetTotalSeconds = mode === 'burn' 
+            ? baseWork 
+            : (baseWork * randomJitter * difficultyMod) - (driftCompensation * 0.3);
+            
         targetTotalSeconds = Math.max(15, targetTotalSeconds);
 
         const rawReps = String(ex.reps_or_time || "").toLowerCase();
@@ -189,7 +216,7 @@ function buildSteps(exercises, config, mode, timeFactor) {
         const isIso = tempoStr.includes("izo") || tempoStr.includes("iso");
         const hasMaxDuration = (ex.maxDuration > 0) || (ex.max_recommended_duration > 0);
 
-        const isTimeBased = hasTimeUnits || isIso || hasMaxDuration;
+        const isTimeBased = hasTimeUnits || isIso || hasMaxDuration || mode === 'burn'; // Burn zawsze na czas
         const isRepBased = !isTimeBased;
 
         let sets = 1;
@@ -210,6 +237,7 @@ function buildSteps(exercises, config, mode, timeFactor) {
             let totalSeconds = Math.round(targetTotalSeconds);
             const maxDuration = ex.maxDuration || ex.max_recommended_duration || DEFAULT_MAX_DURATION;
 
+            // W trybie BURN nie dzielimy na serie, chyba że przekracza maxDuration
             sets = Math.ceil(totalSeconds / maxDuration);
             const secondsPerSet = Math.round(totalSeconds / sets / 5) * 5;
 
@@ -269,15 +297,31 @@ function getCandidates(mode, focusZone, ctx = {}) {
     if (!zoneConfig) return [];
 
     return library.filter(ex => {
-        // ZMIANA: Użycie centralnego silnika
+        // Walidacja kliniczna (impact, spine load, equipment)
         const result = checkExerciseAvailability(ex, clinicalCtx, { ignoreEquipment });
         if (!result.allowed) {
-            // Wyjątek: Jeśli rejectionReason to 'missing_equipment' a my ignorujemy sprzęt -> przepuść
             if (ignoreEquipment && result.reason === 'missing_equipment') { /* pass */ }
             else return false;
         }
 
         const difficulty = parseInt(ex.difficultyLevel || 1, 10);
+        
+        // Logika specyficzna dla trybów
+        if (mode === 'burn') {
+            // Musi być tag 'fat_loss' lub 'conditioning', ALBO kategoria 'conditioning_low_impact'
+            const hasTag = (ex.goalTags && (ex.goalTags.includes('fat_loss') || ex.goalTags.includes('conditioning')));
+            const isCat = ex.categoryId === 'conditioning_low_impact';
+            
+            if (!hasTag && !isCat) return false;
+            
+            // Preferuj metabolic intensity >= 2
+            if ((ex.metabolicIntensity || 1) < 2) return false;
+            
+            // Low impact jest wymuszany przez clinical engine jeśli user ma kontuzję,
+            // ale tutaj możemy dodać miękki filtr preferencji
+            return true;
+        }
+
         if (mode === 'sos' && difficulty > 2) return false;
         if (mode === 'booster' && difficulty < 2) return false;
         if (mode === 'reset' && difficulty > 3) return false;
@@ -304,6 +348,7 @@ function getCandidates(mode, focusZone, ctx = {}) {
         if (zoneConfig.type === 'zone') return ex.painReliefZones && ex.painReliefZones.some(z => zoneConfig.keys.includes(z));
         else if (zoneConfig.type === 'cat') return zoneConfig.keys.includes(ex.categoryId);
         else if (zoneConfig.type === 'mixed') return zoneConfig.keys.includes(ex.categoryId) || (ex.painReliefZones && ex.painReliefZones.some(z => zoneConfig.keys.includes(z)));
+        else if (zoneConfig.type === 'tag') return ex.goalTags && ex.goalTags.some(t => zoneConfig.keys.includes(t));
         else if (zoneConfig.type === 'all') return true;
         return false;
     });
@@ -312,7 +357,6 @@ function getCandidates(mode, focusZone, ctx = {}) {
 function getCandidatesSafeFallback(mode, clinicalCtx) {
     const library = Object.entries(state.exerciseLibrary).map(([id, data]) => ({ id, ...data }));
     return library.filter(ex => {
-        // ZMIANA: Użycie centralnego silnika
         const result = checkExerciseAvailability(ex, clinicalCtx, { ignoreEquipment: true, ignoreDifficulty: true });
         if (!result.allowed) return false;
 
@@ -331,6 +375,12 @@ function scoreCandidates(candidates, mode, userContext) {
         score += (pref.score || 0);
         if (recentSessions.includes(ex.id)) score -= 50;
         if (mode === 'booster') score += (parseInt(ex.difficultyLevel || 1) * 5);
+        if (mode === 'burn') {
+            // Promuj wyższą intensywność metaboliczną
+            score += (ex.metabolicIntensity || 1) * 10;
+            // Promuj styl 'interval'
+            if (ex.conditioningStyle === 'interval') score += 15;
+        }
         score += Math.random() * 20;
         ex._genScore = score;
     });
@@ -342,11 +392,13 @@ function generateTitle(mode, zone) {
         'cervical': 'Szyja', 'thoracic': 'Plecy (Góra)', 'lumbar': 'Odcinek Lędźwiowy',
         'sciatica': 'Nerw Kulszowy', 'hips': 'Biodra', 'core': 'Brzuch / Core',
         'office': 'Anty-Biuro', 'sleep': 'Sen', 'glute': 'Pośladki', 'full_body': 'Całe Ciało',
-        'legs': 'Nogi'
+        'legs': 'Nogi',
+        'metabolic': 'Kondycja'
     }[zone] || 'Bio-Protokół';
     const suffix = {
         'sos': 'Ratunkowy', 'booster': 'Power', 'reset': 'Flow',
-        'calm': 'Wyciszenie', 'flow': 'Mobility Flow', 'neuro': 'Neuro-Ślizgi', 'ladder': 'Progresja'
+        'calm': 'Wyciszenie', 'flow': 'Mobility Flow', 'neuro': 'Neuro-Ślizgi', 'ladder': 'Progresja',
+        'burn': 'Fat Burner'
     }[mode] || '';
     return `${zoneName}: ${suffix}`;
 }
@@ -357,6 +409,7 @@ function generateDescription(mode, duration) {
     if (mode === 'neuro') return `Praca z układem nerwowym (${duration} min). Delikatne zakresy.`;
     if (mode === 'ladder') return `Budowanie techniki (${duration} min). Stopniowanie trudności.`;
     if (mode === 'booster') return `Intensywny trening (${duration} min). Utrzymuj technikę.`;
+    if (mode === 'burn') return `Kondycja Low-Impact (${duration} min). Spalanie bez skoków.`;
     return `Regeneracja (${duration} min). Skup się na oddechu.`;
 }
 
@@ -365,11 +418,13 @@ function mapModeToSectionName(mode) {
     if (mode === 'calm') return 'Wyciszenie';
     if (mode === 'booster') return 'Ogień';
     if (mode === 'ladder') return 'Wyzwanie';
+    if (mode === 'burn') return 'Cardio';
     return 'Regeneracja';
 }
 
 function getRestName(mode) {
     if (mode === 'booster') return 'Szybka Przerwa';
+    if (mode === 'burn') return 'Aktywna Przerwa';
     if (mode === 'calm') return 'Przejście';
     if (mode === 'flow') return 'Płynna zmiana';
     return 'Rozluźnienie';
@@ -378,6 +433,7 @@ function getRestName(mode) {
 function calculateXP(mode, minutes) {
     const base = minutes * 10;
     if (mode === 'booster') return Math.round(base * 1.5);
+    if (mode === 'burn') return Math.round(base * 1.6); // Więcej XP za burn
     if (mode === 'ladder') return Math.round(base * 1.2);
     if (mode === 'calm') return Math.round(base * 0.6);
     return base;
@@ -387,5 +443,6 @@ function calculateResilienceBonus(mode) {
     if (mode === 'sos' || mode === 'reset') return 5;
     if (mode === 'calm') return 7;
     if (mode === 'neuro') return 6;
+    if (mode === 'burn') return 8;
     return 1;
 }

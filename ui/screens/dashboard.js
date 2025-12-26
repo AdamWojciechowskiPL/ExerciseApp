@@ -298,24 +298,20 @@ export const renderMainScreen = (isLoading = false) => {
                     const painLevel = parseInt(opt.dataset.level, 10);
 
                     // 1. Sprawdzamy czy to tryb SOS (Level 8+)
-                    // Używamy helpera z assistantEngine, żeby zasymulować odpowiedź
                     const checkPlan = assistant.adjustTrainingVolume(finalPlan, painLevel);
                     const isSOS = checkPlan?._modificationInfo?.shouldSuggestSOS;
 
-                    // Aktualizacja przycisku Start
                     if (isSOS) {
                         startBtn.textContent = "🏥 Aktywuj Protokół SOS";
                         startBtn.style.backgroundColor = "var(--danger-color)";
                         startBtn.dataset.mode = 'sos';
-                        // FIX: Aktualizujemy czas na sztywno dla SOS (protokół trwa ok 10 min)
                         timeBadge.textContent = "10 min";
                     } else {
-                        // Standardowa aktualizacja czasu
                         const newDuration = assistant.estimateDuration(checkPlan);
                         timeBadge.textContent = `${newDuration} min`;
 
                         startBtn.textContent = "Start Misji";
-                        startBtn.style.backgroundColor = ""; // Reset do domyślnego
+                        startBtn.style.backgroundColor = ""; 
                         startBtn.dataset.mode = 'normal';
                     }
 
@@ -341,7 +337,6 @@ export const renderMainScreen = (isLoading = false) => {
                             return;
                         } catch (err) {
                             console.error("SOS Gen Error:", err);
-                            // Fallback do normalnego startu
                         }
                     }
                 }
@@ -360,43 +355,48 @@ export const renderMainScreen = (isLoading = false) => {
     const wz = state.settings.wizardData || {};
     const protocols = [];
 
+    // --- NOWOŚĆ: TRYB BURN (Dla wszystkich, którzy nie mają ostrych restrykcji) ---
+    // Sprawdzamy, czy użytkownik nie ma ostrego bólu (resilience != Critical)
+    const canBurn = state.userStats?.resilience?.status !== 'Critical';
+    if (canBurn) {
+        protocols.push({ 
+            mode: 'burn', 
+            zone: 'metabolic', 
+            time: 15, 
+            title: 'Metabolic Burn', 
+            desc: 'Low-impact Fat Loss', 
+            icon: '🔥',
+            styleClass: 'bio-card-booster' // używamy stylu boostera, bo to intensywne
+        });
+    }
+
     // 1. ZAWSZE DOSTĘPNE (Baza)
-    protocols.push({ mode: 'booster', zone: 'core', time: 5, title: 'Brzuch ze stali', desc: 'Szybki obwód', icon: '🔥' });
+    protocols.push({ mode: 'booster', zone: 'core', time: 5, title: 'Brzuch ze stali', desc: 'Szybki obwód', icon: '⚡' });
     protocols.push({ mode: 'flow', zone: 'full_body', time: 8, title: 'Mobility Flow', desc: 'Płynny ruch całego ciała', icon: '🌊' });
     protocols.push({ mode: 'calm', zone: 'sleep', time: 10, title: 'Głęboki Reset', desc: 'Oddech i wyciszenie', icon: '🌙' });
 
-    // 2. KONTEKSTOWE (Na podstawie Wizarda)
-    
-    // Praca siedząca -> Anty-Biuro (Flow lub Reset)
+    // 2. KONTEKSTOWE
     if (wz.work_type === 'sedentary') {
         protocols.unshift({ mode: 'flow', zone: 'office', time: 5, title: 'Anty-Biuro', desc: 'Rozprostuj się po pracy', icon: '🪑' });
     }
 
-    // Szyja -> SOS lub Flow
     if (wz.pain_locations?.includes('cervical')) {
         protocols.unshift({ mode: 'sos', zone: 'cervical', time: 4, title: 'Szyja: Ratunek', desc: 'Ulga w napięciu karku', icon: '💊' });
     }
 
-    // Rwa kulszowa / Biodra -> NEURO
     const hasSciatica = wz.medical_diagnosis?.includes('sciatica') || wz.pain_locations?.includes('sciatica');
     const hasHipIssues = wz.pain_locations?.includes('hip') || wz.medical_diagnosis?.includes('piriformis');
-    
+
     if (hasSciatica || hasHipIssues) {
         protocols.unshift({ mode: 'neuro', zone: 'sciatica', time: 6, title: 'Neuro-Ślizgi', desc: 'Mobilizacja nerwów', icon: '⚡' });
     }
 
-    // Jeśli użytkownik jest zaawansowany -> LADDER
     if (wz.exercise_experience === 'advanced' || wz.exercise_experience === 'regular') {
         protocols.push({ mode: 'ladder', zone: 'full_body', time: 12, title: 'Drabina Progresji', desc: 'Buduj technikę', icon: '🧗' });
     }
 
-    // Fallback: Glute Pump jeśli mało kart
-    if (protocols.length < 3) {
-        protocols.push({ mode: 'booster', zone: 'glute', time: 6, title: 'Glute Pump', desc: 'Aktywacja pośladków', icon: '🍑' });
-    }
-
     const cardsHTML = protocols.map(p => `
-        <div class="bio-card bio-card-${p.mode}"
+        <div class="bio-card ${p.styleClass || `bio-card-${p.mode}`}"
              data-mode="${p.mode}" data-zone="${p.zone}" data-time="${p.time}">
             <div class="bio-bg-icon">${p.icon}</div>
             <div class="bio-header">

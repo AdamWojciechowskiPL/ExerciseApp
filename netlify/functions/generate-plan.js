@@ -19,44 +19,35 @@ const CATEGORY_WEIGHTS = {
     'core_anti_extension': 1.0,
     'core_anti_rotation': 1.0,
     'core_anti_flexion': 1.0,
-    'nerve_flossing': 0.0
+    'core_anti_lateral_flexion': 1.0, // Added support for new cat
+    'nerve_flossing': 0.0,
+    'conditioning_low_impact': 0.5 // Default low
 };
 
 const BREATHING_CATEGORIES = ['breathing', 'breathing_control', 'muscle_relaxation'];
 
-// --- HELPER: NORMALIZACJA SPRZĘTU (POPRAWIONA) ---
+// --- HELPER: NORMALIZACJA SPRZĘTU (BEZ TŁUMACZENIA) ---
 const normalizeEquipment = (rawEquipment) => {
     if (!rawEquipment) return [];
 
     let items = [];
     if (Array.isArray(rawEquipment)) {
-        items = rawEquipment.map(item => String(item).trim().toLowerCase());
+        items = rawEquipment.map(item => String(item).trim());
     } else if (typeof rawEquipment === 'string') {
-        items = rawEquipment.split(',').map(item => item.trim().toLowerCase());
+        items = rawEquipment.split(',').map(item => item.trim());
     } else {
         return [];
     }
 
-    const MAPPING = {
-        'mata': 'mata', 'mat': 'mata', 'yoga mat': 'mata',
-        'hantle': 'hantle', 'dumbbell': 'hantle', 'dumbbells': 'hantle', 'ciężarki': 'hantle',
-        'guma': 'guma oporowa', 'miniband': 'guma oporowa', 'mini band': 'guma oporowa', 'resistance band': 'guma oporowa', 'taśma': 'guma oporowa',
-        'drążek': 'drążek', 'pull-up bar': 'drążek',
-        'piłka': 'piłka gimnastyczna', 'swiss ball': 'piłka gimnastyczna', 'gym ball': 'piłka gimnastyczna', 'fitball': 'piłka gimnastyczna',
-        'krzesło': 'krzesło', 'chair': 'krzesło',
-        'ściana': 'ściana', 'wall': 'ściana',
-        'wałek': 'roller', 'roller': 'roller',
-        'kettlebell': 'kettlebell', 'kettle': 'kettlebell',
-        'ławka': 'ławka', 'bench': 'ławka'
-    };
     const IGNORE_LIST = ['brak', 'none', 'brak sprzętu', 'masa własna', 'bodyweight', ''];
     const normalizedSet = new Set();
+
     items.forEach(item => {
-        if (IGNORE_LIST.includes(item)) return;
-        const canonical = MAPPING[item] || item;
-        const formatted = canonical.charAt(0).toUpperCase() + canonical.slice(1);
+        if (IGNORE_LIST.includes(item.toLowerCase())) return;
+        const formatted = item.charAt(0).toUpperCase() + item.slice(1);
         normalizedSet.add(formatted);
     });
+
     return Array.from(normalizedSet);
 };
 
@@ -91,7 +82,6 @@ exports.handler = async (event) => {
                 ...ex,
                 is_unilateral: !!ex.is_unilateral,
                 pain_relief_zones: normalizePainZones(ex.pain_relief_zones),
-                // Używamy poprawionej normalizacji
                 equipment: normalizeEquipment(ex.equipment),
                 default_tempo: ex.default_tempo,
                 primary_plane: ex.primary_plane || 'multi',
@@ -102,21 +92,40 @@ exports.handler = async (event) => {
             const ctx = buildUserContext(userData);
             blacklistResult.rows.forEach(row => ctx.blockedIds.add(row.exercise_id));
 
-            // --- SEKCJA WAG (Bez zmian) ---
+            // --- SEKCJA WAG ---
             let weights = { ...CATEGORY_WEIGHTS };
             const diagnosis = userData.medical_diagnosis || [];
 
-            if (diagnosis.includes('scoliosis')) { weights['core_anti_rotation'] += 0.6; weights['glute_activation'] += 0.4; weights['spine_mobility'] += 0.3; }
-            if (diagnosis.includes('facet_syndrome') || diagnosis.includes('stenosis')) { weights['hip_mobility'] += 0.6; weights['core_anti_extension'] -= 0.5; }
+            if (diagnosis.includes('scoliosis')) {
+                weights['core_anti_rotation'] += 0.6;
+                weights['core_anti_lateral_flexion'] += 0.5;
+                weights['glute_activation'] += 0.4;
+                weights['spine_mobility'] += 0.3;
+            }
+            if (diagnosis.includes('facet_syndrome') || diagnosis.includes('stenosis')) {
+                weights['hip_mobility'] += 0.6;
+                weights['core_anti_extension'] -= 0.5;
+            }
             if (diagnosis.includes('disc_herniation')) {
-                weights['core_anti_extension'] += 0.3; weights['core_anti_rotation'] += 0.2;
+                weights['core_anti_extension'] += 0.3;
+                weights['core_anti_rotation'] += 0.2;
                 if (ctx.tolerancePattern !== 'flexion_intolerant' && ctx.severityScore < 4) weights['core_anti_flexion'] += 0.5;
             }
-            if (ctx.painFilters.has('sciatica') || diagnosis.includes('piriformis')) { weights['nerve_flossing'] = 2.5; weights['glute_activation'] += 0.3; }
+            if (ctx.painFilters.has('sciatica') || diagnosis.includes('piriformis')) {
+                weights['nerve_flossing'] = 2.5;
+                weights['glute_activation'] += 0.3;
+            }
+
+            // Conditioning Logic
+            if (userData.primary_goal === 'fat_loss' || (userData.goal_tags && userData.goal_tags.includes('fat_loss'))) {
+                weights['conditioning_low_impact'] += 1.5;
+            }
 
             const painChar = userData.pain_character || [];
             const painLocs = userData.pain_locations || [];
-            if (painChar.includes('radiating') && (painLocs.includes('sciatica') || painLocs.includes('lumbar_radiculopathy'))) { weights['nerve_flossing'] = Math.max(weights['nerve_flossing'], 2.5); }
+            if (painChar.includes('radiating') && (painLocs.includes('sciatica') || painLocs.includes('lumbar_radiculopathy'))) {
+                weights['nerve_flossing'] = Math.max(weights['nerve_flossing'], 2.5);
+            }
 
             const workType = userData.work_type;
             if (workType === 'sedentary') { weights['hip_mobility'] += 0.5; weights['spine_mobility'] += 0.4; weights['glute_activation'] += 0.4; }
@@ -128,8 +137,13 @@ exports.handler = async (event) => {
 
             const userPriorities = [...(userData.session_component_weights || []), userData.primary_goal, ...(userData.secondary_goals || [])];
             if (userPriorities.includes('mobility') || userPriorities.includes('flexibility')) { weights['hip_mobility'] += 0.5; weights['spine_mobility'] += 0.5; }
-            if (userPriorities.includes('stability') || userPriorities.includes('core')) { weights['core_anti_extension'] += 0.4; weights['core_anti_rotation'] += 0.4; weights['core_anti_flexion'] += 0.4; }
+            if (userPriorities.includes('stability') || userPriorities.includes('core')) {
+                weights['core_anti_extension'] += 0.4;
+                weights['core_anti_rotation'] += 0.4;
+                weights['core_anti_flexion'] += 0.4;
+            }
             if (userPriorities.includes('strength')) { weights['glute_activation'] += 0.6; }
+            if (userPriorities.includes('fat_loss') || userPriorities.includes('conditioning')) { weights['conditioning_low_impact'] += 1.0; }
             if (userPriorities.includes('breathing') || userPriorities.includes('pain_relief')) { weights['breathing'] += 0.7; }
             if (userPriorities.includes('posture')) { weights['core_anti_extension'] += 0.5; weights['spine_mobility'] += 0.3; }
 
@@ -154,7 +168,7 @@ exports.handler = async (event) => {
             const weeklyPlan = {
                 id: `dynamic-${Date.now()}`,
                 name: "Terapia Personalizowana",
-                description: "Plan wygenerowany przez Asystenta AI (v4.3)",
+                description: "Plan wygenerowany przez Asystenta AI (v4.4 - Split Load)",
                 days: []
             };
 
@@ -236,11 +250,32 @@ function generateSession(dayNum, candidates, weights, severity, experience, week
         session.main.push(pickOne(candidates, 'nerve_flossing', sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage));
     }
 
-    const coreCats = ['core_anti_extension', 'core_anti_flexion', 'core_anti_rotation'];
+    // Conditioning (NOWE)
+    if (weights['conditioning_low_impact'] > 1.2) {
+        session.main.push(pickOne(candidates, 'conditioning_low_impact', sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage));
+    }
+
+    // Core Logic z obsługą Split Load
+    const coreCats = ['core_anti_extension', 'core_anti_flexion', 'core_anti_rotation', 'core_anti_lateral_flexion'];
     coreCats.sort((a, b) => weights[b] - weights[a]);
 
-    session.main.push(pickOne(candidates, coreCats[0], sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage));
-    session.main.push(pickOne(candidates, coreCats[1], sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage));
+    const primaryCoreCat = coreCats[0];
+    const secondaryCoreCat = coreCats[1];
+
+    // Slot 1: Najważniejszy Core
+    session.main.push(pickOne(candidates, primaryCoreCat, sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage));
+
+    // ZMIANA: Load Splitting (Drugie ćwiczenie z tej samej kategorii zamiast 5 serii jednego)
+    // Jeśli waga priorytetu jest wysoka (> 1.2), dodaj drugie unikalne ćwiczenie z tej samej kategorii.
+    if (weights[primaryCoreCat] >= 1.2) {
+        const extraEx = pickOne(candidates, primaryCoreCat, sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage);
+        if (extraEx) {
+            session.main.push(extraEx);
+        }
+    }
+
+    // Slot 2 (lub 3): Drugi najważniejszy Core
+    session.main.push(pickOne(candidates, secondaryCoreCat, sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage));
 
     if (weights['glute_activation'] > 0.8) {
         session.main.push(pickOne(candidates, 'glute_activation', sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage));
@@ -265,7 +300,6 @@ function sanitizeForStorage(session) {
             exerciseId: ex.id || ex.exerciseId,
             sets: ex.sets,
             reps_or_time: ex.reps_or_time,
-            // Zapisujemy string dla kompatybilności wstecznej UI, ale normalizer i tak to obsłuży
             equipment: Array.isArray(ex.equipment) ? ex.equipment.join(', ') : ex.equipment
         }));
     };
@@ -308,11 +342,24 @@ function pickOne(pool, category, usedIds, weeklyUsage, sectionName, userData, we
     });
 
     if (matching.length === 0) {
-        matching = pool.filter(ex => categories.includes(ex.category_id));
+        // Fallback: Spróbuj znaleźć cokolwiek z kategorii, nawet jeśli było użyte (ale nie w tej sesji - to filtruje usedIds na górze)
+        matching = pool.filter(ex => categories.includes(ex.category_id) && (!usedIds || !usedIds.has(ex.id)));
         if (matching.length === 0) return null;
     }
 
-    const original = matching[Math.floor(Math.random() * matching.length)];
+    // Sortowanie: Preferuj te z pasującymi tagami celu (np. fat_loss)
+    matching.sort((a, b) => {
+        const aTags = a.goalTags || [];
+        const bTags = b.goalTags || [];
+        const hasA = aTags.some(t => [userData.primary_goal, ...userData.secondary_goals].includes(t));
+        const hasB = bTags.some(t => [userData.primary_goal, ...userData.secondary_goals].includes(t));
+        return (hasB ? 1 : 0) - (hasA ? 1 : 0);
+    });
+
+    // Weź jeden z top 3 (żeby zachować losowość, ale preferować lepsze dopasowanie)
+    const topCandidates = matching.slice(0, Math.min(3, matching.length));
+    const original = topCandidates[Math.floor(Math.random() * topCandidates.length)];
+
     if (usedIds) usedIds.add(original.id);
 
     if (weeklyUsage && sectionName === 'main') {
@@ -372,6 +419,12 @@ function applyVolume(ex, factor, sectionName, targetDurationMin = 30) {
         if (factor < 0.6) sets = 1;
         else if (factor > 1.0) sets = 3;
         else sets = 2;
+    }
+
+    // ZMIANA: Hard Cap dla Core Stability (max 3 serie)
+    // Bez względu na poziom zaawansowania, 4-5 serii Deadbuga za jednym zamachem to za dużo dla jakości ruchu
+    if (ex.category_id && ex.category_id.startsWith('core_')) {
+        sets = Math.min(sets, 3);
     }
 
     const isUnilateralText = (ex.reps_or_time && String(ex.reps_or_time).includes('/str')) || (ex.description && ex.description.toLowerCase().includes('stron'));
@@ -472,6 +525,9 @@ function expandSessionDuration(session, targetMin) {
         while (estimatedSeconds < targetSeconds * 0.9 && attempts < 10) {
             let expansionMade = false;
             for (let ex of session.main) {
+                // ZMIANA: Nie zwiększaj Core powyżej 3 serii nawet przy expandzie
+                if (ex.category_id.startsWith('core_')) continue;
+
                 if (BREATHING_CATEGORIES.includes(ex.category_id)) continue;
                 const sets = parseInt(ex.sets);
                 if (sets < maxSets) {

@@ -7,7 +7,6 @@ const DIFFICULTY_MAP = {
     'advanced': 4
 };
 
-// ZADANIE 4: Jawna definicja pozycji dla lepszej kontroli i debugowania
 const KNOWN_POSITIONS = [
     'standing',
     'sitting',
@@ -15,7 +14,7 @@ const KNOWN_POSITIONS = [
     'quadruped',
     'supine',
     'prone',
-    'side_lying' // Nowa pozycja jawnie obsługiwana
+    'side_lying'
 ];
 
 function detectTolerancePattern(triggers, reliefs) {
@@ -62,7 +61,6 @@ function buildUserContext(userData) {
         painFilters.add('thoracic');
     }
 
-    // Normalizacja sprzętu usera
     const userEquipment = (userData.equipment_available || []).map(e => e.toLowerCase());
     const physicalRestrictions = userData.physical_restrictions || [];
 
@@ -79,19 +77,16 @@ function buildUserContext(userData) {
 }
 
 function checkEquipment(ex, userEquipment) {
-    // Obsługa tablicy stringów (po normalizacji w Zadaniu 1)
     const exEquip = Array.isArray(ex.equipment) ? ex.equipment : (ex.equipment ? ex.equipment.split(',').map(e => e.trim()) : []);
 
     if (exEquip.length === 0) return true;
 
-    // Sprawdzenie "braku sprzętu"
     const isNone = exEquip.some(e => {
         const el = e.toLowerCase();
         return el.includes('brak') || el.includes('masa własna') || el.includes('none') || el === '';
     });
     if (isNone) return true;
 
-    // Weryfikacja posiadania
     const hasAll = exEquip.every(req => {
         const reqLower = req.toLowerCase();
         return userEquipment.some(owned => owned.includes(reqLower) || reqLower.includes(owned));
@@ -104,10 +99,10 @@ function violatesRestrictions(ex, restrictions) {
     const plane = ex.primary_plane || 'multi';
     const pos = ex.position || null;
     const cat = ex.category_id || '';
+    const impact = ex.impact_level || 'low';
 
     // 1. Klękanie
     if (restrictions.includes('no_kneeling')) {
-        // Blokujemy klęk i klęk podparty
         if (pos === 'kneeling' || pos === 'quadruped') return true;
     }
 
@@ -118,37 +113,23 @@ function violatesRestrictions(ex, restrictions) {
 
     // 3. Siedzenie na podłodze
     if (restrictions.includes('no_floor_sitting')) {
-        // Blokujemy tylko pozycję siedzącą.
-        // 'side_lying', 'supine', 'prone' są OK (użytkownik może leżeć, ale nie siedzieć np. z prostymi nogami)
         if (pos === 'sitting') return true;
     }
 
-    // 4. Uderzenia / Skoki
+    // 4. Uderzenia / Skoki (Zaktualizowane o impact_level)
     if (restrictions.includes('no_high_impact')) {
+        if (impact === 'high') return true;
         const highImpactCats = ['plyometrics', 'cardio'];
-        if (highImpactCats.includes(cat)) return true;
+        if (!ex.impact_level && highImpactCats.includes(cat)) return true;
     }
 
-    // 5. Uraz stopy (Non-weight bearing)
+    // 5. Uraz stopy
     if (restrictions.includes('foot_injury')) {
-        // A. Twarda flaga z bazy (najważniejsza)
         if (ex.is_foot_loading === true) return true;
-
-        // B. Fallback pozycjach (jeśli flaga nieustawiona)
-        // Blokujemy pozycje stojące i klęczące
         const blockedPositions = ['standing', 'kneeling', 'quadruped', 'lunge', 'squat'];
         if (blockedPositions.includes(pos)) return true;
-
-        // C. Specyfika side_lying dla stopy:
-        // Zwykłe leżenie bokiem (Clamshell) jest OK.
-        // Side Plank (na stopach) - powinien być zablokowany przez is_foot_loading=true w bazie.
-        // Jeśli nie jest, to przejdzie (zakładamy poprawność danych w bazie).
-
-        // D. Blokada kategorii wymagających nóg
         const blockedCategories = ['squats', 'lunges', 'calves', 'plyometrics', 'cardio'];
         if (blockedCategories.includes(cat)) return true;
-
-        // E. Glute Bridge (supine) wymaga pchania stopami
         if (cat === 'glute_activation' && pos === 'supine') return true;
     }
 
@@ -157,7 +138,6 @@ function violatesRestrictions(ex, restrictions) {
 
 function passesTolerancePattern(ex, tolerancePattern) {
     const plane = ex.primary_plane || 'multi';
-    // Gwarancja tablicy (Zadanie 2)
     const zones = Array.isArray(ex.pain_relief_zones) ? ex.pain_relief_zones : [];
 
     if (tolerancePattern === 'flexion_intolerant') {
@@ -181,6 +161,10 @@ function checkExerciseAvailability(ex, ctx, options = {}) {
     if (!passesTolerancePattern(ex, ctx.tolerancePattern)) return { allowed: false, reason: 'biomechanics_mismatch' };
 
     if (strictSeverity && ctx.isSevere) {
+        // ZMIANA: Ochrona przed wysokim obciążeniem kręgosłupa w stanie ostrym
+        const spineLoad = ex.spine_load_level || 'low';
+        if (spineLoad === 'high') return { allowed: false, reason: 'severity_filter' };
+
         const zones = Array.isArray(ex.pain_relief_zones) ? ex.pain_relief_zones : [];
         const helpsZone = zones.some(z => ctx.painFilters.has(z));
         if (!helpsZone) return { allowed: false, reason: 'severity_filter' };
@@ -194,5 +178,5 @@ module.exports = {
     checkExerciseAvailability,
     checkEquipment,
     detectTolerancePattern,
-    KNOWN_POSITIONS // Eksport stałej dla testów/dokumentacji
+    KNOWN_POSITIONS
 };

@@ -5,7 +5,7 @@ import { navigateTo, showLoader, hideLoader } from '../core.js';
 import { getAffinityBadge } from '../templates.js';
 import { renderTunerModal, renderPreviewModal } from '../modals.js';
 import dataStore from '../../dataStore.js';
-import { extractYoutubeId } from '../../utils.js'; // ZMIANA: Import
+import { extractYoutubeId } from '../../utils.js';
 
 let atlasState = {
     search: '',
@@ -18,7 +18,8 @@ const ZONE_MAPPING = {
     'thoracic': { label: 'Górne Plecy', icon: '🔙', cats: ['thoracic', 'posture'] },
     'lumbar_general': { label: 'Lędźwia / Core', icon: '🧱', cats: ['core_anti_extension', 'core_anti_flexion', 'core_anti_rotation', 'lumbar'] },
     'hip_mobility': { label: 'Biodra', icon: '⚙️', cats: ['hip_mobility', 'glute_activation', 'piriformis'] },
-    'sciatica': { label: 'Nogi / Nerw', icon: '⚡', cats: ['nerve_flossing', 'sciatica', 'legs'] }
+    'sciatica': { label: 'Nogi / Nerw', icon: '⚡', cats: ['nerve_flossing', 'sciatica', 'legs'] },
+    'metabolic': { label: 'Spalanie', icon: '🔥', cats: [] } // Placeholder dla logiki tagów
 };
 
 const REJECTION_CONFIG = {
@@ -141,7 +142,12 @@ function renderExerciseList() {
         if (!atlasState.search) items = items.filter(ex => !blacklist.includes(ex.id));
         if (ZONE_MAPPING[atlasState.activeFilter]) {
             const zData = ZONE_MAPPING[atlasState.activeFilter];
-            items = items.filter(ex => zData.cats.includes(ex.categoryId) || (ex.painReliefZones && ex.painReliefZones.includes(atlasState.activeFilter)));
+            if (atlasState.activeFilter === 'metabolic') {
+                // Filtrowanie po tagach dla metabolic
+                items = items.filter(ex => ex.goalTags && (ex.goalTags.includes('fat_loss') || ex.goalTags.includes('conditioning')));
+            } else {
+                items = items.filter(ex => zData.cats.includes(ex.categoryId) || (ex.painReliefZones && ex.painReliefZones.includes(atlasState.activeFilter)));
+            }
         }
     }
     if (atlasState.search) {
@@ -182,15 +188,19 @@ function renderExerciseList() {
         let equipLabel = Array.isArray(ex.equipment) ? ex.equipment.join(', ').toUpperCase() : (ex.equipment || 'BRAK SPRZĘTU').toUpperCase();
         const hiddenEquipValues = ['BRAK', 'NONE', 'BRAK SPRZĘTU', 'MASA WŁASNA', 'BODYWEIGHT', ''];
         const showEquipBadge = !hiddenEquipValues.includes(equipLabel.trim());
-        
+
+        // NOWOŚĆ: Ikona metaboliczna
+        let burnBadge = '';
+        if (ex.metabolicIntensity && ex.metabolicIntensity >= 3) {
+            burnBadge = `<span class="meta-tag" style="background:#fff1f2; color:#be123c; border:1px solid #fda4af;">🔥 MET: ${ex.metabolicIntensity}/5</span>`;
+        }
+
         let footerHtml = '';
-        
-        // ZMIANA (Zadanie 9): Standardowy link wideo
         const videoId = extractYoutubeId(ex.youtube_url);
         if (videoId) {
             footerHtml += `<a href="https://youtu.be/${videoId}" target="_blank" class="link-btn link-youtube">📺 Wideo</a>`;
         }
-        
+
         if (ex.hasAnimation) footerHtml += `<button class="link-btn preview-btn" data-id="${ex.id}">👁️ Podgląd</button>`;
         const actionBtn = isBlacklisted ? `<button class="icon-btn restore-btn" title="Przywróć" style="color:var(--success-color)">♻️</button>` : `<button class="icon-btn block-btn" title="Zablokuj (Dodaj do czarnej listy)">🚫</button>`;
         let tunerButtonHtml = '';
@@ -206,6 +216,7 @@ function renderExerciseList() {
             <div class="ac-title">${ex.name} ${affinityBadge ? '<span style="margin-left:5px">' + affinityBadge + '</span>' : ''}</div>
             <div class="ac-tags">
                 <span class="meta-tag tag-level">⚡ ${lvlLabel}</span>
+                ${burnBadge}
                 <span class="meta-tag tag-category">📂 ${catLabel}</span>
                 ${showEquipBadge ? `<span class="meta-tag tag-equipment">🏋️ ${equipLabel}</span>` : ''}
             </div>
@@ -219,25 +230,25 @@ function renderExerciseList() {
         </div>
     </div>`;
     }).join('');
-    
+
     grid.querySelectorAll('.atlas-card').forEach(card => {
         const exId = card.dataset.id;
         const descEl = card.querySelector('.ac-desc');
         if (descEl) { descEl.addEventListener('click', (e) => { e.stopPropagation(); descEl.classList.toggle('expanded'); }); }
         const tunerBtn = card.querySelector('.tuner-btn');
         if (tunerBtn) { tunerBtn.addEventListener('click', (e) => { e.stopPropagation(); renderTunerModal(exId, () => { renderExerciseList(); renderZoneSelector(); }); }); }
-        
+
         const previewBtn = card.querySelector('.preview-btn');
-        if (previewBtn) { 
-            previewBtn.addEventListener('click', async (e) => { 
-                e.stopPropagation(); 
+        if (previewBtn) {
+            previewBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
                 previewBtn.classList.add('loading');
                 previewBtn.textContent = '⏳ Ładowanie...';
-                
+
                 try {
                     const svg = await dataStore.fetchExerciseAnimation(exId);
-                    if (svg) { 
-                        renderPreviewModal(svg, state.exerciseLibrary[exId].name); 
+                    if (svg) {
+                        renderPreviewModal(svg, state.exerciseLibrary[exId].name);
                     } else {
                         alert('Brak podglądu');
                     }
@@ -248,9 +259,9 @@ function renderExerciseList() {
                     previewBtn.classList.remove('loading');
                     previewBtn.textContent = '👁️ Podgląd';
                 }
-            }); 
+            });
         }
-        
+
         const ytLink = card.querySelector('.link-youtube');
         if (ytLink) { ytLink.addEventListener('click', (e) => e.stopPropagation()); }
         const blockBtn = card.querySelector('.block-btn');
@@ -267,7 +278,18 @@ function calculateZoneStats() {
         if (ex.isAllowed === false) return;
         let zone = 'other';
         for (const [zId, zData] of Object.entries(ZONE_MAPPING)) {
-            if (zData.cats.includes(ex.categoryId) || (ex.painReliefZones && ex.painReliefZones.includes(zId))) { zone = zId; break; }
+            // Dodana logika dla strefy metabolicznej
+            if (zId === 'metabolic') {
+                if (ex.goalTags && (ex.goalTags.includes('fat_loss') || ex.goalTags.includes('conditioning'))) {
+                    zone = zId; 
+                    break; 
+                }
+            } else {
+                if (zData.cats.includes(ex.categoryId) || (ex.painReliefZones && ex.painReliefZones.includes(zId))) { 
+                    zone = zId; 
+                    break; 
+                }
+            }
         }
         if (!stats[zone]) stats[zone] = { count: 0 };
         stats[zone].count++;

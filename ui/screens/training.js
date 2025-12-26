@@ -1,3 +1,4 @@
+// ExerciseApp/ui/screens/training.js
 import { state } from '../../state.js';
 import { screens, initializeFocusElements, focus } from '../../dom.js';
 import { getActiveTrainingPlan, getHydratedDay, getISODate } from '../../utils.js';
@@ -155,6 +156,7 @@ export const renderProtocolStart = (protocol) => {
                 exerciseToSwap.name = newExerciseDef.name;
                 exerciseToSwap.description = newExerciseDef.description;
                 exerciseToSwap.animationSvg = newExerciseDef.animationSvg;
+                exerciseToSwap.hasAnimation = newExerciseDef.hasAnimation; // Dodano flagę
                 exerciseToSwap.categoryId = newExerciseDef.categoryId;
                 exerciseToSwap.equipment = newExerciseDef.equipment;
                 exerciseToSwap.youtube_url = newExerciseDef.youtube_url;
@@ -215,17 +217,31 @@ export const renderProtocolStart = (protocol) => {
         startModifiedTraining();
     });
 
-    // Obsługa podglądu animacji (Preview Modal)
-    listContainer.addEventListener('click', (e) => {
+    // --- FIX: ASYNCHRONICZNY PODGLĄD DLA PROTOKOŁÓW ---
+    listContainer.addEventListener('click', async (e) => {
         const btn = e.target.closest('.preview-anim-btn');
         if (btn) {
             e.stopPropagation();
             const exId = btn.dataset.exerciseId;
-            const ex = state.exerciseLibrary[exId];
-            if (ex && ex.animationSvg) {
-                if (typeof renderPreviewModal === 'function') {
-                    renderPreviewModal(ex.animationSvg, ex.name);
+            const exName = state.exerciseLibrary[exId]?.name || "Podgląd";
+
+            // Visual feedback
+            const originalContent = btn.innerHTML;
+            btn.innerHTML = `<span style="font-size:0.75rem">⏳</span>`;
+            btn.style.opacity = "0.7";
+
+            try {
+                const svg = await dataStore.fetchExerciseAnimation(exId);
+                if (svg) {
+                    renderPreviewModal(svg, exName);
+                } else {
+                    alert("Brak podglądu dla tego ćwiczenia.");
                 }
+            } catch (err) {
+                console.error("Preview Error:", err);
+            } finally {
+                btn.innerHTML = originalContent;
+                btn.style.opacity = "1";
             }
         }
     });
@@ -512,17 +528,32 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
         }
     });
 
-    // Obsługa Podglądu
-    listContainer.addEventListener('click', (e) => {
+    // --- FIX: ASYNCHRONICZNY PODGLĄD DLA NORMALNEGO TRENINGU ---
+    listContainer.addEventListener('click', async (e) => {
         const btn = e.target.closest('.preview-anim-btn');
         if (btn) {
             e.stopPropagation();
             const exId = btn.dataset.exerciseId;
-            const ex = state.exerciseLibrary[exId];
-            if (ex && ex.animationSvg) {
-                if (typeof renderPreviewModal === 'function') {
-                    renderPreviewModal(ex.animationSvg, ex.name);
+            // Pobieramy nazwę z biblioteki lub z atrybutu (jeśli byłby dostępny)
+            const exName = state.exerciseLibrary[exId]?.name || "Podgląd";
+
+            // Visual feedback
+            const originalContent = btn.innerHTML;
+            btn.innerHTML = `<span style="font-size:0.75rem">⏳</span>`;
+            btn.style.opacity = "0.7";
+
+            try {
+                const svg = await dataStore.fetchExerciseAnimation(exId);
+                if (svg) {
+                    renderPreviewModal(svg, exName);
+                } else {
+                    alert("Brak podglądu dla tego ćwiczenia.");
                 }
+            } catch (err) {
+                console.error("Preview Error:", err);
+            } finally {
+                btn.innerHTML = originalContent;
+                btn.style.opacity = "1";
             }
         }
     });

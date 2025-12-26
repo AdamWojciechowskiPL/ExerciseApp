@@ -1,7 +1,7 @@
 // js/ui/templates.js
 import { state } from '../state.js';
+import { extractYoutubeId } from '../utils.js';
 
-// --- HELPERY FORMATOWANIA ---
 const formatCategoryName = (catId) => {
     if (!catId) return 'Ogólne';
     return catId.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
@@ -36,21 +36,16 @@ const formatFeedback = (session) => {
     return { label: '-', class: '' };
 };
 
-// --- HELPER: Odznaka (Badge) ---
 export const getAffinityBadge = (exerciseId) => {
     const pref = state.userPreferences[exerciseId] || { score: 0 };
     const score = pref.score || 0;
-
     let badge = null;
-
     if (score >= 10) {
         badge = { icon: '⭐', label: 'Często', color: '#047857', bg: '#ecfdf5', border: '#6ee7b7' };
     } else if (score <= -10) {
         badge = { icon: '📉', label: 'Rzadko', color: '#b91c1c', bg: '#fef2f2', border: '#fca5a5' };
     }
-
     if (!badge) return '';
-
     return `
         <span class="affinity-badge" style="
             display: inline-flex; align-items: center; gap: 4px;
@@ -64,7 +59,6 @@ export const getAffinityBadge = (exerciseId) => {
     `;
 };
 
-// --- HERO DASHBOARD ---
 function getCurrentWeekDays() { const now = new Date(); const day = now.getDay(); const diff = now.getDate() - day + (day === 0 ? -6 : 1); const monday = new Date(now.setDate(diff)); const weekDays = []; for (let i = 0; i < 7; i++) { const d = new Date(monday); d.setDate(monday.getDate() + i); weekDays.push(d); } return weekDays; }
 function getIsoDateKey(date) { const year = date.getFullYear(); const month = String(date.getMonth() + 1).padStart(2, '0'); const day = String(date.getDate()).padStart(2, '0'); return `${year}-${month}-${day}`; }
 
@@ -100,12 +94,17 @@ export function generateSkeletonDashboardHTML() {
     return `<div class="section-title">Ładowanie Asystenta...</div><div class="skeleton-card"><div class="skeleton-header"><div style="flex:1"><div class="skeleton-text skeleton-loading sm"></div><div class="skeleton-text skeleton-loading md"></div></div><div class="skeleton-text skeleton-loading" style="width:60px; border-radius:20px;"></div></div><div class="skeleton-text skeleton-loading lg"></div><div class="skeleton-wellness skeleton-loading"></div><div class="skeleton-btn skeleton-loading"></div></div><div class="section-title" style="margin-top:2rem;">Kolejne w cyklu</div><div class="skeleton-queue-item skeleton-loading"></div><div class="skeleton-queue-item skeleton-loading"></div><div class="skeleton-queue-item skeleton-loading"></div>`;
 }
 
-// --- MISSION CARD ---
 function getSmartAiTags(wizardData) { let tags = []; if (wizardData.work_type === 'sedentary') tags.push({ icon: '🪑', text: 'Anti-Office' }); else if (wizardData.work_type === 'standing') tags.push({ icon: '🧍', text: 'Odciążenie' }); if (wizardData.hobby?.includes('running')) tags.push({ icon: '🏃', text: 'Miednica' }); else if (wizardData.hobby?.includes('cycling')) tags.push({ icon: '🚴', text: 'Biodra' }); else if (wizardData.hobby?.includes('gym')) tags.push({ icon: '🏋️', text: 'Mobility' }); if (wizardData.pain_locations?.includes('sciatica') || wizardData.medical_diagnosis?.includes('piriformis')) tags.unshift({ icon: '⚡', text: 'Neuro' }); else if (wizardData.medical_diagnosis?.includes('disc_herniation')) tags.unshift({ icon: '🛡️', text: 'Bezpieczne' }); else if (wizardData.pain_locations?.includes('cervical')) tags.push({ icon: '🦒', text: 'Szyja' }); if (wizardData.physical_restrictions?.includes('no_kneeling')) tags.push({ icon: '🚫', text: 'Bez klękania' }); if (tags.length < 2 && wizardData.primary_goal === 'pain_relief') tags.push({ icon: '💊', text: 'Redukcja bólu' }); return tags.slice(0, 4); }
 
 export function generateMissionCardHTML(dayData, estimatedMinutes, wizardData = null) {
     const equipmentSet = new Set();
-    [...(dayData.warmup || []), ...(dayData.main || []), ...(dayData.cooldown || [])].forEach(ex => { if (ex.equipment) ex.equipment.split(',').forEach(item => equipmentSet.add(item.trim())); });
+    [...(dayData.warmup || []), ...(dayData.main || []), ...(dayData.cooldown || [])].forEach(ex => {
+        if (Array.isArray(ex.equipment)) {
+            ex.equipment.forEach(item => equipmentSet.add(item));
+        } else if (ex.equipment) {
+            ex.equipment.split(',').forEach(item => equipmentSet.add(item.trim()));
+        }
+    });
     const equipmentText = equipmentSet.size > 0 ? [...equipmentSet].join(', ') : 'Brak sprzętu';
     let aiHeaderHTML = '';
     let aiTagsHTML = '';
@@ -144,14 +143,26 @@ export function generateMissionCardHTML(dayData, estimatedMinutes, wizardData = 
     </div>`;
 }
 
-// --- PRE-TRAINING / LIBRARY CARD ---
 export function generatePreTrainingCardHTML(ex, index) {
     const uniqueId = `ex-${index}`;
     const exerciseId = ex.id || ex.exerciseId;
     const lvl = ex.difficultyLevel || 1;
     const categoryName = formatCategoryName(ex.categoryId);
-    const equipment = ex.equipment || 'Brak sprzętu';
-    const hasAnimation = !!ex.animationSvg;
+    
+    // --- FIX: POPRAWNE TWORZENIE ETYKIETY SPRZĘTU ---
+    let equipLabel = '';
+    if (Array.isArray(ex.equipment)) {
+        equipLabel = ex.equipment.join(', ');
+    } else {
+        equipLabel = ex.equipment || '';
+    }
+
+    // --- FIX: LOGIKA UKRYWANIA BADGE'A SPRZĘTU ---
+    // Jeśli pusty string, null lub jedna z wartości oznaczających "brak" -> ukrywamy
+    const ignoreList = ['brak', 'none', 'brak sprzętu', 'masa własna', 'bodyweight', ''];
+    const showEquipBadge = equipLabel.length > 0 && !ignoreList.includes(equipLabel.toLowerCase().trim());
+    
+    const hasAnimation = !!ex.hasAnimation;
     const affinityBadge = getAffinityBadge(exerciseId);
     const previewBtnHTML = hasAnimation ? `<button class="preview-anim-btn nav-btn" data-exercise-id="${exerciseId}" title="Podgląd animacji" style="padding: 4px 8px; display: flex; align-items: center; gap: 5px; border-color: var(--secondary-color);"><img src="/icons/eye.svg" width="20" height="20" alt="Podgląd" style="display: block;"><span style="font-size: 0.75rem; font-weight: 600; color: var(--secondary-color);">Podgląd</span></button>` : '';
 
@@ -168,20 +179,12 @@ export function generatePreTrainingCardHTML(ex, index) {
         let bg = '#eee';
         let color = '#333';
         let border = '#ccc';
-
-        if (ex.modification.type === 'boost') {
-            bg = '#ecfdf5'; color = '#047857'; border = '#6ee7b7';
-        } else if (ex.modification.type === 'eco') {
-            bg = '#eff6ff'; color = '#1d4ed8'; border = '#93c5fd';
-        } else if (ex.modification.type === 'care' || ex.modification.type === 'sos') {
-            bg = '#fff7ed'; color = '#c2410c'; border = '#fdba74';
-        }
-
+        if (ex.modification.type === 'boost') { bg = '#ecfdf5'; color = '#047857'; border = '#6ee7b7'; }
+        else if (ex.modification.type === 'eco') { bg = '#eff6ff'; color = '#1d4ed8'; border = '#93c5fd'; }
+        else if (ex.modification.type === 'care' || ex.modification.type === 'sos') { bg = '#fff7ed'; color = '#c2410c'; border = '#fdba74'; }
         modBadge = `<span class="meta-badge" style="background:${bg}; color:${color}; border:1px solid ${border}; white-space:nowrap;">${ex.modification.label}</span>`;
     }
 
-    // --- ZMIANA: Zamiast inputów, wyświetlamy statyczne kafelki z danymi (ReadOnly) ---
-    // Usunięto klasę 'training-inputs-grid' i 'modern-input'
     const targetsHTML = `
         <div class="target-stats-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; padding-top: 15px; border-top: 1px dashed var(--border-color);">
             <div style="background: var(--background-color); padding: 8px; border-radius: 8px; text-align: center; border: 1px solid rgba(0,0,0,0.05);">
@@ -194,6 +197,12 @@ export function generatePreTrainingCardHTML(ex, index) {
             </div>
         </div>
     `;
+
+    // Standardowy link wideo
+    const videoId = extractYoutubeId(ex.youtube_url);
+    const videoLink = videoId 
+        ? `<a href="https://youtu.be/${videoId}" target="_blank" class="video-link">▶ Zobacz wideo</a>` 
+        : '';
 
     return `
     <div class="training-card" data-exercise-id="${exerciseId || ''}" data-category-id="${ex.categoryId || ''}">
@@ -213,27 +222,21 @@ export function generatePreTrainingCardHTML(ex, index) {
             ${modBadge}
             <span class="meta-badge badge-lvl-${lvl}">⚡ ${getLevelLabel(lvl)}</span>
             <span class="meta-badge badge-category">📂 ${categoryName}</span>
-            <span class="meta-badge badge-equipment">🏋️ ${equipment}</span>
+            ${showEquipBadge ? `<span class="meta-badge badge-equipment">🏋️ ${equipLabel}</span>` : ''}
         </div>
         <p class="pre-training-description" style="padding-left:10px; opacity:0.8;">${ex.description || 'Brak opisu.'}</p>
-
         ${targetsHTML}
-
         <div class="training-footer">
-            <div>${ex.youtube_url ? `<a href="${ex.youtube_url}" target="_blank" class="video-link">▶ Zobacz wideo</a>` : ''}</div>
+            <div>${videoLink}</div>
             ${ex.tempo_or_iso ? `<span class="tempo-badge">Tempo: ${ex.tempo_or_iso}</span>` : ''}
         </div>
     </div>`;
 }
 
-// --- SESSION CARD (HISTORY) ---
-
 export function generateSessionCardHTML(session) {
     const planId = session.planId || 'l5s1-foundation';
     const isDynamic = planId.startsWith('dynamic-');
     const title = session.trainingTitle || 'Trening';
-
-    // ... (Stats calculation logic) ...
     let statsHtml = '';
     const optionsTime = { hour: '2-digit', minute: '2-digit' };
     const feedbackInfo = formatFeedback(session);
@@ -267,34 +270,23 @@ export function generateSessionCardHTML(session) {
             const isSkipped = item.status === 'skipped';
             const rowStyle = isSkipped ? 'opacity: 0.6; background-color: rgba(0,0,0,0.02);' : '';
             const id = item.exerciseId || item.id;
-
             const pref = state.userPreferences[id] || { score: 0, difficulty: 0 };
-
-            // POPRAWKA WIZUALNA: Obniżenie progu dla wyświetlania "aktywnych" przycisków
-            // Dzięki temu stare dane (20 pkt) będą widoczne jako polubione
             const isLike = pref.score >= 10;
             const isDislike = pref.score <= -10;
-
-            // NOWOŚĆ: INTERAKTYWNE BADGES DLA TRUDNOŚCI (Z MOŻLIWOŚCIĄ RESETU)
             const diff = pref.difficulty || 0;
             let diffBadge = '';
-
-            // Dodano klasę reset-diff-btn oraz data-id, aby można było obsłużyć kliknięcie
             if (diff === 1) diffBadge = `<button class="reset-diff-btn" data-id="${id}" title="Kliknij, aby cofnąć oznaczenie 'Za trudne'" style="background:none; border:none; cursor:pointer;"><span style="font-size:0.7rem; color:#ea580c; background:#fff7ed; padding:2px 6px; border-radius:4px; margin-right:5px; border:1px solid #fdba74;">🔥 Za trudne <span style="opacity:0.5; margin-left:2px;">✕</span></span></button>`;
             if (diff === -1) diffBadge = `<button class="reset-diff-btn" data-id="${id}" title="Kliknij, aby cofnąć oznaczenie 'Za łatwe'" style="background:none; border:none; cursor:pointer;"><span style="font-size:0.7rem; color:#0369a1; background:#f0f9ff; padding:2px 6px; border-radius:4px; margin-right:5px; border:1px solid #7dd3fc;">💤 Za łatwe <span style="opacity:0.5; margin-left:2px;">✕</span></span></button>`;
-
             let ratingButtons = '';
-            // Przyciski Affinity (działające)
             if (id && !isSkipped) {
                 ratingButtons = `
                     <div class="hist-rating-actions" style="margin-left:auto; display:flex; gap:4px; align-items:center;">
-                        ${diffBadge} <!-- Pokaż informację o trudności -->
+                        ${diffBadge}
                         <button class="rate-btn-hist ${isLike ? 'active' : ''}" data-id="${id}" data-action="like" title="Częściej">👍</button>
                         <button class="rate-btn-hist ${isDislike ? 'active' : ''}" data-id="${id}" data-action="dislike" title="Rzadziej">👎</button>
                     </div>
                 `;
             }
-
             return `
             <div class="history-exercise-row ${isSkipped ? 'skipped' : 'completed'}" style="align-items:center; ${rowStyle}">
                 <div class="hex-main" style="margin-right:8px; flex-grow:1;">

@@ -39,26 +39,47 @@ const dataStore = {
             const token = await getToken();
             const headers = { 'Content-Type': 'application/json' };
             if (token) headers['Authorization'] = `Bearer ${token}`;
-            
+
             const response = await fetch('/.netlify/functions/get-app-content', { headers });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            
+
             const data = await response.json();
             state.exerciseLibrary = data.exercises || {};
             state.trainingPlans = data.training_plans || {};
-            
-            // --- DIAGNOSTYKA WHITE-LIST PATTERN ---
+
             const total = Object.keys(state.exerciseLibrary).length;
             const blocked = Object.values(state.exerciseLibrary).filter(ex => ex.isAllowed === false).length;
             const allowed = total - blocked;
-            
-            console.log(token 
-                ? `📦 Zasoby PERSONALIZOWANE: ${allowed} dostępnych, ${blocked} zablokowanych (Sprzęt/Zdrowie).` 
-                : '📦 Zasoby PUBLICZNE załadowane (Brak personalizacji).');
-                
+
+            console.log(token
+                ? `📦 Zasoby PERSONALIZOWANE: ${allowed} dostępnych, ${blocked} zablokowanych.`
+                : '📦 Zasoby PUBLICZNE załadowane.');
+
         } catch (error) {
             console.error("Critical: Failed to load app content:", error);
         }
+    },
+
+    // --- ZADANIE 6: POBIERANIE ANIMACJI NA ŻĄDANIE ---
+    fetchExerciseAnimation: async (exerciseId) => {
+        if (!exerciseId) return null;
+
+        // 1. Sprawdź Cache
+        if (state.animationCache.has(exerciseId)) {
+            return state.animationCache.get(exerciseId);
+        }
+
+        try {
+            const result = await callAPI('get-exercise-animation', { params: { id: exerciseId } });
+            if (result && result.svg) {
+                // 2. Zapisz do Cache
+                state.animationCache.set(exerciseId, result.svg);
+                return result.svg;
+            }
+        } catch (e) {
+            console.error(`Błąd pobierania animacji dla ${exerciseId}:`, e);
+        }
+        return null;
     },
 
     initialize: async () => {
@@ -193,7 +214,7 @@ const dataStore = {
 
     updatePreference: async (exerciseId, action, value = null) => {
         if (!state.userPreferences[exerciseId]) state.userPreferences[exerciseId] = { score: 0, difficulty: 0 };
-        
+
         if (action === 'set') {
             state.userPreferences[exerciseId].score = value;
         } else if (action === 'set_difficulty') {

@@ -1,4 +1,16 @@
-// netlify/functions/_clinical-rule-engine.js
+// ExerciseApp/clinicalEngine.js
+// Frontendowa wersja silnika reguł (Ported from _clinical-rule-engine.js)
+// Dostosowana do struktury danych camelCase używanej w state.js
+
+export const KNOWN_POSITIONS = [
+    'standing',
+    'sitting',
+    'kneeling',
+    'quadruped',
+    'supine',
+    'prone',
+    'side_lying'
+];
 
 const DIFFICULTY_MAP = {
     'none': 1,
@@ -7,18 +19,9 @@ const DIFFICULTY_MAP = {
     'advanced': 4
 };
 
-// ZADANIE 4: Jawna definicja pozycji dla lepszej kontroli i debugowania
-const KNOWN_POSITIONS = [
-    'standing',
-    'sitting',
-    'kneeling',
-    'quadruped',
-    'supine',
-    'prone',
-    'side_lying' // Nowa pozycja jawnie obsługiwana
-];
+// --- HELPERY KONTEKSTU ---
 
-function detectTolerancePattern(triggers, reliefs) {
+export function detectTolerancePattern(triggers, reliefs) {
     if (!Array.isArray(triggers)) triggers = [];
     if (!Array.isArray(reliefs)) reliefs = [];
 
@@ -31,18 +34,20 @@ function detectTolerancePattern(triggers, reliefs) {
     return 'neutral';
 }
 
-function buildUserContext(userData) {
-    const tolerancePattern = detectTolerancePattern(userData.trigger_movements, userData.relief_movements);
-    const painChar = userData.pain_character || [];
+export function buildClinicalContext(wizardData) {
+    if (!wizardData) return null;
+
+    const tolerancePattern = detectTolerancePattern(wizardData.trigger_movements, wizardData.relief_movements);
+    const painChar = wizardData.pain_character || [];
     const isPainSharp = painChar.includes('sharp') || painChar.includes('burning') || painChar.includes('radiating');
-    const painInt = parseInt(userData.pain_intensity) || 0;
-    const impact = parseInt(userData.daily_impact) || 0;
+    const painInt = parseInt(wizardData.pain_intensity) || 0;
+    const impact = parseInt(wizardData.daily_impact) || 0;
 
     let severityScore = (painInt + impact) / 2;
     if (isPainSharp) severityScore *= 1.2;
     const isSevere = severityScore >= 6.5;
 
-    const experienceKey = userData.exercise_experience;
+    const experienceKey = wizardData.exercise_experience;
     const baseDifficultyCap = DIFFICULTY_MAP[experienceKey] || 2;
     let difficultyCap = baseDifficultyCap;
 
@@ -52,7 +57,7 @@ function buildUserContext(userData) {
         difficultyCap = Math.min(baseDifficultyCap, 3);
     }
 
-    const painLocs = userData.pain_locations || [];
+    const painLocs = wizardData.pain_locations || [];
     const painFilters = new Set();
     if (painLocs.length > 0) {
         painLocs.forEach(loc => painFilters.add(loc));
@@ -62,9 +67,8 @@ function buildUserContext(userData) {
         painFilters.add('thoracic');
     }
 
-    // Normalizacja sprzętu usera
-    const userEquipment = (userData.equipment_available || []).map(e => e.toLowerCase());
-    const physicalRestrictions = userData.physical_restrictions || [];
+    const userEquipment = (wizardData.equipment_available || []).map(e => e.toLowerCase());
+    const physicalRestrictions = wizardData.physical_restrictions || [];
 
     return {
         tolerancePattern,
@@ -73,41 +77,47 @@ function buildUserContext(userData) {
         difficultyCap,
         painFilters,
         userEquipment,
-        physicalRestrictions,
-        blockedIds: new Set()
+        physicalRestrictions
     };
 }
 
-function checkEquipment(ex, userEquipment) {
-    // Obsługa tablicy stringów (po normalizacji w Zadaniu 1)
-    const exEquip = Array.isArray(ex.equipment) ? ex.equipment : (ex.equipment ? ex.equipment.split(',').map(e => e.trim()) : []);
+// --- LOGIKA WALIDACJI (Core Rules) ---
 
-    if (exEquip.length === 0) return true;
+export function checkEquipment(ex, userEquipment) {
+    if (!userEquipment) return true; // Brak danych usera = nie sprawdzamy (lub domyślnie true)
+    
+    let requirements = [];
+    if (Array.isArray(ex.equipment)) {
+        requirements = ex.equipment;
+    } else if (typeof ex.equipment === 'string') {
+        requirements = ex.equipment.split(',').map(e => e.trim());
+    } else {
+        return true; // Brak wymagań
+    }
 
-    // Sprawdzenie "braku sprzętu"
-    const isNone = exEquip.some(e => {
-        const el = e.toLowerCase();
-        return el.includes('brak') || el.includes('masa własna') || el.includes('none') || el === '';
+    if (requirements.length === 0) return true;
+
+    // Sprawdź czy "brak sprzętu"
+    const isNone = requirements.some(req => {
+        const r = req.toLowerCase();
+        return r.includes('brak') || r.includes('none') || r.includes('masa') || r === '';
     });
     if (isNone) return true;
 
-    // Weryfikacja posiadania
-    const hasAll = exEquip.every(req => {
+    // Weryfikacja
+    return requirements.every(req => {
         const reqLower = req.toLowerCase();
         return userEquipment.some(owned => owned.includes(reqLower) || reqLower.includes(owned));
     });
-
-    return hasAll;
 }
 
-function violatesRestrictions(ex, restrictions) {
-    const plane = ex.primary_plane || 'multi';
+export function violatesRestrictions(ex, restrictions) {
+    const plane = ex.primaryPlane || 'multi';
     const pos = ex.position || null;
-    const cat = ex.category_id || '';
+    const cat = ex.categoryId || '';
 
     // 1. Klękanie
     if (restrictions.includes('no_kneeling')) {
-        // Blokujemy klęk i klęk podparty
         if (pos === 'kneeling' || pos === 'quadruped') return true;
     }
 
@@ -118,8 +128,6 @@ function violatesRestrictions(ex, restrictions) {
 
     // 3. Siedzenie na podłodze
     if (restrictions.includes('no_floor_sitting')) {
-        // Blokujemy tylko pozycję siedzącą.
-        // 'side_lying', 'supine', 'prone' są OK (użytkownik może leżeć, ale nie siedzieć np. z prostymi nogami)
         if (pos === 'sitting') return true;
     }
 
@@ -131,34 +139,29 @@ function violatesRestrictions(ex, restrictions) {
 
     // 5. Uraz stopy (Non-weight bearing)
     if (restrictions.includes('foot_injury')) {
-        // A. Twarda flaga z bazy (najważniejsza)
-        if (ex.is_foot_loading === true) return true;
+        // A. Twarda flaga (Frontend property: isFootLoading)
+        if (ex.isFootLoading === true) return true;
 
-        // B. Fallback pozycjach (jeśli flaga nieustawiona)
-        // Blokujemy pozycje stojące i klęczące
-        const blockedPositions = ['standing', 'kneeling', 'quadruped', 'lunge', 'squat'];
+        // B. Fallback na pozycje
+        const blockedPositions = ['standing', 'kneeling', 'quadruped', 'lunge'];
         if (blockedPositions.includes(pos)) return true;
 
-        // C. Specyfika side_lying dla stopy:
-        // Zwykłe leżenie bokiem (Clamshell) jest OK.
-        // Side Plank (na stopach) - powinien być zablokowany przez is_foot_loading=true w bazie.
-        // Jeśli nie jest, to przejdzie (zakładamy poprawność danych w bazie).
-
-        // D. Blokada kategorii wymagających nóg
+        // C. Fallback na kategorie
         const blockedCategories = ['squats', 'lunges', 'calves', 'plyometrics', 'cardio'];
         if (blockedCategories.includes(cat)) return true;
 
-        // E. Glute Bridge (supine) wymaga pchania stopami
+        // D. Specyficzne przypadki
         if (cat === 'glute_activation' && pos === 'supine') return true;
+        const name = (ex.name || '').toLowerCase();
+        if (name.includes('przysiad') || name.includes('wykrok') || name.includes('bieg')) return true;
     }
 
     return false;
 }
 
-function passesTolerancePattern(ex, tolerancePattern) {
-    const plane = ex.primary_plane || 'multi';
-    // Gwarancja tablicy (Zadanie 2)
-    const zones = Array.isArray(ex.pain_relief_zones) ? ex.pain_relief_zones : [];
+export function passesTolerancePattern(ex, tolerancePattern) {
+    const plane = ex.primaryPlane || 'multi';
+    const zones = Array.isArray(ex.painReliefZones) ? ex.painReliefZones : [];
 
     if (tolerancePattern === 'flexion_intolerant') {
         if (plane === 'flexion' && !zones.includes('lumbar_flexion_intolerant')) return false;
@@ -168,31 +171,37 @@ function passesTolerancePattern(ex, tolerancePattern) {
     return true;
 }
 
-function checkExerciseAvailability(ex, ctx, options = {}) {
+/**
+ * Główna funkcja walidująca ćwiczenie.
+ * @param {Object} ex - Ćwiczenie (format frontendowy, camelCase)
+ * @param {Object} ctx - Kontekst kliniczny (z buildClinicalContext)
+ * @param {Object} options - { ignoreDifficulty, ignoreEquipment, strictSeverity }
+ */
+export function checkExerciseAvailability(ex, ctx, options = {}) {
     const { ignoreDifficulty = false, ignoreEquipment = false, strictSeverity = true } = options;
 
-    if (ctx.blockedIds.has(ex.id)) return { allowed: false, reason: 'blacklisted' };
+    // 1. Blacklist (opcjonalnie sprawdzane na zewnątrz, ale dodajemy tu dla kompletności jeśli ctx ma blockedIds)
+    if (ctx.blockedIds && ctx.blockedIds.has(ex.id)) return { allowed: false, reason: 'blacklisted' };
+
+    // 2. Sprzęt
     if (!ignoreEquipment && !checkEquipment(ex, ctx.userEquipment)) return { allowed: false, reason: 'missing_equipment' };
 
-    const exLevel = ex.difficulty_level || 1;
+    // 3. Trudność
+    const exLevel = ex.difficultyLevel || 1;
     if (!ignoreDifficulty && ctx.difficultyCap && exLevel > ctx.difficultyCap) return { allowed: false, reason: 'too_hard_calculated' };
 
+    // 4. Restrykcje
     if (violatesRestrictions(ex, ctx.physicalRestrictions)) return { allowed: false, reason: 'physical_restriction' };
+
+    // 5. Wzorce
     if (!passesTolerancePattern(ex, ctx.tolerancePattern)) return { allowed: false, reason: 'biomechanics_mismatch' };
 
+    // 6. Severity (Tryb ostry)
     if (strictSeverity && ctx.isSevere) {
-        const zones = Array.isArray(ex.pain_relief_zones) ? ex.pain_relief_zones : [];
+        const zones = Array.isArray(ex.painReliefZones) ? ex.painReliefZones : [];
         const helpsZone = zones.some(z => ctx.painFilters.has(z));
         if (!helpsZone) return { allowed: false, reason: 'severity_filter' };
     }
 
     return { allowed: true, reason: null };
 }
-
-module.exports = {
-    buildUserContext,
-    checkExerciseAvailability,
-    checkEquipment,
-    detectTolerancePattern,
-    KNOWN_POSITIONS // Eksport stałej dla testów/dokumentacji
-};

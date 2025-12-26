@@ -41,7 +41,7 @@ async function analyzeAndAdjustPlan(client, userId, sessionLog, feedback, rating
 
     // 1. Priorytet: "ZA TRUDNE" (Safety First) -> Dewolucja lub Micro-Dosing
     const hardRating = ratings.find(r => r.action === 'hard');
-    
+
     if (hardRating) {
         const currentId = hardRating.exerciseId;
         const currentNameRes = await client.query('SELECT name FROM exercises WHERE id = $1', [currentId]);
@@ -50,28 +50,28 @@ async function analyzeAndAdjustPlan(client, userId, sessionLog, feedback, rating
         // A. Sprawdź czy to ćwiczenie jest wynikiem niedawnej Ewolucji (Ping-Pong Check)
         // Szukamy override'a, gdzie currentId jest replacementem
         const historyCheck = await client.query(`
-            SELECT original_exercise_id 
-            FROM user_plan_overrides 
+            SELECT original_exercise_id
+            FROM user_plan_overrides
             WHERE user_id = $1 AND replacement_exercise_id = $2 AND adjustment_type = 'evolution'
         `, [userId, currentId]);
 
         // SCENARIUSZ PING-PONG: User awansował z A na B, a teraz chce cofnąć B.
         if (historyCheck.rows.length > 0) {
             console.log(`🏓 Ping-Pong detected for ${currentId}. Applying Micro-Dosing.`);
-            
+
             const reason = "Ping-Pong: Too Hard after Evolution. Applying Micro-Dose.";
-            
+
             // Zamiast cofać, zostajemy przy trudnym ćwiczeniu, ale zmieniamy typ na 'micro_dose'
             // Kluczowe: original = replacement (to sygnał dla frontendu, że to to samo ćwiczenie, ale zmiana parametrów)
             await client.query(`
-                INSERT INTO user_plan_overrides 
-                (user_id, original_exercise_id, replacement_exercise_id, adjustment_type, reason, updated_at) 
-                VALUES ($1, $2, $2, 'micro_dose', $3, CURRENT_TIMESTAMP) 
-                ON CONFLICT (user_id, original_exercise_id) 
-                DO UPDATE SET 
-                    replacement_exercise_id = $2, 
-                    adjustment_type = 'micro_dose', 
-                    reason = $3, 
+                INSERT INTO user_plan_overrides
+                (user_id, original_exercise_id, replacement_exercise_id, adjustment_type, reason, updated_at)
+                VALUES ($1, $2, $2, 'micro_dose', $3, CURRENT_TIMESTAMP)
+                ON CONFLICT (user_id, original_exercise_id)
+                DO UPDATE SET
+                    replacement_exercise_id = $2,
+                    adjustment_type = 'micro_dose',
+                    reason = $3,
                     updated_at = CURRENT_TIMESTAMP
             `, [userId, currentId, reason]); // Uwaga: Nadpisujemy override dla 'currentId' jako source
 
@@ -84,18 +84,26 @@ async function analyzeAndAdjustPlan(client, userId, sessionLog, feedback, rating
         }
 
         // SCENARIUSZ STANDARDOWY: Dewolucja (Powrót do łatwiejszego)
-        // Szukamy rodzica (ćwiczenia, które prowadzi do obecnego)
-        const parentRes = await client.query('SELECT id, name FROM exercises WHERE next_progression_id = $1 LIMIT 1', [currentId]);
-        
+        // Szukamy rodzica (ćwiczenia, które prowadzi do obecnego).
+        // ZMIANA (Zadanie 3): Sortujemy malejąco po difficulty_level.
+        // Jeśli wiele ćwiczeń wskazuje na obecne, wybieramy to "najtrudniejsze z łatwiejszych" (najbliższe poziomem).
+        const parentRes = await client.query(`
+            SELECT id, name, difficulty_level
+            FROM exercises
+            WHERE next_progression_id = $1
+            ORDER BY difficulty_level DESC
+            LIMIT 1
+        `, [currentId]);
+
         if (parentRes.rows.length > 0) {
             const parentEx = parentRes.rows[0];
             const reason = "User rated as Too Hard";
-            
+
             await client.query(`
-                INSERT INTO user_plan_overrides 
-                (user_id, original_exercise_id, replacement_exercise_id, adjustment_type, reason, updated_at) 
-                VALUES ($1, $2, $3, 'devolution', $4, CURRENT_TIMESTAMP) 
-                ON CONFLICT (user_id, original_exercise_id) 
+                INSERT INTO user_plan_overrides
+                (user_id, original_exercise_id, replacement_exercise_id, adjustment_type, reason, updated_at)
+                VALUES ($1, $2, $3, 'devolution', $4, CURRENT_TIMESTAMP)
+                ON CONFLICT (user_id, original_exercise_id)
                 DO UPDATE SET replacement_exercise_id = EXCLUDED.replacement_exercise_id, adjustment_type = 'devolution', reason = EXCLUDED.reason, updated_at = CURRENT_TIMESTAMP
             `, [userId, currentId, parentEx.id, reason]);
 
@@ -112,23 +120,25 @@ async function analyzeAndAdjustPlan(client, userId, sessionLog, feedback, rating
 
     // 2. Priorytet: "ZA ŁATWE" -> Ewolucja
     const easyRating = ratings.find(r => r.action === 'easy');
-    
+
     if (easyRating) {
         const currentExRes = await client.query('SELECT id, name, next_progression_id FROM exercises WHERE id = $1', [easyRating.exerciseId]);
         if (currentExRes.rows.length > 0) {
             const currentEx = currentExRes.rows[0];
-            
+
+            // Tutaj constraint DB (FK) gwarantuje, że jeśli next_progression_id istnieje, to wskazuje na poprawne ćwiczenie.
             if (currentEx.next_progression_id) {
                 // Pobieramy nazwę nowego ćwiczenia dla UI
                 const nextRes = await client.query('SELECT name FROM exercises WHERE id = $1', [currentEx.next_progression_id]);
+                // Fallback name na wypadek (choć FK to gwarantuje)
                 const nextName = nextRes.rows[0]?.name || 'Trudniejszy wariant';
                 const reason = "User rated as Too Easy";
-                
+
                 await client.query(`
-                    INSERT INTO user_plan_overrides 
-                    (user_id, original_exercise_id, replacement_exercise_id, adjustment_type, reason, updated_at) 
-                    VALUES ($1, $2, $3, 'evolution', $4, CURRENT_TIMESTAMP) 
-                    ON CONFLICT (user_id, original_exercise_id) 
+                    INSERT INTO user_plan_overrides
+                    (user_id, original_exercise_id, replacement_exercise_id, adjustment_type, reason, updated_at)
+                    VALUES ($1, $2, $3, 'evolution', $4, CURRENT_TIMESTAMP)
+                    ON CONFLICT (user_id, original_exercise_id)
                     DO UPDATE SET replacement_exercise_id = EXCLUDED.replacement_exercise_id, adjustment_type = 'evolution', reason = EXCLUDED.reason, updated_at = CURRENT_TIMESTAMP
                 `, [userId, currentEx.id, currentEx.next_progression_id, reason]);
 
@@ -146,7 +156,7 @@ exports.handler = async (event) => {
     try {
         const userId = await getUserIdFromEvent(event);
         const body = JSON.parse(event.body);
-        
+
         const { planId, startedAt, completedAt, feedback, exerciseRatings, ...session_data } = body;
 
         if (!planId || !startedAt || !completedAt) {
@@ -161,9 +171,9 @@ exports.handler = async (event) => {
             await client.query('BEGIN');
 
             const sessionDataToSave = { ...session_data, feedback, exerciseRatings };
-            
+
             await client.query(`
-                INSERT INTO training_sessions (user_id, plan_id, started_at, completed_at, session_data) 
+                INSERT INTO training_sessions (user_id, plan_id, started_at, completed_at, session_data)
                 VALUES ($1, $2, $3, $4, $5)
             `, [userId, planId, startedAt, completedAt, JSON.stringify(sessionDataToSave)]);
 
@@ -183,7 +193,7 @@ exports.handler = async (event) => {
                 [userId]
             );
             const allDates = historyResult.rows.map(r => new Date(r.completed_at));
-            
+
             newStats = {
                 totalSessions: historyResult.rowCount,
                 streak: calculateStreak(allDates),
@@ -191,14 +201,14 @@ exports.handler = async (event) => {
             };
 
             await client.query('COMMIT');
-            
-            return { 
-                statusCode: 201, 
-                body: JSON.stringify({ 
-                    message: "Session saved successfully", 
+
+            return {
+                statusCode: 201,
+                body: JSON.stringify({
+                    message: "Session saved successfully",
                     adaptation: adaptationResult,
                     newStats: newStats
-                }) 
+                })
             };
 
         } catch (dbError) {

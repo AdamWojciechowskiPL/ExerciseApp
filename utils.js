@@ -2,6 +2,66 @@
 
 import { state } from './state.js';
 
+// --- ZADANIE 10: SVG SANITIZER & SCALER ---
+export const processSVG = (svgString) => {
+    if (!svgString) return '';
+    
+    // Jeśli to nie wygląda jak SVG, zwróć oryginał
+    if (!svgString.includes('<svg')) return svgString;
+
+    try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(svgString, "image/svg+xml");
+        const svg = doc.querySelector('svg');
+        
+        if (!svg) return svgString;
+
+        // 1. Zapewnij viewBox (kluczowe dla skalowania)
+        if (!svg.hasAttribute('viewBox')) {
+            const w = svg.getAttribute('width');
+            const h = svg.getAttribute('height');
+            
+            // Jeśli mamy wymiary, tworzymy z nich viewBox
+            if (w && h) {
+                // Usuwamy jednostki 'px' jeśli są
+                const cleanW = parseFloat(w.replace('px', ''));
+                const cleanH = parseFloat(h.replace('px', ''));
+                if (!isNaN(cleanW) && !isNaN(cleanH)) {
+                    svg.setAttribute('viewBox', `0 0 ${cleanW} ${cleanH}`);
+                }
+            }
+        }
+
+        // 2. Usuń sztywne wymiary, które blokują CSS
+        svg.removeAttribute('width');
+        svg.removeAttribute('height');
+
+        // 3. Wymuś responsywność stylami inline (zabezpieczenie)
+        svg.style.width = '100%';
+        svg.style.height = '100%';
+        svg.style.display = 'block';
+        
+        // Fix dla Safari/iOS (zachowanie proporcji)
+        if (!svg.hasAttribute('preserveAspectRatio')) {
+            svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+        }
+
+        return new XMLSerializer().serializeToString(svg);
+    } catch (e) {
+        console.error("[Utils] SVG Process Error:", e);
+        return svgString; // W razie błędu zwróć oryginał
+    }
+};
+
+export const extractYoutubeId = (url) => {
+    if (!url) return null;
+    if (url.length === 11 && !/[:/.]/.test(url)) return url;
+
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
+};
+
 export const getISODate = (date) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -82,21 +142,17 @@ export const getTrainingDayForDate = (date) => {
     return activePlan.Days.find(d => d.dayNumber === planDayNumber);
 };
 
-// --- FIX: POPRAWIONA HYDRACJA ---
 export const getHydratedDay = (dayData) => {
     if (!dayData) return null;
 
-    // Tworzymy głęboką kopię, aby nie modyfikować oryginału w state/storage
     const hydratedDay = JSON.parse(JSON.stringify(dayData));
 
     ['warmup', 'main', 'cooldown'].forEach(section => {
         if (hydratedDay[section]) {
             hydratedDay[section] = hydratedDay[section].map(exerciseRef => {
-                // Pobieramy pełne dane z biblioteki na podstawie ID
                 const exerciseId = exerciseRef.exerciseId || exerciseRef.id;
                 const libraryDetails = state.exerciseLibrary[exerciseId];
 
-                // DEBUG: Sprawdź czy mixer przekazał zmienioną nazwę
                 if (exerciseRef.name && libraryDetails && exerciseRef.name !== libraryDetails.name) {
                     console.log(`🔍 [Hydration] Mixer swap detected: ${exerciseRef.name} (from mixer) vs ${libraryDetails.name} (from library)`);
                 }
@@ -106,7 +162,6 @@ export const getHydratedDay = (dayData) => {
                     return exerciseRef;
                 }
 
-                // 1. Scalamy dane z biblioteki z danymi z planu (plan ma priorytet w kwestii sets/reps)
                 const mergedExercise = {
                     ...libraryDetails,
                     ...exerciseRef,
@@ -114,12 +169,10 @@ export const getHydratedDay = (dayData) => {
                     difficultyLevel: libraryDetails.difficultyLevel
                 };
 
-                // 2. Uzupełniamy TEMPO (jeśli brak w planie, bierzemy domyślne z biblioteki)
                 if (!mergedExercise.tempo_or_iso) {
                     mergedExercise.tempo_or_iso = libraryDetails.defaultTempo || "Kontrolowane";
                 }
 
-                // 3. Uzupełniamy UNILATERAL (jeśli brak w planie, bierzemy z biblioteki)
                 if (mergedExercise.is_unilateral === undefined) {
                     mergedExercise.is_unilateral = libraryDetails.isUnilateral || false;
                 }
@@ -137,9 +190,6 @@ export const parseSetCount = (setsString) => {
     return parseInt(parts[parts.length - 1].trim(), 10) || 1;
 };
 
-/**
- * Parsuje czas trwania z formatu stringa.
- */
 export const getExerciseDuration = (exercise) => {
     if (exercise.isRest) {
         return exercise.duration;
@@ -151,14 +201,12 @@ export const getExerciseDuration = (exercise) => {
     const isUnilateralProp = exercise.isUnilateral || false;
     const multiplier = (isUnilateralStr || isUnilateralProp) ? 2 : 1;
 
-    // 1. Wykrywanie MINUT
     const minMatch = text.match(/(\d+(?:[.,]\d+)?)\s*min/);
     if (minMatch) {
         const minutes = parseFloat(minMatch[1].replace(',', '.'));
         return Math.round(minutes * 60 * multiplier);
     }
 
-    // 2. Wykrywanie SEKUND
     const secMatch = text.match(/(\d+)\s*s\b/);
     if (secMatch) {
         const seconds = parseInt(secMatch[1], 10);

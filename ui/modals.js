@@ -1,5 +1,6 @@
 import { state } from '../state.js';
 import dataStore from '../dataStore.js';
+import { processSVG } from '../utils.js'; // ZMIANA: Import funkcji
 
 export function renderSwapModal(currentExercise, onConfirm) {
     const currentId = currentExercise.id || currentExercise.exerciseId;
@@ -36,8 +37,7 @@ export function renderSwapModal(currentExercise, onConfirm) {
                     <button class="toggle-btn active" data-type="today">Tylko dziś</button>
                     <button class="toggle-btn" data-type="blacklist">🚫 Nie lubię</button>
                 </div>
-                
-                <!-- POPRAWIONA SEKCJA PRZYCISKÓW -->
+
                 <div style="display:flex; gap:10px; margin-top:1.5rem;">
                     <button id="cancel-swap" class="nav-btn" style="flex:1; padding: 0.8rem; justify-content: center; height: auto;">Anuluj</button>
                     <button id="confirm-swap" class="action-btn" style="flex:1; margin-top: 0;" disabled>Wymień</button>
@@ -61,8 +61,6 @@ export function renderSwapModal(currentExercise, onConfirm) {
             card.classList.add('selected');
             selectedAltId = card.dataset.id;
             confirmBtn.disabled = false;
-            // Opcjonalnie: zmiana tekstu na przycisku
-            // confirmBtn.textContent = `Wymień`; 
         });
     });
 
@@ -85,10 +83,14 @@ export function renderSwapModal(currentExercise, onConfirm) {
 
 export function renderPreviewModal(svgContent, title) {
     const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
+    
+    // ZMIANA: Przetwarzanie SVG przed wyświetleniem w modalu
+    const cleanSvg = processSVG(svgContent);
+
     overlay.innerHTML = `
         <div class="swap-modal" style="align-items: center; text-align: center;">
             <h3>${title}</h3>
-            <div style="width: 100%; max-width: 300px; margin: 1rem 0;">${svgContent}</div>
+            <div style="width: 100%; max-width: 300px; margin: 1rem 0;">${cleanSvg}</div>
             <button id="close-preview" class="nav-btn" style="width: 100%">Zamknij</button>
         </div>
     `;
@@ -182,7 +184,6 @@ export function renderSessionRecoveryModal(backup, timeGapFormatted, onRestore, 
     overlay.querySelector('#discard-session').addEventListener('click', () => { overlay.remove(); if (onDiscard) onDiscard(); });
 }
 
-// --- TUNER SYNAPTYCZNY (MODAL) ---
 export function renderTunerModal(exerciseId, onUpdate) {
     const exercise = state.exerciseLibrary[exerciseId];
     if (!exercise) return;
@@ -194,7 +195,6 @@ export function renderTunerModal(exerciseId, onUpdate) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
 
-    // Style inline dla efektu WOW (Gradient Slider)
     const gradientStyle = `background: linear-gradient(90deg, #ff4d4d 0%, #d1d5db 50%, #2dd4bf 75%, #f59e0b 100%);`;
 
     overlay.innerHTML = `
@@ -240,7 +240,6 @@ export function renderTunerModal(exerciseId, onUpdate) {
             .tuner-section { margin-bottom: 1.5rem; }
             .tuner-section label { display: block; font-size: 0.85rem; font-weight: 700; color: #9ca3af; margin-bottom: 10px; text-transform: uppercase; }
 
-            /* Custom Range Slider */
             .slider-wrapper { position: relative; height: 10px; margin: 20px 0; }
             .tuner-slider {
                 -webkit-appearance: none; width: 100%; height: 10px; background: transparent; position: absolute; z-index: 2; margin: 0; cursor: pointer;
@@ -255,19 +254,17 @@ export function renderTunerModal(exerciseId, onUpdate) {
             .tuner-labels { display: flex; justify-content: space-between; font-size: 0.7rem; color: #6b7280; margin-top: 5px; }
             .tuner-val { text-align: center; font-size: 1.5rem; font-weight: 800; margin-top: 5px; color: #fff; font-variant-numeric: tabular-nums; }
 
-            /* Diff Buttons */
             .diff-toggle-group { display: flex; gap: 8px; background: #374151; padding: 4px; border-radius: 8px; }
             .diff-btn { flex: 1; background: transparent; border: none; color: #9ca3af; padding: 10px; border-radius: 6px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
             .diff-btn.active { background: #4b5563; color: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
-            .diff-btn[data-val="-1"].active { background: #0ea5e9; } /* Blue */
-            .diff-btn[data-val="0"].active { background: #10b981; } /* Green */
-            .diff-btn[data-val="1"].active { background: #ef4444; } /* Red */
+            .diff-btn[data-val="-1"].active { background: #0ea5e9; } 
+            .diff-btn[data-val="0"].active { background: #10b981; } 
+            .diff-btn[data-val="1"].active { background: #ef4444; } 
         </style>
     `;
 
     document.body.appendChild(overlay);
 
-    // Logic
     const slider = overlay.querySelector('#tuner-slider');
     const valDisplay = overlay.querySelector('#tuner-score-val');
     const tierDisplay = overlay.querySelector('#tuner-tier-name');
@@ -286,11 +283,11 @@ export function renderTunerModal(exerciseId, onUpdate) {
         tierDisplay.textContent = tier;
         tierDisplay.style.color = color;
 
-        if (navigator.vibrate) navigator.vibrate(5); // Haptic feedback
+        if (navigator.vibrate) navigator.vibrate(5);
     };
 
     slider.addEventListener('input', updateUI);
-    updateUI(); // Init
+    updateUI();
 
     diffBtns.forEach(btn => {
         btn.addEventListener('click', () => {
@@ -300,21 +297,15 @@ export function renderTunerModal(exerciseId, onUpdate) {
         });
     });
 
-    // Close on click outside
     overlay.addEventListener('click', (e) => {
         if (e.target === overlay) overlay.remove();
     });
 
     overlay.querySelector('#save-tuner').addEventListener('click', async () => {
         const newScore = parseInt(slider.value);
-
-        // Zapisz do store
         await dataStore.updatePreference(exerciseId, 'set', newScore);
         await dataStore.updatePreference(exerciseId, 'set_difficulty', currentDiff);
-
-        // Wywołaj callback odświeżający
         if (onUpdate) onUpdate();
-
         overlay.remove();
     });
 }

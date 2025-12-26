@@ -1,16 +1,10 @@
 // protocolGenerator.js
 import { state } from './state.js';
+import { checkExerciseAvailability, buildClinicalContext } from './clinicalEngine.js';
 
 /**
- * PROTOCOL GENERATOR v5.3 (Compact Sets)
- * Moduł odpowiedzialny za dynamiczne tworzenie sesji "Bio-Protocols".
- *
- * CECHY:
- * - Time-Boxing & Stretch: Dopychanie do czasu.
- * - Organic Variance: Losowe fluktuacje czasu.
- * - Smart Sets Calculation: Obliczanie wymaganej liczby serii w celu wypełnienia czasu.
- * - Compact Output: Zwraca pojedynczy obiekt ćwiczenia z zaktualizowanym atrybutem 'sets',
- *   zamiast rozbijać go na wiele osobnych kroków w tablicy.
+ * PROTOCOL GENERATOR v5.5 (Unified Clinical Logic)
+ * Zaktualizowano o import `clinicalEngine.js`.
  */
 
 // ============================================================
@@ -44,23 +38,27 @@ const TIMING_CONFIG = {
 const SECONDS_PER_REP_ESTIMATE = 4;
 const DEFAULT_MAX_DURATION = 60;
 const DEFAULT_MAX_REPS = 15;
-const INTRA_SET_REST = 15; // Czas przerwy doliczany do kompensacji dryfu
+const INTRA_SET_REST = 15;
 
 // ============================================================
 // GŁÓWNA FUNKCJA GENERUJĄCA
 // ============================================================
 
 export function generateBioProtocol({ mode, focusZone, durationMin, userContext, timeFactor = 1.0 }) {
-    console.log(`🧪 [ProtocolGenerator] Generowanie v5.3 (Compact Sets): ${mode} / ${focusZone}`);
+    console.log(`🧪 [ProtocolGenerator] Generowanie v5.5: ${mode} / ${focusZone}`);
 
     const targetSeconds = durationMin * 60;
     const config = TIMING_CONFIG[mode] || TIMING_CONFIG['reset'];
 
-    // 1. Dobór kandydatów
-    let candidates = getCandidates(mode, focusZone, { ignoreEquipment: false, userContext });
+    // Budowa kontekstu klinicznego dla silnika
+    const clinicalCtx = buildClinicalContext(userContext);
+    clinicalCtx.blockedIds = new Set(state.blacklist || []);
 
-    if (candidates.length === 0) candidates = getCandidates(mode, focusZone, { ignoreEquipment: true, userContext });
-    if (candidates.length === 0) candidates = getCandidatesSafeFallback(mode, userContext);
+    // 1. Dobór kandydatów
+    let candidates = getCandidates(mode, focusZone, { ignoreEquipment: false, clinicalCtx });
+
+    if (candidates.length === 0) candidates = getCandidates(mode, focusZone, { ignoreEquipment: true, clinicalCtx });
+    if (candidates.length === 0) candidates = getCandidatesSafeFallback(mode, clinicalCtx);
     if (candidates.length === 0) throw new Error("Brak bezpiecznych ćwiczeń.");
 
     scoreCandidates(candidates, mode, userContext);
@@ -68,23 +66,19 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext,
     // 2. Selekcja sekwencji
     const { sequence, generatedSeconds } = selectExercisesByMode(candidates, mode, targetSeconds, config, timeFactor);
 
-    // 3. Time Stretch (Globalne skalowanie)
+    // 3. Time Stretch
     let finalTimeFactor = timeFactor;
     if (generatedSeconds > 0 && generatedSeconds < targetSeconds) {
         const stretchRatio = targetSeconds / generatedSeconds;
-        // Pozwalamy na większy stretch, bo teraz dzielimy na serie
         finalTimeFactor = timeFactor * Math.min(stretchRatio, 3.0);
     }
 
     // 4. Budowa finalnego planu
     const flatExercises = buildSteps(sequence, config, mode, finalTimeFactor);
 
-    // 5. Finalny czas (szacowany, bo sets > 1 mnoży czas w rzeczywistości, ale tu sumujemy duration kroku)
-    // UWAGA: Aby czas całkowity był poprawny w UI, musimy uwzględnić serie.
     const realTotalDuration = flatExercises.reduce((sum, step) => {
         const sets = parseInt(step.sets) || 1;
         const duration = step.duration || 0;
-        // Jeśli to ćwiczenie (WORK), mnożymy przez serie. Jeśli przerwa (REST), liczymy raz.
         if (step.isWork) {
             return sum + (duration * sets) + ((sets - 1) * INTRA_SET_REST);
         }
@@ -159,7 +153,7 @@ function getStrictUnique(pool, usedIds) {
 }
 
 // ============================================================
-// BUDOWANIE KROKÓW (COMPACT SETS)
+// BUDOWANIE KROKÓW
 // ============================================================
 
 function buildSteps(exercises, config, mode, timeFactor) {
@@ -180,18 +174,15 @@ function buildSteps(exercises, config, mode, timeFactor) {
         const baseWork = config.work * timeFactor;
         const transitionRest = Math.round(config.rest * timeFactor);
 
-        // Organic Variance
         const randomJitter = 0.7 + (Math.random() * 0.6);
         const lvl = parseInt(ex.difficultyLevel || 1);
         let difficultyMod = 1.0;
         if (lvl >= 4) difficultyMod = 0.85;
         if (lvl === 1) difficultyMod = 1.15;
 
-        // Target Total Time for this exercise block (all sets combined)
         let targetTotalSeconds = (baseWork * randomJitter * difficultyMod) - (driftCompensation * 0.3);
         targetTotalSeconds = Math.max(15, targetTotalSeconds);
 
-        // Type Detection
         const rawReps = String(ex.reps_or_time || "").toLowerCase();
         const hasTimeUnits = rawReps.includes('s') || rawReps.includes('min');
         const tempoStr = (ex.defaultTempo || ex.tempo_or_iso || "").toLowerCase();
@@ -201,7 +192,6 @@ function buildSteps(exercises, config, mode, timeFactor) {
         const isTimeBased = hasTimeUnits || isIso || hasMaxDuration;
         const isRepBased = !isTimeBased;
 
-        // --- CALCULATION (SETS & PER SET VALUE) ---
         let sets = 1;
         let displayValue = "";
         let durationPerSet = 0;
@@ -227,15 +217,11 @@ function buildSteps(exercises, config, mode, timeFactor) {
             durationPerSet = secondsPerSet;
         }
 
-        // Drift update
         const totalDurationCreated = (durationPerSet * sets) + ((sets - 1) * INTRA_SET_REST);
         driftCompensation += (totalDurationCreated - baseWork);
 
         const isUnilateral = ex.isUnilateral || String(ex.reps_or_time).includes('/str');
         const tempoDisplay = config.tempo;
-
-        // --- GENERATING COMPACT STEPS ---
-        // Zamiast pętli, tworzymy jeden wpis z zaktualizowanym atrybutem sets.
 
         const createCompactStep = (suffix) => ({
             ...ex,
@@ -243,13 +229,12 @@ function buildSteps(exercises, config, mode, timeFactor) {
             name: `${ex.name}${suffix}`,
             isWork: true,
             isRest: false,
-            // Ważne: ustawiamy sets na wyliczoną wartość!
             sets: sets.toString(),
-            currentSet: 1,      // Startuje od 1
-            totalSets: sets,    // Informacja dla UI
+            currentSet: 1,
+            totalSets: sets,
             sectionName: mapModeToSectionName(mode),
             reps_or_time: displayValue,
-            duration: durationPerSet, // To jest czas JEDNEJ serii dla timera
+            duration: durationPerSet,
             tempo_or_iso: tempoDisplay,
             uniqueId: `${ex.id}_p${index}${suffix ? suffix.replace(/[\s()]/g, '') : ''}`
         });
@@ -262,7 +247,6 @@ function buildSteps(exercises, config, mode, timeFactor) {
             steps.push(createCompactStep(''));
         }
 
-        // Przejście do NASTĘPNEGO ćwiczenia
         if (index < exercises.length - 1 && transitionRest > 0) {
             steps.push({
                 name: getRestName(mode), isWork: false, isRest: true, duration: transitionRest, sectionName: "Przejście", description: `Następnie: ${exercises[index + 1].name}`
@@ -274,45 +258,23 @@ function buildSteps(exercises, config, mode, timeFactor) {
 }
 
 // ============================================================
-// HELPERY DANYCH (BEZ ZMIAN)
+// HELPERY DANYCH
 // ============================================================
 
-function violatesProtocolRestrictions(ex, restrictions) {
-    if (!restrictions || restrictions.length === 0) return false;
-    const plane = ex.primaryPlane || 'multi';
-    const pos = ex.position || null;
-    const cat = ex.categoryId || '';
-
-    if (restrictions.includes('no_kneeling') && (pos === 'kneeling' || pos === 'quadruped')) return true;
-    if (restrictions.includes('no_twisting') && plane === 'rotation') return true;
-    if (restrictions.includes('no_floor_sitting') && pos === 'sitting') return true;
-
-    if (restrictions.includes('foot_injury')) {
-        const blockedPositions = ['standing', 'kneeling', 'quadruped', 'lunge'];
-        if (blockedPositions.includes(pos)) return true;
-        const blockedCategories = ['squats', 'lunges', 'cardio', 'plyometrics', 'calves'];
-        if (blockedCategories.includes(cat)) return true;
-        const name = (ex.name || '').toLowerCase();
-        if (name.includes('przysiad') || name.includes('wykrok') || name.includes('bieg')) return true;
-    }
-    return false;
-}
-
 function getCandidates(mode, focusZone, ctx = {}) {
-    const { ignoreEquipment, userContext } = ctx;
-    const restrictions = userContext?.physical_restrictions || [];
+    const { ignoreEquipment, clinicalCtx } = ctx;
     const library = Object.entries(state.exerciseLibrary).map(([id, data]) => ({ id, ...data }));
     const zoneConfig = ZONE_MAP[focusZone];
-    const blacklist = state.blacklist || [];
 
     if (!zoneConfig) return [];
 
     return library.filter(ex => {
-        if (blacklist.includes(ex.id)) return false;
-        if (violatesProtocolRestrictions(ex, restrictions)) return false;
-        if (ex.isAllowed !== true) {
-            if (ignoreEquipment && ex.isAllowed === false && ex.rejectionReason === 'missing_equipment') { /* pass */ }
-            else { return false; }
+        // ZMIANA: Użycie centralnego silnika
+        const result = checkExerciseAvailability(ex, clinicalCtx, { ignoreEquipment });
+        if (!result.allowed) {
+            // Wyjątek: Jeśli rejectionReason to 'missing_equipment' a my ignorujemy sprzęt -> przepuść
+            if (ignoreEquipment && result.reason === 'missing_equipment') { /* pass */ }
+            else return false;
         }
 
         const difficulty = parseInt(ex.difficultyLevel || 1, 10);
@@ -322,7 +284,7 @@ function getCandidates(mode, focusZone, ctx = {}) {
         if (mode === 'calm') {
             if (difficulty > 2) return false;
             if (!['breathing_control', 'breathing', 'muscle_relaxation'].includes(ex.categoryId)) return false;
-            if (ex.position && !['supine', 'sitting'].includes(ex.position)) return false;
+            if (ex.position && !['supine', 'sitting', 'side_lying'].includes(ex.position)) return false;
         }
         if (mode === 'flow') {
             if (difficulty > 3) return false;
@@ -347,12 +309,13 @@ function getCandidates(mode, focusZone, ctx = {}) {
     });
 }
 
-function getCandidatesSafeFallback(mode, userContext) {
+function getCandidatesSafeFallback(mode, clinicalCtx) {
     const library = Object.entries(state.exerciseLibrary).map(([id, data]) => ({ id, ...data }));
-    const restrictions = userContext?.physical_restrictions || [];
     return library.filter(ex => {
-        if (ex.isAllowed !== true) return false;
-        if (violatesProtocolRestrictions(ex, restrictions)) return false;
+        // ZMIANA: Użycie centralnego silnika
+        const result = checkExerciseAvailability(ex, clinicalCtx, { ignoreEquipment: true, ignoreDifficulty: true });
+        if (!result.allowed) return false;
+
         const difficulty = parseInt(ex.difficultyLevel || 1, 10);
         if (mode === 'sos' && difficulty > 2) return false;
         if (mode === 'calm' && difficulty > 2) return false;
@@ -373,10 +336,6 @@ function scoreCandidates(candidates, mode, userContext) {
     });
     candidates.sort((a, b) => b._genScore - a._genScore);
 }
-
-// ============================================================
-// FORMATOWANIE TEKSTÓW
-// ============================================================
 
 function generateTitle(mode, zone) {
     const zoneName = {

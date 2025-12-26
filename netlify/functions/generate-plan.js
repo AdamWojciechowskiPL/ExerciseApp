@@ -3,12 +3,6 @@
 const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
 const { buildUserContext, checkExerciseAvailability } = require('./_clinical-rule-engine.js');
 
-/**
- * GENERATOR PLANU TRENINGOWEGO (VIRTUAL PHYSIO) v4.3 (Fix ReferenceError)
- * - Logika kliniczna w _clinical-rule-engine.js
- * - Fix: Naprawiono błąd 'original is not defined' w funkcji pickOne.
- */
-
 const SECONDS_PER_REP = 4;
 const REST_BETWEEN_SETS = 5;
 const REST_BETWEEN_EXERCISES = 5;
@@ -17,7 +11,6 @@ const MAX_MAIN_OCCURRENCES_PER_WEEK = 4;
 const MAX_ROTATIONAL_CORE_WITH_DISC_HERNIATION = 3;
 const MAX_ROTATION_MOBILITY_WITH_DISC_HERNIATION = 4;
 
-// Bazowe wagi (neutralne)
 const CATEGORY_WEIGHTS = {
     'breathing': 1.0,
     'spine_mobility': 1.0,
@@ -26,10 +19,51 @@ const CATEGORY_WEIGHTS = {
     'core_anti_extension': 1.0,
     'core_anti_rotation': 1.0,
     'core_anti_flexion': 1.0,
-    'nerve_flossing': 0.0 // Domyślnie wyłączone
+    'nerve_flossing': 0.0
 };
 
 const BREATHING_CATEGORIES = ['breathing', 'breathing_control', 'muscle_relaxation'];
+
+// --- HELPER: NORMALIZACJA SPRZĘTU (POPRAWIONA) ---
+const normalizeEquipment = (rawEquipment) => {
+    if (!rawEquipment) return [];
+
+    let items = [];
+    if (Array.isArray(rawEquipment)) {
+        items = rawEquipment.map(item => String(item).trim().toLowerCase());
+    } else if (typeof rawEquipment === 'string') {
+        items = rawEquipment.split(',').map(item => item.trim().toLowerCase());
+    } else {
+        return [];
+    }
+
+    const MAPPING = {
+        'mata': 'mata', 'mat': 'mata', 'yoga mat': 'mata',
+        'hantle': 'hantle', 'dumbbell': 'hantle', 'dumbbells': 'hantle', 'ciężarki': 'hantle',
+        'guma': 'guma oporowa', 'miniband': 'guma oporowa', 'mini band': 'guma oporowa', 'resistance band': 'guma oporowa', 'taśma': 'guma oporowa',
+        'drążek': 'drążek', 'pull-up bar': 'drążek',
+        'piłka': 'piłka gimnastyczna', 'swiss ball': 'piłka gimnastyczna', 'gym ball': 'piłka gimnastyczna', 'fitball': 'piłka gimnastyczna',
+        'krzesło': 'krzesło', 'chair': 'krzesło',
+        'ściana': 'ściana', 'wall': 'ściana',
+        'wałek': 'roller', 'roller': 'roller',
+        'kettlebell': 'kettlebell', 'kettle': 'kettlebell',
+        'ławka': 'ławka', 'bench': 'ławka'
+    };
+    const IGNORE_LIST = ['brak', 'none', 'brak sprzętu', 'masa własna', 'bodyweight', ''];
+    const normalizedSet = new Set();
+    items.forEach(item => {
+        if (IGNORE_LIST.includes(item)) return;
+        const canonical = MAPPING[item] || item;
+        const formatted = canonical.charAt(0).toUpperCase() + canonical.slice(1);
+        normalizedSet.add(formatted);
+    });
+    return Array.from(normalizedSet);
+};
+
+const normalizePainZones = (zones) => {
+    if (Array.isArray(zones)) return zones;
+    return [];
+};
 
 exports.handler = async (event) => {
     if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method Not Allowed' };
@@ -56,8 +90,9 @@ exports.handler = async (event) => {
             const exerciseDB = exercisesResult.rows.map(ex => ({
                 ...ex,
                 is_unilateral: !!ex.is_unilateral,
-                pain_relief_zones: ex.pain_relief_zones || [],
-                equipment: ex.equipment ? ex.equipment.split(',').map(e => e.trim().toLowerCase()) : [],
+                pain_relief_zones: normalizePainZones(ex.pain_relief_zones),
+                // Używamy poprawionej normalizacji
+                equipment: normalizeEquipment(ex.equipment),
                 default_tempo: ex.default_tempo,
                 primary_plane: ex.primary_plane || 'multi',
                 position: ex.position || null
@@ -67,29 +102,21 @@ exports.handler = async (event) => {
             const ctx = buildUserContext(userData);
             blacklistResult.rows.forEach(row => ctx.blockedIds.add(row.exercise_id));
 
-            // --- SEKCJA WAG ---
+            // --- SEKCJA WAG (Bez zmian) ---
             let weights = { ...CATEGORY_WEIGHTS };
             const diagnosis = userData.medical_diagnosis || [];
 
-            if (diagnosis.includes('scoliosis')) {
-                weights['core_anti_rotation'] += 0.6; weights['glute_activation'] += 0.4; weights['spine_mobility'] += 0.3;
-            }
-            if (diagnosis.includes('facet_syndrome') || diagnosis.includes('stenosis')) {
-                weights['hip_mobility'] += 0.6; weights['core_anti_extension'] -= 0.5;
-            }
+            if (diagnosis.includes('scoliosis')) { weights['core_anti_rotation'] += 0.6; weights['glute_activation'] += 0.4; weights['spine_mobility'] += 0.3; }
+            if (diagnosis.includes('facet_syndrome') || diagnosis.includes('stenosis')) { weights['hip_mobility'] += 0.6; weights['core_anti_extension'] -= 0.5; }
             if (diagnosis.includes('disc_herniation')) {
                 weights['core_anti_extension'] += 0.3; weights['core_anti_rotation'] += 0.2;
                 if (ctx.tolerancePattern !== 'flexion_intolerant' && ctx.severityScore < 4) weights['core_anti_flexion'] += 0.5;
             }
-            if (ctx.painFilters.has('sciatica') || diagnosis.includes('piriformis')) {
-                weights['nerve_flossing'] = 2.5; weights['glute_activation'] += 0.3;
-            }
+            if (ctx.painFilters.has('sciatica') || diagnosis.includes('piriformis')) { weights['nerve_flossing'] = 2.5; weights['glute_activation'] += 0.3; }
 
             const painChar = userData.pain_character || [];
             const painLocs = userData.pain_locations || [];
-            if (painChar.includes('radiating') && (painLocs.includes('sciatica') || painLocs.includes('lumbar_radiculopathy'))) {
-                weights['nerve_flossing'] = Math.max(weights['nerve_flossing'], 2.5);
-            }
+            if (painChar.includes('radiating') && (painLocs.includes('sciatica') || painLocs.includes('lumbar_radiculopathy'))) { weights['nerve_flossing'] = Math.max(weights['nerve_flossing'], 2.5); }
 
             const workType = userData.work_type;
             if (workType === 'sedentary') { weights['hip_mobility'] += 0.5; weights['spine_mobility'] += 0.4; weights['glute_activation'] += 0.4; }
@@ -127,7 +154,7 @@ exports.handler = async (event) => {
             const weeklyPlan = {
                 id: `dynamic-${Date.now()}`,
                 name: "Terapia Personalizowana",
-                description: "Plan wygenerowany przez Asystenta AI (v4.3 - Refactored)",
+                description: "Plan wygenerowany przez Asystenta AI (v4.3)",
                 days: []
             };
 
@@ -136,11 +163,11 @@ exports.handler = async (event) => {
 
             for (let i = 1; i <= sessionsPerWeek; i++) {
                 let session = generateSession(
-                    i, candidates, weights, ctx.severityScore, 
-                    userData.exercise_experience, weeklyUsage, sessionsPerWeek, 
+                    i, candidates, weights, ctx.severityScore,
+                    userData.exercise_experience, weeklyUsage, sessionsPerWeek,
                     userData, weeklyRotationMobilityUsage
                 );
-                
+
                 ['warmup', 'main', 'cooldown'].forEach(section => {
                     session[section].forEach(ex => {
                         applyVolume(ex, calculateLoadFactor(ctx.severityScore, userData.exercise_experience, sessionsPerWeek), section, targetDurationMin);
@@ -169,10 +196,7 @@ exports.handler = async (event) => {
                 [userId, JSON.stringify(currentSettings)]
             );
 
-            return {
-                statusCode: 200,
-                body: JSON.stringify({ message: "Plan generated", plan: weeklyPlan })
-            };
+            return { statusCode: 200, body: JSON.stringify({ message: "Plan generated", plan: weeklyPlan }) };
 
         } finally {
             client.release();
@@ -241,7 +265,8 @@ function sanitizeForStorage(session) {
             exerciseId: ex.id || ex.exerciseId,
             sets: ex.sets,
             reps_or_time: ex.reps_or_time,
-            equipment: ex.equipment && typeof ex.equipment === 'string' ? ex.equipment : undefined
+            // Zapisujemy string dla kompatybilności wstecznej UI, ale normalizer i tak to obsłuży
+            equipment: Array.isArray(ex.equipment) ? ex.equipment.join(', ') : ex.equipment
         }));
     };
 
@@ -273,7 +298,6 @@ function pickOne(pool, category, usedIds, weeklyUsage, sectionName, userData, we
         }
 
         if (weeklyRotationMobilityUsage && sectionName !== 'main' && hasDisc) {
-            // FIX: Używamy 'ex' a nie 'original', bo 'original' jeszcze nie istnieje
             const plane = ex.primary_plane || 'multi';
             if (plane === 'rotation') {
                 const usedRot = weeklyRotationMobilityUsage.get(ex.id) || 0;
@@ -327,25 +351,14 @@ function applyVolume(ex, factor, sectionName, targetDurationMin = 30) {
     const isBreathing = BREATHING_CATEGORIES.includes(ex.category_id);
 
     if (isBreathing) {
-        ex.sets = "1"; 
-        
+        ex.sets = "1";
         let baseDuration = 90;
-
-        if (targetDurationMin < 25) {
-            baseDuration = 60;
-        } else if (targetDurationMin > 45) {
-            baseDuration = 120;
-        }
-
-        if (sectionName === 'warmup') {
-            baseDuration = Math.max(60, baseDuration - 30); 
-        }
-
+        if (targetDurationMin < 25) baseDuration = 60;
+        else if (targetDurationMin > 45) baseDuration = 120;
+        if (sectionName === 'warmup') baseDuration = Math.max(60, baseDuration - 30);
         let calcDuration = Math.round(baseDuration * factor);
         calcDuration = Math.max(60, calcDuration);
-
         calcDuration = Math.ceil(calcDuration / 15) * 15;
-
         ex.reps_or_time = `${calcDuration} s`;
         ex.exerciseId = ex.id;
         ex.tempo_or_iso = "Spokojnie";
@@ -388,11 +401,6 @@ function applyVolume(ex, factor, sectionName, targetDurationMin = 30) {
     ex.sets = sets.toString();
     ex.reps_or_time = repsOrTime;
     ex.exerciseId = ex.id;
-
-    if (Array.isArray(ex.equipment)) {
-        if (ex.equipment.length === 0) ex.equipment = "Brak sprzętu";
-        else ex.equipment = ex.equipment.map(e => e.charAt(0).toUpperCase() + e.slice(1)).join(', ');
-    }
 }
 
 function estimateDurationSeconds(session) {
@@ -420,7 +428,7 @@ function estimateDurationSeconds(session) {
 function optimizeSessionDuration(session, targetMin) {
     const targetSeconds = targetMin * 60;
     let estimatedSeconds = estimateDurationSeconds(session);
-    
+
     if (estimatedSeconds > targetSeconds + 300) {
         while (session.main.length > 1 && estimatedSeconds > targetSeconds + 300) {
             session.main.pop();
@@ -431,27 +439,21 @@ function optimizeSessionDuration(session, targetMin) {
     let attempts = 0;
     while (estimatedSeconds > targetSeconds * 1.15 && attempts < 5) {
         let reductionMade = false;
-        
         for (let ex of session.main) {
             if (BREATHING_CATEGORIES.includes(ex.category_id)) continue;
-
             const sets = parseInt(ex.sets);
             if (ex.is_unilateral) { if (sets >= 4) { ex.sets = String(sets - 2); reductionMade = true; } }
             else { if (sets > 1) { ex.sets = String(sets - 1); reductionMade = true; } }
         }
-
         if (!reductionMade) {
             [...session.warmup, ...session.main, ...session.cooldown].forEach(ex => {
                 const text = String(ex.reps_or_time);
                 const val = parseInt(text);
                 if (!isNaN(val)) {
                     const isBreathing = BREATHING_CATEGORIES.includes(ex.category_id);
-                    const minLimit = isBreathing ? 45 : 5; 
-
+                    const minLimit = isBreathing ? 45 : 5;
                     let newVal = Math.max(minLimit, Math.floor(val * 0.85));
-                    
                     if (isBreathing) newVal = Math.ceil(newVal / 15) * 15;
-
                     ex.reps_or_time = text.replace(val, newVal);
                 }
             });
@@ -471,7 +473,6 @@ function expandSessionDuration(session, targetMin) {
             let expansionMade = false;
             for (let ex of session.main) {
                 if (BREATHING_CATEGORIES.includes(ex.category_id)) continue;
-
                 const sets = parseInt(ex.sets);
                 if (sets < maxSets) {
                     if (ex.is_unilateral) { if (sets + 2 <= maxSets) { ex.sets = String(sets + 2); expansionMade = true; } }

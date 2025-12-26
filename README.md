@@ -1,69 +1,59 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v12.5.7
+# Aplikacja Treningowa (Smart Rehab PWA) v13.0.0
 
-Zaawansowana aplikacja PWA (Progressive Web App) łącząca trening siłowy z rehabilitacją kręgosłupa (metodyka McGill L5-S1). System wykorzystuje architekturę Serverless oraz autorski silnik **"Virtual Physio"** (v3.3), wspierany przez nowy moduł **"Exercise Affinity Engine"**, który personalizuje treningi na podstawie preferencji emocjonalnych i odczuwalnej trudności.
+Zaawansowana aplikacja PWA (Progressive Web App) łącząca trening siłowy z rehabilitacją kręgosłupa (metodyka McGill L5-S1). System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz autorski silnik **"Virtual Physio"**, który personalizuje treningi na podstawie profilu medycznego, dostępnego sprzętu i preferencji użytkownika.
 
----
-
-## 🚀 Kluczowe Funkcjonalności
-
-### 🧠 Virtual Physio (Dynamiczny Generator Planów v3.3)
-*   **Inteligentny Wizard:** Rozbudowana ankieta zbierająca dane o lokalizacji bólu, historii medycznej, wzorcach ruchowych (triggers/reliefs) oraz stylu życia (praca, hobby).
-*   **Generator AI (`generate-plan.js`):** Algorytm po stronie serwera tworzący spersonalizowane plany tygodniowe, uwzględniający przeciwwskazania i priorytety terapeutyczne.
-*   **Walidacja kliniczna:** Blokada generacji planu dla przypadków wykluczonych regułami klinicznymi (`can_generate_plan`).
-*   **Ograniczenie powtarzalności:** Mechanizm `weeklyUsage` limitujący częstość pojawiania się tego samego ćwiczenia w tygodniu.
-
-### ❤️ Exercise Affinity Engine
-*   **Ranking Preferencji (Tiers):** System klasyfikacji ćwiczeń oparty na odczuciach użytkownika, a nie tylko liczbach.
-    *   💎 **Tier S (Supreme):** Ulubione ćwiczenia, najwyższy priorytet w losowaniu.
-    *   🔥 **Tier A (Great):** Solidne i lubiane ćwiczenia.
-    *   🛡️ **Tier B (Neutral):** Standardowa baza.
-    *   ⚠️ **Tier C (Warning):** Ćwiczenia oznaczone jako "Za trudne" lub "Nielubiane".
-*   **Synaptic Tuner:** Innowacyjny interfejs kalibracji (suwak gradientowy), pozwalający precyzyjnie określić stosunek emocjonalny do ćwiczenia.
-*   **Chirurgiczna Ewolucja:** Oznaczenie ćwiczenia jako "Za łatwe" (💤) lub "Za trudne" (🔥) natychmiast wpływa na algorytm progresji/regresji dla tego konkretnego ruchu.
-
-### 🧬 Bio-Protocols & SOS Hub
-Inteligentne "Laboratorium Regeneracji" dostępne na żądanie, niezależnie od głównego planu treningowego.
-*   **On-Demand Generator:** Algorytm działający po stronie klienta (`protocolGenerator.js`), który w ułamku sekundy tworzy mikro-sesję (4-15 min) dopasowaną do aktualnej potrzeby.
-*   **3 Tryby Pracy:**
-    *   🚑 **SOS (Ratunek):** Filtruje ćwiczenia pod kątem ulgi w bólu (`pain_relief_zones`), wymusza wolne tempo i niską trudność.
-    *   🔥 **Booster (Wycisk):** Celowany trening uzupełniający (np. "Brzuch ze stali"), promujący ćwiczenia z wysokim `Affinity Score`.
-    *   🍃 **Reset (Równowaga):** Sesje "Anty-Biuro" lub "Sen", oparte na mobilności i oddechu.
-*   **Time-Boxing:** Algorytm "dopycha" ćwiczenia tak, aby idealnie wypełnić zadeklarowany przez użytkownika czas (np. równe 5 minut).
-
-### 🏆 Gamifikacja i Analityka
-*   **Hero Dashboard:** Nowoczesny panel z kafelkami statystyk (Seria, Tarcza, Łączny Czas Treningów).
-*   **Resilience Shield ("Tarcza"):** Wskaźnik ciągłości treningów i odporności na nawroty bólu.
-*   **Live Affinity Badges:** Widoczne w trakcie treningu odznaki rangi ćwiczenia (np. Tier S), budujące świadomość treningową.
-
-### 📱 Nowoczesny Dashboard (UI & UX)
-*   **Mission Card:** Karta "Twoja Misja na Dziś" z gradientowym nagłówkiem i statusem bólu.
-*   **Upcoming Carousel:** Horyzontalna lista nadchodzących treningów.
-*   **Poprawiona walidacja trybu:** Przełączanie między trybem dynamicznym a statycznym poprawnie resetuje cache sesji.
-
-### 🏋️ Tryby Treningowe
-1.  **Tryb Dynamiczny:** Plan "szyty na miarę" przez generator AI.
-2.  **Tryb Statyczny:** Klasyczne, sztywne plany treningowe (np. "Fundamenty L5-S1").
-3.  **Focus Mode:** Ekran treningu z dużym zegarem, obsługą TTS (lektora) i animacjami SVG.
-
-### 💾 Session Recovery
-*   **Auto-backup:** Stan treningu zapisywany do `localStorage` w czasie rzeczywistym przy każdej zmianie ćwiczenia.
-*   **Wykrywanie przerwanej sesji:** Po awarii/zamknięciu przeglądarki aplikacja wykrywa niezakończony trening.
-*   **Modal przywracania:** Opcja "Przywróć" lub "Porzuć" z informacją o czasie przerwy i postępie.
-*   **Luka czasowa jako pauza:** Czas nieobecności doliczany do `totalPausedTime`.
-
-### ⚙️ Mechanizmy Adaptacyjne (Workout Mixer v2.0)
-*   **Mixer z priorytetem Affinity:** Algorytm doboru ćwiczeń uwzględnia teraz nie tylko świeżość i sprzęt, ale także punkty preferencji (+20 za Like, -50 za "Za trudne").
-*   **Safety First:** Preferencje użytkownika działają tylko w obrębie ćwiczeń bezpiecznych klinicznie (zgodnych z mapą bólu).
-*   **Smart Swap:** Możliwość ręcznej wymiany ćwiczenia na alternatywę z tej samej kategorii.
-*   **Obsługa Czarnej Listy:** Blokowanie nielubianych ćwiczeń (Tier F).
-
-### 📺 Integracja z TV (Google Cast)
-*   **Custom Receiver:** Dedykowana aplikacja na telewizor (Chromecast).
-*   **Real-time Sync:** Synchronizacja timera i animacji między telefonem a TV.
-*   **Anti-Idle System (v8):** Zaawansowane mechanizmy (MediaSession API, Wake Lock API, Canvas Animation, Audio Oscillator, KeepAlive) zapobiegające wygaszaniu ekranu TV.
+Wersja **13.0.0** wprowadza gruntowną przebudowę warstwy danych, optymalizację wydajności (Lazy Loading SVG) oraz ujednolicenie logiki klinicznej między frontendem a backendem.
 
 ---
 
+## 🚀 Co nowego w v13.0.0?
+
+### ⚡ Wydajność i Optymalizacja
+*   **SVG Lazy Loading:** Aplikacja nie pobiera już megabajtów kodu SVG przy starcie. Animacje są pobierane asynchronicznie, na żądanie (endpoint `get-exercise-animation`), co drastycznie przyspiesza Time-to-Interactive.
+*   **SVG Sanitizer:** Automatyczna naprawa atrybutów `viewBox` i usuwanie sztywnych wymiarów `width/height` dla pełnej responsywności na każdym ekranie.
+
+### 🏥 Clinical Engine v5.0 (Shared Logic)
+*   **Unified Rule Engine:** Logika filtracji ćwiczeń (`clinicalEngine.js`) jest teraz współdzielona. Backend (Wizard) i Frontend (Workout Mixer, Protocol Generator) używają dokładnie tych samych reguł bezpieczeństwa.
+*   **Foot Injury Support:** Pełna obsługa flagi `is_foot_loading`. System automatycznie wyklucza ćwiczenia obciążające stopę dla użytkowników z kontuzją (Non-weight bearing).
+*   **New Positions:** Dodano obsługę pozycji `side_lying` (leżenie bokiem), co pozwala na precyzyjniejsze filtrowanie ćwiczeń (np. dozwolone przy zakazie siedzenia).
+
+### 🛡️ Integralność Danych
+*   **Strict Equipment:** Pole `equipment` jest teraz znormalizowaną tablicą (np. `['Mata', 'Hantle']`), a nie surowym stringiem CSV.
+*   **Data Consistency:** Wymuszenie integralności relacji `next_progression_id` (Database Foreign Keys). Nie można przypisać progresji do nieistniejącego ćwiczenia.
+*   **Robust Importer:** Nowy skrypt `scripts/import-exercises.js` działający w dwóch fazach (Upsert -> Linking) zapewniający atomowość i walidację importu danych.
+
+### 🏋️ Logika Treningowa
+*   **Unilateral 2.0:** Twarda zasada "Sets Per Side". Jeśli ćwiczenie jest jednostronne, liczba serii w bazie (np. 2) oznacza 2 serie na lewą i 2 serie na prawą stronę.
+*   **YouTube Parsing:** Inteligentny parser obsługujący różne formaty linków (`youtu.be`, `embed`, parametry URL) dla integracji z Google Cast i UI.
+
+---
+
+## 🧠 Kluczowe Moduły
+
+### 1. Virtual Physio (Backend Generator)
+Algorytm po stronie serwera (`generate-plan.js`), który tworzy tygodniowe plany ("Tyranie", "Rehab", "Hybrid") na podstawie ankiety medycznej.
+*   Analizuje przeciwwskazania (np. `flexion_intolerant`, `sciatica`).
+*   Dobiera wagi kategorii ćwiczeń (np. priorytet dla `nerve_flossing` przy rwie kulszowej).
+
+### 2. Workout Mixer (Frontend Adaptability)
+Silnik tasowania ćwiczeń (`workoutMixer.js`), który zapobiega monotonii.
+*   **Smart Swap:** Pozwala wymienić ćwiczenie na inne z tej samej kategorii, zachowując zgodność ze sprzętem i poziomem trudności.
+*   **Affinity Engine:** Preferuje ćwiczenia oznaczone jako "Lubiane" (Score > 0) i unika tych "Nielubianych".
+
+### 3. Bio-Protocol Generator
+Generator sesji "na żądanie" (`protocolGenerator.js`) działający całkowicie offline.
+*   **Time-Boxing:** Generuje sesję idealnie wypełniającą zadany czas (np. 5, 10, 15 min).
+*   **Tryby:**
+    *   🚑 **SOS:** Tylko ćwiczenia przeciwbólowe (niskie obciążenie).
+    *   🔥 **Booster:** Intensywne obwody (Core, Glute).
+    *   🍃 **Reset/Flow:** Mobilność i oddech (Anty-Biuro).
+
+### 4. Cast Receiver v8.0 (TV App)
+Dedykowana aplikacja na Chromecasta.
+*   **Anti-Idle Tech:** Wykorzystuje MediaSession API, Web Audio API (oscylator ciszy), Canvas Animation i Wake Lock, aby zapobiec wygaszaniu ekranu telewizora.
+*   **Real-time Sync:** Wyświetla timer, powtórzenia i animacje SVG zsynchronizowane z telefonem.
+
+---
 ## 📂 Pełna Struktura Plików
 
 ```text
@@ -150,7 +140,7 @@ Katalog ćwiczeń (Baza Wiedzy).
 *   `id` (PK, VARCHAR): Unikalny slug (np. `deadBug`).
 *   `name` (VARCHAR): Nazwa wyświetlana.
 *   `description` (TEXT): Instrukcja.
-*   `equipment` (VARCHAR): Np. "Mata, Hantle" (CSV).
+*   `equipment` (VARCHAR): Tablica znormalizowanych nazw (np. {mata, hantle})
 *   `category_id` (VARCHAR): Kategoria biomechaniczna (np. `core_anti_extension`).
 *   `difficulty_level` (INT): 1-5.
 *   `pain_relief_zones` (TEXT[]): Tagi medyczne.
@@ -159,8 +149,9 @@ Katalog ćwiczeń (Baza Wiedzy).
 *   `is_unilateral` (BOOLEAN): Czy wykonywane na stronę.
 *   `max_recommended_reps` (INT).
 *   `max_recommended_duration` (INT).
-*   `primary_plane` (VARCHAR): **[NOWE]** Płaszczyzna ruchu (flexion/extension/rotation/lateral_flexion/multi).
-*   `position` (VARCHAR): **[NOWE]** Pozycja wyjściowa (standing/sitting/kneeling/quadruped/supine/prone).
+*   `primary_plane` (VARCHAR): Płaszczyzna ruchu (flexion/extension/rotation/lateral_flexion/multi).
+*   `position` (VARCHAR): Pozycja wyjściowa (standing/sitting/kneeling/quadruped/supine/prone).
+*   `is_foot_loading` (BOOLEAN): Czy ćwiczenie obciąża stopę (dla kontuzji)
 
 ### 3. `user_settings`
 Przechowuje konfigurację oraz **wygenerowany plan dynamiczny**.

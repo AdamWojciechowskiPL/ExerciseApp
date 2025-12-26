@@ -5,11 +5,14 @@ export const state = {
     isAppInitialized: false,
 
     userProgress: {},
-    
+
     // Struktura: { "deadBug": { score: 20, difficulty: 0 }, ... }
     userPreferences: {},
 
     masteryStats: null,
+
+    // CACHE ANIMACJI (Zadanie 6)
+    animationCache: new Map(),
 
     settings: {
         appStartDate: null,
@@ -27,19 +30,8 @@ export const state = {
         wizardData: {} // Pełne dane z ankiety
     },
 
-    /**
-     * BAZA WIEDZY (Atlas Ćwiczeń)
-     * Teraz zawiera flagi walidacji serwerowej ("White List Pattern"):
-     * {
-     *   "id": {
-     *     ...pola_standardowe,
-     *     "isAllowed": boolean,       // Czy bezpieczne dla usera (sprzęt + zdrowie)
-     *     "rejectionReason": string   // np. "missing_equipment", "physical_restriction"
-     *   }
-     * }
-     */
     exerciseLibrary: {},
-    
+
     trainingPlans: {},
     blacklist: [],
 
@@ -61,7 +53,7 @@ export const state = {
     isPaused: false,
     breakTimeoutId: null,
 
-    todaysDynamicPlan: null, // Cache dla planu na dziś (Protocol lub Day)
+    todaysDynamicPlan: null,
 
     timer: {
         interval: null,

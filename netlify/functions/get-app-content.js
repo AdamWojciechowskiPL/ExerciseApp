@@ -3,6 +3,58 @@ const { Pool } = require('@neondatabase/serverless');
 const { getUserIdFromEvent } = require('./_auth-helper.js');
 const { buildUserContext, checkExerciseAvailability } = require('./_clinical-rule-engine.js');
 
+// --- HELPER: NORMALIZACJA SPRZĘTU (POPRAWIONA) ---
+const normalizeEquipment = (rawEquipment) => {
+    // 1. Obsługa null/undefined
+    if (!rawEquipment) return [];
+
+    let items = [];
+
+    // 2. Obsługa TABLICY (Nowy format z bazy)
+    if (Array.isArray(rawEquipment)) {
+        items = rawEquipment.map(item => String(item).trim().toLowerCase());
+    } 
+    // 3. Obsługa STRINGA (Stary format lub CSV)
+    else if (typeof rawEquipment === 'string') {
+        items = rawEquipment.split(',').map(item => item.trim().toLowerCase());
+    } 
+    else {
+        return [];
+    }
+
+    const MAPPING = {
+        'mata': 'mata', 'mat': 'mata', 'yoga mat': 'mata',
+        'hantle': 'hantle', 'dumbbell': 'hantle', 'dumbbells': 'hantle', 'ciężarki': 'hantle',
+        'guma': 'guma oporowa', 'miniband': 'guma oporowa', 'mini band': 'guma oporowa', 'resistance band': 'guma oporowa', 'taśma': 'guma oporowa',
+        'drążek': 'drążek', 'pull-up bar': 'drążek',
+        'piłka': 'piłka gimnastyczna', 'swiss ball': 'piłka gimnastyczna', 'gym ball': 'piłka gimnastyczna', 'fitball': 'piłka gimnastyczna',
+        'krzesło': 'krzesło', 'chair': 'krzesło',
+        'ściana': 'ściana', 'wall': 'ściana',
+        'wałek': 'roller', 'roller': 'roller',
+        'kettlebell': 'kettlebell', 'kettle': 'kettlebell',
+        'ławka': 'ławka', 'bench': 'ławka'
+    };
+
+    const IGNORE_LIST = ['brak', 'none', 'brak sprzętu', 'masa własna', 'bodyweight', ''];
+    const normalizedSet = new Set();
+
+    items.forEach(item => {
+        if (IGNORE_LIST.includes(item)) return;
+        const canonical = MAPPING[item] || item;
+        // Formatowanie: pierwsza litera duża
+        const formatted = canonical.charAt(0).toUpperCase() + canonical.slice(1);
+        normalizedSet.add(formatted);
+    });
+
+    return Array.from(normalizedSet);
+};
+
+// --- HELPER: NORMALIZACJA STREF BÓLU ---
+const normalizePainZones = (zones) => {
+    if (Array.isArray(zones)) return zones;
+    return [];
+};
+
 exports.handler = async (event) => {
   if (!process.env.NETLIFY_DATABASE_URL) {
     return { statusCode: 500, body: JSON.stringify({ error: 'Server config error' }) };
@@ -23,26 +75,23 @@ exports.handler = async (event) => {
 
     // 1. Pobierz Ćwiczenia
     const exercisesResult = await client.query('SELECT * FROM exercises;');
-    
+
     // 2. Pobierz Personalizację (Overrides, Blacklist, Settings/WizardData)
     let overrides = {};
     let blockedIds = new Set();
     let clinicalContext = null;
 
     if (userId) {
-      // Pobieramy wszystko równolegle dla wydajności
       const [overridesResult, blacklistResult, settingsResult] = await Promise.all([
         client.query('SELECT original_exercise_id, replacement_exercise_id FROM user_plan_overrides WHERE user_id = $1', [userId]),
         client.query('SELECT exercise_id, preferred_replacement_id FROM user_exercise_blacklist WHERE user_id = $1', [userId]),
         client.query('SELECT settings FROM user_settings WHERE user_id = $1', [userId])
       ]);
 
-      // Obsługa Overrides
       overridesResult.rows.forEach(row => {
         overrides[row.original_exercise_id] = row.replacement_exercise_id;
       });
 
-      // Obsługa Blacklisty
       blacklistResult.rows.forEach(row => {
         if (row.preferred_replacement_id) {
           overrides[row.exercise_id] = row.preferred_replacement_id;
@@ -51,40 +100,36 @@ exports.handler = async (event) => {
         }
       });
 
-      // Budowanie Kontekstu Klinicznego (Wizard Data)
       if (settingsResult.rows.length > 0 && settingsResult.rows[0].settings) {
         const settings = settingsResult.rows[0].settings;
         if (settings.wizardData) {
             clinicalContext = buildUserContext(settings.wizardData);
-            // Dodajemy blacklistę do kontekstu klinicznego
             blacklistResult.rows.forEach(row => clinicalContext.blockedIds.add(row.exercise_id));
         }
       }
     }
 
-    // 3. Transformacja Ćwiczeń z Walidacją
+    // 3. Transformacja Ćwiczeń z Walidacją i Normalizacją
     const exercises = exercisesResult.rows.reduce((acc, ex) => {
-      // Przygotowanie obiektu do analizy (normalizacja pól)
+      // Normalizacja sprzętu DO TABLICY STRINGÓW (Teraz działa poprawnie dla array i string)
+      const normalizedEquipment = normalizeEquipment(ex.equipment);
+      const normalizedZones = normalizePainZones(ex.pain_relief_zones);
+
       const exForCheck = {
           ...ex,
           is_unilateral: !!ex.is_unilateral,
-          pain_relief_zones: ex.pain_relief_zones || [],
-          equipment: ex.equipment ? ex.equipment.split(',').map(e => e.trim().toLowerCase()) : [],
+          pain_relief_zones: normalizedZones,
+          equipment: normalizedEquipment,
           default_tempo: ex.default_tempo,
           primary_plane: ex.primary_plane || 'multi',
-          position: ex.position || null
+          position: ex.position || null,
+          is_foot_loading: !!ex.is_foot_loading
       };
 
-      // Domyślnie dozwolone, chyba że kontekst kliniczny zabroni
       let isAllowed = true;
       let rejectionReason = null;
 
       if (clinicalContext) {
-          // Używamy silnika regułowego
-          // strictSeverity: false -> w widoku Atlasu nie chcemy ukrywać wszystkiego jak leci w trybie ostrym, 
-          // chyba że frontend o to poprosi. Ale dla generatora protokołów lepiej wiedzieć co jest "safe".
-          // Ustalmy: Zwracamy flagę isSafeClinical (czy pasuje do kontuzji) i isAvailableEquipment.
-          
           const check = checkExerciseAvailability(exForCheck, clinicalContext, { strictSeverity: false });
           isAllowed = check.allowed;
           rejectionReason = check.reason;
@@ -93,28 +138,30 @@ exports.handler = async (event) => {
       acc[ex.id] = {
         name: ex.name,
         description: ex.description,
-        equipment: ex.equipment,
+        equipment: normalizedEquipment, // Przekazujemy poprawną tablicę
         youtube_url: ex.youtube_url,
         categoryId: ex.category_id,
         difficultyLevel: ex.difficulty_level,
         maxDuration: ex.max_recommended_duration,
         maxReps: ex.max_recommended_reps,
         nextProgressionId: ex.next_progression_id,
-        painReliefZones: ex.pain_relief_zones || [],
-        animationSvg: ex.animation_svg || null,
+        painReliefZones: normalizedZones,
+        
+        hasAnimation: !!ex.animation_svg && ex.animation_svg.length > 10,
+
         defaultTempo: ex.default_tempo || null,
         isUnilateral: ex.is_unilateral || false,
         primaryPlane: ex.primary_plane || 'multi',
         position: ex.position || null,
-        
-        // NOWE POLA DLA FRONTENDU
+        isFootLoading: !!ex.is_foot_loading,
+
         isAllowed: isAllowed,
         rejectionReason: rejectionReason
       };
       return acc;
     }, {});
 
-    // 4. Pobierz i Zbuduj Plan (Stara logika bez zmian)
+    // 4. Pobierz i Zbuduj Plan
     const plansQuery = `
       SELECT
         tp.id as plan_id, tp.name as plan_name, tp.description as plan_description, tp.global_rules,
@@ -123,8 +170,8 @@ exports.handler = async (event) => {
       FROM training_plans tp
       LEFT JOIN plan_days pd ON tp.id = pd.plan_id
       LEFT JOIN day_exercises de ON pd.id = de.day_id
-      ORDER BY tp.id, pd.day_number, 
-      CASE de.section WHEN 'warmup' THEN 1 WHEN 'main' THEN 2 WHEN 'cooldown' THEN 3 ELSE 4 END, 
+      ORDER BY tp.id, pd.day_number,
+      CASE de.section WHEN 'warmup' THEN 1 WHEN 'main' THEN 2 WHEN 'cooldown' THEN 3 ELSE 4 END,
       de.order_in_section;
     `;
     const plansResult = await client.query(plansQuery);

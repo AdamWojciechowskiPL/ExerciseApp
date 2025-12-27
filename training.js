@@ -44,7 +44,7 @@ function syncStateToChromecast() {
         exerciseDetails: exercise.isWork ? `Cel: ${exercise.reps_or_time} | Tempo: ${exercise.tempo_or_iso}` : `Następne: ${(state.flatExercises[state.currentExerciseIndex + 1] || {}).name || ''}`,
         nextExercise: nextWorkExercise ? nextWorkExercise.name : 'Koniec',
         isRest: !exercise.isWork,
-        
+
         // Upewniamy się, że Chromecast dostaje oczyszczone SVG lub null
         animationSvg: exercise.animationSvg ? processSVG(exercise.animationSvg) : null
     };
@@ -119,6 +119,91 @@ function triggerSessionBackup() {
     });
 }
 
+// --- ZARZĄDZANIE PASKIEM POSTĘPU ---
+
+function initProgressBar() {
+    if (!focus.progressContainer) return;
+    
+    focus.progressContainer.innerHTML = '';
+    
+    // Filtrujemy tylko ćwiczenia robocze (isWork), aby stworzyć segmenty
+    // W flatExercises mamy przeplatankę (Praca, Przerwa, Praca...)
+    // Chcemy pokazać tylko segmenty Pracy. Przerwy będą wizualizowane jako stan "pomiędzy".
+    
+    state.flatExercises.forEach((ex, realIndex) => {
+        if (ex.isWork) {
+            const segment = document.createElement('div');
+            segment.className = 'progress-segment';
+            segment.dataset.realIndex = realIndex;
+            
+            // Przypisanie klasy sekcji (kolory)
+            const secName = (ex.sectionName || '').toLowerCase();
+            if (secName.includes('rozgrzewka') || secName.includes('warmup') || secName.includes('start')) {
+                segment.classList.add('section-warmup');
+            } else if (secName.includes('schłodzenie') || secName.includes('cooldown') || secName.includes('koniec')) {
+                segment.classList.add('section-cooldown');
+            } else {
+                segment.classList.add('section-main');
+            }
+            
+            focus.progressContainer.appendChild(segment);
+        }
+    });
+}
+
+function updateProgressBar() {
+    if (!focus.progressContainer) return;
+    
+    const currentIndex = state.currentExerciseIndex;
+    const currentEx = state.flatExercises[currentIndex];
+    
+    // Szukamy wszystkich segmentów
+    const segments = focus.progressContainer.querySelectorAll('.progress-segment');
+    
+    segments.forEach(seg => {
+        const segRealIndex = parseInt(seg.dataset.realIndex, 10);
+        
+        // Reset klas stanu
+        seg.classList.remove('completed', 'active', 'rest-pulse', 'paused-active');
+        
+        // 1. Logika Completed: Jeśli indeks ćwiczenia segmentu jest mniejszy niż obecny indeks
+        if (segRealIndex < currentIndex) {
+            seg.classList.add('completed');
+        }
+        
+        // 2. Logika Active (To ćwiczenie jest teraz wykonywane)
+        else if (segRealIndex === currentIndex) {
+            if (state.isPaused) {
+                seg.classList.add('paused-active');
+            } else {
+                seg.classList.add('active');
+            }
+        }
+        
+        // 3. Logika Rest (Jesteśmy na przerwie, a ten segment jest NASTĘPNY)
+        else if (currentEx && !currentEx.isWork && segRealIndex > currentIndex) {
+            // Sprawdzamy, czy to jest *bezpośrednio* następne ćwiczenie robocze
+            // Znajdźmy pierwsze ćwiczenie work po obecnym indeksie
+            let nextWorkIndex = -1;
+            for(let i = currentIndex + 1; i < state.flatExercises.length; i++) {
+                if (state.flatExercises[i].isWork) {
+                    nextWorkIndex = i;
+                    break;
+                }
+            }
+            
+            if (segRealIndex === nextWorkIndex) {
+                // To jest nadchodzące ćwiczenie -> pulsujemy
+                if (state.isPaused) {
+                    // Jeśli pauza na przerwie - brak pulsu, po prostu czekamy
+                } else {
+                    seg.classList.add('rest-pulse');
+                }
+            }
+        }
+    });
+}
+
 export function moveToNextExercise(options = { skipped: false }) {
     stopStopwatch(); stopTimer();
     if (state.tts.isSupported) state.tts.synth.cancel();
@@ -159,7 +244,8 @@ export async function startExercise(index) {
         focus.prevStepBtn.style.pointerEvents = isFirst ? 'none' : 'auto';
     }
 
-    if (focus.progress) focus.progress.textContent = `${index + 1} / ${state.flatExercises.length}`;
+    // UPDATE PROGRESS BAR ZAMIAST TEKSTU
+    updateProgressBar();
 
     if (state.isPaused) {
         state.lastPauseStartTime = Date.now();
@@ -174,14 +260,14 @@ export async function startExercise(index) {
     const animContainer = document.getElementById('focus-animation-container');
     const descContainer = document.getElementById('focus-description');
     const flipIndicator = document.querySelector('.flip-indicator');
-    
+
     // Reset kontenerów na start
     if (animContainer) animContainer.innerHTML = '';
-    
+
     // LOGIKA ŁADOWANIA ANIMACJI (FIX DLA ZADANIA 6 i 10)
     // Jeśli mamy animację (hasAnimation) i jest to ćwiczenie (isWork):
     if (exercise.hasAnimation && exercise.isWork) {
-        
+
         // 1. Pokaż kontener animacji, ukryj opis (Domyślny widok to animacja)
         if (animContainer) {
             animContainer.classList.remove('hidden');
@@ -202,7 +288,7 @@ export async function startExercise(index) {
                 // 3. Oczyść SVG (Task 10)
                 const cleanSvg = processSVG(rawSvg);
                 exercise.animationSvg = cleanSvg; // Cache w pamięci
-                
+
                 // 4. Wyświetl
                 if (animContainer) {
                     animContainer.innerHTML = cleanSvg;
@@ -210,7 +296,7 @@ export async function startExercise(index) {
                 syncStateToChromecast();
             }
         });
-    } 
+    }
     else {
         // Brak animacji lub przerwa -> Pokaż opis
         if (animContainer) animContainer.classList.add('hidden');
@@ -220,7 +306,8 @@ export async function startExercise(index) {
 
     if (exercise.isWork) {
         // --- TRYB PRACY ---
-        focus.sectionName.textContent = exercise.sectionName;
+        // ZMIANA: Usunięto ustawianie focus.sectionName (element usunięty z HTML)
+        
         focus.exerciseName.textContent = exercise.name;
         fitText(focus.exerciseName);
 
@@ -283,7 +370,7 @@ export async function startExercise(index) {
         let afterUpcomingExercise = null;
         for (let i = index + 2; i < state.flatExercises.length; i++) { if (state.flatExercises[i].isWork) { afterUpcomingExercise = state.flatExercises[i]; break; } }
 
-        focus.sectionName.textContent = (exercise.sectionName || "PRZERWA").toUpperCase();
+        // ZMIANA: Usunięto focus.sectionName
         focus.exerciseName.textContent = `Następne: ${upcomingExercise.name}`;
         fitText(focus.exerciseName);
         focus.exerciseDetails.textContent = `Seria ${upcomingExercise.currentSet}/${upcomingExercise.totalSets} | Cel: ${upcomingExercise.reps_or_time}`;
@@ -465,6 +552,7 @@ export async function startModifiedTraining() {
         state.sessionLog = [];
         navigateTo('training');
         initializeFocusElements();
+        initProgressBar(); // INIT BAR
         startExercise(0);
         triggerSessionBackup();
         return;
@@ -507,6 +595,7 @@ export async function startModifiedTraining() {
 
     navigateTo('training');
     initializeFocusElements();
+    initProgressBar(); // INIT BAR
     startExercise(0);
     triggerSessionBackup();
 }
@@ -525,5 +614,6 @@ export function resumeFromBackup(backup, timeGapMs) {
 
     navigateTo('training');
     initializeFocusElements();
+    initProgressBar(); // INIT BAR
     startExercise(backup.currentExerciseIndex);
 }

@@ -19,9 +19,9 @@ const CATEGORY_WEIGHTS = {
     'core_anti_extension': 1.0,
     'core_anti_rotation': 1.0,
     'core_anti_flexion': 1.0,
-    'core_anti_lateral_flexion': 1.0, // Added support for new cat
+    'core_anti_lateral_flexion': 1.0, // Nowa kategoria
     'nerve_flossing': 0.0,
-    'conditioning_low_impact': 0.5 // Default low
+    'conditioning_low_impact': 0.5 // Domyślnie nisko, podbijamy jeśli user chce spalania
 };
 
 const BREATHING_CATEGORIES = ['breathing', 'breathing_control', 'muscle_relaxation'];
@@ -85,7 +85,11 @@ exports.handler = async (event) => {
                 equipment: normalizeEquipment(ex.equipment),
                 default_tempo: ex.default_tempo,
                 primary_plane: ex.primary_plane || 'multi',
-                position: ex.position || null
+                position: ex.position || null,
+                // Mapowanie nowych pól dla pewności
+                goal_tags: ex.goal_tags || [],
+                metabolic_intensity: ex.metabolic_intensity || 1,
+                conditioning_style: ex.conditioning_style || 'none'
             }));
 
             // 2. BUDOWANIE KONTEKSTU UŻYTKOWNIKA
@@ -98,7 +102,7 @@ exports.handler = async (event) => {
 
             if (diagnosis.includes('scoliosis')) {
                 weights['core_anti_rotation'] += 0.6;
-                weights['core_anti_lateral_flexion'] += 0.5;
+                weights['core_anti_lateral_flexion'] += 0.6; // Ważne przy skoliozie
                 weights['glute_activation'] += 0.4;
                 weights['spine_mobility'] += 0.3;
             }
@@ -136,14 +140,28 @@ exports.handler = async (event) => {
             if (hobbies.includes('gym')) { weights['spine_mobility'] += 0.3; }
 
             const userPriorities = [...(userData.session_component_weights || []), userData.primary_goal, ...(userData.secondary_goals || [])];
+            
             if (userPriorities.includes('mobility') || userPriorities.includes('flexibility')) { weights['hip_mobility'] += 0.5; weights['spine_mobility'] += 0.5; }
+            
             if (userPriorities.includes('stability') || userPriorities.includes('core')) {
                 weights['core_anti_extension'] += 0.4;
                 weights['core_anti_rotation'] += 0.4;
                 weights['core_anti_flexion'] += 0.4;
+                weights['core_anti_lateral_flexion'] += 0.3;
             }
+            
+            // NOWE: Obsługa celu bocznego brzucha
+            if (userPriorities.includes('core_side')) {
+                weights['core_anti_lateral_flexion'] += 1.0;
+            }
+
             if (userPriorities.includes('strength')) { weights['glute_activation'] += 0.6; }
-            if (userPriorities.includes('fat_loss') || userPriorities.includes('conditioning')) { weights['conditioning_low_impact'] += 1.0; }
+            
+            // NOWE: Obsługa priorytetu kondycji
+            if (userPriorities.includes('fat_loss') || userPriorities.includes('conditioning')) { 
+                weights['conditioning_low_impact'] += 1.0; 
+            }
+            
             if (userPriorities.includes('breathing') || userPriorities.includes('pain_relief')) { weights['breathing'] += 0.7; }
             if (userPriorities.includes('posture')) { weights['core_anti_extension'] += 0.5; weights['spine_mobility'] += 0.3; }
 
@@ -168,7 +186,7 @@ exports.handler = async (event) => {
             const weeklyPlan = {
                 id: `dynamic-${Date.now()}`,
                 name: "Terapia Personalizowana",
-                description: "Plan wygenerowany przez Asystenta AI (v4.4 - Split Load)",
+                description: "Plan wygenerowany przez Asystenta AI (v4.5 - New Cats)",
                 days: []
             };
 
@@ -250,12 +268,13 @@ function generateSession(dayNum, candidates, weights, severity, experience, week
         session.main.push(pickOne(candidates, 'nerve_flossing', sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage));
     }
 
-    // Conditioning (NOWE)
+    // Conditioning (NOWE) - wstawiamy przed Core jako "rozruch" lub na koniec jako "finisher"? 
+    // Bezpieczniej na początku/środku, póki technika Core jest dobra. Wstawiamy tutaj.
     if (weights['conditioning_low_impact'] > 1.2) {
         session.main.push(pickOne(candidates, 'conditioning_low_impact', sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage));
     }
 
-    // Core Logic z obsługą Split Load
+    // Core Logic z obsługą wszystkich 4 kategorii
     const coreCats = ['core_anti_extension', 'core_anti_flexion', 'core_anti_rotation', 'core_anti_lateral_flexion'];
     coreCats.sort((a, b) => weights[b] - weights[a]);
 
@@ -265,8 +284,7 @@ function generateSession(dayNum, candidates, weights, severity, experience, week
     // Slot 1: Najważniejszy Core
     session.main.push(pickOne(candidates, primaryCoreCat, sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage));
 
-    // ZMIANA: Load Splitting (Drugie ćwiczenie z tej samej kategorii zamiast 5 serii jednego)
-    // Jeśli waga priorytetu jest wysoka (> 1.2), dodaj drugie unikalne ćwiczenie z tej samej kategorii.
+    // Load Splitting (Drugie ćwiczenie z tej samej kategorii)
     if (weights[primaryCoreCat] >= 1.2) {
         const extraEx = pickOne(candidates, primaryCoreCat, sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage);
         if (extraEx) {
@@ -274,7 +292,7 @@ function generateSession(dayNum, candidates, weights, severity, experience, week
         }
     }
 
-    // Slot 2 (lub 3): Drugi najważniejszy Core
+    // Slot 2: Drugi najważniejszy Core
     session.main.push(pickOne(candidates, secondaryCoreCat, sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage));
 
     if (weights['glute_activation'] > 0.8) {
@@ -349,8 +367,8 @@ function pickOne(pool, category, usedIds, weeklyUsage, sectionName, userData, we
 
     // Sortowanie: Preferuj te z pasującymi tagami celu (np. fat_loss)
     matching.sort((a, b) => {
-        const aTags = a.goalTags || [];
-        const bTags = b.goalTags || [];
+        const aTags = a.goal_tags || [];
+        const bTags = b.goal_tags || [];
         const hasA = aTags.some(t => [userData.primary_goal, ...userData.secondary_goals].includes(t));
         const hasB = bTags.some(t => [userData.primary_goal, ...userData.secondary_goals].includes(t));
         return (hasB ? 1 : 0) - (hasA ? 1 : 0);
@@ -421,8 +439,7 @@ function applyVolume(ex, factor, sectionName, targetDurationMin = 30) {
         else sets = 2;
     }
 
-    // ZMIANA: Hard Cap dla Core Stability (max 3 serie)
-    // Bez względu na poziom zaawansowania, 4-5 serii Deadbuga za jednym zamachem to za dużo dla jakości ruchu
+    // Hard Cap dla Core Stability (max 3 serie)
     if (ex.category_id && ex.category_id.startsWith('core_')) {
         sets = Math.min(sets, 3);
     }
@@ -525,7 +542,7 @@ function expandSessionDuration(session, targetMin) {
         while (estimatedSeconds < targetSeconds * 0.9 && attempts < 10) {
             let expansionMade = false;
             for (let ex of session.main) {
-                // ZMIANA: Nie zwiększaj Core powyżej 3 serii nawet przy expandzie
+                // Nie zwiększaj Core powyżej 3 serii nawet przy expandzie
                 if (ex.category_id.startsWith('core_')) continue;
 
                 if (BREATHING_CATEGORIES.includes(ex.category_id)) continue;

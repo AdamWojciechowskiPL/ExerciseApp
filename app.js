@@ -163,12 +163,41 @@ function initAppLogic() {
     if (screens.training) {
         screens.training.addEventListener('click', (e) => {
             const target = e.target;
+            const skipBtn = document.getElementById('skip-btn');
+
+            // --- RESETOWANIE STANU PRZYCISKU SKIP ---
+            // Jeśli klikniemy gdziekolwiek poza przyciskiem skip-btn, a jest on w stanie potwierdzenia, zresetuj go.
+            if (skipBtn && skipBtn.classList.contains('confirm-state') && !target.closest('#skip-btn')) {
+                skipBtn.classList.remove('confirm-state');
+                // Jeśli kliknięcie było np. w "Gotowe", obsługa tego zdarzenia nastąpi poniżej.
+            }
+
             if (target.closest('#exit-training-btn')) { if (confirm('Przerwać trening?')) { stopTimer(); stopStopwatch(); if (state.tts.isSupported) state.tts.synth.cancel(); if (getIsCasting()) sendShowIdle(); clearSessionBackup(); state.currentTrainingDate = null; state.sessionLog = []; state.isPaused = false; navigateTo('main'); renderMainScreen(); } return; }
             if (target.closest('#tts-toggle-btn')) { state.tts.isSoundOn = !state.tts.isSoundOn; const icon = document.getElementById('tts-icon'); if (icon) icon.src = state.tts.isSoundOn ? '/icons/sound-on.svg' : '/icons/sound-off.svg'; if (!state.tts.isSoundOn && state.tts.isSupported) state.tts.synth.cancel(); return; }
             if (target.closest('#prev-step-btn')) { moveToPreviousExercise(); return; }
             if (target.closest('#pause-resume-btn')) { togglePauseTimer(); return; }
-            if (target.closest('#skip-btn')) { moveToNextExercise({ skipped: true }); return; }
-            if (target.closest('#rep-based-done-btn')) { moveToNextExercise({ skipped: false }); return; }
+
+            // --- OBSŁUGA SKIP Z POTWIERDZENIEM ---
+            const skipTarget = target.closest('#skip-btn');
+            if (skipTarget) {
+                if (skipTarget.classList.contains('confirm-state')) {
+                    // Drugie kliknięcie: Wykonaj akcję
+                    skipTarget.classList.remove('confirm-state');
+                    moveToNextExercise({ skipped: true });
+                } else {
+                    // Pierwsze kliknięcie: Zmień stan na "Potwierdź"
+                    skipTarget.classList.add('confirm-state');
+                }
+                return;
+            }
+
+            // --- OBSŁUGA PRZYCISKU "GOTOWE" ---
+            if (target.closest('#rep-based-done-btn')) {
+                // Jeśli przycisk Skip był uzbrojony, to powyższy blok resetujący go obsłużył.
+                // Tutaj po prostu przechodzimy dalej.
+                moveToNextExercise({ skipped: false });
+                return;
+            }
         });
     }
     if (state.tts.isSupported) { loadVoices(); if (speechSynthesis.onvoiceschanged !== undefined) speechSynthesis.onvoiceschanged = loadVoices; }
@@ -240,11 +269,11 @@ export async function main() {
 
             try {
                 localStorage.removeItem('cachedUserStats');
-                
+
                 // --- POBIERANIE USTAWIEŃ UŻYTKOWNIKA ---
                 // Tutaj pobieramy wizardData (restrykcje), które frontendowy generator też używa
-                await dataStore.initialize(); 
-                
+                await dataStore.initialize();
+
                 state.isAppInitialized = true;
 
                 if (bottomNav) bottomNav.classList.remove('hidden');
@@ -299,7 +328,7 @@ export async function main() {
         } else {
             // Jeśli nie ma autoryzacji, pobieramy wersję publiczną (bez personalizacji)
             await dataStore.loadAppContent();
-            
+
             document.getElementById('welcome-screen').classList.remove('hidden');
             document.querySelector('main').classList.add('hidden');
             if (userInfoContainer) userInfoContainer.classList.add('hidden');

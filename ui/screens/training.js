@@ -582,12 +582,20 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
 
 // --- EKRAN TRENINGOWY (FOCUS MODE) ---
 export const renderTrainingScreen = () => {
+    // MODYFIKACJA HTML: 
+    // 1. Pasek postępu na samej górze.
+    // 2. Usunięto tekst z nazwą sekcji.
+    // 3. Przycisk wyjścia jako ikona X pod paskiem.
+    
     screens.training.innerHTML = `
     <div class="focus-view">
-        <div class="focus-header">
-            <p id="focus-section-name"></p>
-            <button id="exit-training-btn">Zakończ</button>
-            <p id="focus-progress"></p>
+        <!-- NOWY PASEK POSTĘPU -->
+        <div id="focus-progress-bar" class="focus-progress-container"></div>
+
+        <div class="focus-header-minimal">
+            <button id="exit-training-btn" class="close-training-btn" title="Zakończ trening">
+                <img src="/icons/close.svg" alt="Zamknij">
+            </button>
         </div>
 
         <div class="focus-timer-container">

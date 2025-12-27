@@ -164,14 +164,12 @@ function renderP10(c) {
     const uniqueEquipment = new Set(['Mata']);
     if (state.exerciseLibrary) {
         Object.values(state.exerciseLibrary).forEach(ex => {
-            // ZMIANA: equipment jest tablicą, iterujemy po niej bezpośrednio
             if (Array.isArray(ex.equipment)) {
                 ex.equipment.forEach(item => {
                     const niceName = item.charAt(0).toUpperCase() + item.slice(1);
                     uniqueEquipment.add(niceName);
                 });
             } else if (ex.equipment) {
-                // Fallback dla stringa (stary kod)
                 ex.equipment.split(',').forEach(rawItem => {
                     let item = rawItem.trim();
                     if (item && !['brak', 'none', 'brak sprzętu', 'masa własna', 'bodyweight', ''].includes(item.toLowerCase())) {
@@ -200,9 +198,38 @@ function renderP10(c) {
 
 function renderP11(c) { renderSingleSelect(c, 'Doświadczenie w treningu?', [{ val: 'none', label: 'Początkujący (0)' }, { val: 'occasional', label: 'Okazjonalne' }, { val: 'regular', label: 'Regularne (2+/tydz)' }, { val: 'advanced', label: 'Zaawansowane' }], 'exercise_experience'); }
 function renderP12(c) { c.innerHTML = `<p class="wizard-step-desc">Ile masz czasu?</p><div style="padding: 0 10px;"><div class="form-group" style="margin-bottom:2.5rem;"><label style="display:flex; justify-content:space-between; margin-bottom:10px;"><span>Sesji w tygodniu:</span><span id="freq-disp" style="font-weight:bold; color:var(--gold-color); min-width: 20px; text-align: right;">${wizardAnswers.sessions_per_week}</span></label><input type="range" min="2" max="7" value="${wizardAnswers.sessions_per_week}" id="freq-slider" style="width: 100%;"></div><div class="form-group"><label style="display:flex; justify-content:space-between; margin-bottom:10px;"><span>Czas na sesję:</span><span id="dur-disp" style="font-weight:bold; color:var(--gold-color); min-width: 60px; text-align: right;">${wizardAnswers.target_session_duration_min} min</span></label><input type="range" min="15" max="60" step="5" value="${wizardAnswers.target_session_duration_min}" id="dur-slider" style="width: 100%;"></div></div>`; c.querySelector('#freq-slider').addEventListener('input', (e) => { wizardAnswers.sessions_per_week = parseInt(e.target.value); c.querySelector('#freq-disp').textContent = e.target.value; }); c.querySelector('#dur-slider').addEventListener('input', (e) => { wizardAnswers.target_session_duration_min = parseInt(e.target.value); c.querySelector('#dur-disp').textContent = e.target.value + " min"; }); }
-function renderP13(c) { renderMultiSelect(c, 'Priorytety treningowe?', [{ val: 'mobility', label: '🤸 Mobilność' }, { val: 'stability', label: '🧱 Stabilizacja' }, { val: 'strength', label: '💪 Siła' }, { val: 'breathing', label: '🌬️ Oddech / Relaks' }], 'session_component_weights'); }
-function renderP14(c) { renderSingleSelect(c, 'Główny cel na 6 tygodni?', [{ val: 'pain_relief', label: '💊 Redukcja bólu' }, { val: 'prevention', label: '🛡️ Zapobieganie' }, { val: 'mobility', label: '🤸 Sprawność' }, { val: 'sport_return', label: '🏆 Powrót do sportu' }], 'primary_goal'); }
-function renderP15(c) { renderMultiSelect(c, 'Cele dodatkowe?', [{ val: 'posture', label: 'Prosta postawa' }, { val: 'energy', label: 'Więcej energii' }, { val: 'strength', label: 'Siła ogólna' }, { val: 'flexibility', label: 'Elastyczność' }], 'secondary_goals'); }
+
+// ZAKTUALIZOWANE RENDEROWANIE PRIORYTETÓW (P13, P14, P15)
+function renderP13(c) { 
+    renderMultiSelect(c, 'Priorytety treningowe?', [
+        { val: 'mobility', label: '🤸 Mobilność' }, 
+        { val: 'stability', label: '🧱 Stabilizacja' }, 
+        { val: 'strength', label: '💪 Siła' }, 
+        { val: 'conditioning', label: '🔥 Kondycja / Spalanie' }, // NOWE
+        { val: 'breathing', label: '🌬️ Oddech / Relaks' }
+    ], 'session_component_weights'); 
+}
+
+function renderP14(c) { 
+    renderSingleSelect(c, 'Główny cel na 6 tygodni?', [
+        { val: 'pain_relief', label: '💊 Redukcja bólu' }, 
+        { val: 'fat_loss', label: '🔥 Redukcja tkanki tłuszczowej' }, // NOWE
+        { val: 'prevention', label: '🛡️ Zapobieganie' }, 
+        { val: 'mobility', label: '🤸 Sprawność' }, 
+        { val: 'sport_return', label: '🏆 Powrót do sportu' }
+    ], 'primary_goal'); 
+}
+
+function renderP15(c) { 
+    renderMultiSelect(c, 'Cele dodatkowe?', [
+        { val: 'posture', label: 'Prosta postawa' }, 
+        { val: 'core_side', label: 'Talia / Boczny brzuch' }, // NOWE (Anti-Lateral Flexion)
+        { val: 'energy', label: 'Więcej energii' }, 
+        { val: 'strength', label: 'Siła ogólna' }, 
+        { val: 'flexibility', label: 'Elastyczność' }
+    ], 'secondary_goals'); 
+}
+
 function renderP16(c) { renderMultiSelect(c, 'Ograniczenia?', [{ val: 'foot_injury', label: '🦶 Uraz stopy (bez obciążania)' }, { val: 'no_kneeling', label: 'Nie mogę klęczeć' }, { val: 'no_floor_sitting', label: 'Nie usiądę na podłodze' }, { val: 'no_twisting', label: 'Ból przy skrętach' }, { val: 'no_high_impact', label: 'Zakaz skoków' }, { val: 'none', label: 'Brak' }], 'physical_restrictions'); }
 function renderSummary(c) { c.innerHTML = `<div style="text-align:left; font-size:0.95rem; background:rgba(255,255,255,0.05); padding:1.5rem; border-radius:12px;"><h3 style="margin-top:0; color:var(--gold-color);">Twój Profil</h3><ul style="list-style:none; padding:0; line-height:1.8;"><li>📍 <strong>Ból:</strong> ${wizardAnswers.pain_locations.length > 0 ? wizardAnswers.pain_locations.join(', ') : 'Brak'} (${wizardAnswers.pain_intensity}/10)</li><li>🛠️ <strong>Sprzęt:</strong> ${wizardAnswers.equipment_available.join(', ')}</li><li>🎯 <strong>Cel:</strong> ${wizardAnswers.primary_goal}</li><li>📅 <strong>Plan:</strong> ${wizardAnswers.sessions_per_week}x w tygodniu</li><li>⏱️ <strong>Czas:</strong> ${wizardAnswers.target_session_duration_min} min</li></ul><p style="margin-top:1.5rem; opacity:0.8; font-size:0.85rem;">Asystent AI przeanalizuje te dane i ułoży spersonalizowany plan tygodniowy.</p></div>`; }
 async function renderProcessing(c) { c.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%;"><div style="width:50px; height:50px; border:4px solid var(--gold-color); border-top-color:transparent; border-radius:50%; animation:spin 1s linear infinite; margin-bottom:20px;"></div><div id="console-output" style="font-family:monospace; color:var(--accent-color); font-size:0.9rem;">Analiza danych...</div></div><style>@keyframes spin { to { transform: rotate(360deg); } }</style>`; const consoleDiv = c.querySelector('#console-output'); const logs = ["Mapowanie stref...", "Analiza sprzętu...", "Wybór ćwiczeń...", "Optymalizacja...", "Gotowe!"]; let delay = 0; logs.forEach((log, index) => { setTimeout(() => { consoleDiv.textContent = log; if (index === logs.length - 1) { setTimeout(finalizeGeneration, 500); } }, delay); delay += 800; }); }

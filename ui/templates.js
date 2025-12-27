@@ -148,7 +148,7 @@ export function generatePreTrainingCardHTML(ex, index) {
     const exerciseId = ex.id || ex.exerciseId;
     const lvl = ex.difficultyLevel || 1;
     const categoryName = formatCategoryName(ex.categoryId);
-    
+
     // --- FIX: POPRAWNE TWORZENIE ETYKIETY SPRZĘTU ---
     let equipLabel = '';
     if (Array.isArray(ex.equipment)) {
@@ -161,7 +161,7 @@ export function generatePreTrainingCardHTML(ex, index) {
     // Jeśli pusty string, null lub jedna z wartości oznaczających "brak" -> ukrywamy
     const ignoreList = ['brak', 'none', 'brak sprzętu', 'masa własna', 'bodyweight', ''];
     const showEquipBadge = equipLabel.length > 0 && !ignoreList.includes(equipLabel.toLowerCase().trim());
-    
+
     const hasAnimation = !!ex.hasAnimation;
     const affinityBadge = getAffinityBadge(exerciseId);
     const previewBtnHTML = hasAnimation ? `<button class="preview-anim-btn nav-btn" data-exercise-id="${exerciseId}" title="Podgląd animacji" style="padding: 4px 8px; display: flex; align-items: center; gap: 5px; border-color: var(--secondary-color);"><img src="/icons/eye.svg" width="20" height="20" alt="Podgląd" style="display: block;"><span style="font-size: 0.75rem; font-weight: 600; color: var(--secondary-color);">Podgląd</span></button>` : '';
@@ -200,8 +200,8 @@ export function generatePreTrainingCardHTML(ex, index) {
 
     // Standardowy link wideo
     const videoId = extractYoutubeId(ex.youtube_url);
-    const videoLink = videoId 
-        ? `<a href="https://youtu.be/${videoId}" target="_blank" class="video-link">▶ Zobacz wideo</a>` 
+    const videoLink = videoId
+        ? `<a href="https://youtu.be/${videoId}" target="_blank" class="video-link">▶ Zobacz wideo</a>`
         : '';
 
     return `
@@ -251,15 +251,42 @@ export function generateSessionCardHTML(session) {
     if (session.startedAt && session.completedAt) {
         const startTime = new Date(session.startedAt);
         const endTime = new Date(session.completedAt);
+        
+        // --- CZAS BRUTTO (Całkowity, zegarowy) ---
         const durationMs = endTime - startTime;
         const totalMinutes = Math.floor(durationMs / 60000);
         const totalSeconds = Math.floor((durationMs % 60000) / 1000);
-        const formattedDuration = `${totalMinutes}:${totalSeconds.toString().padStart(2, '0')}`;
+        const formattedDurationGross = `${totalMinutes}:${totalSeconds.toString().padStart(2, '0')}`;
+
+        // --- CZAS NETTO (Aktywny) ---
+        // Pobieramy z sesji lub szacujemy z brutto (fallback dla starych danych)
+        const netSeconds = session.netDurationSeconds !== undefined 
+            ? session.netDurationSeconds 
+            : Math.round(durationMs / 1000);
+            
+        const netMinutes = Math.floor(netSeconds / 60);
+        const netSecRem = netSeconds % 60;
+        const formattedDurationNet = `${netMinutes}:${netSecRem.toString().padStart(2, '0')}`;
+
+        // ZMODYFIKOWANY GRID: 4 KOLUMNY (Start, Netto, Brutto, Feedback)
         statsHtml = `
-            <div class="session-stats-grid">
-                <div class="stat-item"><span class="stat-label">Start</span><span class="stat-value">${startTime.toLocaleTimeString('pl-PL', optionsTime)}</span></div>
-                <div class="stat-item"><span class="stat-label">Czas</span><span class="stat-value">${formattedDuration}</span></div>
-                <div class="stat-item"><span class="stat-label">Feedback</span><span class="stat-value" style="${feedbackStyle} font-size:0.9rem;">${feedbackInfo.label}</span></div>
+            <div class="session-stats-grid" style="grid-template-columns: repeat(4, 1fr); gap: 5px;">
+                <div class="stat-item">
+                    <span class="stat-label">Start</span>
+                    <span class="stat-value">${startTime.toLocaleTimeString('pl-PL', optionsTime)}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Netto</span>
+                    <span class="stat-value" style="color:var(--primary-color)">${formattedDurationNet}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Brutto</span>
+                    <span class="stat-value" style="color:#999">${formattedDurationGross}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Feedback</span>
+                    <span class="stat-value" style="${feedbackStyle} font-size:0.9rem;">${feedbackInfo.label}</span>
+                </div>
             </div>`;
     } else {
         statsHtml = `<div class="session-stats-grid"><div class="stat-item"><span class="stat-label">Zakończono</span><span class="stat-value">${completedTimeStr}</span></div></div>`;

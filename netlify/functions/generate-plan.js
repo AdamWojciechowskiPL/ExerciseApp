@@ -3,10 +3,6 @@
 const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
 const { buildUserContext, checkExerciseAvailability } = require('./_clinical-rule-engine.js');
 
-const SECONDS_PER_REP = 4;
-const REST_BETWEEN_SETS = 5;
-const REST_BETWEEN_EXERCISES = 5;
-
 const MAX_MAIN_OCCURRENCES_PER_WEEK = 4;
 const MAX_ROTATIONAL_CORE_WITH_DISC_HERNIATION = 3;
 const MAX_ROTATION_MOBILITY_WITH_DISC_HERNIATION = 4;
@@ -19,9 +15,9 @@ const CATEGORY_WEIGHTS = {
     'core_anti_extension': 1.0,
     'core_anti_rotation': 1.0,
     'core_anti_flexion': 1.0,
-    'core_anti_lateral_flexion': 1.0, // Nowa kategoria
+    'core_anti_lateral_flexion': 1.0,
     'nerve_flossing': 0.0,
-    'conditioning_low_impact': 0.5 // Domyślnie nisko, podbijamy jeśli user chce spalania
+    'conditioning_low_impact': 0.5
 };
 
 const BREATHING_CATEGORIES = ['breathing', 'breathing_control', 'muscle_relaxation'];
@@ -70,6 +66,118 @@ exports.handler = async (event) => {
             };
         }
 
+        // --- POBIERANIE USTAWIEŃ CZASOWYCH Z PAYLOADU USERA ---
+        // (Jeśli brak, używamy bezpiecznych wartości domyślnych)
+        const SECONDS_PER_REP = userData.secondsPerRep || 6;
+        const REST_BETWEEN_SETS = userData.restBetweenSets || 30;
+        const REST_BETWEEN_EXERCISES = userData.restBetweenExercises || 30;
+
+        // --- DEFINICJA FUNKCJI ESTYMUJĄCEJ (Z DOMKNIĘCIEM NA ZMIENNE) ---
+        // Musi być wewnątrz handler, aby widzieć powyższe zmienne
+        function estimateDurationSeconds(session) {
+            let totalSeconds = 0;
+            const allExercises = [...session.warmup, ...session.main, ...session.cooldown];
+
+            allExercises.forEach((ex, index) => {
+                const sets = parseInt(ex.sets);
+
+                // Wykrywanie unilateral aby policzyć czas x2 (L+R)
+                const isUnilateral = ex.is_unilateral || (ex.reps_or_time && String(ex.reps_or_time).includes('/str'));
+                const multiplier = isUnilateral ? 2 : 1;
+
+                let workTimePerSet = 0;
+                const text = String(ex.reps_or_time).toLowerCase();
+
+                if (text.includes('s') || text.includes('min')) {
+                    // Czas: Pobieramy wartość
+                    const val = parseInt(text) || 30;
+                    const isMin = text.includes('min');
+                    workTimePerSet = isMin ? val * 60 : val;
+                } else {
+                    // Reps: Używamy dynamicznego SECONDS_PER_REP
+                    const reps = parseInt(text) || 10;
+                    workTimePerSet = reps * SECONDS_PER_REP;
+                }
+
+                // Całkowity czas pracy
+                totalSeconds += sets * workTimePerSet * multiplier;
+
+                // Przerwy: (Ilość wykonanych serii - 1) * Przerwa
+                const totalExecutions = sets * multiplier;
+                if (totalExecutions > 1) {
+                    totalSeconds += (totalExecutions - 1) * REST_BETWEEN_SETS;
+                }
+
+                // Przerwa po ćwiczeniu
+                if (index < allExercises.length - 1) totalSeconds += REST_BETWEEN_EXERCISES;
+            });
+
+            return totalSeconds;
+        }
+
+        function optimizeSessionDuration(session, targetMin) {
+            const targetSeconds = targetMin * 60;
+            let estimatedSeconds = estimateDurationSeconds(session);
+
+            if (estimatedSeconds > targetSeconds + 300) {
+                while (session.main.length > 1 && estimatedSeconds > targetSeconds + 300) {
+                    session.main.pop();
+                    estimatedSeconds = estimateDurationSeconds(session);
+                }
+            }
+
+            let attempts = 0;
+            while (estimatedSeconds > targetSeconds * 1.15 && attempts < 5) {
+                let reductionMade = false;
+                for (let ex of session.main) {
+                    if (BREATHING_CATEGORIES.includes(ex.category_id)) continue;
+                    const sets = parseInt(ex.sets);
+                    if (ex.is_unilateral) { if (sets >= 4) { ex.sets = String(sets - 2); reductionMade = true; } }
+                    else { if (sets > 1) { ex.sets = String(sets - 1); reductionMade = true; } }
+                }
+                if (!reductionMade) {
+                    [...session.warmup, ...session.main, ...session.cooldown].forEach(ex => {
+                        const text = String(ex.reps_or_time);
+                        const val = parseInt(text);
+                        if (!isNaN(val)) {
+                            const isBreathing = BREATHING_CATEGORIES.includes(ex.category_id);
+                            const minLimit = isBreathing ? 45 : 5;
+                            let newVal = Math.max(minLimit, Math.floor(val * 0.85));
+                            if (isBreathing) newVal = Math.ceil(newVal / 15) * 15;
+                            ex.reps_or_time = text.replace(val, newVal);
+                        }
+                    });
+                }
+                estimatedSeconds = estimateDurationSeconds(session);
+                attempts++;
+            }
+        }
+
+        function expandSessionDuration(session, targetMin) {
+            const targetSeconds = targetMin * 60;
+            let estimatedSeconds = estimateDurationSeconds(session);
+            if (estimatedSeconds < targetSeconds * 0.8) {
+                let attempts = 0;
+                const maxSets = 5;
+                while (estimatedSeconds < targetSeconds * 0.9 && attempts < 10) {
+                    let expansionMade = false;
+                    for (let ex of session.main) {
+                        if (ex.category_id.startsWith('core_')) continue;
+
+                        if (BREATHING_CATEGORIES.includes(ex.category_id)) continue;
+                        const sets = parseInt(ex.sets);
+                        if (sets < maxSets) {
+                            if (ex.is_unilateral) { if (sets + 2 <= maxSets) { ex.sets = String(sets + 2); expansionMade = true; } }
+                            else { ex.sets = String(sets + 1); expansionMade = true; }
+                        }
+                    }
+                    if (!expansionMade) break;
+                    estimatedSeconds = estimateDurationSeconds(session);
+                    attempts++;
+                }
+            }
+        }
+
         const client = await pool.connect();
         try {
             // 1. POBRANIE DANYCH
@@ -86,7 +194,6 @@ exports.handler = async (event) => {
                 default_tempo: ex.default_tempo,
                 primary_plane: ex.primary_plane || 'multi',
                 position: ex.position || null,
-                // Mapowanie nowych pól dla pewności
                 goal_tags: ex.goal_tags || [],
                 metabolic_intensity: ex.metabolic_intensity || 1,
                 conditioning_style: ex.conditioning_style || 'none'
@@ -102,7 +209,7 @@ exports.handler = async (event) => {
 
             if (diagnosis.includes('scoliosis')) {
                 weights['core_anti_rotation'] += 0.6;
-                weights['core_anti_lateral_flexion'] += 0.6; // Ważne przy skoliozie
+                weights['core_anti_lateral_flexion'] += 0.6;
                 weights['glute_activation'] += 0.4;
                 weights['spine_mobility'] += 0.3;
             }
@@ -120,7 +227,6 @@ exports.handler = async (event) => {
                 weights['glute_activation'] += 0.3;
             }
 
-            // Conditioning Logic
             if (userData.primary_goal === 'fat_loss' || (userData.goal_tags && userData.goal_tags.includes('fat_loss'))) {
                 weights['conditioning_low_impact'] += 1.5;
             }
@@ -140,28 +246,26 @@ exports.handler = async (event) => {
             if (hobbies.includes('gym')) { weights['spine_mobility'] += 0.3; }
 
             const userPriorities = [...(userData.session_component_weights || []), userData.primary_goal, ...(userData.secondary_goals || [])];
-            
+
             if (userPriorities.includes('mobility') || userPriorities.includes('flexibility')) { weights['hip_mobility'] += 0.5; weights['spine_mobility'] += 0.5; }
-            
+
             if (userPriorities.includes('stability') || userPriorities.includes('core')) {
                 weights['core_anti_extension'] += 0.4;
                 weights['core_anti_rotation'] += 0.4;
                 weights['core_anti_flexion'] += 0.4;
                 weights['core_anti_lateral_flexion'] += 0.3;
             }
-            
-            // NOWE: Obsługa celu bocznego brzucha
+
             if (userPriorities.includes('core_side')) {
                 weights['core_anti_lateral_flexion'] += 1.0;
             }
 
             if (userPriorities.includes('strength')) { weights['glute_activation'] += 0.6; }
-            
-            // NOWE: Obsługa priorytetu kondycji
-            if (userPriorities.includes('fat_loss') || userPriorities.includes('conditioning')) { 
-                weights['conditioning_low_impact'] += 1.0; 
+
+            if (userPriorities.includes('fat_loss') || userPriorities.includes('conditioning')) {
+                weights['conditioning_low_impact'] += 1.0;
             }
-            
+
             if (userPriorities.includes('breathing') || userPriorities.includes('pain_relief')) { weights['breathing'] += 0.7; }
             if (userPriorities.includes('posture')) { weights['core_anti_extension'] += 0.5; weights['spine_mobility'] += 0.3; }
 
@@ -219,6 +323,7 @@ exports.handler = async (event) => {
             currentSettings.dynamicPlanData = weeklyPlan;
             currentSettings.planMode = 'dynamic';
             currentSettings.onboardingCompleted = true;
+            // Aktualizujemy wizardData o nowe parametry czasowe, aby generator miał je "na przyszłość"
             currentSettings.wizardData = userData;
 
             await client.query(
@@ -268,23 +373,18 @@ function generateSession(dayNum, candidates, weights, severity, experience, week
         session.main.push(pickOne(candidates, 'nerve_flossing', sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage));
     }
 
-    // Conditioning (NOWE) - wstawiamy przed Core jako "rozruch" lub na koniec jako "finisher"? 
-    // Bezpieczniej na początku/środku, póki technika Core jest dobra. Wstawiamy tutaj.
     if (weights['conditioning_low_impact'] > 1.2) {
         session.main.push(pickOne(candidates, 'conditioning_low_impact', sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage));
     }
 
-    // Core Logic z obsługą wszystkich 4 kategorii
     const coreCats = ['core_anti_extension', 'core_anti_flexion', 'core_anti_rotation', 'core_anti_lateral_flexion'];
     coreCats.sort((a, b) => weights[b] - weights[a]);
 
     const primaryCoreCat = coreCats[0];
     const secondaryCoreCat = coreCats[1];
 
-    // Slot 1: Najważniejszy Core
     session.main.push(pickOne(candidates, primaryCoreCat, sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage));
 
-    // Load Splitting (Drugie ćwiczenie z tej samej kategorii)
     if (weights[primaryCoreCat] >= 1.2) {
         const extraEx = pickOne(candidates, primaryCoreCat, sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage);
         if (extraEx) {
@@ -292,7 +392,6 @@ function generateSession(dayNum, candidates, weights, severity, experience, week
         }
     }
 
-    // Slot 2: Drugi najważniejszy Core
     session.main.push(pickOne(candidates, secondaryCoreCat, sessionUsedIds, weeklyUsage, 'main', userData, weeklyRotationMobilityUsage));
 
     if (weights['glute_activation'] > 0.8) {
@@ -360,12 +459,10 @@ function pickOne(pool, category, usedIds, weeklyUsage, sectionName, userData, we
     });
 
     if (matching.length === 0) {
-        // Fallback: Spróbuj znaleźć cokolwiek z kategorii, nawet jeśli było użyte (ale nie w tej sesji - to filtruje usedIds na górze)
         matching = pool.filter(ex => categories.includes(ex.category_id) && (!usedIds || !usedIds.has(ex.id)));
         if (matching.length === 0) return null;
     }
 
-    // Sortowanie: Preferuj te z pasującymi tagami celu (np. fat_loss)
     matching.sort((a, b) => {
         const aTags = a.goal_tags || [];
         const bTags = b.goal_tags || [];
@@ -374,7 +471,6 @@ function pickOne(pool, category, usedIds, weeklyUsage, sectionName, userData, we
         return (hasB ? 1 : 0) - (hasA ? 1 : 0);
     });
 
-    // Weź jeden z top 3 (żeby zachować losowość, ale preferować lepsze dopasowanie)
     const topCandidates = matching.slice(0, Math.min(3, matching.length));
     const original = topCandidates[Math.floor(Math.random() * topCandidates.length)];
 
@@ -439,7 +535,6 @@ function applyVolume(ex, factor, sectionName, targetDurationMin = 30) {
         else sets = 2;
     }
 
-    // Hard Cap dla Core Stability (max 3 serie)
     if (ex.category_id && ex.category_id.startsWith('core_')) {
         sets = Math.min(sets, 3);
     }
@@ -471,90 +566,4 @@ function applyVolume(ex, factor, sectionName, targetDurationMin = 30) {
     ex.sets = sets.toString();
     ex.reps_or_time = repsOrTime;
     ex.exerciseId = ex.id;
-}
-
-function estimateDurationSeconds(session) {
-    let totalSeconds = 0;
-    const allExercises = [...session.warmup, ...session.main, ...session.cooldown];
-    allExercises.forEach((ex, index) => {
-        const sets = parseInt(ex.sets);
-        let workTimePerSet = 0;
-        const text = String(ex.reps_or_time).toLowerCase();
-        if (text.includes('s') || text.includes('min')) {
-            const val = parseInt(text) || 30;
-            const isMin = text.includes('min');
-            workTimePerSet = isMin ? val * 60 : val;
-        } else {
-            const reps = parseInt(text) || 10;
-            workTimePerSet = reps * SECONDS_PER_REP;
-        }
-        totalSeconds += sets * workTimePerSet;
-        if (sets > 1) totalSeconds += (sets - 1) * REST_BETWEEN_SETS;
-        if (index < allExercises.length - 1) totalSeconds += REST_BETWEEN_EXERCISES;
-    });
-    return totalSeconds;
-}
-
-function optimizeSessionDuration(session, targetMin) {
-    const targetSeconds = targetMin * 60;
-    let estimatedSeconds = estimateDurationSeconds(session);
-
-    if (estimatedSeconds > targetSeconds + 300) {
-        while (session.main.length > 1 && estimatedSeconds > targetSeconds + 300) {
-            session.main.pop();
-            estimatedSeconds = estimateDurationSeconds(session);
-        }
-    }
-
-    let attempts = 0;
-    while (estimatedSeconds > targetSeconds * 1.15 && attempts < 5) {
-        let reductionMade = false;
-        for (let ex of session.main) {
-            if (BREATHING_CATEGORIES.includes(ex.category_id)) continue;
-            const sets = parseInt(ex.sets);
-            if (ex.is_unilateral) { if (sets >= 4) { ex.sets = String(sets - 2); reductionMade = true; } }
-            else { if (sets > 1) { ex.sets = String(sets - 1); reductionMade = true; } }
-        }
-        if (!reductionMade) {
-            [...session.warmup, ...session.main, ...session.cooldown].forEach(ex => {
-                const text = String(ex.reps_or_time);
-                const val = parseInt(text);
-                if (!isNaN(val)) {
-                    const isBreathing = BREATHING_CATEGORIES.includes(ex.category_id);
-                    const minLimit = isBreathing ? 45 : 5;
-                    let newVal = Math.max(minLimit, Math.floor(val * 0.85));
-                    if (isBreathing) newVal = Math.ceil(newVal / 15) * 15;
-                    ex.reps_or_time = text.replace(val, newVal);
-                }
-            });
-        }
-        estimatedSeconds = estimateDurationSeconds(session);
-        attempts++;
-    }
-}
-
-function expandSessionDuration(session, targetMin) {
-    const targetSeconds = targetMin * 60;
-    let estimatedSeconds = estimateDurationSeconds(session);
-    if (estimatedSeconds < targetSeconds * 0.8) {
-        let attempts = 0;
-        const maxSets = 5;
-        while (estimatedSeconds < targetSeconds * 0.9 && attempts < 10) {
-            let expansionMade = false;
-            for (let ex of session.main) {
-                // Nie zwiększaj Core powyżej 3 serii nawet przy expandzie
-                if (ex.category_id.startsWith('core_')) continue;
-
-                if (BREATHING_CATEGORIES.includes(ex.category_id)) continue;
-                const sets = parseInt(ex.sets);
-                if (sets < maxSets) {
-                    if (ex.is_unilateral) { if (sets + 2 <= maxSets) { ex.sets = String(sets + 2); expansionMade = true; } }
-                    else { ex.sets = String(sets + 1); expansionMade = true; }
-                }
-            }
-            if (!expansionMade) break;
-            estimatedSeconds = estimateDurationSeconds(session);
-            attempts++;
-        }
-    }
 }

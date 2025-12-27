@@ -4,7 +4,7 @@ import { state } from './state.js';
 import { focus, screens, initializeFocusElements } from './dom.js';
 import { speak } from './tts.js';
 import { startTimer, stopTimer, startStopwatch, stopStopwatch, updateTimerDisplay, updateStopwatchDisplay } from './timer.js';
-import { getExerciseDuration, parseSetCount, formatForTTS, getHydratedDay, processSVG } from './utils.js'; // Import processSVG
+import { getExerciseDuration, parseSetCount, formatForTTS, getHydratedDay, processSVG } from './utils.js';
 import { navigateTo } from './ui.js';
 import { renderSummaryScreen } from './ui/screens/summary.js';
 import { getIsCasting, sendTrainingStateUpdate } from './cast.js';
@@ -44,8 +44,6 @@ function syncStateToChromecast() {
         exerciseDetails: exercise.isWork ? `Cel: ${exercise.reps_or_time} | Tempo: ${exercise.tempo_or_iso}` : `Następne: ${(state.flatExercises[state.currentExerciseIndex + 1] || {}).name || ''}`,
         nextExercise: nextWorkExercise ? nextWorkExercise.name : 'Koniec',
         isRest: !exercise.isWork,
-
-        // Upewniamy się, że Chromecast dostaje oczyszczone SVG lub null
         animationSvg: exercise.animationSvg ? processSVG(exercise.animationSvg) : null
     };
     sendTrainingStateUpdate(payload);
@@ -119,24 +117,14 @@ function triggerSessionBackup() {
     });
 }
 
-// --- ZARZĄDZANIE PASKIEM POSTĘPU ---
-
 function initProgressBar() {
     if (!focus.progressContainer) return;
-    
     focus.progressContainer.innerHTML = '';
-    
-    // Filtrujemy tylko ćwiczenia robocze (isWork), aby stworzyć segmenty
-    // W flatExercises mamy przeplatankę (Praca, Przerwa, Praca...)
-    // Chcemy pokazać tylko segmenty Pracy. Przerwy będą wizualizowane jako stan "pomiędzy".
-    
     state.flatExercises.forEach((ex, realIndex) => {
         if (ex.isWork) {
             const segment = document.createElement('div');
             segment.className = 'progress-segment';
             segment.dataset.realIndex = realIndex;
-            
-            // Przypisanie klasy sekcji (kolory)
             const secName = (ex.sectionName || '').toLowerCase();
             if (secName.includes('rozgrzewka') || secName.includes('warmup') || secName.includes('start')) {
                 segment.classList.add('section-warmup');
@@ -145,7 +133,6 @@ function initProgressBar() {
             } else {
                 segment.classList.add('section-main');
             }
-            
             focus.progressContainer.appendChild(segment);
         }
     });
@@ -153,37 +140,23 @@ function initProgressBar() {
 
 function updateProgressBar() {
     if (!focus.progressContainer) return;
-    
     const currentIndex = state.currentExerciseIndex;
     const currentEx = state.flatExercises[currentIndex];
-    
-    // Szukamy wszystkich segmentów
     const segments = focus.progressContainer.querySelectorAll('.progress-segment');
-    
+
     segments.forEach(seg => {
         const segRealIndex = parseInt(seg.dataset.realIndex, 10);
-        
-        // Reset klas stanu
         seg.classList.remove('completed', 'active', 'rest-pulse', 'paused-active');
-        
-        // 1. Logika Completed: Jeśli indeks ćwiczenia segmentu jest mniejszy niż obecny indeks
+
         if (segRealIndex < currentIndex) {
             seg.classList.add('completed');
-        }
-        
-        // 2. Logika Active (To ćwiczenie jest teraz wykonywane)
-        else if (segRealIndex === currentIndex) {
+        } else if (segRealIndex === currentIndex) {
             if (state.isPaused) {
                 seg.classList.add('paused-active');
             } else {
                 seg.classList.add('active');
             }
-        }
-        
-        // 3. Logika Rest (Jesteśmy na przerwie, a ten segment jest NASTĘPNY)
-        else if (currentEx && !currentEx.isWork && segRealIndex > currentIndex) {
-            // Sprawdzamy, czy to jest *bezpośrednio* następne ćwiczenie robocze
-            // Znajdźmy pierwsze ćwiczenie work po obecnym indeksie
+        } else if (currentEx && !currentEx.isWork && segRealIndex > currentIndex) {
             let nextWorkIndex = -1;
             for(let i = currentIndex + 1; i < state.flatExercises.length; i++) {
                 if (state.flatExercises[i].isWork) {
@@ -191,14 +164,8 @@ function updateProgressBar() {
                     break;
                 }
             }
-            
-            if (segRealIndex === nextWorkIndex) {
-                // To jest nadchodzące ćwiczenie -> pulsujemy
-                if (state.isPaused) {
-                    // Jeśli pauza na przerwie - brak pulsu, po prostu czekamy
-                } else {
-                    seg.classList.add('rest-pulse');
-                }
+            if (segRealIndex === nextWorkIndex && !state.isPaused) {
+                seg.classList.add('rest-pulse');
             }
         }
     });
@@ -207,9 +174,7 @@ function updateProgressBar() {
 export function moveToNextExercise(options = { skipped: false }) {
     stopStopwatch(); stopTimer();
     if (state.tts.isSupported) state.tts.synth.cancel();
-
     if (options.skipped) logCurrentStep('skipped'); else logCurrentStep('completed');
-
     if (state.breakTimeoutId) { clearTimeout(state.breakTimeoutId); state.breakTimeoutId = null; }
 
     if (state.currentExerciseIndex < state.flatExercises.length - 1) {
@@ -234,7 +199,6 @@ export async function startExercise(index) {
     state.currentExerciseIndex = index;
     const exercise = state.flatExercises[index];
 
-    // --- RESET UI STANU (Przycisk TTS, Progress, Pauza) ---
     if (focus.ttsIcon) focus.ttsIcon.src = state.tts.isSoundOn ? '/icons/sound-on.svg' : '/icons/sound-off.svg';
 
     if (focus.prevStepBtn) {
@@ -244,7 +208,6 @@ export async function startExercise(index) {
         focus.prevStepBtn.style.pointerEvents = isFirst ? 'none' : 'auto';
     }
 
-    // UPDATE PROGRESS BAR ZAMIAST TEKSTU
     updateProgressBar();
 
     if (state.isPaused) {
@@ -256,61 +219,38 @@ export async function startExercise(index) {
         if (focus.timerDisplay) focus.timerDisplay.style.opacity = '1';
     }
 
-    // --- ZARZĄDZANIE WIDOKIEM KARTY (Animacja vs Opis) ---
     const animContainer = document.getElementById('focus-animation-container');
     const descContainer = document.getElementById('focus-description');
     const flipIndicator = document.querySelector('.flip-indicator');
 
-    // Reset kontenerów na start
     if (animContainer) animContainer.innerHTML = '';
 
-    // LOGIKA ŁADOWANIA ANIMACJI (FIX DLA ZADANIA 6 i 10)
-    // Jeśli mamy animację (hasAnimation) i jest to ćwiczenie (isWork):
     if (exercise.hasAnimation && exercise.isWork) {
-
-        // 1. Pokaż kontener animacji, ukryj opis (Domyślny widok to animacja)
         if (animContainer) {
             animContainer.classList.remove('hidden');
-            // Wstawiamy spinner
             animContainer.innerHTML = '<div class="spinner-dots"></div><style>.spinner-dots { width:30px; height:30px; border:4px solid #ccc; border-top-color:var(--primary-color); border-radius:50%; animation:spin 1s linear infinite; }</style>';
         }
-        if (descContainer) {
-            descContainer.classList.add('hidden');
-        }
-        if (flipIndicator) {
-            flipIndicator.classList.remove('hidden');
-        }
+        if (descContainer) descContainer.classList.add('hidden');
+        if (flipIndicator) flipIndicator.classList.remove('hidden');
 
-        // 2. Pobierz SVG w tle
         dataStore.fetchExerciseAnimation(exercise.exerciseId || exercise.id).then(rawSvg => {
-            // Sprawdź, czy użytkownik nadal jest na tym samym ćwiczeniu (czy nie przewinął dalej)
             if (rawSvg && state.currentExerciseIndex === index) {
-                // 3. Oczyść SVG (Task 10)
                 const cleanSvg = processSVG(rawSvg);
-                exercise.animationSvg = cleanSvg; // Cache w pamięci
-
-                // 4. Wyświetl
-                if (animContainer) {
-                    animContainer.innerHTML = cleanSvg;
-                }
+                exercise.animationSvg = cleanSvg;
+                if (animContainer) animContainer.innerHTML = cleanSvg;
                 syncStateToChromecast();
             }
         });
     }
     else {
-        // Brak animacji lub przerwa -> Pokaż opis
         if (animContainer) animContainer.classList.add('hidden');
         if (descContainer) descContainer.classList.remove('hidden');
         if (flipIndicator) flipIndicator.classList.add('hidden');
     }
 
     if (exercise.isWork) {
-        // --- TRYB PRACY ---
-        // ZMIANA: Usunięto ustawianie focus.sectionName (element usunięty z HTML)
-        
         focus.exerciseName.textContent = exercise.name;
         fitText(focus.exerciseName);
-
         focus.exerciseDetails.textContent = `Seria ${exercise.currentSet}/${exercise.totalSets} | Cel: ${exercise.reps_or_time}`;
 
         if (focus.tempo) {
@@ -320,7 +260,6 @@ export async function startExercise(index) {
         }
 
         focus.focusDescription.textContent = exercise.description || '';
-
         if (focus.affinityBadge) focus.affinityBadge.innerHTML = getAffinityBadge(exercise.exerciseId || exercise.id);
 
         let nextWorkExercise = null;
@@ -349,7 +288,6 @@ export async function startExercise(index) {
         }
     }
     else {
-        // --- TRYB PRZERWY ---
         if (animContainer) animContainer.classList.add('hidden');
         if (descContainer) descContainer.classList.remove('hidden');
         if (flipIndicator) flipIndicator.classList.add('hidden');
@@ -359,7 +297,6 @@ export async function startExercise(index) {
         const upcomingExercise = state.flatExercises[index + 1];
         if (!upcomingExercise) { moveToNextExercise({ skipped: false }); return; }
 
-        // Preload dla następnego ćwiczenia
         if (upcomingExercise.hasAnimation) {
              dataStore.fetchExerciseAnimation(upcomingExercise.exerciseId || upcomingExercise.id);
         }
@@ -370,7 +307,6 @@ export async function startExercise(index) {
         let afterUpcomingExercise = null;
         for (let i = index + 2; i < state.flatExercises.length; i++) { if (state.flatExercises[i].isWork) { afterUpcomingExercise = state.flatExercises[i]; break; } }
 
-        // ZMIANA: Usunięto focus.sectionName
         focus.exerciseName.textContent = `Następne: ${upcomingExercise.name}`;
         fitText(focus.exerciseName);
         focus.exerciseDetails.textContent = `Seria ${upcomingExercise.currentSet}/${upcomingExercise.totalSets} | Cel: ${upcomingExercise.reps_or_time}`;
@@ -399,8 +335,12 @@ export async function startExercise(index) {
 
 export function generateFlatExercises(dayData) {
     const plan = [];
-    const FIXED_REST_DURATION = 5;
-    const TRANSITION_DURATION = 5;
+    
+    // --- DYNAMICZNE USTAWIENIA CZASOWE ---
+    const REST_BETWEEN_SETS = state.settings.restBetweenSets || 30;
+    const REST_BETWEEN_EXERCISES = state.settings.restBetweenExercises || 30;
+    const TRANSITION_DURATION = 5; // Krótka przerwa techniczna przy zmianie stron
+
     let unilateralGlobalIndex = 0;
     let globalStepCounter = 0;
 
@@ -477,7 +417,7 @@ export function generateFlatExercises(dayData) {
                         name: "Zmiana Strony",
                         isRest: true,
                         isWork: false,
-                        duration: TRANSITION_DURATION,
+                        duration: TRANSITION_DURATION, // Tu zostawiamy 5s techniczne
                         sectionName: "Przejście",
                         description: `Przygotuj stronę: ${secondSide}`,
                         uniqueId: `rest_transition_${globalStepCounter++}`
@@ -506,24 +446,26 @@ export function generateFlatExercises(dayData) {
                     });
                 }
 
+                // Przerwa między seriami TEGO SAMEGO ćwiczenia
                 if (i < loopLimit) {
                     plan.push({
                         name: 'Odpoczynek',
                         isRest: true,
                         isWork: false,
-                        duration: FIXED_REST_DURATION,
+                        duration: REST_BETWEEN_SETS, // <--- Ustawienie z Settings
                         sectionName: 'Przerwa między seriami',
                         uniqueId: `rest_set_${globalStepCounter++}`
                     });
                 }
             }
 
+            // Przerwa po OSTATNIEJ serii przed nowym ćwiczeniem
             if (exerciseIndex < section.exercises.length - 1) {
                 plan.push({
                     name: 'Przerwa',
                     isRest: true,
                     isWork: false,
-                    duration: FIXED_REST_DURATION,
+                    duration: REST_BETWEEN_EXERCISES, // <--- Ustawienie z Settings
                     sectionName: 'Przerwa',
                     uniqueId: `rest_exercise_${globalStepCounter++}`
                 });
@@ -552,7 +494,7 @@ export async function startModifiedTraining() {
         state.sessionLog = [];
         navigateTo('training');
         initializeFocusElements();
-        initProgressBar(); // INIT BAR
+        initProgressBar(); 
         startExercise(0);
         triggerSessionBackup();
         return;
@@ -595,7 +537,7 @@ export async function startModifiedTraining() {
 
     navigateTo('training');
     initializeFocusElements();
-    initProgressBar(); // INIT BAR
+    initProgressBar();
     startExercise(0);
     triggerSessionBackup();
 }
@@ -614,6 +556,6 @@ export function resumeFromBackup(backup, timeGapMs) {
 
     navigateTo('training');
     initializeFocusElements();
-    initProgressBar(); // INIT BAR
+    initProgressBar();
     startExercise(backup.currentExerciseIndex);
 }

@@ -27,6 +27,12 @@ export const state = {
         equipment: [],
         schedule: {},
         ttsEnabled: true,
+        
+        // --- NOWE PARAMETRY CZASOWE (Globalne Ustawienia Usera) ---
+        secondsPerRep: 6,          // Domyślnie 6s
+        restBetweenSets: 30,       // Domyślnie 30s
+        restBetweenExercises: 30,  // Domyślnie 30s
+
         wizardData: {} // Pełne dane z ankiety
     },
 

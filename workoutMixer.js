@@ -4,7 +4,6 @@ import { assistant } from './assistantEngine.js';
 import { buildClinicalContext, checkExerciseAvailability, checkEquipment } from './clinicalEngine.js';
 
 const CACHE_FRESHNESS_DAYS = 60;
-const SECONDS_PER_REP = 4;
 const WEIGHT_FRESHNESS = 1.0;
 const WEIGHT_AFFINITY = 1.2;
 
@@ -15,7 +14,7 @@ export const workoutMixer = {
         console.log(`🌪️ [Mixer] Rozpoczynam miksowanie dnia: ${staticDayPlan.title}`);
         const dynamicPlan = JSON.parse(JSON.stringify(staticDayPlan));
         const sessionUsedIds = new Set();
-        
+
         const wizardData = state.settings.wizardData || {};
         const clinicalCtx = buildClinicalContext(wizardData);
         clinicalCtx.blockedIds = new Set(state.blacklist || []);
@@ -73,7 +72,7 @@ export const workoutMixer = {
         const wizardData = state.settings.wizardData || {};
         const clinicalCtx = buildClinicalContext(wizardData);
         clinicalCtx.blockedIds = new Set(state.blacklist || []);
-        
+
         const variant = findBestVariant(originalExercise, criteria, usedIds, true, false, clinicalCtx);
         return variant ? mergeExerciseData(originalExercise, variant) : originalExercise;
     },
@@ -130,7 +129,7 @@ function findBestVariant(originalEx, criteria, usedIds, forceShuffle = false, mu
                 if (Math.abs(lvl - criteria.targetLevel) > 1) return false;
             }
             if (usedIds.has(ex.id)) return false;
-            
+
             const result = checkExerciseAvailability(ex, clinicalCtx, { ignoreDifficulty: true, ignoreEquipment: false });
             return result.allowed;
         });
@@ -186,6 +185,9 @@ function findEmergencyVariant(originalEx, usedIds, clinicalCtx) {
 }
 
 function adaptVolumeInternal(originalEx, newEx) {
+    // Dynamicznie pobieramy SECONDS_PER_REP z ustawień
+    const SECONDS_PER_REP = state.settings.secondsPerRep || 6;
+
     if (['breathing', 'breathing_control', 'muscle_relaxation'].includes(newEx.categoryId)) {
         let minDuration = 60;
         if (newEx.maxDuration) minDuration = Math.max(60, Math.min(newEx.maxDuration, 120));
@@ -241,7 +243,7 @@ function mergeExerciseData(original, variant) {
     if (variant.isUnilateral && !merged.reps_or_time.includes("/str")) {
         if (merged.reps_or_time.includes("s")) merged.reps_or_time = merged.reps_or_time.replace("s", "s/str.");
         else merged.reps_or_time = `${merged.reps_or_time}/str.`;
-        
+
         // ZMIANA (Zadanie 8): Ustawiamy serie per stronę, bez podwajania
         if (parseSetCount(original.sets) === 1) merged.sets = "1";
     }
@@ -279,7 +281,6 @@ function injectPrehabExercises(plan, usedIds, clinicalCtx) {
 }
 
 function compressWorkout(plan, targetMin, currentMin) {
-    // ZMIANA (Zadanie 8): Redukcja o 1 serię, a nie o 2, bo sets = per side
     if (plan.main) { plan.main.forEach(ex => { const c = parseSetCount(ex.sets); if (c > 1) ex.sets = String(c - 1); }); }
     plan.compressionApplied = true; plan.targetMinutes = targetMin;
 }
@@ -295,165 +296,4 @@ function getLastPerformedDate(exerciseId, exerciseName) {
         });
     });
     return latestDate;
-}
-
-// --- ZMIANA (Zadanie 8): Poprawiona logika objętości dla unilateral ---
-function applyVolume(ex, factor, sectionName, targetDurationMin = 30) {
-    const isBreathing = ['breathing', 'breathing_control', 'muscle_relaxation'].includes(ex.categoryId);
-
-    if (isBreathing) {
-        ex.sets = "1";
-        let baseDuration = 90;
-        if (targetDurationMin < 25) baseDuration = 60;
-        else if (targetDurationMin > 45) baseDuration = 120;
-        if (sectionName === 'warmup') baseDuration = Math.max(60, baseDuration - 30);
-        let calcDuration = Math.round(baseDuration * factor);
-        calcDuration = Math.max(60, calcDuration);
-        calcDuration = Math.ceil(calcDuration / 15) * 15;
-        ex.reps_or_time = `${calcDuration} s`;
-        ex.exerciseId = ex.id;
-        ex.tempo_or_iso = "Spokojnie";
-        return;
-    }
-
-    let sets = 2;
-    if (sectionName === 'warmup' || sectionName === 'cooldown') {
-        sets = 1;
-    } else {
-        if (factor < 0.6) sets = 1;
-        else if (factor > 1.0) sets = 3;
-        else sets = 2;
-    }
-
-    const isUnilateralText = (ex.reps_or_time && String(ex.reps_or_time).includes('/str')) || (ex.description && ex.description.toLowerCase().includes('stron'));
-    const isReallyUnilateral = ex.is_unilateral || isUnilateralText;
-
-    if (isReallyUnilateral) {
-        // ZMIANA (Zadanie 8): Definiujemy serie PER SIDE. Nie mnożymy.
-        // Jeśli chcemy 2 serie na stronę (standard), to zostawiamy 2.
-        // Ograniczamy max do 3 serii na stronę.
-        if (sets > 3) sets = 3; 
-    }
-
-    let repsOrTime = "10";
-    if (ex.max_recommended_duration) {
-        let baseDuration = (ex.difficulty_level >= 3) ? 45 : 30;
-        let calculatedDuration = Math.round(baseDuration * factor);
-        calculatedDuration = Math.min(calculatedDuration, ex.max_recommended_duration);
-        calculatedDuration = Math.max(10, calculatedDuration);
-        repsOrTime = `${calculatedDuration} s`;
-    } else {
-        let baseReps = 10;
-        if (ex.max_recommended_reps) baseReps = ex.max_recommended_reps;
-        let calculatedReps = Math.round(baseReps * factor);
-        if (ex.max_recommended_reps) calculatedReps = Math.min(calculatedReps, ex.max_recommended_reps + 2);
-        repsOrTime = `${Math.max(5, calculatedReps)}`;
-    }
-
-    ex.sets = sets.toString();
-    ex.reps_or_time = repsOrTime;
-    ex.exerciseId = ex.id;
-}
-
-// ZMIANA (Zadanie 8): Poprawiony estymator czasu dla nowej logiki sets
-function estimateDurationSeconds(session) {
-    let totalSeconds = 0;
-    const allExercises = [...session.warmup, ...session.main, ...session.cooldown];
-    allExercises.forEach((ex, index) => {
-        const sets = parseInt(ex.sets);
-        
-        // Wykrywamy unilateral aby policzyć czas x2 (L+R)
-        const isUnilateral = ex.is_unilateral || (ex.reps_or_time && String(ex.reps_or_time).includes('/str'));
-        const multiplier = isUnilateral ? 2 : 1;
-
-        let workTimePerSet = 0;
-        const text = String(ex.reps_or_time).toLowerCase();
-        if (text.includes('s') || text.includes('min')) {
-            const val = parseInt(text) || 30;
-            const isMin = text.includes('min');
-            workTimePerSet = isMin ? val * 60 : val;
-        } else {
-            const reps = parseInt(text) || 10;
-            workTimePerSet = reps * SECONDS_PER_REP;
-        }
-        
-        // Mnożymy czas pracy przez multiplier (L+R)
-        totalSeconds += sets * workTimePerSet * multiplier;
-        
-        // Przerwy między seriami (jeśli sets > 1, to mamy (sets-1) przerw MIĘDZY seriami tej samej strony,
-        // ALE w unilateral mamy też przejście stron. Uproszczenie: sets * multiplier * przerwa?
-        // Przyjmijmy standardowy model: czas = (praca + przerwa) * serie.
-        const REST_TIME = 30; // Średni czas przerwy/przejścia
-        if (sets > 1 || isUnilateral) totalSeconds += (sets * multiplier - 1) * REST_TIME;
-        
-        if (index < allExercises.length - 1) totalSeconds += REST_BETWEEN_EXERCISES;
-    });
-    return totalSeconds;
-}
-
-function optimizeSessionDuration(session, targetMin) {
-    const targetSeconds = targetMin * 60;
-    let estimatedSeconds = estimateDurationSeconds(session);
-
-    if (estimatedSeconds > targetSeconds + 300) {
-        while (session.main.length > 1 && estimatedSeconds > targetSeconds + 300) {
-            session.main.pop();
-            estimatedSeconds = estimateDurationSeconds(session);
-        }
-    }
-
-    let attempts = 0;
-    while (estimatedSeconds > targetSeconds * 1.15 && attempts < 5) {
-        let reductionMade = false;
-        for (let ex of session.main) {
-            if (['breathing', 'breathing_control', 'muscle_relaxation'].includes(ex.category_id)) continue;
-            const sets = parseInt(ex.sets);
-            
-            // ZMIANA (Zadanie 8): Redukujemy o 1, bo to seria na stronę
-            if (sets > 1) { 
-                ex.sets = String(sets - 1); 
-                reductionMade = true; 
-            }
-        }
-        if (!reductionMade) {
-            [...session.warmup, ...session.main, ...session.cooldown].forEach(ex => {
-                const text = String(ex.reps_or_time);
-                const val = parseInt(text);
-                if (!isNaN(val)) {
-                    const isBreathing = ['breathing', 'breathing_control', 'muscle_relaxation'].includes(ex.category_id);
-                    const minLimit = isBreathing ? 45 : 5;
-                    let newVal = Math.max(minLimit, Math.floor(val * 0.85));
-                    if (isBreathing) newVal = Math.ceil(newVal / 15) * 15;
-                    ex.reps_or_time = text.replace(val, newVal);
-                }
-            });
-        }
-        estimatedSeconds = estimateDurationSeconds(session);
-        attempts++;
-    }
-}
-
-function expandSessionDuration(session, targetMin) {
-    const targetSeconds = targetMin * 60;
-    let estimatedSeconds = estimateDurationSeconds(session);
-    if (estimatedSeconds < targetSeconds * 0.8) {
-        let attempts = 0;
-        const maxSets = 4; // Max sets per side
-        while (estimatedSeconds < targetSeconds * 0.9 && attempts < 10) {
-            let expansionMade = false;
-            for (let ex of session.main) {
-                if (['breathing', 'breathing_control', 'muscle_relaxation'].includes(ex.category_id)) continue;
-                const sets = parseInt(ex.sets);
-                
-                // ZMIANA (Zadanie 8): Dodajemy 1 serię na stronę
-                if (sets < maxSets) {
-                    ex.sets = String(sets + 1); 
-                    expansionMade = true; 
-                }
-            }
-            if (!expansionMade) break;
-            estimatedSeconds = estimateDurationSeconds(session);
-            attempts++;
-        }
-    }
 }

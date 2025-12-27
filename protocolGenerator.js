@@ -3,7 +3,7 @@ import { state } from './state.js';
 import { checkExerciseAvailability, buildClinicalContext } from './clinicalEngine.js';
 
 /**
- * PROTOCOL GENERATOR v5.6 (Added Metabolic Burn Support)
+ * PROTOCOL GENERATOR v5.7 (Dynamic Timing Config)
  */
 
 // ============================================================
@@ -37,7 +37,6 @@ const TIMING_CONFIG = {
     'burn': { work: 30, rest: 15, tempo: 'Żwawe (Low Impact)' }
 };
 
-const SECONDS_PER_REP_ESTIMATE = 4;
 const DEFAULT_MAX_DURATION = 60;
 const DEFAULT_MAX_REPS = 15;
 const INTRA_SET_REST = 15;
@@ -47,7 +46,7 @@ const INTRA_SET_REST = 15;
 // ============================================================
 
 export function generateBioProtocol({ mode, focusZone, durationMin, userContext, timeFactor = 1.0 }) {
-    console.log(`🧪 [ProtocolGenerator] Generowanie v5.6: ${mode} / ${focusZone}`);
+    console.log(`🧪 [ProtocolGenerator] Generowanie v5.7: ${mode} / ${focusZone}`);
 
     const targetSeconds = durationMin * 60;
     const config = TIMING_CONFIG[mode] || TIMING_CONFIG['reset'];
@@ -116,7 +115,7 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
         sequence.push(ex);
         usedIds.add(ex.id);
         const mult = (ex.isUnilateral || String(ex.reps_or_time).includes('/str')) ? 2 : 1;
-        
+
         // Obsługa recommendedInterval dla trybu BURN
         let cycleDuration = baseCycleTime;
         if (mode === 'burn' && ex.recommendedInterval) {
@@ -145,7 +144,7 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
         const breathing = candidates.filter(ex => ['breathing_control', 'breathing'].includes(ex.categoryId));
         const relax = candidates.filter(ex => ex.categoryId === 'muscle_relaxation');
         runStrategy([...breathing, ...relax], candidates);
-    } 
+    }
     else if (mode === 'burn') {
         // Tryb BURN preferuje wysoką intensywność metaboliczną
         const highIntensity = candidates.filter(ex => (ex.metabolicIntensity || 1) >= 3);
@@ -174,6 +173,9 @@ function getStrictUnique(pool, usedIds) {
 // ============================================================
 
 function buildSteps(exercises, config, mode, timeFactor) {
+    // Dynamiczne ustawienia usera
+    const SECONDS_PER_REP_ESTIMATE = state.settings.secondsPerRep || 6;
+
     const steps = [];
 
     steps.push({
@@ -204,10 +206,10 @@ function buildSteps(exercises, config, mode, timeFactor) {
         if (lvl === 1) difficultyMod = 1.15;
 
         // W trybie BURN trzymamy się sztywno czasów (Interval Timer)
-        let targetTotalSeconds = mode === 'burn' 
-            ? baseWork 
+        let targetTotalSeconds = mode === 'burn'
+            ? baseWork
             : (baseWork * randomJitter * difficultyMod) - (driftCompensation * 0.3);
-            
+
         targetTotalSeconds = Math.max(15, targetTotalSeconds);
 
         const rawReps = String(ex.reps_or_time || "").toLowerCase();
@@ -305,18 +307,18 @@ function getCandidates(mode, focusZone, ctx = {}) {
         }
 
         const difficulty = parseInt(ex.difficultyLevel || 1, 10);
-        
+
         // Logika specyficzna dla trybów
         if (mode === 'burn') {
             // Musi być tag 'fat_loss' lub 'conditioning', ALBO kategoria 'conditioning_low_impact'
             const hasTag = (ex.goalTags && (ex.goalTags.includes('fat_loss') || ex.goalTags.includes('conditioning')));
             const isCat = ex.categoryId === 'conditioning_low_impact';
-            
+
             if (!hasTag && !isCat) return false;
-            
+
             // Preferuj metabolic intensity >= 2
             if ((ex.metabolicIntensity || 1) < 2) return false;
-            
+
             // Low impact jest wymuszany przez clinical engine jeśli user ma kontuzję,
             // ale tutaj możemy dodać miękki filtr preferencji
             return true;

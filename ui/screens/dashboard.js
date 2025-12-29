@@ -1,7 +1,7 @@
 // js/ui/screens/dashboard.js
 import { state } from '../../state.js';
 import { containers } from '../../dom.js';
-import { getActiveTrainingPlan, getHydratedDay, getISODate, isTodayRestDay, getNextLogicalDay, getTrainingDayForDate } from '../../utils.js';
+import { getActiveTrainingPlan, getHydratedDay, getISODate, isTodayRestDay } from '../../utils.js';
 import { getIsCasting, sendUserStats } from '../../cast.js';
 import { getGamificationState } from '../../gamification.js';
 import { assistant } from '../../assistantEngine.js';
@@ -9,7 +9,6 @@ import { navigateTo, showLoader, hideLoader } from '../core.js';
 import { generateHeroDashboardHTML, generateMissionCardHTML, generateCompletedMissionCardHTML, generateSkeletonDashboardHTML, generatePlanFinishedCardHTML } from '../templates.js';
 import { renderPreTrainingScreen, renderProtocolStart } from './training.js';
 import { renderDayDetailsScreen } from './history.js';
-import { workoutMixer } from '../../workoutMixer.js';
 import { getUserPayload } from '../../auth.js';
 import { generateBioProtocol } from '../../protocolGenerator.js';
 import dataStore from '../../dataStore.js';
@@ -47,18 +46,7 @@ const loadPlanFromStorage = () => {
 const getDynamicDayFromSettings = (dayIndex) => {
     const dynamicPlan = state.settings.dynamicPlanData;
     if (!dynamicPlan || !dynamicPlan.days) return null;
-    
-    // W starej logice było modulo (cykliczne powtarzanie).
-    // W nowej logice: jeśli dayIndex > length, to znaczy że plan się skończył.
-    // Ale ta funkcja służy do pobierania konkretnego dnia, więc zwracamy po prostu element tablicy.
-    // dayIndex jest 1-based.
-    
     return dynamicPlan.days[dayIndex - 1] || null;
-};
-
-const getPlanDaysArray = (plan) => {
-    if (!plan) return [];
-    return plan.Days || plan.days || [];
 };
 
 // --- GŁÓWNA FUNKCJA RENDERUJĄCA ---
@@ -78,50 +66,26 @@ export const renderMainScreen = (isLoading = false) => {
 
     const hasDynamicData = state.settings.dynamicPlanData && state.settings.dynamicPlanData.days && state.settings.dynamicPlanData.days.length > 0;
 
-    let isDynamicMode = false;
-
-    if (state.settings.planMode === 'dynamic') {
-        isDynamicMode = true;
-    } else if (state.settings.planMode === 'static') {
-        isDynamicMode = false;
-    } else {
-        isDynamicMode = hasDynamicData;
-    }
-
-    const activePlan = isDynamicMode && hasDynamicData
-        ? state.settings.dynamicPlanData
-        : getActiveTrainingPlan();
-
-    if (!activePlan) {
-        containers.days.innerHTML = '<p style="padding:2rem; text-align:center;">Brak aktywnego planu. Sprawdź ustawienia.</p>';
+    // Jeśli brak danych planu, wyświetl komunikat/wizard
+    if (!hasDynamicData) {
+        containers.days.innerHTML = `
+            <div style="text-align:center; padding: 3rem 1rem;">
+                <h3>Witaj w Virtual Physio</h3>
+                <p>Nie masz aktywnego planu. Wypełnij ankietę, aby wygenerować program.</p>
+                <button id="start-wizard-btn" class="action-btn" style="margin-top:1rem;">Uruchom Kreatora</button>
+            </div>
+        `;
+        document.getElementById('start-wizard-btn').addEventListener('click', () => initWizard(true));
+        // Mimo braku planu, wyświetlamy Hero (jeśli user ma statystyki z przeszłości)
+        renderHero();
+        renderBioHub();
         return;
     }
 
-    const currentPlanId = isDynamicMode
-        ? (state.settings.dynamicPlanData.id || 'dynamic')
-        : state.settings.activePlanId;
+    const currentPlanId = state.settings.dynamicPlanData.id;
 
     // 1. RENDEROWANIE HERO STATS
-    const heroContainer = document.getElementById('hero-dashboard');
-    if (heroContainer) {
-        try {
-            const stats = state.userStats || {};
-            const combinedStats = {
-                ...getGamificationState(state.userProgress),
-                resilience: stats.resilience,
-                streak: stats.streak,
-                totalSessions: stats.totalSessions,
-                level: stats.level,
-                totalMinutes: stats.totalMinutes
-            };
-
-            if (getIsCasting()) sendUserStats(combinedStats);
-            heroContainer.classList.remove('hidden');
-            heroContainer.innerHTML = generateHeroDashboardHTML(combinedStats);
-        } catch (e) {
-            console.error('[Dashboard] Błąd renderowania Hero:', e);
-        }
-    }
+    renderHero();
 
     // 2. RENDEROWANIE ZAWARTOŚCI GŁÓWNEJ
     containers.days.innerHTML = '';
@@ -148,7 +112,7 @@ export const renderMainScreen = (isLoading = false) => {
     const todaysSessions = state.userProgress[todayISO] || [];
 
     // Sprawdzamy czy dzisiaj wykonano już trening z AKTUALNEGO planu
-    const completedSession = todaysSessions.find(s => 
+    const completedSession = todaysSessions.find(s =>
         s.planId === currentPlanId && s.status === 'completed'
     );
 
@@ -171,11 +135,10 @@ export const renderMainScreen = (isLoading = false) => {
                 renderDayDetailsScreen(todayISO, () => { navigateTo('main'); renderMainScreen(); });
             });
         }
-        
-        // Obliczamy numer na podstawie historii, aby wyświetlić poprawnie "kolejne w cyklu"
+
         const allSessions = Object.values(state.userProgress).flat();
         const completedInPlan = allSessions.filter(s => s.planId === currentPlanId && s.status === 'completed');
-        currentSequenceDayNum = completedInPlan.length; 
+        currentSequenceDayNum = completedInPlan.length;
 
     } else if (isTodayRestDay()) {
         containers.days.innerHTML += `
@@ -191,107 +154,50 @@ export const renderMainScreen = (isLoading = false) => {
             </div>
         `;
         clearPlanFromStorage();
-        
-        // Dla dnia wolnego obliczamy postęp
+
         const allSessions = Object.values(state.userProgress).flat();
         const completedInPlan = allSessions.filter(s => s.planId === currentPlanId && s.status === 'completed');
         currentSequenceDayNum = completedInPlan.length;
 
     } else {
+        // ============================================================
+        // B. TRENING DO WYKONANIA (Dynamic Only)
+        // ============================================================
         let finalPlan = null;
         let estimatedMinutes = 0;
 
-        // --- LOGIKA DLA TRYBU DYNAMICZNEGO ---
-        if (isDynamicMode) {
-            // 1. Obliczamy postęp W RAMACH TEGO KONKRETNEGO PLANU
-            const allSessions = Object.values(state.userProgress).flat();
-            // Filtrujemy tylko sesje należące do obecnego planu ID
-            const completedInPlan = allSessions.filter(s => s.planId === currentPlanId && s.status === 'completed');
-            const completedCount = completedInPlan.length;
-            
-            const totalDaysInPlan = state.settings.dynamicPlanData.days.length;
+        const allSessions = Object.values(state.userProgress).flat();
+        const completedInPlan = allSessions.filter(s => s.planId === currentPlanId && s.status === 'completed');
+        const completedCount = completedInPlan.length;
 
-            // 2. SPRAWDZENIE CZY PLAN SIĘ SKOŃCZYŁ
-            if (completedCount >= totalDaysInPlan) {
-                // PLAN UKOŃCZONY -> Wyświetl kartę generacji nowego planu
-                renderPlanFinishedScreen();
-                // Renderujemy resztę (bio-hub) i wychodzimy
-                renderBioHub();
-                return;
-            }
+        const totalDaysInPlan = state.settings.dynamicPlanData.days.length;
 
-            // 3. Jeśli plan trwa, wyznaczamy następny dzień
-            currentSequenceDayNum = completedCount + 1;
-            const rawDay = getDynamicDayFromSettings(currentSequenceDayNum);
-
-            if (!rawDay) {
-                // To teoretycznie nie powinno wystąpić dzięki warunkowi wyżej
-                containers.days.innerHTML += `<p class="error-msg">Błąd indeksu planu.</p>`;
-                return;
-            }
-
-            const cachedPlan = loadPlanFromStorage();
-
-            if (cachedPlan && 
-                cachedPlan.dayNumber === currentSequenceDayNum && 
-                cachedPlan.planId === currentPlanId) {
-                console.log("CACHE HIT: Używam zapisanego planu z dysku.");
-                finalPlan = cachedPlan;
-            } else {
-                console.log("CACHE MISS: Generuję plan na dziś (z Mikserem).");
-                const hydratedDay = getHydratedDay(rawDay);
-                
-                finalPlan = workoutMixer.mixWorkout(hydratedDay, false);
-                
-                finalPlan.dayNumber = currentSequenceDayNum;
-                finalPlan.planId = currentPlanId;
-                savePlanToStorage(finalPlan);
-            }
-            state.todaysDynamicPlan = finalPlan;
-
-        } 
-        // --- LOGIKA DLA TRYBU STATYCZNEGO ---
-        else {
-            const todayDataRaw = getNextLogicalDay();
-            if (todayDataRaw) {
-                const todayDataStatic = getHydratedDay(todayDataRaw);
-                currentSequenceDayNum = todayDataStatic.dayNumber;
-
-                let dynamicDayData = state.todaysDynamicPlan;
-
-                // Reset jeśli plan się zmienił w międzyczasie
-                if (dynamicDayData && dynamicDayData.planId !== currentPlanId) {
-                    dynamicDayData = null;
-                    state.todaysDynamicPlan = null;
-                    clearPlanFromStorage();
-                }
-
-                if (!dynamicDayData) {
-                    const cachedPlan = loadPlanFromStorage();
-                    if (cachedPlan && cachedPlan.dayNumber === currentSequenceDayNum && cachedPlan.planId === currentPlanId) {
-                        if (cachedPlan._isDynamic) {
-                            dynamicDayData = cachedPlan;
-                            state.todaysDynamicPlan = cachedPlan;
-                        } else {
-                            clearPlanFromStorage();
-                        }
-                    }
-                }
-
-                if (!dynamicDayData) {
-                    console.log(`🎲 [Dashboard] Uruchamiam Mixer dla dnia ${currentSequenceDayNum}...`);
-                    state.todaysDynamicPlan = workoutMixer.mixWorkout(todayDataStatic);
-                    dynamicDayData = state.todaysDynamicPlan;
-                    dynamicDayData.planId = currentPlanId;
-                    savePlanToStorage(dynamicDayData);
-                }
-                finalPlan = dynamicDayData || todayDataStatic;
-                
-                if (finalPlan && finalPlan._isDynamic) {
-                    state.todaysDynamicPlan = finalPlan;
-                }
-            }
+        if (completedCount >= totalDaysInPlan) {
+            renderPlanFinishedScreen();
+            renderBioHub();
+            return;
         }
+
+        currentSequenceDayNum = completedCount + 1;
+        const rawDay = getDynamicDayFromSettings(currentSequenceDayNum);
+
+        if (!rawDay) {
+            containers.days.innerHTML += `<p class="error-msg">Błąd indeksu planu.</p>`;
+            return;
+        }
+
+        // Ładujemy plan bezpośrednio (zamiast mieszać)
+        console.log(`[Dashboard] Ładuję dzień ${currentSequenceDayNum} (bez automatycznego miksera)`);
+        
+        // Hydracja - zamiana ID na pełne obiekty z bazy
+        finalPlan = getHydratedDay(rawDay);
+        finalPlan.dayNumber = currentSequenceDayNum;
+        finalPlan.planId = currentPlanId;
+        
+        state.todaysDynamicPlan = finalPlan;
+        
+        // Zapisz do cache, aby mieć "stan na dziś"
+        savePlanToStorage(finalPlan);
 
         if (finalPlan) {
             const missionWrapper = document.createElement('div');
@@ -300,7 +206,7 @@ export const renderMainScreen = (isLoading = false) => {
 
             estimatedMinutes = assistant.estimateDuration(finalPlan);
 
-            const wizardData = isDynamicMode ? state.settings.wizardData : null;
+            const wizardData = state.settings.wizardData;
             missionWrapper.innerHTML = generateMissionCardHTML(finalPlan, estimatedMinutes, wizardData);
 
             const cardEl = missionWrapper.querySelector('.mission-card');
@@ -314,15 +220,12 @@ export const renderMainScreen = (isLoading = false) => {
                 timeBadge.textContent = `${estimatedMinutes} min (limit)`;
             }
 
-            // --- WELLNESS LOGIC V2.1 ---
             painOptions.forEach(opt => {
                 opt.addEventListener('click', () => {
                     painOptions.forEach(o => o.classList.remove('selected'));
                     opt.classList.add('selected');
 
                     const painLevel = parseInt(opt.dataset.level, 10);
-
-                    // 1. Sprawdzamy czy to tryb SOS (Level 8+)
                     const checkPlan = assistant.adjustTrainingVolume(finalPlan, painLevel);
                     const isSOS = checkPlan?._modificationInfo?.shouldSuggestSOS;
 
@@ -334,7 +237,7 @@ export const renderMainScreen = (isLoading = false) => {
                     } else {
                         const newDuration = assistant.estimateDuration(checkPlan);
                         timeBadge.textContent = `${newDuration} min`;
-                        
+
                         startBtn.textContent = "Start Misji";
                         startBtn.style.backgroundColor = "";
                         startBtn.dataset.mode = 'normal';
@@ -347,8 +250,7 @@ export const renderMainScreen = (isLoading = false) => {
             startBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const pain = parseInt(startBtn.dataset.initialPain, 10) || 0;
-                
-                // Obsługa przekierowania SOS
+
                 if (startBtn.dataset.mode === 'sos') {
                     if (confirm("Wykryto wysoki poziom bólu. Czy uruchomić bezpieczny Protokół SOS zamiast głównego planu?")) {
                         try {
@@ -366,7 +268,7 @@ export const renderMainScreen = (isLoading = false) => {
                     }
                 }
 
-                renderPreTrainingScreen(finalPlan.dayNumber, pain, isDynamicMode);
+                renderPreTrainingScreen(finalPlan.dayNumber, pain, true);
             });
         }
     }
@@ -376,26 +278,21 @@ export const renderMainScreen = (isLoading = false) => {
     // ============================================================
     // C. SEKCJA "KOLEJNE W CYKLU" (Tylko jeśli plan nieukończony)
     // ============================================================
-    if (activePlan) {
+    // W trybie dynamicznym pokazujemy podgląd następnych dni
+    if (hasDynamicData) {
         let upcomingHTML = '';
-        const planDays = getPlanDaysArray(activePlan);
+        const planDays = state.settings.dynamicPlanData.days;
         const totalDaysInPlan = planDays.length;
-        
-        // Pokazujemy kolejne dni tylko jeśli nie przekraczamy długości planu
+
         if (totalDaysInPlan > currentSequenceDayNum) {
             upcomingHTML += `<div class="section-title" style="margin-top:1.5rem; margin-bottom:0.8rem; padding-left:4px;">KOLEJNE W CYKLU</div>`;
             upcomingHTML += `<div class="upcoming-scroll-container">`;
 
-            // Pokazujemy max 5 kolejnych dni
             for (let i = 0; i < 5; i++) {
                 let targetLogicalNum = currentSequenceDayNum + 1 + i;
-                
-                // Jeśli przekraczamy długość planu, przerywamy pętlę (nie pokazujemy dni z "następnego" cyklu, bo go jeszcze nie ma)
                 if (targetLogicalNum > totalDaysInPlan) break;
 
-                // Dla planów statycznych arrayIndex = targetLogicalNum - 1
-                // Dla dynamicznych to samo (tablica days)
-                const dayDataRaw = planDays[targetLogicalNum - 1]; 
+                const dayDataRaw = planDays[targetLogicalNum - 1];
 
                 if (dayDataRaw) {
                     const dayData = getHydratedDay(dayDataRaw);
@@ -422,7 +319,7 @@ export const renderMainScreen = (isLoading = false) => {
                 card.addEventListener('click', (e) => {
                     e.stopPropagation();
                     const dayId = parseInt(card.dataset.dayId, 10);
-                    renderPreTrainingScreen(dayId, 0, isDynamicMode);
+                    renderPreTrainingScreen(dayId, 0, true);
                 });
             });
         }
@@ -431,42 +328,54 @@ export const renderMainScreen = (isLoading = false) => {
     navigateTo('main');
 };
 
-// --- HELPER: RENDEROWANIE KARTY UKOŃCZENIA PLANU ---
+function renderHero() {
+    const heroContainer = document.getElementById('hero-dashboard');
+    if (heroContainer) {
+        try {
+            const stats = state.userStats || {};
+            const combinedStats = {
+                ...getGamificationState(state.userProgress),
+                resilience: stats.resilience,
+                streak: stats.streak,
+                totalSessions: stats.totalSessions,
+                level: stats.level,
+                totalMinutes: stats.totalMinutes
+            };
+
+            if (getIsCasting()) sendUserStats(combinedStats);
+            heroContainer.classList.remove('hidden');
+            heroContainer.innerHTML = generateHeroDashboardHTML(combinedStats);
+        } catch (e) {
+            console.error('[Dashboard] Błąd renderowania Hero:', e);
+        }
+    }
+}
+
 function renderPlanFinishedScreen() {
     const wrapper = document.createElement('div');
     wrapper.className = 'mission-card-wrapper';
-    
-    // Pobieramy liczbę ukończonych sesji
     const totalSessions = state.settings.dynamicPlanData.days.length;
-    
     wrapper.innerHTML = generatePlanFinishedCardHTML(totalSessions);
     containers.days.appendChild(wrapper);
 
-    // Obsługa przycisku "Szybka generacja"
     const quickBtn = wrapper.querySelector('#quick-regen-btn');
     if (quickBtn) {
         quickBtn.addEventListener('click', async () => {
             if (!confirm("Wygenerować nowy plan na podstawie dotychczasowych ustawień?")) return;
-            
             showLoader();
             try {
-                // Pobieramy stare dane wizarda
                 const wizardData = state.settings.wizardData || {};
-                
-                // Upewniamy się, że mamy aktualne ustawienia czasu
                 const payload = {
                     ...wizardData,
                     secondsPerRep: state.settings.secondsPerRep || 6,
                     restBetweenSets: state.settings.restBetweenSets || 30,
                     restBetweenExercises: state.settings.restBetweenExercises || 30
                 };
-
                 await dataStore.generateDynamicPlan(payload);
-                clearPlanFromStorage(); // Czyścimy cache
-                
+                clearPlanFromStorage();
                 hideLoader();
                 alert("Nowy plan gotowy! Powodzenia w nowym cyklu.");
-                renderMainScreen(); // Przeładowanie widoku
+                renderMainScreen();
             } catch (e) {
                 hideLoader();
                 console.error(e);
@@ -475,16 +384,12 @@ function renderPlanFinishedScreen() {
         });
     }
 
-    // Obsługa przycisku "Zmień cele"
     const editBtn = wrapper.querySelector('#edit-settings-btn');
     if (editBtn) {
-        editBtn.addEventListener('click', () => {
-            initWizard(true); // Wymuś start wizarda
-        });
+        editBtn.addEventListener('click', () => { initWizard(true); });
     }
 }
 
-// --- HELPER: BIO HUB (Wyciągnięty dla czytelności) ---
 function renderBioHub() {
     const bioHubContainer = document.createElement('div');
     bioHubContainer.className = 'bio-hub-container';
@@ -492,26 +397,15 @@ function renderBioHub() {
     const wz = state.settings.wizardData || {};
     const protocols = [];
 
-    // --- NOWOŚĆ: TRYB BURN (Dla wszystkich, którzy nie mają ostrych restrykcji) ---
     const canBurn = state.userStats?.resilience?.status !== 'Critical';
     if (canBurn) {
-        protocols.push({ 
-            mode: 'burn', 
-            zone: 'metabolic', 
-            time: 15, 
-            title: 'Metabolic Burn', 
-            desc: 'Low-impact Fat Loss', 
-            icon: '🔥',
-            styleClass: 'bio-card-booster'
-        });
+        protocols.push({ mode: 'burn', zone: 'metabolic', time: 15, title: 'Metabolic Burn', desc: 'Low-impact Fat Loss', icon: '🔥', styleClass: 'bio-card-booster' });
     }
 
-    // 1. ZAWSZE DOSTĘPNE (Baza)
     protocols.push({ mode: 'booster', zone: 'core', time: 5, title: 'Brzuch ze stali', desc: 'Szybki obwód', icon: '⚡' });
     protocols.push({ mode: 'flow', zone: 'full_body', time: 8, title: 'Mobility Flow', desc: 'Płynny ruch całego ciała', icon: '🌊' });
     protocols.push({ mode: 'calm', zone: 'sleep', time: 10, title: 'Głęboki Reset', desc: 'Oddech i wyciszenie', icon: '🌙' });
 
-    // 2. KONTEKSTOWE
     if (wz.work_type === 'sedentary') {
         protocols.unshift({ mode: 'flow', zone: 'office', time: 5, title: 'Anty-Biuro', desc: 'Rozprostuj się po pracy', icon: '🪑' });
     }
@@ -532,7 +426,7 @@ function renderBioHub() {
     }
 
     const cardsHTML = protocols.map(p => `
-        <div class="bio-card ${p.styleClass || `bio-card-${p.mode}`}" 
+        <div class="bio-card ${p.styleClass || `bio-card-${p.mode}`}"
              data-mode="${p.mode}" data-zone="${p.zone}" data-time="${p.time}">
             <div class="bio-bg-icon">${p.icon}</div>
             <div class="bio-header">

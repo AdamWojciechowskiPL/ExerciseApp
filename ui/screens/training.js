@@ -133,15 +133,12 @@ export const renderProtocolStart = (protocol) => {
         renderList(previewProtocol);
     });
 
-    // --- OBSŁUGA WYMIANY ĆWICZEŃ W PROTOKOLE ---
+    // --- OBSŁUGA WYMIANY ĆWICZEŃ IN-PLACE ---
     listContainer.addEventListener('click', (e) => {
         const btn = e.target.closest('.swap-btn');
         if (!btn) return;
 
-        // Pobieramy indeks (odnosi się on do workExercises, bo tylko te są renderowane)
         const index = parseInt(btn.dataset.exerciseIndex, 10);
-
-        // Filtrujemy ćwiczenia robocze w oryginalnym obiekcie protokołu
         const workExercises = protocol.flatExercises.filter(ex => ex.isWork);
         const exerciseToSwap = workExercises[index];
 
@@ -149,7 +146,6 @@ export const renderProtocolStart = (protocol) => {
             const oldId = exerciseToSwap.id || exerciseToSwap.exerciseId;
 
             renderSwapModal(exerciseToSwap, (newExerciseDef, swapType) => {
-                // Aktualizujemy obiekt ćwiczenia w miejscu (przez referencję)
                 exerciseToSwap.id = newExerciseDef.id;
                 exerciseToSwap.exerciseId = newExerciseDef.id;
                 exerciseToSwap.name = newExerciseDef.name;
@@ -160,19 +156,16 @@ export const renderProtocolStart = (protocol) => {
                 exerciseToSwap.equipment = newExerciseDef.equipment;
                 exerciseToSwap.youtube_url = newExerciseDef.youtube_url;
 
-                // Oznaczamy jako wymienione wizualnie
                 exerciseToSwap.isSwapped = true;
                 exerciseToSwap.isDynamicSwap = true;
                 exerciseToSwap.originalName = (oldId !== newExerciseDef.id) ? exerciseToSwap.name : null;
 
-                // Obsługa Czarnej Listy
                 if (swapType === 'blacklist') {
                      if (confirm(`Dodać poprzednie ćwiczenie do czarnej listy?`)) {
                          dataStore.addToBlacklist(oldId, newExerciseDef.id);
                      }
                 }
 
-                // Odświeżamy listę
                 const timeFactor = parseFloat(slider.value) || 1.0;
                 const previewProtocol = JSON.parse(JSON.stringify(protocol));
                 previewProtocol.flatExercises.forEach(ex => {
@@ -187,7 +180,7 @@ export const renderProtocolStart = (protocol) => {
         }
     });
 
-    // Obsługa przycisku Wróć (Dynamic Import + Absolute Path)
+    // Obsługa przycisku Wróć
     screen.querySelector('#proto-cancel-btn').addEventListener('click', async () => {
         const { renderMainScreen } = await import('/ui/screens/dashboard.js');
         navigateTo('main');
@@ -197,8 +190,6 @@ export const renderProtocolStart = (protocol) => {
     // Obsługa przycisku Start
     screen.querySelector('#proto-start-btn').addEventListener('click', () => {
         const timeFactor = parseFloat(slider.value) || 1.0;
-
-        // Tutaj musimy zastosować zmiany na "ostrym" obiekcie, który trafi do silnika
         const scaledProtocol = JSON.parse(JSON.stringify(protocol));
 
         scaledProtocol.flatExercises.forEach(ex => {
@@ -211,21 +202,18 @@ export const renderProtocolStart = (protocol) => {
         });
         scaledProtocol.totalDuration = Math.round(protocol.totalDuration * timeFactor);
 
-        // Ustawiamy stan
         state.todaysDynamicPlan = scaledProtocol;
         state.sessionParams = { initialPainLevel: 0, timeFactor: timeFactor };
 
         startModifiedTraining();
     });
 
-    // --- FIX: ASYNCHRONICZNY PODGLĄD DLA PROTOKOŁÓW ---
     listContainer.addEventListener('click', async (e) => {
         const btn = e.target.closest('.preview-anim-btn');
         if (btn) {
             e.stopPropagation();
             const exId = btn.dataset.exerciseId;
             const exName = state.exerciseLibrary[exId]?.name || "Podgląd";
-
             const originalContent = btn.innerHTML;
             btn.innerHTML = `<span style="font-size:0.75rem">⏳</span>`;
             btn.style.opacity = "0.7";
@@ -249,26 +237,22 @@ export const renderProtocolStart = (protocol) => {
     navigateTo('preTraining');
 };
 
-// --- STANDARDOWY PRE-TRAINING (Dla Planów Dziennych) ---
+// --- STANDARDOWY PRE-TRAINING ---
 export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicPlan = false) => {
     state.currentTrainingDayId = dayId;
     state.currentTrainingDate = getISODate(new Date());
 
     const activePlan = getActiveTrainingPlan();
-
     let rawDayData = null;
     let isCurrentDynamicDay = false;
 
-    // 1. Priorytet dla planu w pamięci
     if (state.todaysDynamicPlan && state.todaysDynamicPlan.dayNumber === dayId) {
         if (state.todaysDynamicPlan.type !== 'protocol') {
-            console.log("✅ [PreTraining] Używam planu z pamięci dla dnia:", dayId);
             rawDayData = state.todaysDynamicPlan;
             isCurrentDynamicDay = true;
         }
     }
 
-    // 2. Fallback do settings
     if (!rawDayData && useDynamicPlan && state.settings.dynamicPlanData && state.settings.dynamicPlanData.days) {
         const dynDays = state.settings.dynamicPlanData.days;
         const arrayIndex = (dayId - 1) % dynDays.length;
@@ -278,14 +262,11 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
         }
     }
 
-    // 3. Fallback do planu statycznego
     if (!rawDayData && activePlan) {
         rawDayData = activePlan.Days.find(d => d.dayNumber === dayId);
     }
 
     if (!rawDayData) {
-        console.error("Błąd: Nie znaleziono danych dla dnia", dayId);
-        alert("Nie udało się załadować podglądu tego dnia.");
         navigateTo('main');
         return;
     }
@@ -294,11 +275,11 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
     let currentAdjustedPlan = assistant.adjustTrainingVolume(basePlanData, initialPainLevel, 1.0);
 
     const screen = screens.preTraining;
-    const showResetButton = isCurrentDynamicDay;
 
+    // NAGŁÓWEK - USUNIĘTO SHUFFLE BTN
     const actionButtonsHTML = `
         <div style="display:flex; gap:12px;">
-            ${showResetButton ?
+            ${isCurrentDynamicDay ?
                 `<button id="reset-workout-btn" class="icon-btn" title="Przywróć Plan Bazowy"
                     style="background:var(--card-background); border:1px solid var(--danger-color);
                     width: 42px; height: 42px; padding: 0; flex-shrink: 0;
@@ -307,12 +288,6 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
                          style="filter: invert(56%) sepia(69%) saturate(408%) hue-rotate(314deg) brightness(88%) contrast(93%); display:block;">
                 </button>` : ''
             }
-            <button id="shuffle-workout-btn" class="icon-btn" title="Przelosuj Trening"
-                style="background:var(--card-background); border:1px solid var(--border-color); color:var(--primary-color);
-                width: 42px; height: 42px; padding: 0; flex-shrink: 0;
-                display:flex; align-items:center; justify-content:center; border-radius: 50%;">
-                <img src="/icons/swap.svg" width="22" height="22" alt="Shuffle" style="display:block;">
-            </button>
         </div>
     `;
 
@@ -345,7 +320,6 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
 
     const listContainer = screen.querySelector('#pre-training-list');
 
-    // --- GLÓWNA FUNKCJA RENDERUJĄCA LISTĘ (Z OBSŁUGĄ UNILATERAL W PODGLĄDZIE) ---
     const renderList = (planToRender) => {
         listContainer.innerHTML = '';
         const sections = [
@@ -354,8 +328,8 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
             { name: 'Schłodzenie', exercises: planToRender.cooldown || [] }
         ];
 
-        let exerciseCounter = 0; // Globalny licznik ćwiczeń w strukturze danych (do swapowania)
-        let unilateralGlobalIndex = 0; // Licznik do naprzemienności (L/P, P/L)
+        let exerciseCounter = 0;
+        let unilateralGlobalIndex = 0;
 
         sections.forEach(section => {
             if (section.exercises.length === 0) return;
@@ -365,56 +339,20 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
             listContainer.appendChild(header);
 
             section.exercises.forEach((ex) => {
-                const currentDataIndex = exerciseCounter; // Zapamiętujemy indeks w tablicy danych
-                exerciseCounter++;
+                const currentDataIndex = exerciseCounter++;
+                const isUnilateral = ex.isUnilateral || ex.is_unilateral || String(ex.reps_or_time).includes('/str');
 
-                const isUnilateral = ex.isUnilateral ||
-                                     ex.is_unilateral ||
-                                     String(ex.reps_or_time).includes('/str') ||
-                                     String(ex.reps_or_time).includes('stron');
-
-                // Parsujemy liczbę serii
-                const setsStr = String(ex.sets);
-                const totalSets = parseInt(setsStr.split('-').pop());
-
-                // ZMIANA: Usuwamy warunek parzystości. Rozbijamy jeśli to unilateral i ma > 0 serii.
-                if (isUnilateral && totalSets > 0) {
-                    // Logika naprzemienności
-                    let startSide = 'Lewa';
-                    let secondSide = 'Prawa';
-
-                    if (unilateralGlobalIndex % 2 !== 0) {
-                        startSide = 'Prawa';
-                        secondSide = 'Lewa';
-                    }
+                if (isUnilateral) {
+                    let startSide = unilateralGlobalIndex % 2 === 0 ? 'Lewa' : 'Prawa';
+                    let secondSide = unilateralGlobalIndex % 2 === 0 ? 'Prawa' : 'Lewa';
                     unilateralGlobalIndex++;
 
-                    // Czyścimy cel (usuwamy "/str")
                     const cleanReps = ex.reps_or_time.replace(/\/str\.?|\s*stron.*/gi, '').trim();
+                    const setsPerSide = Math.ceil(parseInt(ex.sets.split('-').pop()) / 2);
 
-                    // Obliczamy ile serii na stronę.
-                    const setsPerSide = Math.ceil(totalSets / 2);
-
-                    // Generujemy KARTĘ 1 (Start Side)
-                    const exSide1 = {
-                        ...ex,
-                        name: `${ex.name} (${startSide})`,
-                        reps_or_time: cleanReps,
-                        sets: setsPerSide.toString()
-                    };
-                    listContainer.innerHTML += generatePreTrainingCardHTML(exSide1, currentDataIndex);
-
-                    // Generujemy KARTĘ 2 (Second Side)
-                    const exSide2 = {
-                        ...ex,
-                        name: `${ex.name} (${secondSide})`,
-                        reps_or_time: cleanReps,
-                        sets: setsPerSide.toString()
-                    };
-                    listContainer.innerHTML += generatePreTrainingCardHTML(exSide2, currentDataIndex);
-
+                    listContainer.innerHTML += generatePreTrainingCardHTML({...ex, name: `${ex.name} (${startSide})`, reps_or_time: cleanReps, sets: setsPerSide.toString()}, currentDataIndex);
+                    listContainer.innerHTML += generatePreTrainingCardHTML({...ex, name: `${ex.name} (${secondSide})`, reps_or_time: cleanReps, sets: setsPerSide.toString()}, currentDataIndex);
                 } else {
-                    // Standardowe (Bilateral)
                     listContainer.innerHTML += generatePreTrainingCardHTML(ex, currentDataIndex);
                 }
             });
@@ -423,7 +361,6 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
 
     renderList(currentAdjustedPlan);
 
-    // Obsługa suwaka czasu
     const slider = screen.querySelector('#time-slider');
     const display = screen.querySelector('#time-factor-display');
 
@@ -435,26 +372,10 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
         renderList(currentAdjustedPlan);
     });
 
-    // Obsługa Shuffle
-    const shuffleBtn = screen.querySelector('#shuffle-workout-btn');
-    if (shuffleBtn) {
-        shuffleBtn.addEventListener('click', () => {
-            if (confirm("Chcesz przelosować cały zestaw ćwiczeń?")) {
-                const freshStatic = getHydratedDay(rawDayData);
-                const mixedPlan = workoutMixer.mixWorkout(freshStatic, true);
-                state.todaysDynamicPlan = mixedPlan;
-                savePlanToStorage(mixedPlan);
-                isCurrentDynamicDay = true;
-                renderPreTrainingScreen(dayId, initialPainLevel, useDynamicPlan);
-            }
-        });
-    }
-
-    // Obsługa Reset (Dynamic Import + Absolute Path)
     const resetBtn = screen.querySelector('#reset-workout-btn');
     if (resetBtn) {
         resetBtn.addEventListener('click', async () => {
-            if (confirm("Czy na pewno chcesz cofnąć wszystkie losowania?")) {
+            if (confirm("Czy na pewno chcesz cofnąć wszystkie manualne zmiany w tym zestawie?")) {
                 if (isCurrentDynamicDay) {
                     const { clearPlanFromStorage } = await import('/ui/screens/dashboard.js');
                     clearPlanFromStorage();
@@ -465,14 +386,11 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
         });
     }
 
-    // Obsługa Swap
     listContainer.addEventListener('click', (e) => {
         const btn = e.target.closest('.swap-btn');
         if (!btn) return;
 
         const globalIndex = parseInt(btn.dataset.exerciseIndex, 10);
-
-        // Znajdź ćwiczenie w strukturze danych (oryginalnej, nie zwizualizowanej)
         let counter = 0;
         let targetSection = null;
         let targetLocalIndex = -1;
@@ -491,24 +409,18 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
 
         if (foundExercise) {
             renderSwapModal(foundExercise, (newExerciseDef, swapType) => {
-                if (!state.todaysDynamicPlan) {
-                    state.todaysDynamicPlan = JSON.parse(JSON.stringify(getHydratedDay(rawDayData)));
-                }
-
+                if (!state.todaysDynamicPlan) state.todaysDynamicPlan = JSON.parse(JSON.stringify(getHydratedDay(rawDayData)));
                 let planToModify = state.todaysDynamicPlan;
 
                 if (planToModify[targetSection] && planToModify[targetSection][targetLocalIndex]) {
                     const oldEx = planToModify[targetSection][targetLocalIndex];
-                    const smartRepsOrTime = workoutMixer.adaptVolume(oldEx, newExerciseDef);
-                    const dbTempo = workoutMixer.getExerciseTempo(newExerciseDef.id);
-
                     planToModify[targetSection][targetLocalIndex] = {
                         ...newExerciseDef,
                         id: newExerciseDef.id,
                         exerciseId: newExerciseDef.id,
                         sets: oldEx.sets,
-                        reps_or_time: smartRepsOrTime,
-                        tempo_or_iso: dbTempo,
+                        reps_or_time: workoutMixer.adaptVolume(oldEx, newExerciseDef),
+                        tempo_or_iso: workoutMixer.getExerciseTempo(newExerciseDef.id),
                         isSwapped: true,
                         isDynamicSwap: true,
                         originalName: (oldEx.exerciseId !== newExerciseDef.id) ? oldEx.name : null
@@ -519,45 +431,28 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
                 renderPreTrainingScreen(dayId, initialPainLevel, true);
 
                 if (swapType === 'blacklist') {
-                    const blockedId = foundExercise.id || foundExercise.exerciseId;
-                    const replacementId = newExerciseDef.id;
                     if (confirm(`Dodać "${foundExercise.name}" do czarnej listy?`)) {
-                        dataStore.addToBlacklist(blockedId, replacementId);
+                        dataStore.addToBlacklist(foundExercise.id || foundExercise.exerciseId, newExerciseDef.id);
                     }
                 }
             });
         }
     });
 
-    // --- FIX: ASYNCHRONICZNY PODGLĄD DLA NORMALNEGO TRENINGU ---
     listContainer.addEventListener('click', async (e) => {
         const btn = e.target.closest('.preview-anim-btn');
         if (btn) {
             e.stopPropagation();
             const exId = btn.dataset.exerciseId;
-            const exName = state.exerciseLibrary[exId]?.name || "Podgląd";
-
             const originalContent = btn.innerHTML;
             btn.innerHTML = `<span style="font-size:0.75rem">⏳</span>`;
-            btn.style.opacity = "0.7";
-
             try {
                 const svg = await dataStore.fetchExerciseAnimation(exId);
-                if (svg) {
-                    renderPreviewModal(svg, exName);
-                } else {
-                    alert("Brak podglądu dla tego ćwiczenia.");
-                }
-            } catch (err) {
-                console.error("Preview Error:", err);
-            } finally {
-                btn.innerHTML = originalContent;
-                btn.style.opacity = "1";
-            }
+                if (svg) renderPreviewModal(svg, state.exerciseLibrary[exId]?.name || "Podgląd");
+            } catch (err) { console.error(err); } finally { btn.innerHTML = originalContent; }
         }
     });
 
-    // Nawigacja (Dynamic Import + Absolute Path)
     screen.querySelector('#pre-training-back-btn').addEventListener('click', async () => {
         const { renderMainScreen } = await import('/ui/screens/dashboard.js');
         navigateTo('main');
@@ -569,14 +464,10 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
             if (confirm("To jest trening z przyszłości. Czy chcesz ustawić go jako dzisiejszy plan i rozpocząć?")) {
                 state.todaysDynamicPlan = currentAdjustedPlan;
                 savePlanToStorage(currentAdjustedPlan);
-            } else {
-                return;
-            }
+            } else return;
         }
-
         state.sessionParams.initialPainLevel = initialPainLevel;
         state.sessionParams.timeFactor = parseFloat(slider.value) || 1.0;
-
         startModifiedTraining();
     });
 
@@ -585,88 +476,51 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
 
 // --- EKRAN TRENINGOWY (FOCUS MODE) ---
 export const renderTrainingScreen = () => {
-    // MODYFIKACJA HTML:
-    // 1. Pasek postępu na samej górze.
-    // 2. Usunięto tekst z nazwą sekcji.
-    // 3. Przycisk wyjścia jako ikona X pod paskiem.
-
     screens.training.innerHTML = `
     <div class="focus-view">
-        <!-- NOWY PASEK POSTĘPU -->
         <div id="focus-progress-bar" class="focus-progress-container"></div>
-
         <div class="focus-header-minimal">
-            <button id="exit-training-btn" class="close-training-btn" title="Zakończ trening">
-                <img src="/icons/close.svg" alt="Zamknij">
-            </button>
+            <button id="exit-training-btn" class="close-training-btn" title="Zakończ trening"><img src="/icons/close.svg" alt="Zamknij"></button>
         </div>
-
-        <div class="focus-timer-container">
-            <p id="focus-timer-display"></p>
-        </div>
-
+        <div class="focus-timer-container"><p id="focus-timer-display"></p></div>
         <div class="focus-exercise-info" style="margin-bottom: 0.5rem;">
             <div class="exercise-title-container">
                 <h2 id="focus-exercise-name"></h2>
-                <!-- NOWE: Kontener na badge preferencji -->
                 <span id="focus-affinity-badge"></span>
-
-                <button id="tts-toggle-btn" class="tts-button">
-                    <img id="tts-icon" src="/icons/sound-on.svg" alt="Dźwięk">
-                </button>
+                <button id="tts-toggle-btn" class="tts-button"><img id="tts-icon" src="/icons/sound-on.svg" alt="Dźwięk"></button>
             </div>
             <p id="focus-exercise-details"></p>
         </div>
-
-        <!-- NOWE: Informacja o tempie -->
         <p id="focus-tempo" style="text-align: center; margin: -5px 0 10px 0; font-weight: 600; color: var(--accent-color); font-size: 0.9rem; opacity: 0.9;"></p>
-
         <div id="visual-toggle-card" class="visual-card-wrapper" title="Kliknij, aby przełączyć widok">
             <div id="focus-animation-container" class="visual-card-content focus-animation-container hidden"></div>
             <div id="focus-description" class="visual-card-content focus-description-container"></div>
-            <div class="flip-indicator">
-                <img src="/icons/info.svg" alt="Info">
-            </div>
+            <div class="flip-indicator"><img src="/icons/info.svg" alt="Info"></div>
         </div>
-
         <div class="focus-controls-wrapper">
-             <div class="focus-main-action">
-                <button id="rep-based-done-btn" class="control-btn action-btn hidden">GOTOWE</button>
-            </div>
+             <div class="focus-main-action"><button id="rep-based-done-btn" class="control-btn action-btn hidden">GOTOWE</button></div>
             <div class="focus-secondary-actions">
                 <button id="prev-step-btn" class="control-icon-btn"><img src="/icons/control-back.svg"></button>
                 <button id="pause-resume-btn" class="control-icon-btn"><img src="/icons/control-pause.svg"></button>
                 <button id="skip-btn" class="control-icon-btn"><img src="/icons/control-skip.svg"></button>
             </div>
         </div>
-
-        <div class="focus-next-up">
-            <p><strong>Następne:</strong> <span id="next-exercise-name"></span></p>
-        </div>
+        <div class="focus-next-up"><p><strong>Następne:</strong> <span id="next-exercise-name"></span></p></div>
     </div>`;
 
     initializeFocusElements();
-
-    // Dodajemy referencję do nowego elementu w obiekcie focus
     focus.affinityBadge = document.getElementById('focus-affinity-badge');
 
     const cardWrapper = document.getElementById('visual-toggle-card');
     const animContainer = document.getElementById('focus-animation-container');
     const descContainer = document.getElementById('focus-description');
 
-    // Obsługa obracania karty (Animacja <-> Opis)
     if (cardWrapper) {
         cardWrapper.addEventListener('click', () => {
-            const isAnimVisible = !animContainer.classList.contains('hidden');
-            // Obracamy tylko jeśli jest animacja (jeśli pusta, zostajemy na opisie)
             if (animContainer.innerHTML.trim() !== "") {
-                if (isAnimVisible) {
-                    animContainer.classList.add('hidden');
-                    descContainer.classList.remove('hidden');
-                } else {
-                    animContainer.classList.remove('hidden');
-                    descContainer.classList.add('hidden');
-                }
+                const isAnimVisible = !animContainer.classList.contains('hidden');
+                animContainer.classList.toggle('hidden', isAnimVisible);
+                descContainer.classList.toggle('hidden', !isAnimVisible);
             }
         });
     }

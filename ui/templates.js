@@ -118,12 +118,22 @@ export function generateMissionCardHTML(dayData, estimatedMinutes, wizardData = 
     const equipmentSet = new Set();
     [...(dayData.warmup || []), ...(dayData.main || []), ...(dayData.cooldown || [])].forEach(ex => {
         if (Array.isArray(ex.equipment)) {
-            ex.equipment.forEach(item => equipmentSet.add(item));
+            ex.equipment.forEach(item => equipmentSet.add(item.trim().toLowerCase()));
         } else if (ex.equipment) {
-            ex.equipment.split(',').forEach(item => equipmentSet.add(item.trim()));
+            ex.equipment.split(',').forEach(item => equipmentSet.add(item.trim().toLowerCase()));
         }
     });
-    const equipmentText = equipmentSet.size > 0 ? [...equipmentSet].join(', ') : 'Brak sprzętu';
+
+    const ignoreList = ['brak', 'none', 'brak sprzętu', 'masa własna', 'bodyweight', ''];
+    const filteredEquipment = [...equipmentSet].filter(item => !ignoreList.includes(item));
+
+    const equipmentBadgesHTML = filteredEquipment.length > 0 
+        ? filteredEquipment.map(item => {
+            const display = item.charAt(0).toUpperCase() + item.slice(1);
+            return `<span class="meta-tag tag-equipment" style="margin-bottom: 2px;">🏋️ ${display}</span>`;
+          }).join(' ')
+        : '<span style="font-size:0.8rem; opacity:0.5;">Brak sprzętu</span>';
+
     let aiHeaderHTML = '';
     let aiTagsHTML = '';
     let aiClass = '';
@@ -144,7 +154,11 @@ export function generateMissionCardHTML(dayData, estimatedMinutes, wizardData = 
             <div class="estimated-time-badge"><img src="/icons/clock.svg" width="16" height="16" alt="Czas"><span id="mission-time-val">${estimatedMinutes} min</span></div>
         </div>
         ${aiTagsHTML}
-        <p style="font-size:0.8rem; opacity:0.7; margin:0; margin-bottom: 0.8rem; border-top: 1px solid rgba(0,0,0,0.05); padding-top: 8px;"><strong>Sprzęt:</strong> ${equipmentText}</p>
+        
+        <div style="margin-bottom: 0.8rem; border-top: 1px solid rgba(0,0,0,0.05); padding-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+            <strong style="font-size:0.7rem; text-transform:uppercase; opacity:0.6; margin-right: 4px;">Sprzęt:</strong>
+            ${equipmentBadgesHTML}
+        </div>
 
         <div class="wellness-section">
             <div class="wellness-label"><span>Wellness Check-in</span><span style="font-weight:400">Jak się czujesz?</span></div>
@@ -486,10 +500,10 @@ export function generatePlanFinishedCardHTML(sessionsCount) {
             <h3 class="completed-title" style="color: #fff;">Plan Ukończony!</h3>
             <p class="completed-subtitle" style="color: rgba(255,255,255,0.8);">Zrealizowałeś wszystkie ${sessionsCount} sesji.</p>
         </div>
-        
+
         <div style="margin-top: 1.5rem; text-align: center;">
             <p style="font-size: 0.9rem; opacity: 0.9; margin-bottom: 1.5rem;">Twój cykl dobiegł końca. Czas na nowe wyzwania!</p>
-            
+
             <div style="display:flex; flex-direction: column; gap: 10px;">
                 <button id="quick-regen-btn" class="action-btn" style="background: var(--gold-color); color: #000; font-weight: 800; border: none;">
                     ⚡ Wygeneruj kolejny cykl
@@ -498,7 +512,7 @@ export function generatePlanFinishedCardHTML(sessionsCount) {
                     📝 Zmień cele (Kreator)
                 </button>
             </div>
-            
+
             <p style="font-size: 0.75rem; opacity: 0.6; margin-top: 10px;">
                 "Szybka generacja" użyje obecnych ustawień (ból, czas, sprzęt).
             </p>

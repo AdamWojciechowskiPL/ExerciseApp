@@ -5,25 +5,19 @@ import { state } from './state.js';
 // --- ZADANIE 10: SVG SANITIZER & SCALER ---
 export const processSVG = (svgString) => {
     if (!svgString) return '';
-    
-    // Jeśli to nie wygląda jak SVG, zwróć oryginał
     if (!svgString.includes('<svg')) return svgString;
 
     try {
         const parser = new DOMParser();
         const doc = parser.parseFromString(svgString, "image/svg+xml");
         const svg = doc.querySelector('svg');
-        
+
         if (!svg) return svgString;
 
-        // 1. Zapewnij viewBox (kluczowe dla skalowania)
         if (!svg.hasAttribute('viewBox')) {
             const w = svg.getAttribute('width');
             const h = svg.getAttribute('height');
-            
-            // Jeśli mamy wymiary, tworzymy z nich viewBox
             if (w && h) {
-                // Usuwamy jednostki 'px' jeśli są
                 const cleanW = parseFloat(w.replace('px', ''));
                 const cleanH = parseFloat(h.replace('px', ''));
                 if (!isNaN(cleanW) && !isNaN(cleanH)) {
@@ -32,16 +26,12 @@ export const processSVG = (svgString) => {
             }
         }
 
-        // 2. Usuń sztywne wymiary, które blokują CSS
         svg.removeAttribute('width');
         svg.removeAttribute('height');
-
-        // 3. Wymuś responsywność stylami inline (zabezpieczenie)
         svg.style.width = '100%';
         svg.style.height = '100%';
         svg.style.display = 'block';
-        
-        // Fix dla Safari/iOS (zachowanie proporcji)
+
         if (!svg.hasAttribute('preserveAspectRatio')) {
             svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
         }
@@ -49,14 +39,13 @@ export const processSVG = (svgString) => {
         return new XMLSerializer().serializeToString(svg);
     } catch (e) {
         console.error("[Utils] SVG Process Error:", e);
-        return svgString; // W razie błędu zwróć oryginał
+        return svgString;
     }
 };
 
 export const extractYoutubeId = (url) => {
     if (!url) return null;
     if (url.length === 11 && !/[:/.]/.test(url)) return url;
-
     const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
     const match = url.match(regExp);
     return (match && match[2].length === 11) ? match[2] : null;
@@ -69,14 +58,14 @@ export const getISODate = (date) => {
     return `${year}-${month}-${day}`;
 };
 
+// ZMIANA: Zawsze zwraca dynamicPlanData
 export const getActiveTrainingPlan = () => {
-    return state.trainingPlans[state.settings.activePlanId] || state.trainingPlans['l5s1-foundation'];
+    return state.settings.dynamicPlanData;
 };
 
 export const isTodayRestDay = () => {
     const todayIndex = new Date().getDay();
     const scheduleIndex = todayIndex === 0 ? 6 : todayIndex - 1;
-
     if (!state.settings.schedule || !state.settings.schedule[scheduleIndex]) return false;
     return !state.settings.schedule[scheduleIndex].active;
 };
@@ -84,62 +73,44 @@ export const isTodayRestDay = () => {
 export const getAvailableMinutesForToday = () => {
     const todayIndex = new Date().getDay();
     const scheduleIndex = todayIndex === 0 ? 6 : todayIndex - 1;
-
     if (!state.settings.schedule || !state.settings.schedule[scheduleIndex]) return 60;
     return state.settings.schedule[scheduleIndex].minutes || 45;
 };
 
 export const getNextLogicalDay = () => {
     const activePlan = getActiveTrainingPlan();
-    if (!activePlan) return null;
+    if (!activePlan || !activePlan.days) return null;
 
+    // Pobieramy historię dla obecnego planu dynamicznego
     let allSessions = [];
     if (state.userProgress) {
         allSessions = Object.values(state.userProgress).flat();
     }
 
+    const currentPlanId = activePlan.id;
     const planSessions = allSessions.filter(s =>
-        s.planId === state.settings.activePlanId &&
-        s.status === 'completed' &&
-        s.completedAt
+        s.planId === currentPlanId &&
+        s.status === 'completed'
     );
 
-    planSessions.sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
+    // Liczba ukończonych sesji = indeks następnej sesji
+    const completedCount = planSessions.length;
+    const totalDays = activePlan.days.length;
 
-    const lastSession = planSessions[0];
-
-    if (!lastSession) {
-        console.log("[Queue] Brak historii dla tego planu. Startuję od Dnia 1.");
-        return activePlan.Days.find(d => d.dayNumber === 1);
+    if (completedCount >= totalDays) {
+        // Plan ukończony
+        return null; 
     }
 
-    const lastDayNum = parseInt(lastSession.trainingDayId || 0);
-    const totalDaysInPlan = activePlan.Days.length;
-
-    console.log(`[Queue] Ostatni trening: Dzień ${lastDayNum} wykonany ${lastSession.completedAt.split('T')[0]}`);
-
-    let nextDayNum = lastDayNum + 1;
-    if (nextDayNum > totalDaysInPlan) {
-        nextDayNum = 1;
-    }
-
-    return activePlan.Days.find(d => d.dayNumber === nextDayNum);
+    // Zwracamy następny dzień z tablicy (indeks 0-based)
+    return activePlan.days[completedCount];
 };
 
+// ZMIANA: Deprecated/Simplified for dynamic logic context
 export const getTrainingDayForDate = (date) => {
-    const activePlan = getActiveTrainingPlan();
-    if (!activePlan) return null;
-
-    const startDate = new Date(state.settings.appStartDate);
-    const currentDate = new Date(getISODate(date));
-
-    const diffTime = currentDate - startDate;
-    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-    const dayIndex = diffDays % activePlan.Days.length;
-
-    const planDayNumber = (dayIndex < 0) ? dayIndex + activePlan.Days.length + 1 : dayIndex + 1;
-
-    return activePlan.Days.find(d => d.dayNumber === planDayNumber);
+    // W systemie dynamicznym nie ma sztywnego mapowania daty na dzień.
+    // Zwracamy null, aby historia korzystała z danych zapisanych w sesji (snapshots).
+    return null; 
 };
 
 export const getHydratedDay = (dayData) => {

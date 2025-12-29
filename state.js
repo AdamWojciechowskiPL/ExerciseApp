@@ -19,9 +19,10 @@ export const state = {
 
     settings: {
         appStartDate: null,
-        activePlanId: "l5s1-foundation",
-        // Tryb planu (static/dynamic)
-        planMode: 'static',
+        // ID aktywnego planu dynamicznego
+        activePlanId: null,
+        // Tryb planu - TERAZ TYLKO DYNAMICZNY
+        planMode: 'dynamic',
         // Przechowywanie wygenerowanego planu dynamicznego (tygodniówka)
         dynamicPlanData: null,
 
@@ -31,17 +32,17 @@ export const state = {
         schedule: {},
         ttsEnabled: true,
 
-        // --- NOWE PARAMETRY CZASOWE (Globalne Ustawienia Usera) ---
-        secondsPerRep: 6,          // Domyślnie 6s
-        restBetweenSets: 30,       // Domyślnie 30s
-        restBetweenExercises: 30,  // Domyślnie 30s
+        // --- PARAMETRY CZASOWE ---
+        secondsPerRep: 6,
+        restBetweenSets: 30,
+        restBetweenExercises: 30,
 
         wizardData: {} // Pełne dane z ankiety
     },
 
     exerciseLibrary: {},
 
-    trainingPlans: {},
+    // Usunięto trainingPlans (static)
     blacklist: [],
 
     isHistoryLoaded: false,
@@ -59,7 +60,6 @@ export const state = {
     sessionStartTime: null,
     totalPausedTime: 0,
     lastPauseStartTime: null,
-    isPaused: false,
     breakTimeoutId: null,
 
     todaysDynamicPlan: null,
@@ -88,7 +88,6 @@ export const state = {
         if (!state.audioContext) {
             state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
         }
-        // FIX: Wznawiamy kontekst, jeśli jest zawieszony (wymagane przez przeglądarki)
         if (state.audioContext.state === 'suspended') {
             state.audioContext.resume();
         }

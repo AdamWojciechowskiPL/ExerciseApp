@@ -45,7 +45,8 @@ const dataStore = {
 
             const data = await response.json();
             state.exerciseLibrary = data.exercises || {};
-            state.trainingPlans = data.training_plans || {};
+            
+            // Usunięto ładowanie trainingPlans (static)
 
             const total = Object.keys(state.exerciseLibrary).length;
             const blocked = Object.values(state.exerciseLibrary).filter(ex => ex.isAllowed === false).length;
@@ -77,12 +78,9 @@ const dataStore = {
         return null;
     },
 
-    // --- OPTYMALIZACJA: AGREGACJA DANYCH ---
     initialize: async () => {
         try {
             console.time("Bootstrap");
-            // Pobieramy wszystko w jednym strzale z get-or-create-user-data
-            // Usunięto: Promise.all z get-user-preferences i manage-blacklist
             const data = await callAPI('get-or-create-user-data');
             console.timeEnd("Bootstrap");
 
@@ -92,10 +90,9 @@ const dataStore = {
             if (data.settings) {
                 state.settings = { ...state.settings, ...data.settings };
                 state.tts.isSoundOn = state.settings.ttsEnabled ?? true;
-                if (!state.settings.planMode) {
-                    if (state.settings.dynamicPlanData && state.settings.dynamicPlanData.days) state.settings.planMode = 'dynamic';
-                    else state.settings.planMode = 'static';
-                }
+                
+                // Zawsze wymuszamy tryb dynamiczny
+                state.settings.planMode = 'dynamic';
             }
 
             if (data.exercisePace) {
@@ -105,14 +102,12 @@ const dataStore = {
 
             if (data.integrations) state.stravaIntegration.isConnected = !!data.integrations.isStravaConnected;
 
-            // 2. PREFERENCES (z Mega Payloadu)
             if (data.userPreferences) {
                 state.userPreferences = data.userPreferences;
             } else {
                 state.userPreferences = {};
             }
 
-            // 3. BLACKLIST (z Mega Payloadu)
             if (data.blacklist) {
                 state.blacklist = data.blacklist;
             } else {

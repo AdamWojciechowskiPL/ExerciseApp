@@ -1,71 +1,14 @@
 import { state } from './state.js';
-import { getISODate, getAvailableMinutesForToday, parseSetCount } from './utils.js';
-import { assistant } from './assistantEngine.js';
-import { buildClinicalContext, checkExerciseAvailability, checkEquipment } from './clinicalEngine.js';
+import { parseSetCount } from './utils.js';
+import { buildClinicalContext, checkExerciseAvailability } from './clinicalEngine.js';
 
-const CACHE_FRESHNESS_DAYS = 60;
-const WEIGHT_FRESHNESS = 1.0;
-const WEIGHT_AFFINITY = 1.2;
+// workoutMixer.js v3.0 (Lite)
+// Moduł uproszczony - usunięto automatyczne miksowanie.
+// Pozostawiono tylko helpery do ręcznych modyfikacji.
 
 export const workoutMixer = {
 
-    mixWorkout: (staticDayPlan, forceShuffle = false) => {
-        if (!staticDayPlan) return null;
-        console.log(`🌪️ [Mixer] Rozpoczynam miksowanie dnia: ${staticDayPlan.title}`);
-        const dynamicPlan = JSON.parse(JSON.stringify(staticDayPlan));
-        const sessionUsedIds = new Set();
-
-        const wizardData = state.settings.wizardData || {};
-        const clinicalCtx = buildClinicalContext(wizardData);
-        clinicalCtx.blockedIds = new Set(state.blacklist || []);
-
-        const effectiveForceShuffle = clinicalCtx.isSevere ? false : forceShuffle;
-
-        if (state.settings.painZones && state.settings.painZones.length > 0) {
-            injectPrehabExercises(dynamicPlan, sessionUsedIds, clinicalCtx);
-        }
-
-        ['warmup', 'main', 'cooldown'].forEach(section => {
-            if (!dynamicPlan[section]) return;
-            dynamicPlan[section] = dynamicPlan[section].map(originalExercise => {
-                const originalId = originalExercise.id || originalExercise.exerciseId;
-                const isCollision = sessionUsedIds.has(originalId);
-                const hasEquipmentForOriginal = checkEquipment(originalExercise, clinicalCtx.userEquipment);
-                const mustSwap = !hasEquipmentForOriginal || isCollision;
-                const criteria = { categoryId: originalExercise.categoryId, targetLevel: originalExercise.difficultyLevel || 1 };
-                const shouldShuffle = effectiveForceShuffle || mustSwap;
-
-                let variant = findBestVariant(originalExercise, criteria, sessionUsedIds, shouldShuffle, mustSwap, clinicalCtx);
-
-                if (!variant && mustSwap) {
-                    console.warn(`[Mixer] Awaryjne szukanie dla ${originalExercise.name} (Kolizja/Sprzęt)`);
-                    variant = findEmergencyVariant(originalExercise, sessionUsedIds, clinicalCtx);
-                }
-
-                if (variant && (variant.id !== originalId)) {
-                    sessionUsedIds.add(variant.id);
-                    return mergeExerciseData(originalExercise, variant);
-                }
-
-                if (mustSwap && !variant) {
-                    originalExercise.equipmentWarning = true;
-                }
-
-                sessionUsedIds.add(originalId);
-                return originalExercise;
-            });
-        });
-
-        const availableMinutes = getAvailableMinutesForToday();
-        const estimatedMinutes = assistant.estimateDuration(dynamicPlan);
-        if (estimatedMinutes > availableMinutes) {
-            compressWorkout(dynamicPlan, availableMinutes, estimatedMinutes);
-        }
-
-        dynamicPlan._isDynamic = true;
-        return dynamicPlan;
-    },
-
+    // Helper do ręcznej wymiany ćwiczeń (używany w Training Screen -> Swap Modal)
     getAlternative: (originalExercise, currentId) => {
         const criteria = { categoryId: originalExercise.categoryId, targetLevel: originalExercise.difficultyLevel || 1 };
         const usedIds = new Set([currentId]);
@@ -118,16 +61,18 @@ export const workoutMixer = {
     }
 };
 
+// --- HELPERY WEWNĘTRZNE (Pozostawione dla obsługi manualnego swapowania) ---
+
 function findBestVariant(originalEx, criteria, usedIds, forceShuffle = false, mustSwap = false, clinicalCtx = null) {
     if (!criteria.categoryId) return null;
     let candidates = Object.entries(state.exerciseLibrary)
         .map(([id, data]) => ({ id: id, ...data }))
         .filter(ex => {
             if (ex.categoryId !== criteria.categoryId) return false;
-            if (!mustSwap) {
-                const lvl = ex.difficultyLevel || 1;
-                if (Math.abs(lvl - criteria.targetLevel) > 1) return false;
-            }
+            // Przy ręcznym swapie pozwalamy na +/- 1 poziom trudności
+            const lvl = ex.difficultyLevel || 1;
+            if (Math.abs(lvl - criteria.targetLevel) > 1) return false;
+            
             if (usedIds.has(ex.id)) return false;
 
             const result = checkExerciseAvailability(ex, clinicalCtx, { ignoreDifficulty: true, ignoreEquipment: false });
@@ -136,56 +81,17 @@ function findBestVariant(originalEx, criteria, usedIds, forceShuffle = false, mu
 
     if (candidates.length === 0) return null;
 
-    const scoredCandidates = candidates.map(ex => {
-        let score = 0;
-        const lastDate = getLastPerformedDate(ex.id, ex.name);
-        if (!lastDate) score += 100 * WEIGHT_FRESHNESS;
-        else {
-            const daysSince = (new Date() - lastDate) / (1000 * 60 * 60 * 24);
-            const freshnessScore = Math.min(daysSince, CACHE_FRESHNESS_DAYS);
-            if (daysSince < 2) score -= 100;
-            else score += freshnessScore * WEIGHT_FRESHNESS;
-        }
-        const userPref = state.userPreferences[ex.id] || { score: 0 };
-        score += (userPref.score || 0) * WEIGHT_AFFINITY;
-        const originalId = originalEx.exerciseId || originalEx.id;
-        if (!forceShuffle && !mustSwap && (ex.id === originalId)) score += 60;
-        const randomFactor = forceShuffle ? (Math.random() * 50) : (Math.random() * 10);
-        score += randomFactor;
-        return { ex, score };
-    });
-
-    scoredCandidates.sort((a, b) => b.score - a.score);
-    if (scoredCandidates.length > 0) {
-        const winner = scoredCandidates[0].ex;
-        winner._score = scoredCandidates[0].score;
-        return winner;
-    }
-    return null;
-}
-
-function findEmergencyVariant(originalEx, usedIds, clinicalCtx) {
-    const categoryId = originalEx.categoryId;
-    if (!categoryId) return null;
-    const candidates = Object.entries(state.exerciseLibrary)
-        .map(([id, data]) => ({ id: id, ...data }))
-        .filter(ex => {
-            if (ex.categoryId !== categoryId) return false;
-            if (usedIds.has(ex.id)) return false;
-            const result = checkExerciseAvailability(ex, clinicalCtx, { ignoreDifficulty: true, ignoreEquipment: false });
-            return result.allowed;
-        });
-    if (candidates.length === 0) return null;
+    // Proste sortowanie po preferencjach (bez zaawansowanej logiki świeżości, bo to ręczny wybór)
     candidates.sort((a, b) => {
         const prefA = (state.userPreferences[a.id]?.score || 0);
         const prefB = (state.userPreferences[b.id]?.score || 0);
         return prefB - prefA;
     });
+
     return candidates[0];
 }
 
 function adaptVolumeInternal(originalEx, newEx) {
-    // Dynamicznie pobieramy SECONDS_PER_REP z ustawień
     const SECONDS_PER_REP = state.settings.secondsPerRep || 6;
 
     if (['breathing', 'breathing_control', 'muscle_relaxation'].includes(newEx.categoryId)) {
@@ -244,7 +150,6 @@ function mergeExerciseData(original, variant) {
         if (merged.reps_or_time.includes("s")) merged.reps_or_time = merged.reps_or_time.replace("s", "s/str.");
         else merged.reps_or_time = `${merged.reps_or_time}/str.`;
 
-        // ZMIANA (Zadanie 8): Ustawiamy serie per stronę, bez podwajania
         if (parseSetCount(original.sets) === 1) merged.sets = "1";
     }
     return merged;
@@ -252,48 +157,3 @@ function mergeExerciseData(original, variant) {
 
 function parseSeconds(val) { const v = val.toLowerCase(); return v.includes('min') ? parseFloat(v) * 60 : (parseInt(v) || 45); }
 function parseReps(val) { return parseInt(val) || 10; }
-
-function injectPrehabExercises(plan, usedIds, clinicalCtx) {
-    if (!plan.warmup) plan.warmup = [];
-    const libraryArray = Object.entries(state.exerciseLibrary).map(([id, data]) => ({ id, ...data }));
-    state.settings.painZones.forEach(zone => {
-        const rehabCandidates = libraryArray.filter(ex => {
-            if (!ex.painReliefZones || !ex.painReliefZones.includes(zone)) return false;
-            if (usedIds.has(ex.id)) return false;
-            const result = checkExerciseAvailability(ex, clinicalCtx, { ignoreDifficulty: false });
-            return result.allowed;
-        });
-        if (rehabCandidates.length > 0) {
-            const chosen = rehabCandidates[Math.floor(Math.random() * rehabCandidates.length)];
-            plan.warmup.unshift({
-                ...chosen,
-                exerciseId: chosen.id,
-                sets: "1",
-                reps_or_time: "45 s",
-                tempo_or_iso: chosen.defaultTempo || "Izometria",
-                isPersonalized: true,
-                section: "warmup",
-                isUnilateral: chosen.isUnilateral
-            });
-            usedIds.add(chosen.id);
-        }
-    });
-}
-
-function compressWorkout(plan, targetMin, currentMin) {
-    if (plan.main) { plan.main.forEach(ex => { const c = parseSetCount(ex.sets); if (c > 1) ex.sets = String(c - 1); }); }
-    plan.compressionApplied = true; plan.targetMinutes = targetMin;
-}
-
-function getLastPerformedDate(exerciseId, exerciseName) {
-    let latestDate = null;
-    Object.keys(state.userProgress).forEach(dateKey => {
-        state.userProgress[dateKey].forEach(session => {
-            if (!session.sessionLog) return;
-            if (session.sessionLog.find(l => (l.exerciseId === exerciseId) || (l.name === exerciseName))) {
-                const d = new Date(dateKey); if (!latestDate || d > latestDate) latestDate = d;
-            }
-        });
-    });
-    return latestDate;
-}

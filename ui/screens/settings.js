@@ -9,9 +9,6 @@ import { renderMainScreen, clearPlanFromStorage } from './dashboard.js';
 export const renderSettingsScreen = () => {
     const screen = screens.settings;
 
-    // Pobieramy aktualne wartości ze stanu
-    const currentMode = state.settings.planMode || (state.settings.dynamicPlanData ? 'dynamic' : 'static');
-    const activePlanId = state.settings.activePlanId;
     const startDate = state.settings.appStartDate || new Date().toISOString().split('T')[0];
     const ttsEnabled = state.settings.ttsEnabled ?? true;
     const isStravaConnected = state.stravaIntegration.isConnected;
@@ -40,36 +37,10 @@ export const renderSettingsScreen = () => {
                 </button>
             </div>
 
-            <!-- SEKCJA 2: KONFIGURACJA PLANU -->
+            <!-- SEKCJA 2: KONFIGURACJA CYKLU -->
             <div class="settings-card">
                 <div class="card-header-icon">📅</div>
-                <h3>Plan Treningowy</h3>
-
-                <!-- Tryb Planu -->
-                <div class="form-group">
-                    <label for="setting-plan-mode">Tryb Planu</label>
-                    <select id="setting-plan-mode">
-                        <option value="static" ${currentMode === 'static' ? 'selected' : ''}>Sztywny (Wybór z listy)</option>
-                        <option value="dynamic" ${currentMode === 'dynamic' ? 'selected' : ''}>Dynamiczny (Virtual Physio)</option>
-                    </select>
-                    <p class="settings-hint" id="mode-hint">
-                        ${currentMode === 'dynamic'
-                            ? 'Plan dopasowuje się automatycznie do Twojego bólu i postępów.'
-                            : 'Klasyczny plan treningowy ze stałą listą ćwiczeń.'}
-                    </p>
-                </div>
-
-                <!-- Wybór Planu (Tylko dla Static) -->
-                <div class="form-group ${currentMode === 'dynamic' ? 'hidden' : ''}" id="static-plan-selector-group">
-                    <label for="setting-training-plan">Wybierz Szablon</label>
-                    <select id="setting-training-plan">
-                        ${Object.keys(state.trainingPlans).map(planId => `
-                            <option value="${planId}" ${planId === activePlanId ? 'selected' : ''}>
-                                ${state.trainingPlans[planId].name}
-                            </option>
-                        `).join('')}
-                    </select>
-                </div>
+                <h3>Cykl Treningowy</h3>
 
                 <!-- Data Startu -->
                 <div class="form-group">
@@ -79,7 +50,7 @@ export const renderSettingsScreen = () => {
                 </div>
             </div>
 
-            <!-- SEKCJA 3: KALIBRACJA CZASU (NOWOŚĆ) -->
+            <!-- SEKCJA 3: KALIBRACJA CZASU -->
             <div class="settings-card">
                 <div class="card-header-icon">⏱️</div>
                 <h3>Kalibracja Czasu</h3>
@@ -101,7 +72,7 @@ export const renderSettingsScreen = () => {
                     <input type="range" id="setting-rest-ex" min="5" max="120" step="5" value="${restBetweenExercises}">
                 </div>
 
-                <!-- NOWY PRZYCISK: RECALC -->
+                <!-- PRZYCISK: RECALC -->
                 <div style="margin-top: 20px; padding-top: 15px; border-top: 1px dashed var(--border-color);">
                     <button type="button" id="recalc-stats-btn" class="nav-btn" style="width:100%; font-size: 0.85rem; display: flex; justify-content: center; align-items: center; gap: 8px;">
                         <span>🔄</span> Przelicz Statystyki Tempa
@@ -215,9 +186,6 @@ export const renderSettingsScreen = () => {
     // ============================================================
 
     const form = document.getElementById('settings-form-rebuild');
-    const modeSelect = document.getElementById('setting-plan-mode');
-    const planSelectorGroup = document.getElementById('static-plan-selector-group');
-    const modeHint = document.getElementById('mode-hint');
 
     // Obsługa suwaków (Update wartości live)
     const repSlider = document.getElementById('setting-rep-time');
@@ -228,23 +196,10 @@ export const renderSettingsScreen = () => {
     restSetSlider.addEventListener('input', (e) => document.getElementById('val-rest-set').textContent = e.target.value + 's');
     restExSlider.addEventListener('input', (e) => document.getElementById('val-rest-ex').textContent = e.target.value + 's');
 
-    // 1. Obsługa zmiany trybu (Dynamic/Static)
-    modeSelect.addEventListener('change', (e) => {
-        const val = e.target.value;
-        if (val === 'static') {
-            planSelectorGroup.classList.remove('hidden');
-            modeHint.textContent = 'Klasyczny plan treningowy ze stałą listą ćwiczeń.';
-        } else {
-            planSelectorGroup.classList.add('hidden');
-            modeHint.textContent = 'Plan dopasowuje się automatycznie do Twojego bólu i postępów.';
-        }
-    });
-
     // 2. Obsługa Zapisu
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
 
-        const newMode = modeSelect.value;
         const newDate = document.getElementById('setting-start-date').value;
         const newTts = document.getElementById('setting-tts').checked;
 
@@ -260,7 +215,6 @@ export const renderSettingsScreen = () => {
             newRestEx !== state.settings.restBetweenExercises;
 
         state.settings.appStartDate = newDate;
-        state.settings.planMode = newMode;
         state.settings.ttsEnabled = newTts;
         state.tts.isSoundOn = newTts;
 
@@ -268,17 +222,12 @@ export const renderSettingsScreen = () => {
         state.settings.restBetweenSets = newRestSet;
         state.settings.restBetweenExercises = newRestEx;
 
-        if (newMode === 'static') {
-            const staticId = document.getElementById('setting-training-plan').value;
-            state.settings.activePlanId = staticId;
-        }
-
         showLoader();
         try {
             await dataStore.saveSettings();
 
             // Jeśli czasy się zmieniły i mamy plan dynamiczny, pytamy o regenerację
-            if (timingChanged && newMode === 'dynamic' && state.settings.wizardData && Object.keys(state.settings.wizardData).length > 0) {
+            if (timingChanged && state.settings.wizardData && Object.keys(state.settings.wizardData).length > 0) {
                 if (confirm("Zmieniono parametry czasowe. Czy chcesz przeliczyć i wygenerować nowy plan treningowy, aby dopasować go do tych ustawień?")) {
                     // Dołączamy nowe parametry do wizardData
                     state.settings.wizardData.secondsPerRep = newSecondsPerRep;
@@ -312,13 +261,11 @@ export const renderSettingsScreen = () => {
         initWizard(true);
     });
 
-    // --- RECALCULATE STATS BTN ---
     document.getElementById('recalc-stats-btn').addEventListener('click', async () => {
         if (confirm("Ta operacja przeanalizuje całą Twoją historię treningową, aby zaktualizować wskaźniki tempa (czas na powtórzenie). Może to chwilę potrwać.")) {
             showLoader();
             try {
                 const res = await dataStore.recalculateStats();
-                // Po sukcesie, musimy odświeżyć dane lokalne (pobierając user-data na nowo)
                 if (res) {
                     await dataStore.initialize();
                     alert(`Gotowe! Przeliczono statystyki dla ${res.count || 'kilku'} ćwiczeń.`);

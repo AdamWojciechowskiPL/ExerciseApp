@@ -2,7 +2,6 @@ const { Pool } = require('@neondatabase/serverless');
 const { getUserIdFromEvent } = require('./_auth-helper.js');
 const { buildUserContext, checkExerciseAvailability } = require('./_clinical-rule-engine.js');
 
-// --- HELPER: NORMALIZACJA SPRZĘTU (BEZ TŁUMACZENIA) ---
 const normalizeEquipment = (rawEquipment) => {
     if (!rawEquipment) return [];
 
@@ -96,7 +95,6 @@ exports.handler = async (event) => {
       const normalizedEquipment = normalizeEquipment(ex.equipment);
       const normalizedZones = normalizePainZones(ex.pain_relief_zones);
 
-      // --- NEW SCHEMA MAPPING ---
       const exForCheck = {
           ...ex,
           is_unilateral: !!ex.is_unilateral,
@@ -106,10 +104,9 @@ exports.handler = async (event) => {
           primary_plane: ex.primary_plane || 'multi',
           position: ex.position || null,
           is_foot_loading: !!ex.is_foot_loading,
-          // New Fields for Clinical Engine
           impact_level: ex.impact_level || 'low',
           spine_load_level: ex.spine_load_level || 'low',
-          knee_load_level: ex.knee_load_level || 'low' // NOWOŚĆ
+          knee_load_level: ex.knee_load_level || 'low'
       };
 
       let isAllowed = true;
@@ -141,14 +138,13 @@ exports.handler = async (event) => {
         position: ex.position || null,
         isFootLoading: !!ex.is_foot_loading,
 
-        // --- NEW SCHEMA FRONTEND PROPERTIES ---
         goalTags: normalizeArray(ex.goal_tags),
-        metabolicIntensity: ex.metabolic_intensity || 1, // 1-5
-        impactLevel: ex.impact_level || 'low', // low, moderate, high
-        spineLoadLevel: ex.spine_load_level || 'low', // low, moderate, high
-        kneeLoadLevel: ex.knee_load_level || 'low', // NOWOŚĆ: low, medium, high
-        conditioningStyle: ex.conditioning_style || 'none', // steady, interval, circuit
-        recommendedInterval: ex.recommended_interval_sec || null, // { work, rest, rounds }
+        metabolicIntensity: ex.metabolic_intensity || 1,
+        impactLevel: ex.impact_level || 'low',
+        spineLoadLevel: ex.spine_load_level || 'low',
+        kneeLoadLevel: ex.knee_load_level || 'low',
+        conditioningStyle: ex.conditioning_style || 'none',
+        recommendedInterval: ex.recommended_interval_sec || null,
 
         isAllowed: isAllowed,
         rejectionReason: rejectionReason
@@ -156,73 +152,12 @@ exports.handler = async (event) => {
       return acc;
     }, {});
 
-    // 4. Pobierz i Zbuduj Plan
-    const plansQuery = `
-      SELECT
-        tp.id as plan_id, tp.name as plan_name, tp.description as plan_description, tp.global_rules,
-        pd.day_number, pd.title as day_title,
-        de.section, de.sets, de.reps_or_time, de.tempo_or_iso, de.exercise_id
-      FROM training_plans tp
-      LEFT JOIN plan_days pd ON tp.id = pd.plan_id
-      LEFT JOIN day_exercises de ON pd.id = de.day_id
-      ORDER BY tp.id, pd.day_number,
-      CASE de.section WHEN 'warmup' THEN 1 WHEN 'main' THEN 2 WHEN 'cooldown' THEN 3 ELSE 4 END,
-      de.order_in_section;
-    `;
-    const plansResult = await client.query(plansQuery);
-
-    const training_plans = plansResult.rows.reduce((acc, row) => {
-      if (row.plan_id && !acc[row.plan_id]) {
-        acc[row.plan_id] = {
-          name: row.plan_name,
-          description: row.plan_description,
-          GlobalRules: row.global_rules,
-          Days: [],
-        };
-      }
-
-      if (row.day_number) {
-        const plan = acc[row.plan_id];
-        let day = plan.Days.find(d => d.dayNumber === row.day_number);
-        if (!day) {
-          day = { dayNumber: row.day_number, title: row.day_title, warmup: [], main: [], cooldown: [] };
-          plan.Days.push(day);
-        }
-
-        if (row.exercise_id && day[row.section]) {
-          let finalExerciseId = row.exercise_id;
-          let isOverridden = false;
-
-          if (overrides[finalExerciseId]) {
-            finalExerciseId = overrides[finalExerciseId];
-            isOverridden = true;
-          }
-
-          if (blockedIds.has(finalExerciseId)) {
-            return acc;
-          }
-
-          const exerciseRef = {
-            exerciseId: finalExerciseId,
-            sets: row.sets,
-            reps_or_time: row.reps_or_time,
-            tempo_or_iso: row.tempo_or_iso,
-            isPersonalized: isOverridden
-          };
-          day[row.section].push(exerciseRef);
-        }
-      }
-      return acc;
-    }, {});
-
-    Object.values(training_plans).forEach(plan => {
-      plan.Days.sort((a, b) => a.dayNumber - b.dayNumber);
-    });
+    // Usunięto kod pobierający plany statyczne z tabeli training_plans
 
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ exercises, training_plans }),
+      body: JSON.stringify({ exercises, training_plans: {} }), // Zwracamy pusty obiekt planów
     };
 
   } catch (error) {

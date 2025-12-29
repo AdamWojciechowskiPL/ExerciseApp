@@ -1,3 +1,4 @@
+// ExerciseApp/app.js
 // === 1. IMPORTY MODUŁÓW ===
 import { state } from './state.js';
 import dataStore from './dataStore.js';
@@ -33,19 +34,17 @@ import { renderSessionRecoveryModal } from './ui/modals.js';
  */
 function checkUnsavedSummaryNavigation() {
     const summaryScreen = document.getElementById('summary-screen');
-    // Sprawdzamy czy ekran podsumowania jest aktywny
     if (summaryScreen && summaryScreen.classList.contains('active')) {
         const confirmed = confirm("Twoja sesja nie została zapisana. Czy na pewno chcesz wyjść? Dane tego treningu zostaną bezpowrotnie utracone.");
         if (confirmed) {
-            clearSessionBackup(); // Użytkownik świadomie porzuca sesję -> czyścimy backup
-            return true; // Pozwalamy na nawigację
+            clearSessionBackup();
+            return true;
         }
-        return false; // Blokujemy nawigację
+        return false;
     }
-    return true; // Inny ekran, droga wolna
+    return true;
 }
 
-// Funkcja wyświetlająca powiadomienie o aktualizacji PWA
 function showUpdateNotification(worker) {
     const notification = document.createElement('div');
     notification.className = 'update-notification';
@@ -57,7 +56,6 @@ function showUpdateNotification(worker) {
     `;
 
     document.body.appendChild(notification);
-
     document.getElementById('reload-btn').addEventListener('click', () => {
         worker.postMessage({ type: 'SKIP_WAITING' });
     });
@@ -69,7 +67,6 @@ function showUpdateNotification(worker) {
 function initAppLogic() {
     renderTrainingScreen();
 
-    // Obsługa kliknięcia w logo/nazwę aplikacji
     const brandContainer = document.querySelector('.brand-container');
     if (brandContainer) {
         brandContainer.addEventListener('click', () => {
@@ -103,16 +100,7 @@ function initAppLogic() {
     if (bottomNav) {
         bottomNav.addEventListener('click', (e) => {
             const button = e.target.closest('.bottom-nav-btn');
-            if (!button) return;
-
-            // Sprawdzamy czy to nie jest ten sam ekran (opcjonalna optymalizacja)
-            // ale ważniejsze: sprawdzamy czy można wyjść z summary
-            if (!checkUnsavedSummaryNavigation()) {
-                // Jeśli użytkownik anulował, musimy upewnić się, że wizualnie
-                // aktywny przycisk na dole nie przeskoczył (jeśli dany framework UI to robi automatycznie).
-                // W Twoim kodzie klasa 'active' jest nadawana poniżej, więc return wystarczy.
-                return;
-            }
+            if (!button || !checkUnsavedSummaryNavigation()) return;
 
             const screen = button.dataset.screen;
             bottomNav.querySelectorAll('.bottom-nav-btn').forEach(btn => btn.classList.remove('active'));
@@ -141,10 +129,6 @@ function initAppLogic() {
         e.preventDefault();
         state.settings.appStartDate = e.target['setting-start-date'].value;
 
-        if (e.target['setting-training-plan']) {
-            state.settings.activePlanId = e.target['setting-training-plan'].value;
-        }
-
         const ttsCheckbox = e.target.querySelector('#setting-tts');
         if (ttsCheckbox) {
             state.settings.ttsEnabled = ttsCheckbox.checked;
@@ -165,11 +149,8 @@ function initAppLogic() {
             const target = e.target;
             const skipBtn = document.getElementById('skip-btn');
 
-            // --- RESETOWANIE STANU PRZYCISKU SKIP ---
-            // Jeśli klikniemy gdziekolwiek poza przyciskiem skip-btn, a jest on w stanie potwierdzenia, zresetuj go.
             if (skipBtn && skipBtn.classList.contains('confirm-state') && !target.closest('#skip-btn')) {
                 skipBtn.classList.remove('confirm-state');
-                // Jeśli kliknięcie było np. w "Gotowe", obsługa tego zdarzenia nastąpi poniżej.
             }
 
             if (target.closest('#exit-training-btn')) { if (confirm('Przerwać trening?')) { stopTimer(); stopStopwatch(); if (state.tts.isSupported) state.tts.synth.cancel(); if (getIsCasting()) sendShowIdle(); clearSessionBackup(); state.currentTrainingDate = null; state.sessionLog = []; state.isPaused = false; navigateTo('main'); renderMainScreen(); } return; }
@@ -177,24 +158,18 @@ function initAppLogic() {
             if (target.closest('#prev-step-btn')) { moveToPreviousExercise(); return; }
             if (target.closest('#pause-resume-btn')) { togglePauseTimer(); return; }
 
-            // --- OBSŁUGA SKIP Z POTWIERDZENIEM ---
             const skipTarget = target.closest('#skip-btn');
             if (skipTarget) {
                 if (skipTarget.classList.contains('confirm-state')) {
-                    // Drugie kliknięcie: Wykonaj akcję
                     skipTarget.classList.remove('confirm-state');
                     moveToNextExercise({ skipped: true });
                 } else {
-                    // Pierwsze kliknięcie: Zmień stan na "Potwierdź"
                     skipTarget.classList.add('confirm-state');
                 }
                 return;
             }
 
-            // --- OBSŁUGA PRZYCISKU "GOTOWE" ---
             if (target.closest('#rep-based-done-btn')) {
-                // Jeśli przycisk Skip był uzbrojony, to powyższy blok resetujący go obsłużył.
-                // Tutaj po prostu przechodzimy dalej.
                 moveToNextExercise({ skipped: false });
                 return;
             }
@@ -220,7 +195,6 @@ function checkAndMigrateLocalData() {
             }, 1000);
         }
     } catch (e) {
-        console.error("Błąd parsowania lokalnych danych:", e);
         localStorage.removeItem('trainingAppProgress');
     }
 }
@@ -246,8 +220,6 @@ export async function main() {
             window.history.replaceState({}, document.title, "/");
         }
 
-        // --- FIX KOLEJNOŚCI ŁADOWANIA (RACE CONDITION) ---
-        // Najpierw sprawdzamy autoryzację, aby wiedzieć czy pobierać content spersonalizowany
         const isAuth = await isAuthenticated();
 
         if (isAuth) {
@@ -256,24 +228,17 @@ export async function main() {
             if (userInfoContainer) userInfoContainer.classList.remove('hidden');
             if (mainNav) mainNav.classList.remove('hidden');
 
-            await getToken(); // Upewniamy się, że mamy token przed pobraniem treści
+            await getToken();
             const profile = getUserProfile();
             const nameEl = document.getElementById('user-display-name');
             if (nameEl) nameEl.textContent = profile.name || profile.email || 'Użytkownik';
 
-            // --- POBIERANIE TREŚCI (TERAZ Z GWARANCJĄ TOKENA) ---
-            // Backend otrzyma token i przefiltruje ćwiczenia (np. isAllowed: false dla kontuzji)
             await dataStore.loadAppContent();
-
             initAppLogic();
 
             try {
                 localStorage.removeItem('cachedUserStats');
-
-                // --- POBIERANIE USTAWIEŃ UŻYTKOWNIKA ---
-                // Tutaj pobieramy wizardData (restrykcje), które frontendowy generator też używa
                 await dataStore.initialize();
-
                 state.isAppInitialized = true;
 
                 if (bottomNav) bottomNav.classList.remove('hidden');
@@ -295,40 +260,26 @@ export async function main() {
                         const backup = getSessionBackup();
                         if (backup) {
                             const timeGap = calculateTimeGap(backup);
-                            const timeGapFormatted = formatTimeGap(timeGap);
-
                             renderSessionRecoveryModal(
                                 backup,
-                                timeGapFormatted,
-                                () => {
-                                    resumeFromBackup(backup, timeGap);
-                                },
-                                () => {
-                                    clearSessionBackup();
-                                    renderMainScreen(false);
-                                }
+                                formatTimeGap(timeGap),
+                                () => resumeFromBackup(backup, timeGap),
+                                () => { clearSessionBackup(); renderMainScreen(false); }
                             );
-                        } else {
-                            renderMainScreen(false);
-                        }
+                        } else renderMainScreen(false);
                     }
                 }
 
                 checkAndMigrateLocalData();
                 await dataStore.fetchDetailedStats();
                 const mainScreen = document.getElementById('main-screen');
-                if (mainScreen && mainScreen.classList.contains('active')) {
-                    renderMainScreen(false);
-                }
+                if (mainScreen && mainScreen.classList.contains('active')) renderMainScreen(false);
             } catch (initError) {
-                console.error("Błąd inicjalizacji:", initError);
                 hideLoader();
             }
 
         } else {
-            // Jeśli nie ma autoryzacji, pobieramy wersję publiczną (bez personalizacji)
             await dataStore.loadAppContent();
-
             document.getElementById('welcome-screen').classList.remove('hidden');
             document.querySelector('main').classList.add('hidden');
             if (userInfoContainer) userInfoContainer.classList.add('hidden');
@@ -337,7 +288,6 @@ export async function main() {
             hideLoader();
         }
     } catch (error) {
-        console.error("Błąd startu:", error);
         hideLoader();
     }
 }
@@ -348,30 +298,18 @@ if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('/service-worker.js')
             .then(registration => {
-                console.log('SW OK:', registration.scope);
-
-                if (registration.waiting) {
-                    showUpdateNotification(registration.waiting);
-                    return;
-                }
-
+                if (registration.waiting) showUpdateNotification(registration.waiting);
                 registration.addEventListener('updatefound', () => {
                     const newWorker = registration.installing;
                     newWorker.addEventListener('statechange', () => {
-                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                            showUpdateNotification(newWorker);
-                        }
+                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) showUpdateNotification(newWorker);
                     });
                 });
-            })
-            .catch(err => console.error('SW Fail:', err));
+            });
 
         let refreshing = false;
         navigator.serviceWorker.addEventListener('controllerchange', () => {
-            if (!refreshing) {
-                window.location.reload();
-                refreshing = true;
-            }
+            if (!refreshing) { window.location.reload(); refreshing = true; }
         });
     });
 }

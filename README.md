@@ -1,60 +1,54 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v14.0.0
+# Aplikacja Treningowa (Smart Rehab PWA) v15.0.0
 
-Zaawansowana aplikacja PWA (Progressive Web App) łącząca trening siłowy z rehabilitacją (metodyka McGill L5-S1, prehab kolan i bioder). System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz autorski silnik **"Virtual Physio"**, który personalizuje treningi na podstawie profilu medycznego, dostępnego sprzętu i historii postępów.
+Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją (metodyka McGill, prehab kolan i bioder). System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Virtual Physio"**, który w czasie rzeczywistym buduje plany treningowe na podstawie profilu medycznego, historii postępów i dostępnego sprzętu.
 
 ---
 
 ## 🚀 Kluczowe Funkcjonalności
 
-### 🧠 Adaptive Pacing (Nowość!)
-Aplikacja uczy się Twojego tempa.
-*   **Analiza Historii:** Backend analizuje czasy trwania serii dla każdego ćwiczenia.
-*   **Personalizacja:** Jeśli wykonujesz "Przysiady" wolniej niż średnia, system automatycznie wydłuży estymowany czas treningu w kolejnych planach.
-*   **Globalna Kalibracja:** Możliwość ręcznego ustawienia globalnego czasu na powtórzenie oraz przerw w ustawieniach.
+### 🧠 Adaptive Pacing & Recalculation
+System uczy się tempa użytkownika, aby estymacje czasu trwania sesji były idealnie dopasowane.
+*   **Analiza Historii:** Backend wylicza medianę czasu wykonania jednego powtórzenia dla każdego ćwiczenia (np. jeśli robisz pompki wolniej niż domyślne 6s, system to zapamięta).
+*   **Manualna Rekalibracja:** W ustawieniach dostępna jest funkcja "Przelicz Statystyki Tempa", która analizuje całą historię treningową w celu aktualizacji bazy Adaptive Pacing.
+*   **Globalna Kalibracja:** Możliwość ręcznego ustawienia bazowego tempa i długości przerw.
 
-### 🛡️ Session Recovery (Nowość!)
-*   **Crash Protection:** Stan treningu (ćwiczenie, seria, timer) jest zapisywany lokalnie co 2 sekundy.
-*   **Auto-Resume:** Po odświeżeniu strony lub powrocie do aplikacji po zamknięciu, system wykrywa przerwany trening i pozwala go wznowić dokładnie w tym samym punkcie (z uwzględnieniem czasu, który upłynął).
+### 🛡️ Session Recovery (Crash Protection)
+*   **Stan sesji:** Pozycja w treningu, czasy serii, timer i logi są zapisywane lokalnie co 2 sekundy.
+*   **Auto-Resume:** Po odświeżeniu strony lub zamknięciu przeglądarki, aplikacja wykrywa przerwany trening i oferuje jego wznowienie z uwzględnieniem czasu, który upłynął w trakcie pauzy.
 
-### 🏥 Clinical Engine v5.8 (Knee & Spine Support)
-Współdzielony silnik reguł (`clinicalEngine.js`) używany przez Frontend i Backend.
-*   **Knee Protection:** Nowa logika analizująca obciążenie kolan (`knee_load_level`). Blokuje głębokie przysiady i wysoki impact u osób z chondromalacją lub ostrym bólem kolana.
-*   **Foot Injury Mode:** Automatyczne wykluczanie ćwiczeń obciążających stopę (Non-weight bearing).
-*   **Severity Filters:** Dynamiczne filtrowanie ćwiczeń w oparciu o "Wellness Check-in" (poziom bólu 0-10).
+### 🏥 Clinical Engine v5.8 (Knee & Spine)
+Zaawansowany silnik reguł współdzielony między Frontend i Backend:
+*   **Knee Protection:** Blokuje wysokie obciążenia (High Load) i głębokie przysiady u osób z chondromalacją, uszkodzeniami łąkotek lub zgłoszonym ostrym bólem kolana.
+*   **Wzorce Tolerancji:** Automatyczne wykluczanie ruchów wyprostnych lub zgięciowych w zależności od zdiagnozowanego wzorca bólowego (np. przepuklina L5-S1).
+*   **Wellness Check-in:** Każdy trening zaczyna się od oceny stanu dnia (0-10), co pozwala Asystentowi na dynamiczną redukcję objętości (tryby ECO, CARE, SOS).
 
-### ⚡ Wydajność i UX
-*   **SVG Lazy Loading & Sanitizer:** Animacje pobierane są asynchronicznie i naprawiane w locie (viewBox fix), co drastycznie przyspiesza start aplikacji.
-*   **Focus Mode UI:** Nowy ekran treningowy z paskiem postępu na górze, zoptymalizowany do obsługi jedną ręką.
-*   **Double-Click Skip:** Zabezpieczenie przycisku pomijania ćwiczenia przed przypadkowym kliknięciem.
-
-### 📺 Cast Receiver v8.0 (Anti-Idle)
-Dedykowana aplikacja na TV (Chromecast).
-*   **Agresywny Keep-Alive:** Wykorzystuje Web Audio API (oscylator ciszy), MediaSession API, Wake Lock oraz Canvas Animation, aby zapobiec wygaszaniu ekranu telewizora podczas przerw w treningu.
+### 📺 Cast Receiver v8.0 (Anti-Idle Nuclear Option)
+Dedykowana aplikacja na TV (Chromecast) z najbardziej agresywnym na rynku systemem zapobiegania wygaszaniu ekranu:
+*   **Keep-Alive:** Wykorzystuje Web Audio API (oscylator ciszy co 5s), MediaSession API (emulacja odtwarzacza), Wake Lock API oraz niewidoczną animację Canvas (GPU activity).
 
 ---
 
 ## 🧠 Moduły Logiczne
 
-### 1. Virtual Physio (Backend Generator)
-Generator planów tygodniowych (`generate-plan.js`).
-*   Analizuje ankietę medyczną (Wizard).
-*   Dobiera wagi dla kategorii (np. priorytet `vmo_activation` przy problemach z kolanami).
-*   Tworzy strukturę: Rozgrzewka (Prehab) -> Główna (Siła/Stabilizacja) -> Schłodzenie (Mobility).
+### 1. Virtual Physio (Dynamic Generator)
+Generator planów tygodniowych oparty wyłącznie na logice dynamicznej.
+*   **Brak sztywnych szablonów:** Każdy dzień cyklu jest generowany indywidualnie.
+*   **Priorytetyzacja:** Jeśli zgłosisz "Siedzący tryb pracy", system automatycznie wstrzyknie ćwiczenia typu "Anti-Office" do rozgrzewki.
 
-### 2. Workout Mixer & Affinity Engine
-Frontendowy system tasowania ćwiczeń (`workoutMixer.js`).
-*   **Freshness:** Priorytetyzuje ćwiczenia, których dawno nie robiłeś.
-*   **Affinity:** Uczy się, co lubisz ( 👍 / 👎 ).
-*   **Micro-Dosing:** Jeśli system wykryje pętlę "za trudne" <-> "za łatwe", aplikuje wersję "Micro-Dose" (więcej serii, mniej powtórzeń), aby zbudować technikę.
+### 2. Workout Mixer Lite & Tuner Synaptyczny
+Zrezygnowano z losowego tasowania na rzecz świadomej personalizacji:
+*   **Smart Swap:** Pozwala wymienić dowolne ćwiczenie na bezpieczną alternatywę z tej samej kategorii biomechanicznej.
+*   **Tuner:** Możliwość precyzyjnego ustawienia "Affinity Score" (lubię/nie lubię) oraz zgłoszenia poziomu trudności (za łatwe -> Ewolucja / za trudne -> Dewolucja).
+*   **Micro-Dosing:** Jeśli system wykryje, że ewolucja była zbyt szybka, zastosuje tryb mikro-serii (więcej serii, ale bardzo mało powtórzeń), aby zbudować technikę.
 
-### 3. Bio-Protocol Generator (On-Demand)
-Generator sesji celowanych (`protocolGenerator.js`) z algorytmem Time-Boxing.
-*   **Tryby:**
-    *   🚑 **SOS:** Ratunek przeciwbólowy (Low Load).
-    *   🔥 **Booster/Burn:** Intensywne spalanie lub Core.
-    *   🌙 **Calm:** Wyciszenie i sen.
-    *   ⚡ **Neuro:** Praca z układem nerwowym (Neuro-ślizgi).
-    *   🧱 **Ladder:** Progresja techniczna.
+### 3. Bio-Protocol Hub (Front-end Generated)
+Sesje celowane generowane natychmiastowo po stronie klienta (Time-Boxing):
+*   🚑 **SOS:** Ratunek przeciwbólowy dla wybranej strefy.
+*   ⚡ **Neuro:** Ślizgi nerwowe dla rwy kulszowej/udowej.
+*   🌊 **Flow:** Mobilność całego ciała.
+*   🔥 **Metabolic Burn:** Intensywne spalanie w trybie Low-Impact.
+*   🧗 **Ladder:** Budowanie progresji technicznej.
+
 
 ---
 ## 📂 Pełna Struktura Plików

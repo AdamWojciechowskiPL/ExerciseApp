@@ -1,57 +1,60 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v13.2.0
+# Aplikacja Treningowa (Smart Rehab PWA) v14.0.0
 
-Zaawansowana aplikacja PWA (Progressive Web App) łącząca trening siłowy z rehabilitacją kręgosłupa (metodyka McGill L5-S1). System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz autorski silnik **"Virtual Physio"**, który personalizuje treningi na podstawie profilu medycznego, dostępnego sprzętu i preferencji użytkownika.
-
-Wersja **13.0.0** wprowadza gruntowną przebudowę warstwy danych, optymalizację wydajności (Lazy Loading SVG) oraz ujednolicenie logiki klinicznej między frontendem a backendem.
+Zaawansowana aplikacja PWA (Progressive Web App) łącząca trening siłowy z rehabilitacją (metodyka McGill L5-S1, prehab kolan i bioder). System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz autorski silnik **"Virtual Physio"**, który personalizuje treningi na podstawie profilu medycznego, dostępnego sprzętu i historii postępów.
 
 ---
 
-## 🚀 Co nowego w v13.0.0?
+## 🚀 Kluczowe Funkcjonalności
 
-### ⚡ Wydajność i Optymalizacja
-*   **SVG Lazy Loading:** Aplikacja nie pobiera już megabajtów kodu SVG przy starcie. Animacje są pobierane asynchronicznie, na żądanie (endpoint `get-exercise-animation`), co drastycznie przyspiesza Time-to-Interactive.
-*   **SVG Sanitizer:** Automatyczna naprawa atrybutów `viewBox` i usuwanie sztywnych wymiarów `width/height` dla pełnej responsywności na każdym ekranie.
+### 🧠 Adaptive Pacing (Nowość!)
+Aplikacja uczy się Twojego tempa.
+*   **Analiza Historii:** Backend analizuje czasy trwania serii dla każdego ćwiczenia.
+*   **Personalizacja:** Jeśli wykonujesz "Przysiady" wolniej niż średnia, system automatycznie wydłuży estymowany czas treningu w kolejnych planach.
+*   **Globalna Kalibracja:** Możliwość ręcznego ustawienia globalnego czasu na powtórzenie oraz przerw w ustawieniach.
 
-### 🏥 Clinical Engine v5.0 (Shared Logic)
-*   **Unified Rule Engine:** Logika filtracji ćwiczeń (`clinicalEngine.js`) jest teraz współdzielona. Backend (Wizard) i Frontend (Workout Mixer, Protocol Generator) używają dokładnie tych samych reguł bezpieczeństwa.
-*   **Foot Injury Support:** Pełna obsługa flagi `is_foot_loading`. System automatycznie wyklucza ćwiczenia obciążające stopę dla użytkowników z kontuzją (Non-weight bearing).
-*   **New Positions:** Dodano obsługę pozycji `side_lying` (leżenie bokiem), co pozwala na precyzyjniejsze filtrowanie ćwiczeń (np. dozwolone przy zakazie siedzenia).
+### 🛡️ Session Recovery (Nowość!)
+*   **Crash Protection:** Stan treningu (ćwiczenie, seria, timer) jest zapisywany lokalnie co 2 sekundy.
+*   **Auto-Resume:** Po odświeżeniu strony lub powrocie do aplikacji po zamknięciu, system wykrywa przerwany trening i pozwala go wznowić dokładnie w tym samym punkcie (z uwzględnieniem czasu, który upłynął).
 
-### 🛡️ Integralność Danych
-*   **Strict Equipment:** Pole `equipment` jest teraz znormalizowaną tablicą (np. `['Mata', 'Hantle']`), a nie surowym stringiem CSV.
-*   **Data Consistency:** Wymuszenie integralności relacji `next_progression_id` (Database Foreign Keys). Nie można przypisać progresji do nieistniejącego ćwiczenia.
-*   **Robust Importer:** Nowy skrypt `scripts/import-exercises.js` działający w dwóch fazach (Upsert -> Linking) zapewniający atomowość i walidację importu danych.
+### 🏥 Clinical Engine v5.8 (Knee & Spine Support)
+Współdzielony silnik reguł (`clinicalEngine.js`) używany przez Frontend i Backend.
+*   **Knee Protection:** Nowa logika analizująca obciążenie kolan (`knee_load_level`). Blokuje głębokie przysiady i wysoki impact u osób z chondromalacją lub ostrym bólem kolana.
+*   **Foot Injury Mode:** Automatyczne wykluczanie ćwiczeń obciążających stopę (Non-weight bearing).
+*   **Severity Filters:** Dynamiczne filtrowanie ćwiczeń w oparciu o "Wellness Check-in" (poziom bólu 0-10).
 
-### 🏋️ Logika Treningowa
-*   **Unilateral 2.0:** Twarda zasada "Sets Per Side". Jeśli ćwiczenie jest jednostronne, liczba serii w bazie (np. 2) oznacza 2 serie na lewą i 2 serie na prawą stronę.
-*   **YouTube Parsing:** Inteligentny parser obsługujący różne formaty linków (`youtu.be`, `embed`, parametry URL) dla integracji z Google Cast i UI.
+### ⚡ Wydajność i UX
+*   **SVG Lazy Loading & Sanitizer:** Animacje pobierane są asynchronicznie i naprawiane w locie (viewBox fix), co drastycznie przyspiesza start aplikacji.
+*   **Focus Mode UI:** Nowy ekran treningowy z paskiem postępu na górze, zoptymalizowany do obsługi jedną ręką.
+*   **Double-Click Skip:** Zabezpieczenie przycisku pomijania ćwiczenia przed przypadkowym kliknięciem.
+
+### 📺 Cast Receiver v8.0 (Anti-Idle)
+Dedykowana aplikacja na TV (Chromecast).
+*   **Agresywny Keep-Alive:** Wykorzystuje Web Audio API (oscylator ciszy), MediaSession API, Wake Lock oraz Canvas Animation, aby zapobiec wygaszaniu ekranu telewizora podczas przerw w treningu.
 
 ---
 
-## 🧠 Kluczowe Moduły
+## 🧠 Moduły Logiczne
 
 ### 1. Virtual Physio (Backend Generator)
-Algorytm po stronie serwera (`generate-plan.js`), który tworzy tygodniowe plany ("Tyranie", "Rehab", "Hybrid") na podstawie ankiety medycznej.
-*   Analizuje przeciwwskazania (np. `flexion_intolerant`, `sciatica`).
-*   Dobiera wagi kategorii ćwiczeń (np. priorytet dla `nerve_flossing` przy rwie kulszowej).
+Generator planów tygodniowych (`generate-plan.js`).
+*   Analizuje ankietę medyczną (Wizard).
+*   Dobiera wagi dla kategorii (np. priorytet `vmo_activation` przy problemach z kolanami).
+*   Tworzy strukturę: Rozgrzewka (Prehab) -> Główna (Siła/Stabilizacja) -> Schłodzenie (Mobility).
 
-### 2. Workout Mixer (Frontend Adaptability)
-Silnik tasowania ćwiczeń (`workoutMixer.js`), który zapobiega monotonii.
-*   **Smart Swap:** Pozwala wymienić ćwiczenie na inne z tej samej kategorii, zachowując zgodność ze sprzętem i poziomem trudności.
-*   **Affinity Engine:** Preferuje ćwiczenia oznaczone jako "Lubiane" (Score > 0) i unika tych "Nielubianych".
+### 2. Workout Mixer & Affinity Engine
+Frontendowy system tasowania ćwiczeń (`workoutMixer.js`).
+*   **Freshness:** Priorytetyzuje ćwiczenia, których dawno nie robiłeś.
+*   **Affinity:** Uczy się, co lubisz ( 👍 / 👎 ).
+*   **Micro-Dosing:** Jeśli system wykryje pętlę "za trudne" <-> "za łatwe", aplikuje wersję "Micro-Dose" (więcej serii, mniej powtórzeń), aby zbudować technikę.
 
-### 3. Bio-Protocol Generator
-Generator sesji "na żądanie" (`protocolGenerator.js`) działający całkowicie offline.
-*   **Time-Boxing:** Generuje sesję idealnie wypełniającą zadany czas (np. 5, 10, 15 min).
+### 3. Bio-Protocol Generator (On-Demand)
+Generator sesji celowanych (`protocolGenerator.js`) z algorytmem Time-Boxing.
 *   **Tryby:**
-    *   🚑 **SOS:** Tylko ćwiczenia przeciwbólowe (niskie obciążenie).
-    *   🔥 **Booster:** Intensywne obwody (Core, Glute).
-    *   🍃 **Reset/Flow:** Mobilność i oddech (Anty-Biuro).
-
-### 4. Cast Receiver v8.0 (TV App)
-Dedykowana aplikacja na Chromecasta.
-*   **Anti-Idle Tech:** Wykorzystuje MediaSession API, Web Audio API (oscylator ciszy), Canvas Animation i Wake Lock, aby zapobiec wygaszaniu ekranu telewizora.
-*   **Real-time Sync:** Wyświetla timer, powtórzenia i animacje SVG zsynchronizowane z telefonem.
+    *   🚑 **SOS:** Ratunek przeciwbólowy (Low Load).
+    *   🔥 **Booster/Burn:** Intensywne spalanie lub Core.
+    *   🌙 **Calm:** Wyciszenie i sen.
+    *   ⚡ **Neuro:** Praca z układem nerwowym (Neuro-ślizgi).
+    *   🧱 **Ladder:** Progresja techniczna.
 
 ---
 ## 📂 Pełna Struktura Plików
@@ -194,6 +197,10 @@ Przechowuje relację emocjonalną i percepcyjną użytkownika z ćwiczeniem.
 *   `affinity_score` (INT): Punkty od -100 do +100. Wpływają na częstotliwość losowania.
 *   `difficulty_rating` (INT): Flaga trudności (-1: Za łatwe, 0: OK, 1: Za trudne).
 *   `updated_at` (TIMESTAMP).
+
+### 10. `user_exercise_stats`
+Analityka tempa:
+*   `avg_seconds_per_rep`: Średni czas wykonania jednego powtórzenia przez użytkownika. Używane przez silnik estymacji czasu.
 ---
 
 ## 🚀 Instalacja i Uruchomienie

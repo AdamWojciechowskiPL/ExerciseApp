@@ -1,19 +1,59 @@
+// js/ui/modals.js
 import { state } from '../state.js';
 import dataStore from '../dataStore.js';
-import { processSVG } from '../utils.js'; // ZMIANA: Import funkcji
+import { processSVG } from '../utils.js';
+import { buildClinicalContext, checkExerciseAvailability } from '../clinicalEngine.js';
 
 export function renderSwapModal(currentExercise, onConfirm) {
     const currentId = currentExercise.id || currentExercise.exerciseId;
     let categoryId = currentExercise.categoryId;
     const libraryExercise = state.exerciseLibrary[currentId];
+    
+    // Fallback kategorii z biblioteki
     if (!categoryId && libraryExercise) categoryId = libraryExercise.categoryId;
     if (!categoryId) { alert("Błąd danych: brak kategorii."); return; }
 
+    // --- BUDOWANIE KONTEKSTU KLINICZNEGO ---
+    const wizardData = state.settings.wizardData;
+    let clinicalCtx = null;
+    
+    if (wizardData) {
+        clinicalCtx = buildClinicalContext(wizardData);
+        // Dodajemy czarną listę do kontekstu, aby filtrować zablokowane
+        if (clinicalCtx) {
+            clinicalCtx.blockedIds = new Set(state.blacklist || []);
+        }
+    }
+
+    // --- FILTROWANIE ALTERNATYW (KLINICZNE) ---
     const alternatives = Object.entries(state.exerciseLibrary)
         .map(([id, data]) => ({ id, ...data }))
-        .filter(ex => ex.categoryId === categoryId && String(ex.id) !== String(currentId));
+        .filter(ex => {
+            // 1. Musi być ta sama kategoria
+            if (ex.categoryId !== categoryId) return false;
+            
+            // 2. Nie może to być to samo ćwiczenie
+            if (String(ex.id) === String(currentId)) return false;
 
-    if (alternatives.length === 0) { alert(`Brak alternatyw dla kategorii "${categoryId}".`); return; }
+            // 3. WALIDACJA KLINICZNA
+            if (clinicalCtx) {
+                // Sprawdzamy bezpieczeństwo, sprzęt i blacklistę
+                const result = checkExerciseAvailability(ex, clinicalCtx, {
+                    ignoreEquipment: false, // Wymagamy sprzętu przy swapie
+                    strictSeverity: true,   // Wymagamy bezpieczeństwa (tarcza, ból)
+                    ignoreDifficulty: false // Opcjonalnie: można dać true, jeśli chcemy pozwolić na trudniejsze
+                });
+                return result.allowed;
+            }
+
+            // Fallback jeśli brak wizardData (np. user niezalogowany/bez ankiety)
+            return true; 
+        });
+
+    if (alternatives.length === 0) { 
+        alert(`Brak bezpiecznych alternatyw dla kategorii "${categoryId}" spełniających Twoje kryteria kliniczne i sprzętowe.`); 
+        return; 
+    }
 
     const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
 
@@ -83,8 +123,8 @@ export function renderSwapModal(currentExercise, onConfirm) {
 
 export function renderPreviewModal(svgContent, title) {
     const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
-    
-    // ZMIANA: Przetwarzanie SVG przed wyświetleniem w modalu
+
+    // Przetwarzanie SVG przed wyświetleniem w modalu
     const cleanSvg = processSVG(svgContent);
 
     overlay.innerHTML = `
@@ -257,9 +297,9 @@ export function renderTunerModal(exerciseId, onUpdate) {
             .diff-toggle-group { display: flex; gap: 8px; background: #374151; padding: 4px; border-radius: 8px; }
             .diff-btn { flex: 1; background: transparent; border: none; color: #9ca3af; padding: 10px; border-radius: 6px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
             .diff-btn.active { background: #4b5563; color: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
-            .diff-btn[data-val="-1"].active { background: #0ea5e9; } 
-            .diff-btn[data-val="0"].active { background: #10b981; } 
-            .diff-btn[data-val="1"].active { background: #ef4444; } 
+            .diff-btn[data-val="-1"].active { background: #0ea5e9; }
+            .diff-btn[data-val="0"].active { background: #10b981; }
+            .diff-btn[data-val="1"].active { background: #ef4444; }
         </style>
     `;
 

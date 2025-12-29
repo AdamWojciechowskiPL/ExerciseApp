@@ -30,9 +30,10 @@ export function saveSessionBackup(data) {
         currentExerciseIndex: data.currentExerciseIndex,
         sessionLog: data.sessionLog,
 
-        // Timer state
+        // Timer state - PRECYZYJNY ZAPIS
         stopwatchSeconds: data.stopwatchSeconds || 0,
         timerTimeLeft: data.timerTimeLeft || 0,
+        timerInitialDuration: data.timerInitialDuration || 0,
 
         // Session params
         sessionParams: data.sessionParams || { initialPainLevel: 0, timeFactor: 1.0 }
@@ -40,7 +41,6 @@ export function saveSessionBackup(data) {
 
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(backup));
-        console.log('[SessionRecovery] 💾 Backup saved at index:', data.currentExerciseIndex);
     } catch (e) {
         console.warn('[SessionRecovery] Failed to save backup:', e);
     }

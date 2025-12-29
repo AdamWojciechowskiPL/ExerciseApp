@@ -60,19 +60,14 @@ const dataStore = {
         }
     },
 
-    // --- ZADANIE 6: POBIERANIE ANIMACJI NA ŻĄDANIE ---
     fetchExerciseAnimation: async (exerciseId) => {
         if (!exerciseId) return null;
-
-        // 1. Sprawdź Cache
         if (state.animationCache.has(exerciseId)) {
             return state.animationCache.get(exerciseId);
         }
-
         try {
             const result = await callAPI('get-exercise-animation', { params: { id: exerciseId } });
             if (result && result.svg) {
-                // 2. Zapisz do Cache
                 state.animationCache.set(exerciseId, result.svg);
                 return result.svg;
             }
@@ -82,14 +77,18 @@ const dataStore = {
         return null;
     },
 
+    // --- OPTYMALIZACJA: AGREGACJA DANYCH ---
     initialize: async () => {
         try {
-            const [data, preferences] = await Promise.all([
-                callAPI('get-or-create-user-data'),
-                callAPI('get-user-preferences').catch(e => ({}))
-            ]);
-            state.userPreferences = preferences || {};
+            console.time("Bootstrap");
+            // Pobieramy wszystko w jednym strzale z get-or-create-user-data
+            // Usunięto: Promise.all z get-user-preferences i manage-blacklist
+            const data = await callAPI('get-or-create-user-data');
+            console.timeEnd("Bootstrap");
+
             if (!state.userProgress) state.userProgress = {};
+
+            // 1. SETTINGS & PACING
             if (data.settings) {
                 state.settings = { ...state.settings, ...data.settings };
                 state.tts.isSoundOn = state.settings.ttsEnabled ?? true;
@@ -98,11 +97,34 @@ const dataStore = {
                     else state.settings.planMode = 'static';
                 }
             }
+
+            if (data.exercisePace) {
+                state.exercisePace = data.exercisePace;
+                console.log("⏱️ Adaptive Pacing: Loaded stats for", Object.keys(data.exercisePace).length, "exercises.");
+            }
+
             if (data.integrations) state.stravaIntegration.isConnected = !!data.integrations.isStravaConnected;
+
+            // 2. PREFERENCES (z Mega Payloadu)
+            if (data.userPreferences) {
+                state.userPreferences = data.userPreferences;
+            } else {
+                state.userPreferences = {};
+            }
+
+            // 3. BLACKLIST (z Mega Payloadu)
+            if (data.blacklist) {
+                state.blacklist = data.blacklist;
+            } else {
+                state.blacklist = [];
+            }
+
+            // 4. RECENT SESSIONS (Hydration)
             const cachedStats = localStorage.getItem('cachedUserStats');
             if (cachedStats) {
                 try { state.userStats = JSON.parse(cachedStats); } catch (e) { state.userStats = { totalSessions: 0, streak: 0, resilience: null }; }
             } else { state.userStats = { totalSessions: 0, streak: 0, resilience: null }; }
+
             if (data.recentSessions) {
                 data.recentSessions.forEach(session => {
                     const dateKey = getISODate(new Date(session.completedAt));
@@ -111,7 +133,7 @@ const dataStore = {
                     if (!exists) state.userProgress[dateKey].push(session);
                 });
             }
-            await dataStore.fetchBlacklist();
+
             return data;
         } catch (error) { console.error("Initialization failed:", error); throw error; }
     },
@@ -204,6 +226,10 @@ const dataStore = {
             });
         }
         return result;
+    },
+
+    recalculateStats: async () => {
+        return await callAPI('recalculate-stats', { method: 'POST' });
     },
 
     deleteSession: async (sid) => { await callAPI('delete-session', { method: 'DELETE', params: { sessionId: sid } }); state.loadedMonths.clear(); },

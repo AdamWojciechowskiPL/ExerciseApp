@@ -100,6 +100,14 @@ export const renderSettingsScreen = () => {
                     <label>Przerwa między ćwiczeniami: <span id="val-rest-ex" style="font-weight:bold; color:var(--primary-color)">${restBetweenExercises}s</span></label>
                     <input type="range" id="setting-rest-ex" min="5" max="120" step="5" value="${restBetweenExercises}">
                 </div>
+
+                <!-- NOWY PRZYCISK: RECALC -->
+                <div style="margin-top: 20px; padding-top: 15px; border-top: 1px dashed var(--border-color);">
+                    <button type="button" id="recalc-stats-btn" class="nav-btn" style="width:100%; font-size: 0.85rem; display: flex; justify-content: center; align-items: center; gap: 8px;">
+                        <span>🔄</span> Przelicz Statystyki Tempa
+                    </button>
+                    <p class="settings-hint" style="text-align: center;">Analizuje całą historię i aktualizuje średnie czasy powtórzeń (Adaptive Pacing).</p>
+                </div>
             </div>
 
             <!-- SEKCJA 4: PREFERENCJE (TTS) -->
@@ -246,7 +254,7 @@ export const renderSettingsScreen = () => {
         const newRestEx = parseInt(restExSlider.value, 10);
 
         // Wykrywanie zmiany w czasach (aby zapytać o regenerację)
-        const timingChanged = 
+        const timingChanged =
             newSecondsPerRep !== state.settings.secondsPerRep ||
             newRestSet !== state.settings.restBetweenSets ||
             newRestEx !== state.settings.restBetweenExercises;
@@ -268,7 +276,7 @@ export const renderSettingsScreen = () => {
         showLoader();
         try {
             await dataStore.saveSettings();
-            
+
             // Jeśli czasy się zmieniły i mamy plan dynamiczny, pytamy o regenerację
             if (timingChanged && newMode === 'dynamic' && state.settings.wizardData && Object.keys(state.settings.wizardData).length > 0) {
                 if (confirm("Zmieniono parametry czasowe. Czy chcesz przeliczyć i wygenerować nowy plan treningowy, aby dopasować go do tych ustawień?")) {
@@ -276,7 +284,7 @@ export const renderSettingsScreen = () => {
                     state.settings.wizardData.secondsPerRep = newSecondsPerRep;
                     state.settings.wizardData.restBetweenSets = newRestSet;
                     state.settings.wizardData.restBetweenExercises = newRestEx;
-                    
+
                     try {
                         await dataStore.generateDynamicPlan(state.settings.wizardData);
                         clearPlanFromStorage(); // Ważne: czyścimy cache dzisiejszego planu
@@ -289,7 +297,7 @@ export const renderSettingsScreen = () => {
             } else {
                 alert('Ustawienia zostały zapisane.');
             }
-            
+
             renderMainScreen();
         } catch (err) {
             console.error(err);
@@ -302,6 +310,26 @@ export const renderSettingsScreen = () => {
     // 3. Przyciski Akcji
     document.getElementById('restart-wizard-btn').addEventListener('click', () => {
         initWizard(true);
+    });
+
+    // --- RECALCULATE STATS BTN ---
+    document.getElementById('recalc-stats-btn').addEventListener('click', async () => {
+        if (confirm("Ta operacja przeanalizuje całą Twoją historię treningową, aby zaktualizować wskaźniki tempa (czas na powtórzenie). Może to chwilę potrwać.")) {
+            showLoader();
+            try {
+                const res = await dataStore.recalculateStats();
+                // Po sukcesie, musimy odświeżyć dane lokalne (pobierając user-data na nowo)
+                if (res) {
+                    await dataStore.initialize();
+                    alert(`Gotowe! Przeliczono statystyki dla ${res.count || 'kilku'} ćwiczeń.`);
+                }
+            } catch (err) {
+                console.error(err);
+                alert("Wystąpił błąd podczas przeliczania.");
+            } finally {
+                hideLoader();
+            }
+        }
     });
 
     const connectStravaBtn = document.getElementById('connect-strava-btn');

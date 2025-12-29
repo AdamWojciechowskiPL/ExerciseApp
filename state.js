@@ -9,9 +9,12 @@ export const state = {
     // Struktura: { "deadBug": { score: 20, difficulty: 0 }, ... }
     userPreferences: {},
 
+    // Statystyki tempa użytkownika { "pushUps": 4.5, ... }
+    exercisePace: {},
+
     masteryStats: null,
 
-    // CACHE ANIMACJI (Zadanie 6)
+    // CACHE ANIMACJI
     animationCache: new Map(),
 
     settings: {
@@ -27,7 +30,7 @@ export const state = {
         equipment: [],
         schedule: {},
         ttsEnabled: true,
-        
+
         // --- NOWE PARAMETRY CZASOWE (Globalne Ustawienia Usera) ---
         secondsPerRep: 6,          // Domyślnie 6s
         restBetweenSets: 30,       // Domyślnie 30s
@@ -82,7 +85,14 @@ export const state = {
     },
 
     completionSound: () => {
-        if (!state.audioContext) state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        if (!state.audioContext) {
+            state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        // FIX: Wznawiamy kontekst, jeśli jest zawieszony (wymagane przez przeglądarki)
+        if (state.audioContext.state === 'suspended') {
+            state.audioContext.resume();
+        }
+
         const oscillator = state.audioContext.createOscillator();
         const gainNode = state.audioContext.createGain();
         oscillator.connect(gainNode);
@@ -95,7 +105,13 @@ export const state = {
     },
 
     finalCompletionSound: () => {
-        if (!state.audioContext) state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        if (!state.audioContext) {
+            state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (state.audioContext.state === 'suspended') {
+            state.audioContext.resume();
+        }
+
         const now = state.audioContext.currentTime;
         const oscillator = state.audioContext.createOscillator();
         const gainNode = state.audioContext.createGain();

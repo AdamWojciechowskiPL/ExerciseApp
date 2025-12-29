@@ -1268,16 +1268,37 @@ border-color: var(--primary-color);
 box-shadow: 0 4px 12px rgba(0,95,115,0.15);
 }
 
-/* --- ZONE SELECTOR (HUD) --- */
+/* --- ZONE SELECTOR (HUD) - SCROLLBAR FIX --- */
 .zone-hud-container {
-display: flex;
-gap: 10px;
-overflow-x: auto;
-padding: 5px 2px 15px 2px;
-scrollbar-width: none;
--webkit-overflow-scrolling: touch;
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    padding: 5px 2px 15px 2px;
+    -webkit-overflow-scrolling: touch;
+
+    /* Custom Scrollbar Styling (Not hidden anymore) */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 95, 115, 0.3) transparent;
 }
-.zone-hud-container::-webkit-scrollbar { display: none; }
+
+/* WebKit Scrollbar Styling */
+.zone-hud-container::-webkit-scrollbar {
+    height: 6px;
+    display: block; /* Show scrollbar */
+}
+
+.zone-hud-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.zone-hud-container::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 95, 115, 0.2);
+    border-radius: 10px;
+}
+
+.zone-hud-container::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(0, 95, 115, 0.5);
+}
 
 .zone-tile {
 flex: 0 0 auto;
@@ -1326,16 +1347,33 @@ color: var(--primary-color);
 font-weight: 700;
 }
 
-/* --- CHIPS (Secondary Filter) --- */
+/* --- CHIPS (Secondary Filter) - SCROLLBAR FIX --- */
 .chips-scroller {
-display: flex;
-flex-wrap: nowrap;
-gap: 8px;
-overflow-x: auto;
-padding: 0 2px 10px 2px;
-scrollbar-width: none;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 0 2px 10px 2px;
+    -webkit-overflow-scrolling: touch;
+
+    /* Custom Scrollbar Styling */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 95, 115, 0.3) transparent;
 }
-.chips-scroller::-webkit-scrollbar { display: none; }
+
+.chips-scroller::-webkit-scrollbar {
+    height: 4px; /* Thinner for chips */
+    display: block;
+}
+
+.chips-scroller::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.chips-scroller::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 95, 115, 0.2);
+    border-radius: 10px;
+}
 
 .chip {
 flex: 0 0 auto;

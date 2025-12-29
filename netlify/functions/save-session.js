@@ -1,7 +1,7 @@
 // netlify/functions/save-session.js
 
 const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
-const { calculateStreak, calculateResilience } = require('./_stats-helper.js');
+const { calculateStreak, calculateResilience, calculateAndUpsertPace } = require('./_stats-helper.js');
 
 /**
  * Aktualizuje preferencje (Affinity) w trybie SET (Idempotentnym).
@@ -11,14 +11,10 @@ async function updatePreferences(client, userId, ratings) {
 
     for (const rating of ratings) {
         let targetScore = null;
-
-        // Logika V3.0: Ustawianie wagi częstotliwości
         if (rating.action === 'like') targetScore = 50;
         else if (rating.action === 'dislike') targetScore = -50;
         else if (rating.action === 'neutral') targetScore = 0;
 
-        // Jeśli akcja dotyczy trudności (hard/easy), tutaj jej NIE obsługujemy
-        // Trudność jest obsługiwana w analyzeAndAdjustPlan (poniżej)
         if (targetScore === null) continue;
 
         const query = `
@@ -36,10 +32,8 @@ async function updatePreferences(client, userId, ratings) {
  * Analizuje Ewolucję/Dewolucję i obsługuje Ping-Pong (Micro-Dosing).
  */
 async function analyzeAndAdjustPlan(client, userId, sessionLog, feedback, ratings) {
-    // Sprawdzamy czy są oceny trudności
     if (!ratings || ratings.length === 0) return null;
 
-    // 1. Priorytet: "ZA TRUDNE" (Safety First) -> Dewolucja lub Micro-Dosing
     const hardRating = ratings.find(r => r.action === 'hard');
 
     if (hardRating) {
@@ -47,22 +41,16 @@ async function analyzeAndAdjustPlan(client, userId, sessionLog, feedback, rating
         const currentNameRes = await client.query('SELECT name FROM exercises WHERE id = $1', [currentId]);
         const currentName = currentNameRes.rows[0]?.name || 'Ćwiczenie';
 
-        // A. Sprawdź czy to ćwiczenie jest wynikiem niedawnej Ewolucji (Ping-Pong Check)
-        // Szukamy override'a, gdzie currentId jest replacementem
         const historyCheck = await client.query(`
             SELECT original_exercise_id
             FROM user_plan_overrides
             WHERE user_id = $1 AND replacement_exercise_id = $2 AND adjustment_type = 'evolution'
         `, [userId, currentId]);
 
-        // SCENARIUSZ PING-PONG: User awansował z A na B, a teraz chce cofnąć B.
         if (historyCheck.rows.length > 0) {
             console.log(`🏓 Ping-Pong detected for ${currentId}. Applying Micro-Dosing.`);
-
             const reason = "Ping-Pong: Too Hard after Evolution. Applying Micro-Dose.";
 
-            // Zamiast cofać, zostajemy przy trudnym ćwiczeniu, ale zmieniamy typ na 'micro_dose'
-            // Kluczowe: original = replacement (to sygnał dla frontendu, że to to samo ćwiczenie, ale zmiana parametrów)
             await client.query(`
                 INSERT INTO user_plan_overrides
                 (user_id, original_exercise_id, replacement_exercise_id, adjustment_type, reason, updated_at)
@@ -73,9 +61,8 @@ async function analyzeAndAdjustPlan(client, userId, sessionLog, feedback, rating
                     adjustment_type = 'micro_dose',
                     reason = $3,
                     updated_at = CURRENT_TIMESTAMP
-            `, [userId, currentId, reason]); // Uwaga: Nadpisujemy override dla 'currentId' jako source
+            `, [userId, currentId, reason]);
 
-            // Resetujemy Affinity, żeby user nie był zmuszany do robienia tego zbyt często, jeśli go boli
             await client.query(`
                 UPDATE user_exercise_preferences SET affinity_score = 0 WHERE user_id = $1 AND exercise_id = $2
             `, [userId, currentId]);
@@ -83,10 +70,6 @@ async function analyzeAndAdjustPlan(client, userId, sessionLog, feedback, rating
             return { original: currentName, type: 'micro_dose', newName: `${currentName} (Mikro-Serie)` };
         }
 
-        // SCENARIUSZ STANDARDOWY: Dewolucja (Powrót do łatwiejszego)
-        // Szukamy rodzica (ćwiczenia, które prowadzi do obecnego).
-        // ZMIANA (Zadanie 3): Sortujemy malejąco po difficulty_level.
-        // Jeśli wiele ćwiczeń wskazuje na obecne, wybieramy to "najtrudniejsze z łatwiejszych" (najbliższe poziomem).
         const parentRes = await client.query(`
             SELECT id, name, difficulty_level
             FROM exercises
@@ -107,7 +90,6 @@ async function analyzeAndAdjustPlan(client, userId, sessionLog, feedback, rating
                 DO UPDATE SET replacement_exercise_id = EXCLUDED.replacement_exercise_id, adjustment_type = 'devolution', reason = EXCLUDED.reason, updated_at = CURRENT_TIMESTAMP
             `, [userId, currentId, parentEx.id, reason]);
 
-            // Reset Affinity dla nowego ćwiczenia (czysta karta)
             await client.query(`
                 INSERT INTO user_exercise_preferences (user_id, exercise_id, affinity_score, updated_at)
                 VALUES ($1, $3, 0, CURRENT_TIMESTAMP)
@@ -118,7 +100,6 @@ async function analyzeAndAdjustPlan(client, userId, sessionLog, feedback, rating
         }
     }
 
-    // 2. Priorytet: "ZA ŁATWE" -> Ewolucja
     const easyRating = ratings.find(r => r.action === 'easy');
 
     if (easyRating) {
@@ -126,11 +107,8 @@ async function analyzeAndAdjustPlan(client, userId, sessionLog, feedback, rating
         if (currentExRes.rows.length > 0) {
             const currentEx = currentExRes.rows[0];
 
-            // Tutaj constraint DB (FK) gwarantuje, że jeśli next_progression_id istnieje, to wskazuje na poprawne ćwiczenie.
             if (currentEx.next_progression_id) {
-                // Pobieramy nazwę nowego ćwiczenia dla UI
                 const nextRes = await client.query('SELECT name FROM exercises WHERE id = $1', [currentEx.next_progression_id]);
-                // Fallback name na wypadek (choć FK to gwarantuje)
                 const nextName = nextRes.rows[0]?.name || 'Trudniejszy wariant';
                 const reason = "User rated as Too Easy";
 
@@ -177,17 +155,14 @@ exports.handler = async (event) => {
                 VALUES ($1, $2, $3, $4, $5)
             `, [userId, planId, startedAt, completedAt, JSON.stringify(sessionDataToSave)]);
 
-            // 1. Aktualizacja Preferencji (Affinity) - tylko Like/Dislike/Neutral
             if (exerciseRatings && exerciseRatings.length > 0) {
                 await updatePreferences(client, userId, exerciseRatings);
             }
 
-            // 2. Analiza Trudności (Ewolucja / Dewolucja / Micro-Dose)
             if (exerciseRatings && exerciseRatings.length > 0) {
                 adaptationResult = await analyzeAndAdjustPlan(client, userId, session_data.sessionLog, feedback, exerciseRatings);
             }
 
-            // 3. Statystyki
             const historyResult = await client.query(
                 'SELECT completed_at FROM training_sessions WHERE user_id = $1 ORDER BY completed_at DESC',
                 [userId]
@@ -201,6 +176,32 @@ exports.handler = async (event) => {
             };
 
             await client.query('COMMIT');
+
+            // --- Faza Analityczna (Post-Commit) ---
+            // Wykonujemy w tym samym bloku try-catch (choć po commit), ale nie blokujemy odpowiedzi błędem.
+            // Wybieramy unikalne ID ćwiczeń z logu, które były wykonane na powtórzenia
+            try {
+                if (session_data.sessionLog && Array.isArray(session_data.sessionLog)) {
+                    const exerciseIds = new Set();
+                    session_data.sessionLog.forEach(log => {
+                        if (log.status === 'completed' && log.duration > 0) {
+                            const valStr = String(log.reps_or_time || "").toLowerCase();
+                            // Interesują nas tylko powtórzenia (bez 's' ani 'min')
+                            if (!valStr.includes('s') && !valStr.includes('min') && !valStr.includes(':')) {
+                                exerciseIds.add(log.exerciseId || log.id);
+                            }
+                        }
+                    });
+
+                    if (exerciseIds.size > 0) {
+                        console.log('[Stats] Recalculating pace for:', Array.from(exerciseIds));
+                        await calculateAndUpsertPace(client, userId, Array.from(exerciseIds));
+                    }
+                }
+            } catch (statsError) {
+                // Nie chcemy, aby błąd statystyk zepsuł odpowiedź sukcesu (bo sesja już zapisana)
+                console.error('[Stats] Error calculating pace:', statsError);
+            }
 
             return {
                 statusCode: 201,

@@ -13,13 +13,15 @@ let atlasState = {
     collapsedMap: false
 };
 
+// --- ZMIANA: Dodano strefę 'knee' ---
 const ZONE_MAPPING = {
     'cervical': { label: 'Szyja', icon: '🧣', cats: ['neck', 'cervical'] },
     'thoracic': { label: 'Górne Plecy', icon: '🔙', cats: ['thoracic', 'posture'] },
     'lumbar_general': { label: 'Lędźwia / Core', icon: '🧱', cats: ['core_anti_extension', 'core_anti_flexion', 'core_anti_rotation', 'lumbar'] },
     'hip_mobility': { label: 'Biodra', icon: '⚙️', cats: ['hip_mobility', 'glute_activation', 'piriformis'] },
+    'knee': { label: 'Kolana', icon: '🦵', cats: ['knee_stability', 'vmo_activation', 'terminal_knee_extension', 'eccentric_control'] }, // NOWE
     'sciatica': { label: 'Nogi / Nerw', icon: '⚡', cats: ['nerve_flossing', 'sciatica', 'legs'] },
-    'metabolic': { label: 'Spalanie', icon: '🔥', cats: [] } // Placeholder dla logiki tagów
+    'metabolic': { label: 'Spalanie', icon: '🔥', cats: [] }
 };
 
 const REJECTION_CONFIG = {
@@ -143,9 +145,9 @@ function renderExerciseList() {
         if (ZONE_MAPPING[atlasState.activeFilter]) {
             const zData = ZONE_MAPPING[atlasState.activeFilter];
             if (atlasState.activeFilter === 'metabolic') {
-                // Filtrowanie po tagach dla metabolic
                 items = items.filter(ex => ex.goalTags && (ex.goalTags.includes('fat_loss') || ex.goalTags.includes('conditioning')));
             } else {
+                // Rozszerzone filtrowanie o nowe kategorie kolanowe
                 items = items.filter(ex => zData.cats.includes(ex.categoryId) || (ex.painReliefZones && ex.painReliefZones.includes(atlasState.activeFilter)));
             }
         }
@@ -189,10 +191,25 @@ function renderExerciseList() {
         const hiddenEquipValues = ['BRAK', 'NONE', 'BRAK SPRZĘTU', 'MASA WŁASNA', 'BODYWEIGHT', ''];
         const showEquipBadge = !hiddenEquipValues.includes(equipLabel.trim());
 
-        // NOWOŚĆ: Ikona metaboliczna
         let burnBadge = '';
         if (ex.metabolicIntensity && ex.metabolicIntensity >= 3) {
             burnBadge = `<span class="meta-tag" style="background:#fff1f2; color:#be123c; border:1px solid #fda4af;">🔥 MET: ${ex.metabolicIntensity}/5</span>`;
+        }
+
+        // NOWOŚĆ: Badge obciążenia kolan (tylko jeśli high/medium)
+        let kneeBadge = '';
+        if (ex.kneeLoadLevel && ex.kneeLoadLevel !== 'low') {
+            const kColor = ex.kneeLoadLevel === 'high' ? '#b91c1c' : '#b45309';
+            const kBg = ex.kneeLoadLevel === 'high' ? '#fef2f2' : '#fffbeb';
+            const kBorder = ex.kneeLoadLevel === 'high' ? '#fca5a5' : '#fcd34d';
+            kneeBadge = `<span class="meta-tag" style="background:${kBg}; color:${kColor}; border:1px solid ${kBorder};">🦵 ${ex.kneeLoadLevel === 'high' ? 'HIGH' : 'MED'} LOAD</span>`;
+        }
+
+        // --- NOWOŚĆ: Pace Badge (Twoje Tempo) ---
+        const userPace = state.exercisePace && state.exercisePace[ex.id];
+        let paceBadge = '';
+        if (userPace) {
+            paceBadge = `<span class="meta-tag" style="background:#fefce8; color:#854d0e; border:1px solid #fde047;" title="Twój średni czas na powtórzenie">⏱ ${userPace}s</span>`;
         }
 
         let footerHtml = '';
@@ -216,7 +233,9 @@ function renderExerciseList() {
             <div class="ac-title">${ex.name} ${affinityBadge ? '<span style="margin-left:5px">' + affinityBadge + '</span>' : ''}</div>
             <div class="ac-tags">
                 <span class="meta-tag tag-level">⚡ ${lvlLabel}</span>
+                ${paceBadge}
                 ${burnBadge}
+                ${kneeBadge}
                 <span class="meta-tag tag-category">📂 ${catLabel}</span>
                 ${showEquipBadge ? `<span class="meta-tag tag-equipment">🏋️ ${equipLabel}</span>` : ''}
             </div>
@@ -231,6 +250,7 @@ function renderExerciseList() {
     </div>`;
     }).join('');
 
+    // ... (rest of logic: event listeners)
     grid.querySelectorAll('.atlas-card').forEach(card => {
         const exId = card.dataset.id;
         const descEl = card.querySelector('.ac-desc');
@@ -278,16 +298,15 @@ function calculateZoneStats() {
         if (ex.isAllowed === false) return;
         let zone = 'other';
         for (const [zId, zData] of Object.entries(ZONE_MAPPING)) {
-            // Dodana logika dla strefy metabolicznej
             if (zId === 'metabolic') {
                 if (ex.goalTags && (ex.goalTags.includes('fat_loss') || ex.goalTags.includes('conditioning'))) {
-                    zone = zId; 
-                    break; 
+                    zone = zId;
+                    break;
                 }
             } else {
-                if (zData.cats.includes(ex.categoryId) || (ex.painReliefZones && ex.painReliefZones.includes(zId))) { 
-                    zone = zId; 
-                    break; 
+                if (zData.cats.includes(ex.categoryId) || (ex.painReliefZones && ex.painReliefZones.includes(zId))) {
+                    zone = zId;
+                    break;
                 }
             }
         }

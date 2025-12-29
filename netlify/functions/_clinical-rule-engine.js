@@ -1,32 +1,19 @@
 // netlify/functions/_clinical-rule-engine.js
 
 const DIFFICULTY_MAP = {
-    'none': 1,
-    'occasional': 2,
-    'regular': 3,
-    'advanced': 4
+    'none': 1, 'occasional': 2, 'regular': 3, 'advanced': 4
 };
 
 const KNOWN_POSITIONS = [
-    'standing',
-    'sitting',
-    'kneeling',
-    'quadruped',
-    'supine',
-    'prone',
-    'side_lying'
+    'standing', 'sitting', 'kneeling', 'quadruped', 'supine', 'prone', 'side_lying'
 ];
 
 function detectTolerancePattern(triggers, reliefs) {
     if (!Array.isArray(triggers)) triggers = [];
     if (!Array.isArray(reliefs)) reliefs = [];
 
-    if (triggers.includes('bending_forward') || reliefs.includes('bending_backward')) {
-        return 'flexion_intolerant';
-    }
-    if (triggers.includes('bending_backward') || reliefs.includes('bending_forward')) {
-        return 'extension_intolerant';
-    }
+    if (triggers.includes('bending_forward') || reliefs.includes('bending_backward')) return 'flexion_intolerant';
+    if (triggers.includes('bending_backward') || reliefs.includes('bending_forward')) return 'extension_intolerant';
     return 'neutral';
 }
 
@@ -56,6 +43,7 @@ function buildUserContext(userData) {
     if (painLocs.length > 0) {
         painLocs.forEach(loc => painFilters.add(loc));
         if (painLocs.includes('si_joint') || painLocs.includes('hip')) painFilters.add('lumbar_general');
+        if (painLocs.includes('knee')) painFilters.add('knee');
     } else {
         painFilters.add('lumbar_general');
         painFilters.add('thoracic');
@@ -63,6 +51,7 @@ function buildUserContext(userData) {
 
     const userEquipment = (userData.equipment_available || []).map(e => e.toLowerCase());
     const physicalRestrictions = userData.physical_restrictions || [];
+    const medicalDiagnosis = userData.medical_diagnosis || [];
 
     return {
         tolerancePattern,
@@ -72,13 +61,13 @@ function buildUserContext(userData) {
         painFilters,
         userEquipment,
         physicalRestrictions,
+        medicalDiagnosis,
         blockedIds: new Set()
     };
 }
 
 function checkEquipment(ex, userEquipment) {
     const exEquip = Array.isArray(ex.equipment) ? ex.equipment : (ex.equipment ? ex.equipment.split(',').map(e => e.trim()) : []);
-
     if (exEquip.length === 0) return true;
 
     const isNone = exEquip.some(e => {
@@ -87,19 +76,21 @@ function checkEquipment(ex, userEquipment) {
     });
     if (isNone) return true;
 
-    const hasAll = exEquip.every(req => {
+    return exEquip.every(req => {
         const reqLower = req.toLowerCase();
         return userEquipment.some(owned => owned.includes(reqLower) || reqLower.includes(owned));
     });
-
-    return hasAll;
 }
 
-function violatesRestrictions(ex, restrictions) {
+function violatesRestrictions(ex, ctx) {
+    const restrictions = ctx.physicalRestrictions;
+    const diagnosis = ctx.medicalDiagnosis || [];
+
     const plane = ex.primary_plane || 'multi';
     const pos = ex.position || null;
     const cat = ex.category_id || '';
     const impact = ex.impact_level || 'low';
+    const kneeLoad = ex.knee_load_level || 'low';
 
     // 1. Klękanie
     if (restrictions.includes('no_kneeling')) {
@@ -116,7 +107,7 @@ function violatesRestrictions(ex, restrictions) {
         if (pos === 'sitting') return true;
     }
 
-    // 4. Uderzenia / Skoki (Zaktualizowane o impact_level)
+    // 4. Uderzenia / Skoki
     if (restrictions.includes('no_high_impact')) {
         if (impact === 'high') return true;
         const highImpactCats = ['plyometrics', 'cardio'];
@@ -130,7 +121,25 @@ function violatesRestrictions(ex, restrictions) {
         if (blockedPositions.includes(pos)) return true;
         const blockedCategories = ['squats', 'lunges', 'calves', 'plyometrics', 'cardio'];
         if (blockedCategories.includes(cat)) return true;
-        if (cat === 'glute_activation' && pos === 'supine') return true;
+    }
+
+    // 6. Ochrona Kolan (Knee Logic Backend)
+    const hasKneeIssue = ctx.painFilters.has('knee') || ctx.painFilters.has('knee_anterior');
+    const isChondromalacia = diagnosis.includes('chondromalacia') || diagnosis.includes('runners_knee');
+
+    // Severity + Knee Pain -> Block High Load
+    if (hasKneeIssue && ctx.isSevere && kneeLoad === 'high') {
+        return true;
+    }
+
+    // Diagnosis -> Block High Load
+    if (isChondromalacia && kneeLoad === 'high') {
+        return true;
+    }
+
+    // Explicit restriction
+    if (restrictions.includes('no_deep_squat') && kneeLoad === 'high') {
+        return true;
     }
 
     return false;
@@ -157,13 +166,19 @@ function checkExerciseAvailability(ex, ctx, options = {}) {
     const exLevel = ex.difficulty_level || 1;
     if (!ignoreDifficulty && ctx.difficultyCap && exLevel > ctx.difficultyCap) return { allowed: false, reason: 'too_hard_calculated' };
 
-    if (violatesRestrictions(ex, ctx.physicalRestrictions)) return { allowed: false, reason: 'physical_restriction' };
+    if (violatesRestrictions(ex, ctx)) return { allowed: false, reason: 'physical_restriction' };
     if (!passesTolerancePattern(ex, ctx.tolerancePattern)) return { allowed: false, reason: 'biomechanics_mismatch' };
 
     if (strictSeverity && ctx.isSevere) {
-        // ZMIANA: Ochrona przed wysokim obciążeniem kręgosłupa w stanie ostrym
+        // Spine Load
         const spineLoad = ex.spine_load_level || 'low';
         if (spineLoad === 'high') return { allowed: false, reason: 'severity_filter' };
+
+        // Knee Load in severe knee cases
+        const kneeLoad = ex.knee_load_level || 'low';
+        if ((ctx.painFilters.has('knee') || ctx.painFilters.has('knee_anterior')) && kneeLoad === 'high') {
+            return { allowed: false, reason: 'severity_filter' };
+        }
 
         const zones = Array.isArray(ex.pain_relief_zones) ? ex.pain_relief_zones : [];
         const helpsZone = zones.some(z => ctx.painFilters.has(z));

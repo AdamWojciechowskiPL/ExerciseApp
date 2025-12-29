@@ -94,7 +94,25 @@ export function generateSkeletonDashboardHTML() {
     return `<div class="section-title">Ładowanie Asystenta...</div><div class="skeleton-card"><div class="skeleton-header"><div style="flex:1"><div class="skeleton-text skeleton-loading sm"></div><div class="skeleton-text skeleton-loading md"></div></div><div class="skeleton-text skeleton-loading" style="width:60px; border-radius:20px;"></div></div><div class="skeleton-text skeleton-loading lg"></div><div class="skeleton-wellness skeleton-loading"></div><div class="skeleton-btn skeleton-loading"></div></div><div class="section-title" style="margin-top:2rem;">Kolejne w cyklu</div><div class="skeleton-queue-item skeleton-loading"></div><div class="skeleton-queue-item skeleton-loading"></div><div class="skeleton-queue-item skeleton-loading"></div>`;
 }
 
-function getSmartAiTags(wizardData) { let tags = []; if (wizardData.work_type === 'sedentary') tags.push({ icon: '🪑', text: 'Anti-Office' }); else if (wizardData.work_type === 'standing') tags.push({ icon: '🧍', text: 'Odciążenie' }); if (wizardData.hobby?.includes('running')) tags.push({ icon: '🏃', text: 'Miednica' }); else if (wizardData.hobby?.includes('cycling')) tags.push({ icon: '🚴', text: 'Biodra' }); else if (wizardData.hobby?.includes('gym')) tags.push({ icon: '🏋️', text: 'Mobility' }); if (wizardData.pain_locations?.includes('sciatica') || wizardData.medical_diagnosis?.includes('piriformis')) tags.unshift({ icon: '⚡', text: 'Neuro' }); else if (wizardData.medical_diagnosis?.includes('disc_herniation')) tags.unshift({ icon: '🛡️', text: 'Bezpieczne' }); else if (wizardData.pain_locations?.includes('cervical')) tags.push({ icon: '🦒', text: 'Szyja' }); if (wizardData.physical_restrictions?.includes('no_kneeling')) tags.push({ icon: '🚫', text: 'Bez klękania' }); if (tags.length < 2 && wizardData.primary_goal === 'pain_relief') tags.push({ icon: '💊', text: 'Redukcja bólu' }); return tags.slice(0, 4); }
+function getSmartAiTags(wizardData) {
+    let tags = [];
+    if (wizardData.work_type === 'sedentary') tags.push({ icon: '🪑', text: 'Anti-Office' });
+    else if (wizardData.work_type === 'standing') tags.push({ icon: '🧍', text: 'Odciążenie' });
+
+    if (wizardData.pain_locations?.includes('knee')) tags.push({ icon: '🦵', text: 'Kolana' });
+    if (wizardData.pain_locations?.includes('sciatica') || wizardData.medical_diagnosis?.includes('piriformis')) tags.unshift({ icon: '⚡', text: 'Neuro' });
+    else if (wizardData.medical_diagnosis?.includes('disc_herniation')) tags.unshift({ icon: '🛡️', text: 'Bezpieczne' });
+    else if (wizardData.pain_locations?.includes('cervical')) tags.push({ icon: '🦒', text: 'Szyja' });
+
+    if (wizardData.hobby?.includes('running')) tags.push({ icon: '🏃', text: 'Miednica' });
+    else if (wizardData.hobby?.includes('cycling')) tags.push({ icon: '🚴', text: 'Biodra' });
+    if (wizardData.physical_restrictions?.includes('no_kneeling')) tags.push({ icon: '🚫', text: 'Bez klękania' });
+    if (wizardData.physical_restrictions?.includes('no_deep_squat')) tags.push({ icon: '🚫', text: 'Bez przysiadów' });
+
+    if (tags.length < 2 && wizardData.primary_goal === 'pain_relief') tags.push({ icon: '💊', text: 'Redukcja bólu' });
+
+    return tags.slice(0, 4);
+}
 
 export function generateMissionCardHTML(dayData, estimatedMinutes, wizardData = null) {
     const equipmentSet = new Set();
@@ -149,7 +167,6 @@ export function generatePreTrainingCardHTML(ex, index) {
     const lvl = ex.difficultyLevel || 1;
     const categoryName = formatCategoryName(ex.categoryId);
 
-    // --- FIX: POPRAWNE TWORZENIE ETYKIETY SPRZĘTU ---
     let equipLabel = '';
     if (Array.isArray(ex.equipment)) {
         equipLabel = ex.equipment.join(', ');
@@ -157,8 +174,6 @@ export function generatePreTrainingCardHTML(ex, index) {
         equipLabel = ex.equipment || '';
     }
 
-    // --- FIX: LOGIKA UKRYWANIA BADGE'A SPRZĘTU ---
-    // Jeśli pusty string, null lub jedna z wartości oznaczających "brak" -> ukrywamy
     const ignoreList = ['brak', 'none', 'brak sprzętu', 'masa własna', 'bodyweight', ''];
     const showEquipBadge = equipLabel.length > 0 && !ignoreList.includes(equipLabel.toLowerCase().trim());
 
@@ -170,6 +185,14 @@ export function generatePreTrainingCardHTML(ex, index) {
     if (ex.isPersonalized) badgeHTML = `<span class="meta-badge" style="background:var(--gold-color); color:#000; border:none;">✨ Personalizacja</span>`;
     else if (ex.isDynamicSwap) badgeHTML = `<span class="meta-badge" style="background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd;">🎲 Mix</span>`;
     else if (ex.isSwapped) badgeHTML = `<span class="meta-badge" style="background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0;">🔄 Wybór</span>`;
+
+    let kneeBadge = '';
+    if (ex.kneeLoadLevel && ex.kneeLoadLevel !== 'low') {
+        const kColor = ex.kneeLoadLevel === 'high' ? '#b91c1c' : '#b45309';
+        const kBg = ex.kneeLoadLevel === 'high' ? '#fef2f2' : '#fffbeb';
+        const kBorder = ex.kneeLoadLevel === 'high' ? '#fca5a5' : '#fcd34d';
+        kneeBadge = `<span class="meta-badge" style="background:${kBg}; color:${kColor}; border:1px solid ${kBorder};">🦵 ${ex.kneeLoadLevel === 'high' ? 'HIGH' : 'MED'} LOAD</span>`;
+    }
 
     const showOriginalInfo = ex.originalName && ex.originalName !== ex.name;
     const originalInfo = showOriginalInfo ? `<div style="font-size:0.75rem; color:#999; margin-top:-5px; margin-bottom:5px;">Zamiast: ${ex.originalName}</div>` : '';
@@ -198,7 +221,6 @@ export function generatePreTrainingCardHTML(ex, index) {
         </div>
     `;
 
-    // Standardowy link wideo
     const videoId = extractYoutubeId(ex.youtube_url);
     const videoLink = videoId
         ? `<a href="https://youtu.be/${videoId}" target="_blank" class="video-link">▶ Zobacz wideo</a>`
@@ -220,6 +242,7 @@ export function generatePreTrainingCardHTML(ex, index) {
         <div class="training-meta">
             ${badgeHTML}
             ${modBadge}
+            ${kneeBadge}
             <span class="meta-badge badge-lvl-${lvl}">⚡ ${getLevelLabel(lvl)}</span>
             <span class="meta-badge badge-category">📂 ${categoryName}</span>
             ${showEquipBadge ? `<span class="meta-badge badge-equipment">🏋️ ${equipLabel}</span>` : ''}
@@ -251,24 +274,20 @@ export function generateSessionCardHTML(session) {
     if (session.startedAt && session.completedAt) {
         const startTime = new Date(session.startedAt);
         const endTime = new Date(session.completedAt);
-        
-        // --- CZAS BRUTTO (Całkowity, zegarowy) ---
+
         const durationMs = endTime - startTime;
         const totalMinutes = Math.floor(durationMs / 60000);
         const totalSeconds = Math.floor((durationMs % 60000) / 1000);
         const formattedDurationGross = `${totalMinutes}:${totalSeconds.toString().padStart(2, '0')}`;
 
-        // --- CZAS NETTO (Aktywny) ---
-        // Pobieramy z sesji lub szacujemy z brutto (fallback dla starych danych)
-        const netSeconds = session.netDurationSeconds !== undefined 
-            ? session.netDurationSeconds 
+        const netSeconds = session.netDurationSeconds !== undefined
+            ? session.netDurationSeconds
             : Math.round(durationMs / 1000);
-            
+
         const netMinutes = Math.floor(netSeconds / 60);
         const netSecRem = netSeconds % 60;
         const formattedDurationNet = `${netMinutes}:${netSecRem.toString().padStart(2, '0')}`;
 
-        // ZMODYFIKOWANY GRID: 4 KOLUMNY (Start, Netto, Brutto, Feedback)
         statsHtml = `
             <div class="session-stats-grid" style="grid-template-columns: repeat(4, 1fr); gap: 5px;">
                 <div class="stat-item">
@@ -301,24 +320,52 @@ export function generateSessionCardHTML(session) {
             const isLike = pref.score >= 10;
             const isDislike = pref.score <= -10;
             const diff = pref.difficulty || 0;
+
             let diffBadge = '';
-            if (diff === 1) diffBadge = `<button class="reset-diff-btn" data-id="${id}" title="Kliknij, aby cofnąć oznaczenie 'Za trudne'" style="background:none; border:none; cursor:pointer;"><span style="font-size:0.7rem; color:#ea580c; background:#fff7ed; padding:2px 6px; border-radius:4px; margin-right:5px; border:1px solid #fdba74;">🔥 Za trudne <span style="opacity:0.5; margin-left:2px;">✕</span></span></button>`;
-            if (diff === -1) diffBadge = `<button class="reset-diff-btn" data-id="${id}" title="Kliknij, aby cofnąć oznaczenie 'Za łatwe'" style="background:none; border:none; cursor:pointer;"><span style="font-size:0.7rem; color:#0369a1; background:#f0f9ff; padding:2px 6px; border-radius:4px; margin-right:5px; border:1px solid #7dd3fc;">💤 Za łatwe <span style="opacity:0.5; margin-left:2px;">✕</span></span></button>`;
+            if (diff == 1) {
+                diffBadge = `
+                <button class="reset-diff-btn" data-id="${id}" title="Kliknij, aby cofnąć oznaczenie 'Za trudne'">
+                    <span class="diff-badge hard">
+                        🔥 Za trudne <span style="opacity:0.5; margin-left:3px;">✕</span>
+                    </span>
+                </button>`;
+            }
+            if (diff == -1) {
+                diffBadge = `
+                <button class="reset-diff-btn" data-id="${id}" title="Kliknij, aby cofnąć oznaczenie 'Za łatwe'">
+                    <span class="diff-badge easy">
+                        💤 Za łatwe <span style="opacity:0.5; margin-left:3px;">✕</span>
+                    </span>
+                </button>`;
+            }
+
             let ratingButtons = '';
             if (id && !isSkipped) {
                 ratingButtons = `
-                    <div class="hist-rating-actions" style="margin-left:auto; display:flex; gap:4px; align-items:center;">
-                        ${diffBadge}
+                    <div class="hist-rating-actions">
                         <button class="rate-btn-hist ${isLike ? 'active' : ''}" data-id="${id}" data-action="like" title="Częściej">👍</button>
                         <button class="rate-btn-hist ${isDislike ? 'active' : ''}" data-id="${id}" data-action="dislike" title="Rzadziej">👎</button>
                     </div>
                 `;
             }
+
+            let actualTimeBadge = '';
+            if (item.duration && item.duration > 0) {
+                const dm = Math.floor(item.duration / 60);
+                const ds = item.duration % 60;
+                const dStr = dm > 0 ? `${dm}m ${ds}s` : `${ds}s`;
+                actualTimeBadge = `<span class="time-badge">⏱ ${dStr}</span>`;
+            }
+
             return `
-            <div class="history-exercise-row ${isSkipped ? 'skipped' : 'completed'}" style="align-items:center; ${rowStyle}">
-                <div class="hex-main" style="margin-right:8px; flex-grow:1;">
+            <div class="history-exercise-row ${isSkipped ? 'skipped' : 'completed'}" style="${rowStyle}">
+                <div class="hex-main">
                     <span class="hex-name">${item.name}</span>
-                    <span class="hex-details">${item.reps_or_time}</span>
+                    <div class="hex-details-row">
+                        <span class="target-val">${item.reps_or_time}</span>
+                        ${actualTimeBadge}
+                        ${diffBadge}
+                    </div>
                 </div>
                 ${ratingButtons}
             </div>`;
@@ -340,7 +387,121 @@ export function generateSessionCardHTML(session) {
                 </div>
             </summary>
             <div class="details-session-card-content">${statsHtml}${session.notes ? `<div class="session-notes"><strong>Notatki:</strong> ${session.notes}</div>` : ''}<div class="history-exercise-list">${exercisesHtml}</div></div>
-        </details>`;
+        </details>
+
+        <style>
+            .history-exercise-row {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 0.8rem 1.5rem;
+                border-bottom: 1px solid var(--border-color);
+                gap: 10px;
+            }
+
+            .hex-main {
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+                flex-grow: 1;
+                min-width: 0; /* Ważne dla flexa */
+            }
+
+            .hex-name {
+                font-weight: 600;
+                font-size: 0.95rem;
+                color: var(--text-color);
+                line-height: 1.2;
+            }
+
+            .hex-details-row {
+                display: flex;
+                align-items: center;
+                flex-wrap: wrap;
+                gap: 8px;
+                font-size: 0.8rem;
+                color: var(--muted-text-color);
+            }
+
+            .time-badge {
+                color: var(--secondary-color);
+                font-weight: 600;
+                background: rgba(10, 147, 150, 0.1);
+                padding: 1px 5px;
+                border-radius: 4px;
+                font-size: 0.75rem;
+                white-space: nowrap;
+            }
+
+            .reset-diff-btn { background: none; border: none; cursor: pointer; padding: 0; display: inline-flex; }
+            .diff-badge {
+                font-size: 0.7rem;
+                padding: 2px 6px;
+                border-radius: 4px;
+                display: flex;
+                align-items: center;
+                white-space: nowrap;
+            }
+            .diff-badge.easy { color: #0369a1; background: #f0f9ff; border: 1px solid #7dd3fc; }
+            .diff-badge.hard { color: #ea580c; background: #fff7ed; border: 1px solid #fdba74; }
+
+            .hist-rating-actions {
+                display: flex;
+                gap: 6px;
+                margin-left: auto;
+                flex-shrink: 0;
+            }
+
+            .rate-btn-hist {
+                background: transparent;
+                border: 1px solid #e0e0e0;
+                border-radius: 6px;
+                padding: 4px 8px;
+                cursor: pointer;
+                opacity: 0.5;
+                filter: grayscale(100%);
+                transition: all 0.2s;
+                font-size: 1.1rem;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 32px;
+            }
+            .rate-btn-hist:hover { opacity: 0.8; filter: grayscale(50%); transform: scale(1.1); background: #f9f9f9; }
+            .rate-btn-hist.active { opacity: 1; filter: grayscale(0%); border-color: var(--primary-color); background: #e0f2fe; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        </style>
+        `;
 }
 
 export function generateCompletedMissionCardHTML(session) { const durationSeconds = session.netDurationSeconds || 0; const minutes = Math.floor(durationSeconds / 60); const feedbackInfo = formatFeedback(session); return `<div class="mission-card completed"><div class="completed-header"><div class="completed-icon"><img src="/icons/check-circle.svg" width="32" height="32" alt="Check" style="filter: invert(34%) sepia(95%) saturate(464%) hue-rotate(96deg) brightness(94%) contrast(90%);"></div><h3 class="completed-title">Misja Wykonana!</h3><p class="completed-subtitle">Dobra robota. Odpocznij przed jutrem.</p></div><div class="completed-stats"><div class="c-stat"><div class="c-stat-val">${minutes} min</div><div class="c-stat-label">Czas</div></div><div class="c-stat"><div class="c-stat-val" style="font-size:0.9rem;">${feedbackInfo.label}</div><div class="c-stat-label">Feedback</div></div></div><button class="view-details-btn" data-date="${session.completedAt}">Zobacz Szczegóły ➝</button></div>`; }
+
+// --- NOWOŚĆ: KARTA UKOŃCZENIA CYKLU ---
+export function generatePlanFinishedCardHTML(sessionsCount) {
+    return `
+    <div class="mission-card ai-mode" style="background: linear-gradient(135deg, #0f1c2e 0%, var(--primary-color) 100%); color: #fff; border: none; box-shadow: 0 10px 30px rgba(0,95,115,0.4);">
+        <div class="completed-header" style="color: #fff;">
+            <div class="completed-icon" style="background: var(--gold-color); box-shadow: 0 0 20px rgba(233,196,106,0.6);">
+                <span style="font-size: 1.8rem;">🏆</span>
+            </div>
+            <h3 class="completed-title" style="color: #fff;">Plan Ukończony!</h3>
+            <p class="completed-subtitle" style="color: rgba(255,255,255,0.8);">Zrealizowałeś wszystkie ${sessionsCount} sesji.</p>
+        </div>
+        
+        <div style="margin-top: 1.5rem; text-align: center;">
+            <p style="font-size: 0.9rem; opacity: 0.9; margin-bottom: 1.5rem;">Twój cykl dobiegł końca. Czas na nowe wyzwania!</p>
+            
+            <div style="display:flex; flex-direction: column; gap: 10px;">
+                <button id="quick-regen-btn" class="action-btn" style="background: var(--gold-color); color: #000; font-weight: 800; border: none;">
+                    ⚡ Wygeneruj kolejny cykl
+                </button>
+                <button id="edit-settings-btn" class="nav-btn" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: #fff;">
+                    📝 Zmień cele (Kreator)
+                </button>
+            </div>
+            
+            <p style="font-size: 0.75rem; opacity: 0.6; margin-top: 10px;">
+                "Szybka generacja" użyje obecnych ustawień (ból, czas, sprzęt).
+            </p>
+        </div>
+    </div>`;
+}

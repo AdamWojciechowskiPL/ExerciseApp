@@ -12,6 +12,9 @@ import { saveSessionBackup } from './sessionRecovery.js';
 import { getAffinityBadge } from './ui/templates.js';
 import dataStore from './dataStore.js';
 
+// --- ZMIENNE LOKALNE ---
+let backupInterval = null; // Interwał do zapisu stanu co 2s
+
 // --- HELPER: SKALOWANIE CZCIONKI ---
 function fitText(element) {
     if (!element) return;
@@ -49,13 +52,26 @@ function syncStateToChromecast() {
     sendTrainingStateUpdate(payload);
 }
 
+// --- LOGOWANIE CZASU NETTO ---
 function logCurrentStep(status) {
     const exercise = state.flatExercises[state.currentExerciseIndex];
     if (!exercise || !exercise.isWork) return;
-    let duration = state.stopwatch.seconds > 0 ? state.stopwatch.seconds : 0;
+    
+    let netDuration = 0;
 
-    if (state.timer.isActive || state.timer.initialDuration > 0) {
-        duration = state.timer.initialDuration;
+    // SCENARIUSZ 1: STOPER (Ćwiczenie na powtórzenia)
+    if (state.stopwatch.interval || state.stopwatch.seconds > 0) {
+        netDuration = state.stopwatch.seconds;
+    }
+    
+    // SCENARIUSZ 2: TIMER (Ćwiczenie na czas)
+    // Obliczamy ile faktycznie upłynęło: Czas Początkowy - Czas Pozostały
+    else if (state.timer.isActive || state.timer.initialDuration > 0) {
+        netDuration = state.timer.initialDuration - state.timer.timeLeft;
+        // Zabezpieczenie przed ujemnym wynikiem (np. błąd odświeżania)
+        if (netDuration < 0) netDuration = 0;
+        // Zabezpieczenie: jeśli zakończono sukcesem ("completed"), a netDuration jest 0 lub bliski 0 (bo np. user przeklikał), 
+        // a ćwiczenie miało trwać np. 45s, to czy logujemy 0? Tak, logujemy faktyczny czas spędzony.
     }
 
     const entryUniqueId = exercise.uniqueId || `${exercise.id}_${Date.now()}`;
@@ -69,7 +85,7 @@ function logCurrentStep(status) {
         reps_or_time: exercise.reps_or_time,
         tempo_or_iso: exercise.tempo_or_iso,
         status: status,
-        duration: duration > 0 ? duration : '-'
+        duration: netDuration > 0 ? netDuration : 0 // Zapisujemy jako number (sekundy)
     };
 
     const existingEntryIndex = state.sessionLog.findIndex(entry => entry.uniqueId === newLogEntry.uniqueId);
@@ -81,6 +97,7 @@ function logCurrentStep(status) {
     }
 }
 
+// --- BACKUP STANU (Wykonywany cyklicznie) ---
 function triggerSessionBackup() {
     let trainingTitle = 'Trening';
     const isDynamicMode = state.settings.planMode === 'dynamic' || (state.settings.dynamicPlanData && !state.settings.planMode);
@@ -111,10 +128,29 @@ function triggerSessionBackup() {
         flatExercises: state.flatExercises,
         currentExerciseIndex: state.currentExerciseIndex,
         sessionLog: state.sessionLog,
+        // Zapisujemy dokładny stan liczników
         stopwatchSeconds: state.stopwatch.seconds,
         timerTimeLeft: state.timer.timeLeft,
+        timerInitialDuration: state.timer.initialDuration, // Ważne dla obliczania netto po wznowieniu
         sessionParams: state.sessionParams
     });
+}
+
+// Uruchamia automatyczny backup co 2 sekundy
+function startBackupInterval() {
+    if (backupInterval) clearInterval(backupInterval);
+    backupInterval = setInterval(() => {
+        if (!state.isPaused) {
+            triggerSessionBackup();
+        }
+    }, 2000);
+}
+
+function stopBackupInterval() {
+    if (backupInterval) {
+        clearInterval(backupInterval);
+        backupInterval = null;
+    }
 }
 
 function initProgressBar() {
@@ -177,9 +213,12 @@ export function moveToNextExercise(options = { skipped: false }) {
     if (options.skipped) logCurrentStep('skipped'); else logCurrentStep('completed');
     if (state.breakTimeoutId) { clearTimeout(state.breakTimeoutId); state.breakTimeoutId = null; }
 
+    triggerSessionBackup(); // Zapisz stan po zakończeniu ćwiczenia
+
     if (state.currentExerciseIndex < state.flatExercises.length - 1) {
         startExercise(state.currentExerciseIndex + 1);
     } else {
+        stopBackupInterval(); // Koniec treningu, zatrzymaj backup
         state.finalCompletionSound();
         if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
         renderSummaryScreen();
@@ -195,7 +234,8 @@ export function moveToPreviousExercise() {
     }
 }
 
-export async function startExercise(index) {
+// ZMIANA: Dodano parametr isResuming
+export async function startExercise(index, isResuming = false) {
     state.currentExerciseIndex = index;
     const exercise = state.flatExercises[index];
 
@@ -266,8 +306,15 @@ export async function startExercise(index) {
         for (let i = index + 1; i < state.flatExercises.length; i++) { if (state.flatExercises[i].isWork) { nextWorkExercise = state.flatExercises[i]; break; } }
         focus.nextExerciseName.textContent = nextWorkExercise ? nextWorkExercise.name : "Koniec treningu";
 
-        stopTimer();
-        state.stopwatch.seconds = 0;
+        // LOGIKA WZNAWIANIA (RESUME) VS NOWY START
+        if (!isResuming) {
+            stopTimer();
+            state.stopwatch.seconds = 0;
+        } else {
+            // Jeśli wznawiamy, zakładamy że state.stopwatch.seconds lub state.timer.timeLeft są już ustawione przez resumeFromBackup
+            console.log("Wznawianie ćwiczenia (Praca)...", state.stopwatch.seconds || state.timer.timeLeft);
+        }
+        
         updateStopwatchDisplay();
 
         focus.repBasedDoneBtn.classList.remove('hidden');
@@ -275,8 +322,11 @@ export async function startExercise(index) {
         focus.timerDisplay.classList.remove('rep-based-text');
 
         if (!state.isPaused) {
+            // Start stopera tylko jeśli to nie jest pauza
             startStopwatch();
-            if (state.tts.isSoundOn) {
+            
+            // TTS tylko jeśli to faktyczny nowy start, a nie odświeżenie strony
+            if (!isResuming && state.tts.isSoundOn) {
                 let announcement = `Ćwicz: ${exercise.name}. `;
                 if (exercise.reps_or_time) {
                     announcement += `Cel: ${formatForTTS(exercise.reps_or_time)}.`;
@@ -315,12 +365,17 @@ export async function startExercise(index) {
         focus.timerDisplay.classList.remove('rep-based-text');
 
         const startNextExercise = () => moveToNextExercise({ skipped: false });
-        const restDuration = exercise.duration || 5;
-        state.timer.timeLeft = restDuration;
+        
+        // Logika wznawiania timera
+        if (!isResuming) {
+            const restDuration = exercise.duration || 5;
+            state.timer.timeLeft = restDuration;
+        }
+        
         updateTimerDisplay();
 
         if (!state.isPaused) {
-            if (state.tts.isSoundOn) {
+            if (!isResuming && state.tts.isSoundOn) {
                 let announcement = `Odpocznij. Następnie: ${upcomingExercise.name}.`;
                 speak(announcement, true);
                 startTimer(state.timer.timeLeft, startNextExercise, syncStateToChromecast, false);
@@ -330,7 +385,7 @@ export async function startExercise(index) {
         }
     }
     syncStateToChromecast();
-    triggerSessionBackup();
+    triggerSessionBackup(); // Zapis początkowy stanu
 }
 
 export function generateFlatExercises(dayData) {
@@ -339,7 +394,7 @@ export function generateFlatExercises(dayData) {
     // --- DYNAMICZNE USTAWIENIA CZASOWE ---
     const REST_BETWEEN_SETS = state.settings.restBetweenSets || 30;
     const REST_BETWEEN_EXERCISES = state.settings.restBetweenExercises || 30;
-    const TRANSITION_DURATION = 5; // Krótka przerwa techniczna przy zmianie stron
+    const TRANSITION_DURATION = 5; 
 
     let unilateralGlobalIndex = 0;
     let globalStepCounter = 0;
@@ -417,7 +472,7 @@ export function generateFlatExercises(dayData) {
                         name: "Zmiana Strony",
                         isRest: true,
                         isWork: false,
-                        duration: TRANSITION_DURATION, // Tu zostawiamy 5s techniczne
+                        duration: TRANSITION_DURATION,
                         sectionName: "Przejście",
                         description: `Przygotuj stronę: ${secondSide}`,
                         uniqueId: `rest_transition_${globalStepCounter++}`
@@ -446,26 +501,24 @@ export function generateFlatExercises(dayData) {
                     });
                 }
 
-                // Przerwa między seriami TEGO SAMEGO ćwiczenia
                 if (i < loopLimit) {
                     plan.push({
                         name: 'Odpoczynek',
                         isRest: true,
                         isWork: false,
-                        duration: REST_BETWEEN_SETS, // <--- Ustawienie z Settings
+                        duration: REST_BETWEEN_SETS,
                         sectionName: 'Przerwa między seriami',
                         uniqueId: `rest_set_${globalStepCounter++}`
                     });
                 }
             }
 
-            // Przerwa po OSTATNIEJ serii przed nowym ćwiczeniem
             if (exerciseIndex < section.exercises.length - 1) {
                 plan.push({
                     name: 'Przerwa',
                     isRest: true,
                     isWork: false,
-                    duration: REST_BETWEEN_EXERCISES, // <--- Ustawienie z Settings
+                    duration: REST_BETWEEN_EXERCISES,
                     sectionName: 'Przerwa',
                     uniqueId: `rest_exercise_${globalStepCounter++}`
                 });
@@ -489,22 +542,20 @@ export async function startModifiedTraining() {
     let sourcePlan;
 
     if (state.todaysDynamicPlan && state.todaysDynamicPlan.type === 'protocol') {
-        console.log("🚀 Start treningu: Używam BIO-PROTOKOŁU");
         state.flatExercises = state.todaysDynamicPlan.flatExercises;
         state.sessionLog = [];
         navigateTo('training');
         initializeFocusElements();
         initProgressBar(); 
+        startBackupInterval(); // START INTERWAŁU BACKUPU
         startExercise(0);
         triggerSessionBackup();
         return;
     }
 
     if (state.todaysDynamicPlan && state.todaysDynamicPlan.dayNumber === state.currentTrainingDayId) {
-        console.log("🚀 Start treningu: Używam DYNAMICZNEGO planu");
         sourcePlan = state.todaysDynamicPlan;
     } else {
-        console.log("ℹ️ Start treningu: Używam STATYCZNEGO planu");
         const activePlan = state.trainingPlans[state.settings.activePlanId];
         if (!activePlan) { console.error("No active training plan found!"); return; }
         const dayDataRaw = activePlan.Days.find(d => d.dayNumber === state.currentTrainingDayId);
@@ -538,6 +589,7 @@ export async function startModifiedTraining() {
     navigateTo('training');
     initializeFocusElements();
     initProgressBar();
+    startBackupInterval(); // START INTERWAŁU BACKUPU
     startExercise(0);
     triggerSessionBackup();
 }
@@ -546,16 +598,25 @@ export function resumeFromBackup(backup, timeGapMs) {
     console.log('[Training] 🔄 Resuming session from backup...');
     state.sessionStartTime = backup.sessionStartTime ? new Date(backup.sessionStartTime) : new Date();
     state.totalPausedTime = (backup.totalPausedTime || 0) + timeGapMs;
-    state.isPaused = false;
+    state.isPaused = false; // Zawsze wznawiamy w stanie "aktywnym" lub "oczekującym", ale nie zapauzowanym
     state.lastPauseStartTime = null;
+    
     state.currentTrainingDayId = backup.currentTrainingDayId;
     state.todaysDynamicPlan = backup.todaysDynamicPlan;
     state.flatExercises = backup.flatExercises;
     state.sessionLog = backup.sessionLog || [];
     state.sessionParams = backup.sessionParams || { initialPainLevel: 0, timeFactor: 1.0 };
 
+    // PRZYWRACANIE LICZNIKÓW
+    state.stopwatch.seconds = backup.stopwatchSeconds || 0;
+    state.timer.timeLeft = backup.timerTimeLeft || 0;
+    state.timer.initialDuration = backup.timerInitialDuration || 0;
+
     navigateTo('training');
     initializeFocusElements();
     initProgressBar();
-    startExercise(backup.currentExerciseIndex);
+    startBackupInterval(); // START INTERWAŁU BACKUPU
+    
+    // Przekazujemy TRUE jako isResuming
+    startExercise(backup.currentExerciseIndex, true);
 }

@@ -15,17 +15,11 @@ const normalizeEquipment = (rawEquipment) => {
         return [];
     }
 
-    // Lista ignorowanych wartości (techniczne braki sprzętu)
     const IGNORE_LIST = ['brak', 'none', 'brak sprzętu', 'masa własna', 'bodyweight', ''];
     const normalizedSet = new Set();
 
     items.forEach(item => {
-        // Sprawdzamy ignorowane (case-insensitive)
         if (IGNORE_LIST.includes(item.toLowerCase())) return;
-
-        // FORMATOWANIE: Tylko pierwsza litera duża, reszta bez zmian (zachowujemy oryginał z bazy)
-        // Jeśli nazwa w bazie to "dumbbell", wynik to "Dumbbell".
-        // Jeśli "Jump Rope", wynik to "Jump Rope".
         const formatted = item.charAt(0).toUpperCase() + item.slice(1);
         normalizedSet.add(formatted);
     });
@@ -114,7 +108,8 @@ exports.handler = async (event) => {
           is_foot_loading: !!ex.is_foot_loading,
           // New Fields for Clinical Engine
           impact_level: ex.impact_level || 'low',
-          spine_load_level: ex.spine_load_level || 'low'
+          spine_load_level: ex.spine_load_level || 'low',
+          knee_load_level: ex.knee_load_level || 'low' // NOWOŚĆ
       };
 
       let isAllowed = true;
@@ -151,6 +146,7 @@ exports.handler = async (event) => {
         metabolicIntensity: ex.metabolic_intensity || 1, // 1-5
         impactLevel: ex.impact_level || 'low', // low, moderate, high
         spineLoadLevel: ex.spine_load_level || 'low', // low, moderate, high
+        kneeLoadLevel: ex.knee_load_level || 'low', // NOWOŚĆ: low, medium, high
         conditioningStyle: ex.conditioning_style || 'none', // steady, interval, circuit
         recommendedInterval: ex.recommended_interval_sec || null, // { work, rest, rounds }
 
@@ -160,7 +156,7 @@ exports.handler = async (event) => {
       return acc;
     }, {});
 
-    // 4. Pobierz i Zbuduj Plan (bez zmian)
+    // 4. Pobierz i Zbuduj Plan
     const plansQuery = `
       SELECT
         tp.id as plan_id, tp.name as plan_name, tp.description as plan_description, tp.global_rules,

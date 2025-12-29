@@ -1,11 +1,12 @@
+
 // assistantEngine.js
 
 import { state } from './state.js';
 import { getISODate, parseSetCount, getExerciseDuration } from './utils.js';
 
 /**
- * MÓZG SYSTEMU (ASSISTANT ENGINE) v3.4
- * Algorytm estymacji czasu oparty na dynamicznych ustawieniach użytkownika.
+ * MÓZG SYSTEMU (ASSISTANT ENGINE) v3.5 (Adaptive Pacing)
+ * Algorytm estymacji czasu oparty na dynamicznych ustawieniach użytkownika i historii tempa.
  */
 
 export const assistant = {
@@ -21,7 +22,7 @@ export const assistant = {
         if (!dayPlan) return 0;
 
         // POBIERANIE USTAWIEŃ DYNAMICZNYCH Z STANU
-        const secondsPerRep = state.settings.secondsPerRep || 6;
+        const globalSecondsPerRep = state.settings.secondsPerRep || 6;
         const restBetweenSets = state.settings.restBetweenSets || 30;
         const restBetweenExercises = state.settings.restBetweenExercises || 30;
 
@@ -44,26 +45,36 @@ export const assistant = {
             const multiplier = isUnilateral ? 2 : 1;
 
             // 1. Próba obliczenia czasu, jeśli ćwiczenie jest na czas (np. "30s")
-            // UWAGA: getExerciseDuration z utils.js JUŻ uwzględnia mnożnik unilateral dla czasu!
+            // getExerciseDuration zwraca całkowity czas pracy dla wszystkich stron (np. 60s dla 30s/str)
             let workTimePerSet = getExerciseDuration(exercise);
 
-            // 2. Jeśli null, to ćwiczenie na powtórzenia
+            // 2. Jeśli null, to ćwiczenie na powtórzenia -> używamy Adaptive Pacing
             if (workTimePerSet === null) {
                 const repsString = String(exercise.reps_or_time).toLowerCase();
                 const repsMatch = repsString.match(/(\d+)/);
                 const reps = repsMatch ? parseInt(repsMatch[0], 10) : 10;
 
-                // Czas = Powtórzenia * Tempo Usera * Mnożnik Stron
-                workTimePerSet = reps * secondsPerRep * multiplier;
+                // Sprawdzamy, czy mamy personalne tempo dla tego ćwiczenia
+                const exId = exercise.id || exercise.exerciseId;
+                const personalPace = state.exercisePace ? state.exercisePace[exId] : null;
+                const tempoToUse = personalPace || globalSecondsPerRep;
+
+                // Czas = Powtórzenia * Personalne Tempo * Mnożnik Stron
+                workTimePerSet = reps * tempoToUse * multiplier;
             }
 
             totalSeconds += sets * workTimePerSet;
 
             // Przerwy między seriami (ilość przerw = ilość serii - 1)
-            // Uwaga: Jeśli unilateral i sets=2, to mamy 2 serie na lewą i 2 na prawą? 
-            // W obecnym modelu sets=ilość serii per strona.
-            // Przyjmijmy uproszczenie zgodne z logiką planu: sets to ilość bloków pracy.
-            if (sets > 1) totalSeconds += (sets - 1) * restBetweenSets;
+            // Uproszczenie: sets to ilość bloków pracy.
+            if (sets > 1) {
+                // Jeśli jednostronne, to sets może oznaczać serie na stronę lub łączne.
+                // W training.js sets jest traktowane jako liczba powtórzeń cyklu (L+P).
+                // Przyjmujemy, że przerwa jest po całym cyklu L+P lub po prostu po serii.
+                // Jeśli sets = 2 (2 na L, 2 na P), to mamy 2 duże bloki.
+                // Total sets blocks = sets.
+                totalSeconds += (sets - 1) * restBetweenSets;
+            }
 
             // Przerwy między ćwiczeniami
             if (index < allExercises.length - 1) totalSeconds += restBetweenExercises;

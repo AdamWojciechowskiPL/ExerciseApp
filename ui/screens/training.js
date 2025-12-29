@@ -1,18 +1,19 @@
 // ExerciseApp/ui/screens/training.js
-import { state } from '../../state.js';
-import { screens, initializeFocusElements, focus } from '../../dom.js';
-import { getActiveTrainingPlan, getHydratedDay, getISODate } from '../../utils.js';
-import { assistant } from '../../assistantEngine.js';
-import { navigateTo, showLoader, hideLoader } from '../core.js';
-import { generatePreTrainingCardHTML, getAffinityBadge } from '../templates.js';
-import { renderSwapModal, renderPreviewModal } from '../modals.js';
-import { startModifiedTraining } from '../../training.js';
-import { getIsCasting, sendShowIdle, sendPlayVideo, sendStopVideo } from '../../cast.js';
-import dataStore from '../../dataStore.js';
-import { renderMainScreen, clearPlanFromStorage } from './dashboard.js';
-import { workoutMixer } from '../../workoutMixer.js';
-import { getUserPayload } from '../../auth.js';
-import { generateBioProtocol } from '../../protocolGenerator.js';
+// Używamy ścieżek absolutnych (/...), aby uniknąć błędów rozwiązywania modułów
+
+import { state } from '/state.js';
+import { screens, initializeFocusElements, focus } from '/dom.js';
+import { getActiveTrainingPlan, getHydratedDay, getISODate } from '/utils.js';
+import { assistant } from '/assistantEngine.js';
+import { navigateTo, showLoader, hideLoader } from '/ui/core.js';
+import { generatePreTrainingCardHTML, getAffinityBadge } from '/ui/templates.js';
+import { renderSwapModal, renderPreviewModal } from '/ui/modals.js';
+import { startModifiedTraining } from '/training.js';
+import { getIsCasting, sendShowIdle, sendPlayVideo, sendStopVideo } from '/cast.js';
+import dataStore from '/dataStore.js';
+import { workoutMixer } from '/workoutMixer.js';
+import { getUserPayload } from '/auth.js';
+import { generateBioProtocol } from '/protocolGenerator.js';
 
 const savePlanToStorage = (plan) => {
     try {
@@ -132,7 +133,7 @@ export const renderProtocolStart = (protocol) => {
         renderList(previewProtocol);
     });
 
-    // --- NOWOŚĆ: OBSŁUGA WYMIANY ĆWICZEŃ W PROTOKOLE ---
+    // --- OBSŁUGA WYMIANY ĆWICZEŃ W PROTOKOLE ---
     listContainer.addEventListener('click', (e) => {
         const btn = e.target.closest('.swap-btn');
         if (!btn) return;
@@ -149,14 +150,12 @@ export const renderProtocolStart = (protocol) => {
 
             renderSwapModal(exerciseToSwap, (newExerciseDef, swapType) => {
                 // Aktualizujemy obiekt ćwiczenia w miejscu (przez referencję)
-                // WAŻNE: W protokołach ZACHOWUJEMY czas trwania oryginalnego slotu!
-
                 exerciseToSwap.id = newExerciseDef.id;
                 exerciseToSwap.exerciseId = newExerciseDef.id;
                 exerciseToSwap.name = newExerciseDef.name;
                 exerciseToSwap.description = newExerciseDef.description;
                 exerciseToSwap.animationSvg = newExerciseDef.animationSvg;
-                exerciseToSwap.hasAnimation = newExerciseDef.hasAnimation; // Dodano flagę
+                exerciseToSwap.hasAnimation = newExerciseDef.hasAnimation;
                 exerciseToSwap.categoryId = newExerciseDef.categoryId;
                 exerciseToSwap.equipment = newExerciseDef.equipment;
                 exerciseToSwap.youtube_url = newExerciseDef.youtube_url;
@@ -164,7 +163,7 @@ export const renderProtocolStart = (protocol) => {
                 // Oznaczamy jako wymienione wizualnie
                 exerciseToSwap.isSwapped = true;
                 exerciseToSwap.isDynamicSwap = true;
-                exerciseToSwap.originalName = (oldId !== newExerciseDef.id) ? exerciseToSwap.name : null; // Hack na nazwę
+                exerciseToSwap.originalName = (oldId !== newExerciseDef.id) ? exerciseToSwap.name : null;
 
                 // Obsługa Czarnej Listy
                 if (swapType === 'blacklist') {
@@ -188,9 +187,11 @@ export const renderProtocolStart = (protocol) => {
         }
     });
 
-    // Obsługa przycisku Wróć
-    screen.querySelector('#proto-cancel-btn').addEventListener('click', () => {
+    // Obsługa przycisku Wróć (Dynamic Import + Absolute Path)
+    screen.querySelector('#proto-cancel-btn').addEventListener('click', async () => {
+        const { renderMainScreen } = await import('/ui/screens/dashboard.js');
         navigateTo('main');
+        renderMainScreen();
     });
 
     // Obsługa przycisku Start
@@ -225,7 +226,6 @@ export const renderProtocolStart = (protocol) => {
             const exId = btn.dataset.exerciseId;
             const exName = state.exerciseLibrary[exId]?.name || "Podgląd";
 
-            // Visual feedback
             const originalContent = btn.innerHTML;
             btn.innerHTML = `<span style="font-size:0.75rem">⏳</span>`;
             btn.style.opacity = "0.7";
@@ -377,8 +377,8 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
                 const setsStr = String(ex.sets);
                 const totalSets = parseInt(setsStr.split('-').pop());
 
-                // Warunek rozbicia: Parzysta liczba serii > 0
-                if (isUnilateral && totalSets % 2 === 0 && totalSets > 0) {
+                // ZMIANA: Usuwamy warunek parzystości. Rozbijamy jeśli to unilateral i ma > 0 serii.
+                if (isUnilateral && totalSets > 0) {
                     // Logika naprzemienności
                     let startSide = 'Lewa';
                     let secondSide = 'Prawa';
@@ -392,15 +392,15 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
                     // Czyścimy cel (usuwamy "/str")
                     const cleanReps = ex.reps_or_time.replace(/\/str\.?|\s*stron.*/gi, '').trim();
 
-                    // Obliczamy ile serii na stronę
-                    const setsPerSide = totalSets / 2;
+                    // Obliczamy ile serii na stronę.
+                    const setsPerSide = Math.ceil(totalSets / 2);
 
                     // Generujemy KARTĘ 1 (Start Side)
                     const exSide1 = {
                         ...ex,
                         name: `${ex.name} (${startSide})`,
                         reps_or_time: cleanReps,
-                        sets: setsPerSide.toString() // Podmieniamy na połowę
+                        sets: setsPerSide.toString()
                     };
                     listContainer.innerHTML += generatePreTrainingCardHTML(exSide1, currentDataIndex);
 
@@ -409,12 +409,12 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
                         ...ex,
                         name: `${ex.name} (${secondSide})`,
                         reps_or_time: cleanReps,
-                        sets: setsPerSide.toString() // Podmieniamy na połowę
+                        sets: setsPerSide.toString()
                     };
                     listContainer.innerHTML += generatePreTrainingCardHTML(exSide2, currentDataIndex);
 
                 } else {
-                    // Standardowe (Bilateral lub Nieparzyste Unilateral)
+                    // Standardowe (Bilateral)
                     listContainer.innerHTML += generatePreTrainingCardHTML(ex, currentDataIndex);
                 }
             });
@@ -450,12 +450,13 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
         });
     }
 
-    // Obsługa Reset
+    // Obsługa Reset (Dynamic Import + Absolute Path)
     const resetBtn = screen.querySelector('#reset-workout-btn');
     if (resetBtn) {
-        resetBtn.addEventListener('click', () => {
+        resetBtn.addEventListener('click', async () => {
             if (confirm("Czy na pewno chcesz cofnąć wszystkie losowania?")) {
                 if (isCurrentDynamicDay) {
+                    const { clearPlanFromStorage } = await import('/ui/screens/dashboard.js');
                     clearPlanFromStorage();
                     state.todaysDynamicPlan = null;
                 }
@@ -534,10 +535,8 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
         if (btn) {
             e.stopPropagation();
             const exId = btn.dataset.exerciseId;
-            // Pobieramy nazwę z biblioteki lub z atrybutu (jeśli byłby dostępny)
             const exName = state.exerciseLibrary[exId]?.name || "Podgląd";
 
-            // Visual feedback
             const originalContent = btn.innerHTML;
             btn.innerHTML = `<span style="font-size:0.75rem">⏳</span>`;
             btn.style.opacity = "0.7";
@@ -558,8 +557,12 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
         }
     });
 
-    // Nawigacja
-    screen.querySelector('#pre-training-back-btn').addEventListener('click', () => { navigateTo('main'); renderMainScreen(); });
+    // Nawigacja (Dynamic Import + Absolute Path)
+    screen.querySelector('#pre-training-back-btn').addEventListener('click', async () => {
+        const { renderMainScreen } = await import('/ui/screens/dashboard.js');
+        navigateTo('main');
+        renderMainScreen();
+    });
 
     screen.querySelector('#start-modified-training-btn').addEventListener('click', () => {
         if (!isCurrentDynamicDay && useDynamicPlan) {
@@ -582,11 +585,11 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
 
 // --- EKRAN TRENINGOWY (FOCUS MODE) ---
 export const renderTrainingScreen = () => {
-    // MODYFIKACJA HTML: 
+    // MODYFIKACJA HTML:
     // 1. Pasek postępu na samej górze.
     // 2. Usunięto tekst z nazwą sekcji.
     // 3. Przycisk wyjścia jako ikona X pod paskiem.
-    
+
     screens.training.innerHTML = `
     <div class="focus-view">
         <!-- NOWY PASEK POSTĘPU -->

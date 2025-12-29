@@ -9,7 +9,7 @@ let wizardAnswers = {};
 
 const STEPS = [
     { id: 'start', title: 'Witaj', render: renderIntro },
-    { id: 'p1', title: 'Mapa Bólu', render: renderP1 },
+    { id: 'p1', title: 'Mapa Ciała', render: renderP1 },
     { id: 'p2', title: 'Nasilenie', render: renderP2 },
     { id: 'p3', title: 'Charakter', render: renderP3 },
     { id: 'p4', title: 'Diagnoza', render: renderP4 },
@@ -32,8 +32,12 @@ const STEPS = [
 export function initWizard(forceStart = false) {
     if (state.settings.onboardingCompleted && !forceStart) return false;
     const saved = state.settings.wizardData || {};
+    
+    // Inicjalizacja stanu
     wizardAnswers = {
         pain_locations: saved.pain_locations || [],
+        focus_locations: saved.focus_locations || [], 
+        
         pain_intensity: saved.pain_intensity !== undefined ? saved.pain_intensity : 0,
         pain_character: saved.pain_character || [],
         medical_diagnosis: saved.medical_diagnosis || [],
@@ -51,6 +55,9 @@ export function initWizard(forceStart = false) {
         secondary_goals: saved.secondary_goals || [],
         physical_restrictions: saved.physical_restrictions || []
     };
+    
+    wizardAnswers.hasPain = wizardAnswers.pain_locations.length > 0;
+
     let wizardScreen = document.getElementById('wizard-screen');
     if (!wizardScreen) {
         wizardScreen = document.createElement('section');
@@ -61,9 +68,11 @@ export function initWizard(forceStart = false) {
         wizardContainer.id = 'wizard-container';
         wizardScreen.appendChild(wizardContainer);
     }
+    
     document.querySelector('header').style.display = 'none';
     const bottomNav = document.getElementById('app-bottom-nav');
     if (bottomNav) bottomNav.style.display = 'none';
+    
     wizardScreen.classList.add('active');
     currentStep = 0;
     renderStep();
@@ -79,12 +88,54 @@ function closeWizardWithoutSaving() {
     renderMainScreen();
 }
 
+// --- LOGIKA NAWIGACJI (POMIJANIE KROKÓW) ---
+
+function getStepsToSkip() {
+    // Pomijamy pytania o ból (W TYM DIAGNOZĘ), jeśli nie zaznaczono stref bólowych
+    if (wizardAnswers.pain_locations.length === 0) {
+        return ['p2', 'p3', 'p4', 'p5', 'p6', 'p7']; // Dodano 'p4' do pomijanych
+    }
+    return [];
+}
+
+function calculateNextStep(current) {
+    let next = current + 1;
+    const skipIds = getStepsToSkip();
+    while (next < STEPS.length && skipIds.includes(STEPS[next].id)) {
+        resetSkippedStepData(STEPS[next].id);
+        next++;
+    }
+    return next;
+}
+
+function calculatePrevStep(current) {
+    let prev = current - 1;
+    const skipIds = getStepsToSkip();
+    while (prev >= 0 && skipIds.includes(STEPS[prev].id)) {
+        prev--;
+    }
+    return prev;
+}
+
+function resetSkippedStepData(stepId) {
+    switch (stepId) {
+        case 'p2': wizardAnswers.pain_intensity = 0; break;
+        case 'p3': wizardAnswers.pain_character = []; break;
+        case 'p4': wizardAnswers.medical_diagnosis = ['none']; break; // Domyślnie brak diagnozy
+        case 'p5': wizardAnswers.trigger_movements = []; break;
+        case 'p6': wizardAnswers.relief_movements = []; break;
+        case 'p7': wizardAnswers.daily_impact = 0; break;
+    }
+}
+
 async function renderStep() {
     const container = document.getElementById('wizard-container');
     if (!container) return;
     container.innerHTML = '';
+    
     const step = STEPS[currentStep];
     const progressPct = Math.round(((currentStep) / (STEPS.length - 1)) * 100);
+    
     const closeBtn = document.createElement('button');
     closeBtn.id = 'wiz-close';
     closeBtn.className = 'wizard-close-btn';
@@ -92,37 +143,65 @@ async function renderStep() {
     closeBtn.innerHTML = '<img src="/icons/close.svg" alt="X" style="width:20px; height:20px;">';
     closeBtn.onclick = () => { if (confirm("Przerwać konfigurację? Postęp zostanie utracony.")) closeWizardWithoutSaving(); };
     container.appendChild(closeBtn);
+    
     const content = document.createElement('div');
     content.className = 'wizard-content';
+    content.style.cssText = "display: flex; flex-direction: column; height: 100%; padding-top: 4rem; box-sizing: border-box; overflow: hidden;";
+    
     const isIntro = step.id === 'start';
     const isProcessing = step.id === 'generating';
     let navHTML = '';
+    
     if (!isProcessing) {
         navHTML = `
-        <div class="wizard-nav ${isIntro ? 'single-btn' : ''}">
+        <div class="wizard-nav ${isIntro ? 'single-btn' : ''}" style="margin-top: 0; padding-top: 10px; flex-shrink: 0;">
             ${!isIntro ? '<button id="wiz-prev" class="nav-btn">Wstecz</button>' : ''}
             <button id="wiz-next" class="action-btn">${step.id === 'summary' ? 'Generuj Plan' : 'Dalej'}</button>
         </div>`;
     }
-    content.innerHTML = `<div class="wizard-progress-bar"><div class="wizard-progress-fill" style="width: ${progressPct}%;"></div></div><h2 class="wizard-step-title">${step.title}</h2><div id="step-body"></div>${navHTML}`;
+    
+    content.innerHTML = `
+        <div class="wizard-progress-bar" style="flex-shrink: 0; margin-bottom: 10px;">
+            <div class="wizard-progress-fill" style="width: ${progressPct}%;"></div>
+        </div>
+        <h2 class="wizard-step-title" style="flex-shrink: 0; font-size: 1.5rem; margin-bottom: 5px;">${step.title}</h2>
+        <div id="step-body" style="flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; display: flex; flex-direction: column; padding: 5px;"></div>
+        ${navHTML}
+    `;
+    
     container.appendChild(content);
+    
     const bodyContainer = content.querySelector('#step-body');
     await step.render(bodyContainer);
+    
     const prevBtn = content.querySelector('#wiz-prev');
     const nextBtn = content.querySelector('#wiz-next');
-    if (prevBtn) prevBtn.onclick = () => { currentStep--; renderStep(); };
+    
+    if (prevBtn) prevBtn.onclick = () => { 
+        currentStep = calculatePrevStep(currentStep); 
+        renderStep(); 
+    };
+    
     if (nextBtn) nextBtn.onclick = () => {
-        if (validateStep(step.id)) { currentStep++; renderStep(); } else { alert("Proszę wybrać przynajmniej jedną opcję, aby kontynuować."); }
+        // Aktualizacja flagi hasPain przed walidacją/przejściem
+        wizardAnswers.hasPain = wizardAnswers.pain_locations.length > 0;
+        
+        if (validateStep(step.id)) { 
+            currentStep = calculateNextStep(currentStep); 
+            renderStep(); 
+        } else { 
+            alert("Proszę wybrać przynajmniej jedną opcję, aby kontynuować."); 
+        }
     };
 }
 
 function validateStep(stepId) {
     switch (stepId) {
-        case 'p1': return wizardAnswers.pain_locations.length > 0;
-        case 'p3': return wizardAnswers.pain_character.length > 0;
+        case 'p1': return (wizardAnswers.pain_locations.length > 0 || wizardAnswers.focus_locations.length > 0);
+        case 'p3': return wizardAnswers.pain_locations.length === 0 || wizardAnswers.pain_character.length > 0;
         case 'p4': return wizardAnswers.medical_diagnosis.length > 0;
-        case 'p5': return wizardAnswers.trigger_movements.length > 0;
-        case 'p6': return wizardAnswers.relief_movements.length > 0;
+        case 'p5': return wizardAnswers.pain_locations.length === 0 || wizardAnswers.trigger_movements.length > 0;
+        case 'p6': return wizardAnswers.pain_locations.length === 0 || wizardAnswers.relief_movements.length > 0;
         case 'p8': return wizardAnswers.work_type !== '';
         case 'p9': return wizardAnswers.hobby.length > 0;
         case 'p10': return wizardAnswers.equipment_available.length > 0;
@@ -135,27 +214,192 @@ function validateStep(stepId) {
     }
 }
 
-function renderIntro(c) { c.innerHTML = `<p class="wizard-step-desc">Algorytm <strong>Virtual Physio</strong> przygotuje dla Ciebie plan rehabilitacyjno-treningowy.<br><br>Odpowiedz na kilka pytań, abyśmy mogli dopasować ćwiczenia do Twojego bólu i możliwości.</p><div style="font-size:5rem; text-align:center; margin:2rem; animation: pulse-fade 2s infinite;">🧬</div>`; }
+function renderIntro(c) { c.innerHTML = `<p class="wizard-step-desc">Algorytm <strong>Virtual Physio</strong> przygotuje dla Ciebie plan.<br><br>Odpowiedz na kilka pytań, abyśmy mogli dopasować ćwiczenia do Twoich potrzeb.</p><div style="font-size:5rem; text-align:center; margin:2rem; animation: pulse-fade 2s infinite;">🧬</div>`; }
+
+// --- KROK 1: MAPA CIAŁA ---
 async function renderP1(c) {
-    c.innerHTML = `<p class="wizard-step-desc">Gdzie czujesz ból? Dotknij obszaru na modelu.</p><div class="body-map-container" id="svg-placeholder" style="flex-grow:1; display:flex; justify-content:center;">Ładowanie...</div>`;
-    const svgContent = `<svg viewBox="0 0 200 400" xmlns="http://www.w3.org/2000/svg" style="height:100%; max-height:50vh;"><circle cx="100" cy="40" r="25" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.3)" /><path id="cervical" class="zone" d="M85 65 L115 65 L115 85 L85 85 Z" data-label="Szyja"/><path id="thoracic" class="zone" d="M80 85 L120 85 L115 145 L85 145 Z" data-label="Górne plecy"/><path id="lumbar_general" class="zone" d="M85 145 L115 145 L115 175 L85 175 Z" data-label="Dolne plecy"/><path id="si_joint" class="zone" d="M85 175 L115 175 L100 195 Z" data-label="Staw Krzyżowo-Biodrowy"/><circle id="hip_left" class="zone" cx="70" cy="185" r="15" data-val="hip"/><circle id="hip_right" class="zone" cx="130" cy="185" r="15" data-val="hip"/><rect id="sciatica_left" class="zone" x="65" y="210" width="25" height="120" rx="10" data-val="sciatica"/><rect id="sciatica_right" class="zone" x="110" y="210" width="25" height="120" rx="10" data-val="sciatica"/></svg>`;
+    const initialMode = (wizardAnswers.pain_locations.length === 0 && wizardAnswers.focus_locations.length > 0) ? 'focus' : 'pain';
+    const isInitialPain = initialMode === 'pain';
+
+    c.style.justifyContent = "space-between";
+
+    c.innerHTML = `
+        <div style="flex: 1; min-height: 0; position: relative; display: flex; justify-content: center; align-items: center;">
+            <div id="svg-placeholder" style="height: 100%; width: 100%; display: flex; justify-content: center;">Ładowanie...</div>
+        </div>
+
+        <div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.08); border-radius: 12px; flex-shrink: 0;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:8px; padding:0 5px;">
+                <div style="display:flex; align-items:center; gap:6px; font-size:0.75rem;"><span style="width:10px; height:10px; background:var(--danger-color); border-radius:50%; display:block;"></span> Ból / Uraz</div>
+                <div style="display:flex; align-items:center; gap:6px; font-size:0.75rem;"><span style="width:10px; height:10px; background:#3b82f6; border-radius:50%; display:block;"></span> Cel / Focus</div>
+            </div>
+            
+            <label class="switch-container" style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+                <div style="text-align: left;">
+                    <div id="tool-label" style="font-weight: 700; font-size: 0.95rem; color: #fff;">
+                        ${isInitialPain ? '🖊️ Zaznaczam: BÓL' : '🖊️ Zaznaczam: CEL'}
+                    </div>
+                    <div style="font-size: 0.75rem; opacity: 0.7;">Przełącz, aby zmienić tryb zaznaczania</div>
+                </div>
+                <div style="position: relative; width: 54px; height: 30px;">
+                    <input type="checkbox" id="paint-tool-toggle" ${isInitialPain ? 'checked' : ''} style="opacity: 0; width: 0; height: 0;">
+                    <span class="slider-round" style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #3b82f6; transition: .4s; border-radius: 34px;"></span>
+                    <span class="slider-knob" style="position: absolute; content: ''; height: 24px; width: 24px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%;"></span>
+                </div>
+            </label>
+        </div>
+        
+        <p class="wizard-step-desc" style="font-size:0.8rem; margin: 5px 0 0 0; text-align: center; opacity: 0.6;">
+            Dotknij miejsc na ciele.
+        </p>
+
+        <style>
+            input:checked + .slider-round { background-color: var(--danger-color) !important; }
+            input:checked ~ .slider-knob { transform: translateX(24px); }
+            .zone.pain { fill: var(--danger-color) !important; stroke: #fff; filter: drop-shadow(0 0 5px var(--danger-color)); opacity: 0.9 !important; }
+            .zone.focus { fill: #3b82f6 !important; stroke: #fff; filter: drop-shadow(0 0 5px #3b82f6); opacity: 0.9 !important; }
+        </style>
+    `;
+
+    const svgContent = `
+    <svg viewBox="0 0 200 400" xmlns="http://www.w3.org/2000/svg"
+         style="height: 100%; width: auto; max-width: 100%; max-height: 100%; display: block;" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <style>
+          .zone {
+            fill: rgba(255,255,255,0.05);
+            stroke: rgba(255,255,255,0.3);
+            stroke-width: 1;
+            cursor: pointer;
+            transition: all 0.2s;
+          }
+          .zone:hover { stroke: #fff; fill: rgba(255,255,255,0.15); }
+        </style>
+      </defs>
+      <g opacity="0.3" pointer-events="none" fill="#fff">
+         <circle cx="100" cy="38" r="20" />
+         <path d="M92 58 h16 v15 h-16 z" />
+         <path d="M100 74 C80 74 70 85 68 130 C70 180 70 200 78 220 C85 235 115 235 122 220 C130 200 130 180 132 130 C130 85 120 74 100 74" />
+         <path d="M62 230 L90 230 L90 350 L75 350 L62 230" />
+         <path d="M138 230 L110 230 L110 350 L125 350 L138 230" />
+         <rect x="52" y="98" width="16" height="110" rx="5" />
+         <rect x="132" y="98" width="16" height="110" rx="5" />
+      </g>
+      <g id="zones">
+        <rect id="cervical" class="zone" x="86" y="60" width="28" height="20" rx="5" data-label="Szyja"/>
+        <path id="thoracic" class="zone" d="M80 85 C84 80 116 80 120 85 L116 145 C114 150 86 150 84 145 Z" data-label="Plecy (Góra)"/>
+        <path id="lumbar_general" class="zone" d="M84 148 C88 145 112 145 116 148 L114 185 C112 190 88 190 86 185 Z" data-label="Lędźwia"/>
+        <path id="si_joint" class="zone" d="M100 188 L116 200 L100 215 L84 200 Z" data-label="Krzyż"/>
+        <circle id="hip_left" class="zone" cx="74" cy="210" r="14" data-val="hip" data-label="Biodro L"/>
+        <circle id="hip_right" class="zone" cx="126" cy="210" r="14" data-val="hip" data-label="Biodro P"/>
+        <rect id="sciatica_left" class="zone" x="65" y="235" width="22" height="100" rx="5" data-val="sciatica" data-label="Noga L"/>
+        <rect id="sciatica_right" class="zone" x="113" y="235" width="22" height="100" rx="5" data-val="sciatica" data-label="Noga P"/>
+        <circle id="knee_left" class="zone" cx="76" cy="285" r="12" data-val="knee" data-label="Kolano L"/>
+        <circle id="knee_right" class="zone" cx="124" cy="285" r="12" data-val="knee" data-label="Kolano P"/>
+      </g>
+    </svg>`;
+
     document.getElementById('svg-placeholder').innerHTML = svgContent;
-    wizardAnswers.pain_locations.forEach(loc => { const els = c.querySelectorAll(`[id="${loc}"], [data-val="${loc}"]`); els.forEach(el => el.classList.add('selected')); });
+    
+    const updateVisuals = () => {
+        c.querySelectorAll('.zone').forEach(el => {
+            el.classList.remove('pain', 'focus');
+            const val = el.dataset.val || el.id;
+            
+            if (wizardAnswers.pain_locations.includes(val)) {
+                el.classList.add('pain');
+            } else if (wizardAnswers.focus_locations.includes(val)) {
+                el.classList.add('focus');
+            }
+        });
+    };
+
+    updateVisuals();
+
+    const toggle = c.querySelector('#paint-tool-toggle');
+    const label = c.querySelector('#tool-label');
+    
+    toggle.addEventListener('change', (e) => {
+        label.textContent = e.target.checked ? '🖊️ Zaznaczam: BÓL' : '🖊️ Zaznaczam: CEL';
+    });
+
     c.querySelectorAll('.zone').forEach(el => {
         el.addEventListener('click', () => {
             const val = el.dataset.val || el.id;
-            const allRelated = c.querySelectorAll(`[id="${val}"], [data-val="${val}"]`);
-            const isSelected = el.classList.contains('selected');
-            if (isSelected) { allRelated.forEach(e => e.classList.remove('selected')); wizardAnswers.pain_locations = wizardAnswers.pain_locations.filter(x => x !== val); }
-            else { allRelated.forEach(e => e.classList.add('selected')); if (!wizardAnswers.pain_locations.includes(val)) wizardAnswers.pain_locations.push(val); }
+            const currentMode = toggle.checked ? 'pain' : 'focus';
+
+            if (currentMode === 'pain') {
+                if (wizardAnswers.pain_locations.includes(val)) {
+                    wizardAnswers.pain_locations = wizardAnswers.pain_locations.filter(x => x !== val);
+                } else {
+                    wizardAnswers.pain_locations.push(val);
+                    wizardAnswers.focus_locations = wizardAnswers.focus_locations.filter(x => x !== val);
+                }
+            } else {
+                if (wizardAnswers.focus_locations.includes(val)) {
+                    wizardAnswers.focus_locations = wizardAnswers.focus_locations.filter(x => x !== val);
+                } else {
+                    wizardAnswers.focus_locations.push(val);
+                    wizardAnswers.pain_locations = wizardAnswers.pain_locations.filter(x => x !== val);
+                }
+            }
+            updateVisuals();
         });
     });
 }
+
 function renderP2(c) { c.innerHTML = `<p class="wizard-step-desc">Poziom bólu (0-10)</p><div style="padding:2rem 0; text-align:center;"><div id="pain-val-display" style="font-size:4rem; font-weight:800; color:var(--danger-color); text-shadow:0 0 20px rgba(231,111,81,0.4);">${wizardAnswers.pain_intensity}</div><input type="range" min="0" max="10" value="${wizardAnswers.pain_intensity}" style="width:100%; margin-top:2rem;" id="pain-slider"><div style="display:flex; justify-content:space-between; opacity:0.6; font-size:0.8rem; margin-top:10px;"><span>Brak</span><span>Ekstremalny</span></div></div>`; c.querySelector('#pain-slider').addEventListener('input', (e) => { wizardAnswers.pain_intensity = parseInt(e.target.value); c.querySelector('#pain-val-display').textContent = wizardAnswers.pain_intensity; }); }
-function renderP3(c) { renderMultiSelect(c, 'Jaki to rodzaj bólu?', [{ val: 'sharp', label: '🔪 Ostry / Kłujący' }, { val: 'dull', label: '🪨 Tępy / Uciskający' }, { val: 'burning', label: '🔥 Palący' }, { val: 'stiffness', label: '🪵 Sztywność' }, { val: 'radiating', label: '⚡ Promieniujący do nogi' }, { val: 'numbness', label: '🧊 Mrowienie / Drętwienie' }], 'pain_character'); }
-function renderP4(c) { renderMultiSelect(c, 'Czy masz diagnozę lekarską?', [{ val: 'scoliosis', label: 'Skolioza' }, { val: 'disc_herniation', label: 'Dyskopatia / Przepuklina' }, { val: 'stenosis', label: 'Stenoza kanału' }, { val: 'facet_syndrome', label: 'Stawy międzykręgowe' }, { val: 'piriformis', label: 'Mięsień gruszkowaty' }, { val: 'none', label: 'Brak diagnozy' }], 'medical_diagnosis'); }
+function renderP3(c) { renderMultiSelect(c, 'Jaki to rodzaj bólu?', [{ val: 'sharp', label: '🔪 Ostry / Kłujący' }, { val: 'dull', label: '🪨 Tępy / Uciskający' }, { val: 'burning', label: '🔥 Palący' }, { val: 'stiffness', label: '🪵 Sztywność' }, { val: 'radiating', label: '⚡ Promieniujący' }, { val: 'numbness', label: '🧊 Mrowienie' }], 'pain_character'); }
+
+// --- KROK 4: DIAGNOZA (FILTROWANA) ---
+function renderP4(c) {
+    const title = 'Czy masz diagnozę lekarską?';
+    
+    // Mapowanie diagnoz do stref bólowych
+    // Klucz = ID diagnozy, Wartość = Lista stref, które ją aktywują
+    const diagnosisTriggerMap = {
+        'scoliosis': ['thoracic', 'lumbar_general', 'cervical'],
+        'disc_herniation': ['lumbar_general', 'cervical', 'sciatica'],
+        'stenosis': ['lumbar_general', 'cervical'],
+        'facet_syndrome': ['lumbar_general', 'thoracic', 'cervical', 'si_joint'],
+        'piriformis': ['sciatica', 'hip'],
+        'chondromalacia': ['knee'],
+        'meniscus_tear': ['knee'],
+        'acl_rehab': ['knee'],
+        'jumpers_knee': ['knee']
+    };
+
+    const allOptions = [
+        { val: 'scoliosis', label: 'Skolioza' },
+        { val: 'disc_herniation', label: 'Dyskopatia / Przepuklina' },
+        { val: 'stenosis', label: 'Stenoza kanału' },
+        { val: 'facet_syndrome', label: 'Stawy międzykręgowe' },
+        { val: 'piriformis', label: 'Mięsień gruszkowaty' },
+        { val: 'chondromalacia', label: '🦴 Chondromalacja / Rzepka' },
+        { val: 'meniscus_tear', label: '🩹 Uszkodzenie łąkotki' },
+        { val: 'acl_rehab', label: '🦵 ACL / Więzadła' },
+        { val: 'jumpers_knee', label: '🏀 Kolano skoczka' },
+        { val: 'none', label: 'Brak diagnozy / Inna' }
+    ];
+
+    const currentPainZones = wizardAnswers.pain_locations;
+
+    // Filtrujemy opcje
+    const filteredOptions = allOptions.filter(opt => {
+        if (opt.val === 'none') return true; // Zawsze pokazujemy "Brak"
+        
+        const requiredZones = diagnosisTriggerMap[opt.val];
+        if (!requiredZones) return true; // Jeśli diagnoza nie ma przypisanych stref, pokazujemy ją (fallback)
+
+        // Sprawdzamy czy którakolwiek z wymaganych stref jest w obecnych strefach bólu
+        return requiredZones.some(zone => currentPainZones.includes(zone));
+    });
+
+    renderMultiSelect(c, title, filteredOptions, 'medical_diagnosis');
+}
+
 function renderP5(c) { renderMultiSelect(c, 'Kiedy ból się NASILA?', [{ val: 'bending_forward', label: 'Pochylanie do przodu' }, { val: 'bending_backward', label: 'Odchylanie w tył' }, { val: 'twisting', label: 'Skręty tułowia' }, { val: 'sitting', label: 'Długie siedzenie' }, { val: 'standing', label: 'Długie stanie' }, { val: 'walking', label: 'Chodzenie' }, { val: 'lying_back', label: 'Leżenie na plecach' }], 'trigger_movements'); }
-function renderP6(c) { renderMultiSelect(c, 'Co przynosi ULGĘ?', [{ val: 'bending_forward', label: 'Lekki skłon / Zwinięcie się' }, { val: 'bending_backward', label: 'Wyprostowanie się' }, { val: 'lying_knees_bent', label: 'Leżenie z ugiętymi nogami' }, { val: 'walking', label: 'Rozchodzenie' }, { val: 'rest', label: 'Odpoczynek' }], 'relief_movements'); }
+function renderP6(c) { renderMultiSelect(c, 'Co przynosi ULGĘ?', [{ val: 'bending_forward', label: 'Lekki skłon / Zwinięcie' }, { val: 'bending_backward', label: 'Wyprostowanie' }, { val: 'lying_knees_bent', label: 'Leżenie z ugiętymi nogami' }, { val: 'walking', label: 'Rozchodzenie' }, { val: 'rest', label: 'Odpoczynek' }], 'relief_movements'); }
 function renderP7(c) { c.innerHTML = `<p class="wizard-step-desc">Wpływ bólu na życie (0-10)</p><div style="padding:2rem 0; text-align:center;"><div id="impact-val-display" style="font-size:4rem; font-weight:800; color:var(--primary-color);">${wizardAnswers.daily_impact}</div><input type="range" min="0" max="10" value="${wizardAnswers.daily_impact}" style="width:100%; margin-top:2rem;" id="impact-slider"></div>`; c.querySelector('#impact-slider').addEventListener('input', (e) => { wizardAnswers.daily_impact = parseInt(e.target.value); c.querySelector('#impact-val-display').textContent = wizardAnswers.daily_impact; }); }
 function renderP8(c) { renderSingleSelect(c, 'Twój typowy dzień?', [{ val: 'sedentary', label: '🪑 Siedzący (Biuro)' }, { val: 'standing', label: '🧍 Stojący' }, { val: 'physical', label: '💪 Fizyczny' }, { val: 'mixed', label: '🔄 Mieszany' }], 'work_type'); }
 function renderP9(c) { renderMultiSelect(c, 'Twoje aktywności?', [{ val: 'cycling', label: '🚴 Rower' }, { val: 'running', label: '🏃 Bieganie' }, { val: 'swimming', label: '🏊 Pływanie' }, { val: 'gym', label: '🏋️ Siłownia' }, { val: 'yoga', label: '🧘 Joga' }, { val: 'walking', label: '🚶 Spacery' }, { val: 'none', label: '❌ Brak' }], 'hobby'); }
@@ -199,40 +443,101 @@ function renderP10(c) {
 function renderP11(c) { renderSingleSelect(c, 'Doświadczenie w treningu?', [{ val: 'none', label: 'Początkujący (0)' }, { val: 'occasional', label: 'Okazjonalne' }, { val: 'regular', label: 'Regularne (2+/tydz)' }, { val: 'advanced', label: 'Zaawansowane' }], 'exercise_experience'); }
 function renderP12(c) { c.innerHTML = `<p class="wizard-step-desc">Ile masz czasu?</p><div style="padding: 0 10px;"><div class="form-group" style="margin-bottom:2.5rem;"><label style="display:flex; justify-content:space-between; margin-bottom:10px;"><span>Sesji w tygodniu:</span><span id="freq-disp" style="font-weight:bold; color:var(--gold-color); min-width: 20px; text-align: right;">${wizardAnswers.sessions_per_week}</span></label><input type="range" min="2" max="7" value="${wizardAnswers.sessions_per_week}" id="freq-slider" style="width: 100%;"></div><div class="form-group"><label style="display:flex; justify-content:space-between; margin-bottom:10px;"><span>Czas na sesję:</span><span id="dur-disp" style="font-weight:bold; color:var(--gold-color); min-width: 60px; text-align: right;">${wizardAnswers.target_session_duration_min} min</span></label><input type="range" min="15" max="60" step="5" value="${wizardAnswers.target_session_duration_min}" id="dur-slider" style="width: 100%;"></div></div>`; c.querySelector('#freq-slider').addEventListener('input', (e) => { wizardAnswers.sessions_per_week = parseInt(e.target.value); c.querySelector('#freq-disp').textContent = e.target.value; }); c.querySelector('#dur-slider').addEventListener('input', (e) => { wizardAnswers.target_session_duration_min = parseInt(e.target.value); c.querySelector('#dur-disp').textContent = e.target.value + " min"; }); }
 
-// ZAKTUALIZOWANE RENDEROWANIE PRIORYTETÓW (P13, P14, P15)
-function renderP13(c) { 
+function renderP13(c) {
     renderMultiSelect(c, 'Priorytety treningowe?', [
-        { val: 'mobility', label: '🤸 Mobilność' }, 
-        { val: 'stability', label: '🧱 Stabilizacja' }, 
-        { val: 'strength', label: '💪 Siła' }, 
-        { val: 'conditioning', label: '🔥 Kondycja / Spalanie' }, // NOWE
-        { val: 'breathing', label: '🌬️ Oddech / Relaks' }
-    ], 'session_component_weights'); 
+        { val: 'mobility', label: '🤸 Mobilność' },
+        { val: 'stability', label: '🧱 Stabilizacja' },
+        { val: 'strength', label: '💪 Siła' },
+        { val: 'conditioning', label: '🔥 Kondycja' },
+        { val: 'breathing', label: '🌬️ Oddech' }
+    ], 'session_component_weights');
 }
 
-function renderP14(c) { 
+function renderP14(c) {
     renderSingleSelect(c, 'Główny cel na 6 tygodni?', [
-        { val: 'pain_relief', label: '💊 Redukcja bólu' }, 
-        { val: 'fat_loss', label: '🔥 Redukcja tkanki tłuszczowej' }, // NOWE
-        { val: 'prevention', label: '🛡️ Zapobieganie' }, 
-        { val: 'mobility', label: '🤸 Sprawność' }, 
+        { val: 'pain_relief', label: '💊 Redukcja bólu' },
+        { val: 'fat_loss', label: '🔥 Redukcja tłuszczu' },
+        { val: 'prevention', label: '🛡️ Zapobieganie' },
+        { val: 'mobility', label: '🤸 Sprawność' },
         { val: 'sport_return', label: '🏆 Powrót do sportu' }
-    ], 'primary_goal'); 
+    ], 'primary_goal');
 }
 
-function renderP15(c) { 
+function renderP15(c) {
     renderMultiSelect(c, 'Cele dodatkowe?', [
-        { val: 'posture', label: 'Prosta postawa' }, 
-        { val: 'core_side', label: 'Talia / Boczny brzuch' }, // NOWE (Anti-Lateral Flexion)
-        { val: 'energy', label: 'Więcej energii' }, 
-        { val: 'strength', label: 'Siła ogólna' }, 
+        { val: 'posture', label: 'Prosta postawa' },
+        { val: 'core_side', label: 'Talia / Boczny brzuch' },
+        { val: 'energy', label: 'Więcej energii' },
+        { val: 'strength', label: 'Siła ogólna' },
         { val: 'flexibility', label: 'Elastyczność' }
-    ], 'secondary_goals'); 
+    ], 'secondary_goals');
 }
 
-function renderP16(c) { renderMultiSelect(c, 'Ograniczenia?', [{ val: 'foot_injury', label: '🦶 Uraz stopy (bez obciążania)' }, { val: 'no_kneeling', label: 'Nie mogę klęczeć' }, { val: 'no_floor_sitting', label: 'Nie usiądę na podłodze' }, { val: 'no_twisting', label: 'Ból przy skrętach' }, { val: 'no_high_impact', label: 'Zakaz skoków' }, { val: 'none', label: 'Brak' }], 'physical_restrictions'); }
-function renderSummary(c) { c.innerHTML = `<div style="text-align:left; font-size:0.95rem; background:rgba(255,255,255,0.05); padding:1.5rem; border-radius:12px;"><h3 style="margin-top:0; color:var(--gold-color);">Twój Profil</h3><ul style="list-style:none; padding:0; line-height:1.8;"><li>📍 <strong>Ból:</strong> ${wizardAnswers.pain_locations.length > 0 ? wizardAnswers.pain_locations.join(', ') : 'Brak'} (${wizardAnswers.pain_intensity}/10)</li><li>🛠️ <strong>Sprzęt:</strong> ${wizardAnswers.equipment_available.join(', ')}</li><li>🎯 <strong>Cel:</strong> ${wizardAnswers.primary_goal}</li><li>📅 <strong>Plan:</strong> ${wizardAnswers.sessions_per_week}x w tygodniu</li><li>⏱️ <strong>Czas:</strong> ${wizardAnswers.target_session_duration_min} min</li></ul><p style="margin-top:1.5rem; opacity:0.8; font-size:0.85rem;">Asystent AI przeanalizuje te dane i ułoży spersonalizowany plan tygodniowy.</p></div>`; }
+function renderP16(c) {
+    renderMultiSelect(c, 'Ograniczenia?', [
+        { val: 'foot_injury', label: '🦶 Uraz stopy (bez obciążania)' },
+        { val: 'no_kneeling', label: '🚫 Nie mogę klęczeć' },
+        { val: 'no_deep_squat', label: '🚫 Zakaz głębokich przysiadów' },
+        { val: 'no_floor_sitting', label: 'Nie usiądę na podłodze' },
+        { val: 'no_twisting', label: 'Ból przy skrętach' },
+        { val: 'no_high_impact', label: 'Zakaz skoków' },
+        { val: 'none', label: 'Brak' }
+    ], 'physical_restrictions');
+}
+
+function renderSummary(c) { 
+    const painCount = wizardAnswers.pain_locations.length;
+    const focusCount = wizardAnswers.focus_locations.length;
+    
+    let painSection = '';
+    if (painCount > 0) {
+        painSection = `
+            <li style="color:var(--danger-color)">🔴 <strong>Ból:</strong> ${wizardAnswers.pain_locations.join(', ')}</li>
+            <li>🤕 <strong>Nasilenie:</strong> ${wizardAnswers.pain_intensity}/10</li>
+        `;
+    } else {
+        painSection = `<li>✅ <strong>Ból:</strong> Brak</li>`;
+    }
+
+    let focusSection = '';
+    if (focusCount > 0) {
+        focusSection = `<li style="color:#3b82f6">🔵 <strong>Cel:</strong> ${wizardAnswers.focus_locations.join(', ')}</li>`;
+    }
+
+    c.innerHTML = `
+    <div style="text-align:left; font-size:0.95rem; background:rgba(255,255,255,0.05); padding:1.5rem; border-radius:12px;">
+        <h3 style="margin-top:0; color:var(--gold-color);">Twój Profil</h3>
+        <ul style="list-style:none; padding:0; line-height:1.8;">
+            ${painSection}
+            ${focusSection}
+            <li>🛠️ <strong>Sprzęt:</strong> ${wizardAnswers.equipment_available.join(', ')}</li>
+            <li>🎯 <strong>Główny cel:</strong> ${wizardAnswers.primary_goal}</li>
+            <li>📅 <strong>Plan:</strong> ${wizardAnswers.sessions_per_week}x w tygodniu</li>
+            <li>⏱️ <strong>Czas:</strong> ${wizardAnswers.target_session_duration_min} min</li>
+        </ul>
+        <p style="margin-top:1.5rem; opacity:0.8; font-size:0.85rem;">Asystent AI przeanalizuje te dane i ułoży spersonalizowany plan tygodniowy.</p>
+    </div>`; 
+}
+
 async function renderProcessing(c) { c.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%;"><div style="width:50px; height:50px; border:4px solid var(--gold-color); border-top-color:transparent; border-radius:50%; animation:spin 1s linear infinite; margin-bottom:20px;"></div><div id="console-output" style="font-family:monospace; color:var(--accent-color); font-size:0.9rem;">Analiza danych...</div></div><style>@keyframes spin { to { transform: rotate(360deg); } }</style>`; const consoleDiv = c.querySelector('#console-output'); const logs = ["Mapowanie stref...", "Analiza sprzętu...", "Wybór ćwiczeń...", "Optymalizacja...", "Gotowe!"]; let delay = 0; logs.forEach((log, index) => { setTimeout(() => { consoleDiv.textContent = log; if (index === logs.length - 1) { setTimeout(finalizeGeneration, 500); } }, delay); delay += 800; }); }
-async function finalizeGeneration() { try { await dataStore.generateDynamicPlan(wizardAnswers); closeWizardWithoutSaving(); } catch (e) { alert("Błąd generowania planu: " + e.message); currentStep--; renderStep(); } }
+
+async function finalizeGeneration() {
+    try {
+        const payload = {
+            ...wizardAnswers,
+            secondsPerRep: state.settings.secondsPerRep || 6,
+            restBetweenSets: state.settings.restBetweenSets || 30,
+            restBetweenExercises: state.settings.restBetweenExercises || 30
+        };
+
+        await dataStore.generateDynamicPlan(payload);
+        closeWizardWithoutSaving();
+    } catch (e) {
+        alert("Błąd generowania planu: " + e.message);
+        currentStep--;
+        renderStep();
+    }
+}
+
 function renderMultiSelect(container, question, options, key) { container.innerHTML = `<p class="wizard-step-desc">${question}</p><div class="options-list"></div>`; const list = container.querySelector('.options-list'); options.forEach(opt => { const isSel = wizardAnswers[key].includes(opt.val); const btn = document.createElement('div'); btn.className = `option-btn ${isSel ? 'selected' : ''}`; btn.textContent = opt.label; btn.addEventListener('click', () => { btn.classList.toggle('selected'); if (btn.classList.contains('selected')) { wizardAnswers[key].push(opt.val); } else { wizardAnswers[key] = wizardAnswers[key].filter(x => x !== opt.val); } }); list.appendChild(btn); }); }
 function renderSingleSelect(container, question, options, key) { container.innerHTML = `<p class="wizard-step-desc">${question}</p><div class="options-list"></div>`; const list = container.querySelector('.options-list'); options.forEach(opt => { const isSel = wizardAnswers[key] === opt.val; const btn = document.createElement('div'); btn.className = `option-btn ${isSel ? 'selected' : ''}`; btn.textContent = opt.label; btn.addEventListener('click', () => { container.querySelectorAll('.option-btn').forEach(b => b.classList.remove('selected')); btn.classList.add('selected'); wizardAnswers[key] = opt.val; }); list.appendChild(btn); }); }

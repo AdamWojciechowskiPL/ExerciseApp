@@ -27,11 +27,6 @@ import { renderSessionRecoveryModal } from './ui/modals.js';
 
 // === 2. POMOCNICZE FUNKCJE NAWIGACJI ===
 
-/**
- * Sprawdza, czy można bezpiecznie opuścić obecny ekran.
- * Jeśli użytkownik jest na ekranie podsumowania (niezapisany trening),
- * pyta o potwierdzenie i czyści backup w razie zgody.
- */
 function checkUnsavedSummaryNavigation() {
     const summaryScreen = document.getElementById('summary-screen');
     if (summaryScreen && summaryScreen.classList.contains('active')) {
@@ -54,7 +49,6 @@ function showUpdateNotification(worker) {
             <button id="reload-btn">Odśwież</button>
         </div>
     `;
-
     document.body.appendChild(notification);
     document.getElementById('reload-btn').addEventListener('click', () => {
         worker.postMessage({ type: 'SKIP_WAITING' });
@@ -124,25 +118,7 @@ function initAppLogic() {
     const searchInput = document.getElementById('library-search-input');
     if (searchInput) searchInput.addEventListener('input', (e) => { renderLibraryScreen(e.target.value); });
 
-    const settingsForm = document.getElementById('settings-form');
-    if (settingsForm) settingsForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        state.settings.appStartDate = e.target['setting-start-date'].value;
-
-        const ttsCheckbox = e.target.querySelector('#setting-tts');
-        if (ttsCheckbox) {
-            state.settings.ttsEnabled = ttsCheckbox.checked;
-            state.tts.isSoundOn = state.settings.ttsEnabled;
-        }
-
-        await dataStore.saveSettings();
-        alert('Ustawienia zostały zapisane.');
-        navigateTo('main');
-        renderMainScreen();
-    });
-
-    const deleteAccountBtn = document.getElementById('delete-account-btn');
-    if (deleteAccountBtn) deleteAccountBtn.addEventListener('click', async () => { const confirmation1 = prompt("Czy na pewno chcesz usunąć swoje konto? Wpisz 'usuń moje konto' aby potwierdzić."); if (confirmation1 !== 'usuń moje konto') return; if (!confirm("OSTATECZNE POTWIERDZENIE: Dane zostaną trwale usunięte.")) return; showLoader(); try { await dataStore.deleteAccount(); hideLoader(); alert("Konto usunięte."); logout(); } catch (error) { hideLoader(); alert(error.message); } });
+    // USUNIĘTO: stary listener settingsForm, który powodował błędy, ponieważ formularz nie istnieje przy starcie aplikacji.
 
     if (screens.training) {
         screens.training.addEventListener('click', (e) => {
@@ -183,14 +159,13 @@ function initAppLogic() {
 function checkAndMigrateLocalData() {
     const localProgressRaw = localStorage.getItem('trainingAppProgress');
     if (!localProgressRaw) return;
-
     try {
         const parsedData = JSON.parse(localProgressRaw);
         if (Object.keys(parsedData).length > 0) {
             setTimeout(() => {
                 if (confirm("Wykryliśmy dane lokalne. Przenieść na konto?")) {
                     showLoader();
-                    dataStore.migrateData(parsedData).then(() => { localStorage.removeItem('trainingAppProgress'); localStorage.removeItem('trainingAppSettings'); alert("Zmigrowano! Przeładowanie..."); window.location.reload(); }).catch(e => { hideLoader(); alert("Błąd migracji: " + e.message); });
+                    dataStore.migrateData(parsedData).then(() => { localStorage.removeItem('trainingAppProgress'); localStorage.removeItem('trainingAppSettings'); alert("Zmigrowano!"); window.location.reload(); }).catch(e => { hideLoader(); alert("Błąd migracji."); });
                 }
             }, 1000);
         }

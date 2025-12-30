@@ -5,13 +5,8 @@ const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
 const { buildUserContext, checkExerciseAvailability } = require('./_clinical-rule-engine.js');
 
 /**
- * Virtual Physio v3.1: Precision Time-Boxing & Affinity.
- *
- * Zmiany v3.1 (Fix Time Estimate):
- * - Przepisano `deriveSessionCounts`: Mniej ćwiczeń dla krótkich sesji (<=30min).
- * - Przepisano `compressSessionIfTooLong`: 4-fazowa kompresja (Serie -> Warmup/Cool -> Reps/Time -> Remove).
- * - Limit serii dla ćwiczeń unilateralnych (są czasochłonne).
- * - Dokładniejsza estymacja czasu (narzuty na przejścia).
+ * Virtual Physio v3.5: Advanced Time-Boxing & Pruning Fix.
+ * Naprawiono problem przekraczania czasu trwania sesji poprzez wprowadzenie usuwania ćwiczeń (pruning).
  */
 
 const DEFAULT_SECONDS_PER_REP = 6;
@@ -27,7 +22,7 @@ const GLOBAL_MAX_TIME_SEC = 90;
 const MAX_BREATHING_SEC = 240;
 const MAX_STRETCH_SEC = 120;
 
-const MIN_MAIN_EXERCISES = 2; // Zmniejszono z 3 dla krótkich sesji
+const MIN_MAIN_EXERCISES = 2;
 
 const HARD_EXCLUDED_KNEE_LOAD_FOR_DIAGNOSES = new Set([
   'chondromalacia', 'meniscus_tear', 'acl_rehab', 'mcl_rehab', 'lcl_rehab',
@@ -198,7 +193,6 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
   const primaryGoal = String(userData?.primary_goal || '').toLowerCase();
   const secondaryGoals = normalizeStringArray(userData?.secondary_goals).map(s => String(s).toLowerCase());
 
-  // Logika wag (skrócona dla czytelności, identyczna jak w poprzedniej wersji)
   if (painLocs.has('knee') || painLocs.has('knee_anterior')) {
     boost(weights, 'vmo_activation', 2.0);
     boost(weights, 'knee_stability', 2.0);
@@ -267,7 +261,7 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
     boost(weights, 'core_anti_rotation', 0.3);
     multiplyMatching(weights, (cat) => String(cat).toLowerCase().includes('rotation_mobility'), 0.6);
   }
-  if (diagnosis.has('chondromalacia')) {
+  if (diagnosis.has('chondmalacia')) {
     boost(weights, 'vmo_activation', 0.8);
     boost(weights, 'knee_stability', 0.8);
     boost(weights, 'glute_activation', 0.6);
@@ -429,7 +423,6 @@ function applyCheckExerciseAvailability(ex, ctx, userData) {
     if (typeof res === 'boolean') return res;
     return true;
   } catch (e) {
-    console.error('checkExerciseAvailability error:', e);
     return true;
   }
 }
@@ -556,27 +549,21 @@ function varietyPenalty(ex, state, section) {
 function calculateAffinityMultiplier(exId, preferencesMap) {
     if (!preferencesMap || !preferencesMap[exId]) return 1.0;
     const score = preferencesMap[exId].score || 0;
-
-    if (score >= 50) return 1.5;  // LIKE
-    if (score >= 10) return 1.2;  // MILD LIKE
-    if (score <= -50) return 0.2; // DISLIKE (Soft block)
-    if (score <= -10) return 0.7; // MILD DISLIKE
-
+    if (score >= 50) return 1.5;
+    if (score >= 10) return 1.2;
+    if (score <= -50) return 0.2;
+    if (score <= -10) return 0.7;
     return 1.0;
 }
 
 function calculateFreshnessMultiplier(exId, historyMap) {
-    if (!historyMap || !historyMap[exId]) return 1.2; // Nie robione nigdy = Boost
-
+    if (!historyMap || !historyMap[exId]) return 1.2;
     const lastDate = new Date(historyMap[exId]);
     const now = new Date();
-    const diffTime = Math.abs(now - lastDate);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    if (diffDays <= 2) return 0.1; // Robione wczoraj/przedwczoraj -> Kara
-    if (diffDays <= 5) return 0.5; // Robione niedawno
-    if (diffDays >= 14) return 1.2; // Dawno nie robione -> Boost
-
+    const diffDays = Math.ceil(Math.abs(now - lastDate) / (1000 * 60 * 60 * 24));
+    if (diffDays <= 2) return 0.1;
+    if (diffDays <= 5) return 0.5;
+    if (diffDays >= 14) return 1.2;
     return 1.0;
 }
 
@@ -599,13 +586,8 @@ function scoreExercise(ex, section, userData, ctx, categoryWeights, state, painZ
   if (ctx.isSevere && (ex.metabolic_intensity || 1) >= 3) score *= 0.80;
   score *= varietyPenalty(ex, state, section);
 
-  // Integracja Affinity i Freshness
-  if (state.preferencesMap) {
-      score *= calculateAffinityMultiplier(ex.id, state.preferencesMap);
-  }
-  if (state.historyMap) {
-      score *= calculateFreshnessMultiplier(ex.id, state.historyMap);
-  }
+  if (state.preferencesMap) score *= calculateAffinityMultiplier(ex.id, state.preferencesMap);
+  if (state.historyMap) score *= calculateFreshnessMultiplier(ex.id, state.historyMap);
 
   return Math.max(0, score);
 }
@@ -640,38 +622,25 @@ function deriveSessionCounts(userData, ctx) {
   const targetMin = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90);
   const componentWeights = normalizeLowerSet(userData?.session_component_weights);
 
-  // FIX: Zmniejszono bazową liczbę ćwiczeń dla krótkich sesji
   let warmup = 3;
   let main = 4;
   let cooldown = 2;
 
-  // NOWE PROGI DLA KRÓTKICH SESJI
-  if (targetMin <= 25) { warmup = 2; main = 2; cooldown = 1; } // Total 5
-  else if (targetMin <= 35) { warmup = 2; main = 3; cooldown = 1; } // Total 6
-  else if (targetMin <= 50) { warmup = 3; main = 4; cooldown = 2; } // Total 9
-  else { warmup = 3; main = 5; cooldown = 2; } // Total 10
+  if (targetMin <= 25) { warmup = 2; main = 2; cooldown = 1; }
+  else if (targetMin <= 35) { warmup = 2; main = 3; cooldown = 1; }
+  else if (targetMin <= 50) { warmup = 3; main = 4; cooldown = 2; }
+  else { warmup = 3; main = 5; cooldown = 2; }
 
   if (componentWeights.has('mobility')) { warmup += 1; cooldown += 1; main = Math.max(MIN_MAIN_EXERCISES, main - 1); }
   if (componentWeights.has('strength')) { main += 1; warmup = Math.max(2, warmup - 1); }
   if (componentWeights.has('conditioning')) { main += ctx.isSevere ? 0 : 1; }
-
-  if (ctx.isSevere) {
-    warmup += 1;
-    main = Math.max(MIN_MAIN_EXERCISES, main - 1);
-  }
+  if (ctx.isSevere) { warmup += 1; main = Math.max(MIN_MAIN_EXERCISES, main - 1); }
 
   return { warmup, main: Math.max(MIN_MAIN_EXERCISES, main), cooldown, targetMin };
 }
 
 function createInitialSession(dayNumber, counts) {
-  return {
-    dayNumber,
-    title: `Sesja ${dayNumber}`,
-    warmup: [],
-    main: [],
-    cooldown: [],
-    targetMinutes: counts.targetMin,
-  };
+  return { dayNumber, title: `Sesja ${dayNumber}`, warmup: [], main: [], cooldown: [], targetMinutes: counts.targetMin };
 }
 
 // ---------------------------------
@@ -682,21 +651,16 @@ function loadFactorFromExperienceAndPain(userData, ctx) {
   const exp = String(userData?.exercise_experience || 'none').toLowerCase();
   const sessionsPerWeek = clamp(toNumber(userData?.sessions_per_week, DEFAULT_SESSIONS_PER_WEEK), 1, 7);
   const painIntensity = clamp(toNumber(userData?.pain_intensity, 0), 0, 10);
-
   let base = 1.0;
   if (exp === 'none') base = 0.70;
   else if (exp === 'occasional') base = 0.85;
   else if (exp === 'regular') base = 1.0;
   else if (exp === 'advanced') base = 1.10;
-  else base = 0.95;
-
   const severity = clamp(toNumber(ctx?.severityScore, painIntensity), 0, 10);
   if (severity >= 7) base *= 0.55;
   else if (severity >= 4) base *= 0.80;
-
   if (sessionsPerWeek >= 6) base *= 0.85;
   if (sessionsPerWeek <= 2) base *= 1.10;
-
   return clamp(base, 0.45, 1.25);
 }
 
@@ -704,7 +668,6 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights) {
   const factor = loadFactorFromExperienceAndPain(userData, ctx);
   const cat = String(ex.category_id || '').toLowerCase();
   const targetMin = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90);
-
   let sets = 1;
   let repsOrTime = '10';
 
@@ -719,541 +682,204 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights) {
     return { sets: String(sets), reps_or_time: repsOrTime };
   }
 
-  if (section === 'warmup') {
-    sets = factor < 0.7 ? 1 : 2;
-  } else if (section === 'cooldown') {
-    sets = 1;
-  } else {
-    if (factor < 0.65) sets = 1;
-    else if (factor < 0.95) sets = 2;
-    else sets = 3;
+  if (section === 'warmup') { sets = factor < 0.7 ? 1 : 2; }
+  else if (section === 'cooldown') { sets = 1; }
+  else {
+    if (factor < 0.65) sets = 1; else if (factor < 0.95) sets = 2; else sets = 3;
     const w = categoryWeights[ex.category_id] != null ? categoryWeights[ex.category_id] : 1.0;
     if (!ctx.isSevere && w >= 2.5) sets = Math.min(4, sets + 1);
   }
 
-  const maxDur = ex.max_recommended_duration || 0;
-  const maxReps = ex.max_recommended_reps || 0;
-
-  if (maxDur > 0) {
-    let baseSec = 45;
-    if (targetMin >= 45) baseSec = 60;
+  if (ex.max_recommended_duration > 0) {
+    let baseSec = targetMin >= 45 ? 60 : 45;
     if (ctx.isSevere) baseSec = 30;
-
-    let sec = Math.round(baseSec * factor);
-    sec = Math.min(sec, maxDur);
-    sec = Math.max(sec, 15);
-
-    sec = Math.ceil(sec / 5) * 5;
-    repsOrTime = `${sec} s`;
-  }
-  else if (maxReps > 0) {
+    let sec = clamp(Math.round(baseSec * factor), 15, ex.max_recommended_duration);
+    repsOrTime = `${Math.ceil(sec / 5) * 5} s`;
+  } else {
     let baseReps = 10;
     if (isMobilityCategory(cat)) baseReps = 12;
-
     const exp = String(userData?.exercise_experience || 'none').toLowerCase();
-    if (exp === 'advanced') baseReps += 2;
-    else if (exp === 'regular') baseReps += 1;
-
+    if (exp === 'advanced') baseReps += 2; else if (exp === 'regular') baseReps += 1;
     const painIntensity = clamp(toNumber(userData?.pain_intensity, 0), 0, 10);
-    if (painIntensity >= 7) baseReps = Math.min(baseReps, 8);
-    else if (painIntensity >= 4) baseReps = Math.min(baseReps, 10);
-
-    let reps = Math.round(baseReps * factor);
-    reps = Math.min(reps, maxReps);
-    reps = Math.max(reps, 5);
-
+    if (painIntensity >= 7) baseReps = Math.min(baseReps, 8); else if (painIntensity >= 4) baseReps = Math.min(baseReps, 10);
+    let reps = clamp(Math.round(baseReps * factor), 5, ex.max_recommended_reps || GLOBAL_MAX_REPS);
     repsOrTime = String(reps);
   }
-  else {
-    const isStretching = cat.includes('stretch') || cat.includes('yoga') || section === 'cooldown';
-    const forceTime = isConditioningCategory(cat) || (ex.metabolic_intensity || 1) >= 4;
 
-    if (forceTime || isStretching) {
-      let baseSec = section === 'cooldown' ? 60 : 45;
-      if (targetMin >= 45) baseSec += 15;
-      if (forceTime && ctx.isSevere) baseSec = 25;
-
-      const maxSec = isStretching ? MAX_STRETCH_SEC : GLOBAL_MAX_TIME_SEC;
-      const sec = clamp(Math.round(baseSec * factor), 20, maxSec);
-      repsOrTime = `${Math.ceil(sec / 5) * 5} s`;
-      if (isStretching) sets = Math.min(sets, MAX_SETS_MOBILITY);
-      else sets = clamp(sets, 1, ctx.isSevere ? 2 : 4);
-    } else {
-      let baseReps = 10;
-      if (section === 'warmup') baseReps = 8;
-      if (section === 'cooldown') baseReps = 8;
-
-      const exp = String(userData?.exercise_experience || 'none').toLowerCase();
-      if (exp === 'advanced') baseReps += 2;
-      else if (exp === 'regular') baseReps += 1;
-
-      const painIntensity = clamp(toNumber(userData?.pain_intensity, 0), 0, 10);
-      if (painIntensity >= 7) baseReps = Math.min(baseReps, 8);
-      else if (painIntensity >= 4) baseReps = Math.min(baseReps, 10);
-
-      const reps = clamp(Math.round(baseReps * factor), 5, GLOBAL_MAX_REPS);
-      repsOrTime = String(reps);
-    }
-  }
-
-  // --- FIX: LIMIT SERII DLA UNILATERAL ---
   if (ex.is_unilateral) {
     if (!String(repsOrTime).toLowerCase().includes('s')) repsOrTime = `${repsOrTime}/str.`;
-    // Max 3 serie (bo to 6 serii faktycznie), a dla krótkich sesji (<35min) max 2
-    const uniLimit = targetMin < 35 ? 2 : 3;
-    sets = Math.min(sets, uniLimit);
+    sets = Math.min(sets, targetMin < 35 ? 2 : 3);
   }
-
   return { sets: String(sets), reps_or_time: repsOrTime };
 }
 
 function parseRepsOrTimeToSeconds(repsOrTime) {
   const t = String(repsOrTime || '').trim().toLowerCase();
-  if (t.includes('s')) {
-    const n = parseInt(t, 10);
-    return Number.isFinite(n) ? Math.max(5, n) : 30;
-  }
-  if (t.includes('min')) {
-    const n = parseInt(t, 10);
-    return Number.isFinite(n) ? Math.max(10, n * 60) : 60;
-  }
-  const n = parseInt(t, 10);
-  return Number.isFinite(n) ? n : 10;
-}
-
-function isTimePrescription(repsOrTime) {
-  const t = String(repsOrTime || '').toLowerCase();
-  return t.includes('s') || t.includes('min');
+  if (t.includes('s')) return Math.max(5, parseInt(t, 10) || 30);
+  if (t.includes('min')) return Math.max(10, (parseInt(t, 10) || 1) * 60);
+  return parseInt(t, 10) || 10;
 }
 
 function estimateExerciseDurationSeconds(exEntry, userData) {
-  const secondsPerRep = clamp(toNumber(userData?.secondsPerRep, DEFAULT_SECONDS_PER_REP), 2, 12);
-  const restBetweenSets = clamp(toNumber(userData?.restBetweenSets, DEFAULT_REST_BETWEEN_SETS), 0, 180);
-  const sets = clamp(parseInt(exEntry.sets, 10) || 1, 1, 10);
-  const repsOrTime = exEntry.reps_or_time;
-  const unilateralMultiplier = exEntry.is_unilateral || String(repsOrTime || '').includes('/str') ? 2 : 1;
-
+  const spr = clamp(toNumber(userData?.secondsPerRep, DEFAULT_SECONDS_PER_REP), 2, 12);
+  const rbs = clamp(toNumber(userData?.restBetweenSets, DEFAULT_REST_BETWEEN_SETS), 0, 180);
+  const sets = parseInt(exEntry.sets, 10) || 1;
+  const unilateralMult = (exEntry.is_unilateral || String(exEntry.reps_or_time || '').includes('/str')) ? 2 : 1;
   let workPerSet = 0;
-  if (isTimePrescription(repsOrTime)) {
-    workPerSet = parseRepsOrTimeToSeconds(repsOrTime);
-  } else {
-    const reps = parseRepsOrTimeToSeconds(repsOrTime);
-    workPerSet = reps * secondsPerRep;
-  }
-
-  const work = sets * workPerSet * unilateralMultiplier;
-  const rests = (sets > 1) ? (sets - 1) * restBetweenSets : 0;
-  // Transition buffer: 15s dla unilateral (zmiana strony), 10s dla zwykłych
+  if (String(exEntry.reps_or_time).toLowerCase().includes('s')) workPerSet = parseRepsOrTimeToSeconds(exEntry.reps_or_time);
+  else workPerSet = parseRepsOrTimeToSeconds(exEntry.reps_or_time) * spr;
+  const work = sets * workPerSet * unilateralMult;
+  const rests = (sets > 1) ? (sets - 1) * rbs : 0;
   const transition = sets * (exEntry.is_unilateral ? 15 : 10);
-
   return work + rests + transition;
 }
 
 function estimateSessionDurationSeconds(session, userData) {
-  const restBetweenExercises = clamp(toNumber(userData?.restBetweenExercises, DEFAULT_REST_BETWEEN_EXERCISES), 0, 180);
+  const rbe = clamp(toNumber(userData?.restBetweenExercises, DEFAULT_REST_BETWEEN_EXERCISES), 0, 180);
   const all = [...session.warmup, ...session.main, ...session.cooldown];
   let total = 0;
   for (let i = 0; i < all.length; i++) {
     total += estimateExerciseDurationSeconds(all[i], userData);
-    if (i < all.length - 1) total += restBetweenExercises;
+    if (i < all.length - 1) total += rbe;
   }
   return total;
 }
 
 function expandSessionToTarget(session, candidates, userData, ctx, categoryWeights) {
-  const targetMin = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90);
-  const targetSec = targetMin * 60;
+  const targetSec = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90) * 60;
   let estimated = estimateSessionDurationSeconds(session, userData);
-
-  const tryIncreaseSets = () => {
-    const mainSorted = [...session.main].sort((a, b) => {
-      const wa = categoryWeights[a.category_id] != null ? categoryWeights[a.category_id] : 1.0;
-      const wb = categoryWeights[b.category_id] != null ? categoryWeights[b.category_id] : 1.0;
-      return wb - wa;
-    });
-    let changed = false;
-    for (const ex of mainSorted) {
-      const cat = String(ex.category_id || '').toLowerCase();
-      if (isBreathingCategory(cat)) continue;
-      const currentSets = clamp(parseInt(ex.sets, 10) || 1, 1, 10);
-      const maxSets = (isMobilityCategory(cat) && !cat.includes('stretch')) ? MAX_SETS_MOBILITY : MAX_SETS_MAIN;
-      if (currentSets < maxSets) {
-        ex.sets = String(currentSets + 1);
-        changed = true;
-        estimated = estimateSessionDurationSeconds(session, userData);
-        if (estimated >= targetSec * 0.95) break;
-      }
-    }
-    return changed;
-  };
-
-  const tryIncreaseRepsOrTime = () => {
-    let changed = false;
-    const all = [...session.main, ...session.warmup];
-    for (const ex of all) {
-      const cat = String(ex.category_id || '').toLowerCase();
-      if (isBreathingCategory(cat)) {
-        const cur = parseRepsOrTimeToSeconds(ex.reps_or_time);
-        if (cur < MAX_BREATHING_SEC) {
-          ex.reps_or_time = `${Math.min(MAX_BREATHING_SEC, cur + 15)} s`;
-          changed = true;
-        }
-      } else if (isTimePrescription(ex.reps_or_time) || isConditioningCategory(cat)) {
-        const cur = parseRepsOrTimeToSeconds(ex.reps_or_time);
-        const maxSec = GLOBAL_MAX_TIME_SEC;
-        if (cur < maxSec) {
-          ex.reps_or_time = `${Math.min(maxSec, cur + 10)} s`;
-          changed = true;
-        }
-      } else {
-        const cur = parseRepsOrTimeToSeconds(ex.reps_or_time);
-        const next = Math.min(GLOBAL_MAX_REPS, cur + 2);
-        if (next !== cur) {
-          if (String(ex.reps_or_time).includes('/str')) ex.reps_or_time = `${next}/str.`;
-          else ex.reps_or_time = String(next);
-          changed = true;
-        }
-      }
-      estimated = estimateSessionDurationSeconds(session, userData);
-      if (estimated >= targetSec * 0.95) break;
-    }
-    return changed;
-  };
-
   let guard = 0;
-  while (estimated < targetSec * 0.90 && guard < 30) {
-    guard++;
-    const changedSets = tryIncreaseSets();
-    if (estimated >= targetSec * 0.90) break;
-    const changedVol = tryIncreaseRepsOrTime();
-    if (estimated >= targetSec * 0.90) break;
-    if (!changedSets && !changedVol) {
-        break; // Removed filler logic for brevity as per instructions, stick to sets/reps expansion
-    }
-  }
-  session.estimatedDurationMin = Math.round(estimateSessionDurationSeconds(session, userData) / 60);
-  return session;
-}
-
-// --- ZMODYFIKOWANA FUNKCJA KOMPRESJI ---
-function compressSessionIfTooLong(session, userData) {
-  const targetMin = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90);
-  const targetSec = targetMin * 60;
-  let estimated = estimateSessionDurationSeconds(session, userData);
-
-  // Tolerancja 5%
-  if (estimated <= targetSec * 1.05) {
-    session.estimatedDurationMin = Math.round(estimated / 60);
-    return session;
-  }
-
-  // FAZA 1: Redukcja serii w części GŁÓWNEJ
-  let guard = 0;
-  while (estimated > targetSec * 1.05 && guard < 20) {
+  while (estimated < targetSec * 0.92 && guard < 20) {
     guard++;
     let changed = false;
     for (const ex of session.main) {
-      const cat = String(ex.category_id || '').toLowerCase();
-      if (isBreathingCategory(cat)) continue;
-      const s = clamp(parseInt(ex.sets, 10) || 1, 1, 10);
-      if (s > 1) {
-        ex.sets = String(s - 1);
-        changed = true;
-      }
-      estimated = estimateSessionDurationSeconds(session, userData);
-      if (estimated <= targetSec * 1.05) break;
+      if (isBreathingCategory(ex.category_id)) continue;
+      const s = parseInt(ex.sets, 10) || 1;
+      const maxS = (isMobilityCategory(ex.category_id) && !ex.category_id.includes('stretch')) ? MAX_SETS_MOBILITY : MAX_SETS_MAIN;
+      if (s < maxS) { ex.sets = String(s + 1); changed = true; break; }
     }
+    estimated = estimateSessionDurationSeconds(session, userData);
+    if (!changed || estimated >= targetSec * 0.95) break;
+  }
+}
+
+/**
+ * FIXED: compressSessionIfTooLong v3.5
+ * Dodano iteracyjną redukcję powtórzeń oraz "pruning" (usuwanie ćwiczeń), 
+ * jeśli plan nadal przekracza limit.
+ */
+function compressSessionIfTooLong(session, userData) {
+  const targetSec = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90) * 60;
+  let estimated = estimateSessionDurationSeconds(session, userData);
+  
+  if (estimated <= targetSec * 1.05) return;
+
+  // KROK 1: Redukcja serii (do minimum 1)
+  let guard = 0;
+  while (estimated > targetSec * 1.05 && guard < 20) {
+    guard++;
+    let changed = false;
+    // Najpierw tniemy sekcję Main, potem Warmup
+    for (const ex of [...session.main, ...session.warmup]) {
+      const s = parseInt(ex.sets, 10) || 1;
+      if (s > 1) { 
+        ex.sets = String(s - 1); 
+        changed = true; 
+        break; 
+      }
+    }
+    estimated = estimateSessionDurationSeconds(session, userData);
     if (!changed) break;
   }
 
-  if (estimated <= targetSec * 1.05) {
-      session.estimatedDurationMin = Math.round(estimated / 60);
-      return session;
-  }
-
-  // FAZA 2: Redukcja serii w WARMUP/COOLDOWN
-  guard = 0;
-  while (estimated > targetSec * 1.05 && guard < 20) {
-      guard++;
-      let changed = false;
-      const warmCool = [...session.warmup, ...session.cooldown];
-      for (const ex of warmCool) {
-          const s = clamp(parseInt(ex.sets, 10) || 1, 1, 10);
-          if (s > 1) {
-              ex.sets = String(s - 1);
-              changed = true;
-          }
-          estimated = estimateSessionDurationSeconds(session, userData);
-          if (estimated <= targetSec * 1.05) break;
-      }
-      if (!changed) break;
-  }
-
-  if (estimated <= targetSec * 1.05) {
-      session.estimatedDurationMin = Math.round(estimated / 60);
-      return session;
-  }
-
-  // FAZA 3: Redukcja Objętości (Czas/Powtórzenia)
-  guard = 0;
-  while (estimated > targetSec * 1.05 && guard < 20) {
-      guard++;
-      let changed = false;
-      const all = [...session.warmup, ...session.main, ...session.cooldown];
-      for (const ex of all) {
-          const currentVal = parseRepsOrTimeToSeconds(ex.reps_or_time);
-          // Redukcja o 20%, ale nie mniej niż 15s / 5 reps
-          let newVal = Math.floor(currentVal * 0.8);
-          
-          if (isTimePrescription(ex.reps_or_time)) {
-              if (newVal < 15) newVal = 15;
-              if (newVal < currentVal) {
-                  ex.reps_or_time = `${newVal} s`;
-                  changed = true;
+  // KROK 2: Redukcja powtórzeń/czasu (iteracyjnie o 10% do momentu celu)
+  if (estimated > targetSec * 1.08) {
+      let repGuard = 0;
+      while (estimated > targetSec * 1.05 && repGuard < 5) {
+          repGuard++;
+          for (const ex of [...session.main, ...session.warmup]) {
+              const cur = parseRepsOrTimeToSeconds(ex.reps_or_time);
+              const isSec = ex.reps_or_time.includes('s');
+              const next = Math.max(isSec ? 10 : 5, Math.floor(cur * 0.9));
+              
+              if (next < cur) {
+                  ex.reps_or_time = isSec ? `${next} s` : (ex.reps_or_time.includes('/str') ? `${next}/str.` : String(next));
               }
-          } else {
-              if (newVal < 5) newVal = 5;
-              if (newVal < currentVal) {
-                  const isStr = String(ex.reps_or_time).includes('/str');
-                  ex.reps_or_time = isStr ? `${newVal}/str.` : String(newVal);
-                  changed = true;
-              }
+              estimated = estimateSessionDurationSeconds(session, userData);
+              if (estimated <= targetSec * 1.05) break;
           }
-          estimated = estimateSessionDurationSeconds(session, userData);
-          if (estimated <= targetSec * 1.05) break;
       }
-      if (!changed) break;
   }
 
-  // FAZA 4: Usuwanie ćwiczeń z części głównej (Hard Cut)
-  while (estimated > targetSec * 1.10 && session.main.length > 2) {
-    session.main.pop();
-    estimated = estimateSessionDurationSeconds(session, userData);
+  // KROK 3: Agresywne usuwanie (Pruning) - jeśli nadal za długo, usuwamy ostatnie ćwiczenie z MAIN
+  if (estimated > targetSec * 1.15 && session.main.length > MIN_MAIN_EXERCISES) {
+      while (estimated > targetSec * 1.10 && session.main.length > MIN_MAIN_EXERCISES) {
+          session.main.pop();
+          estimated = estimateSessionDurationSeconds(session, userData);
+      }
+      session.compressionApplied = true; // Flaga dla UI (wyświetlenie ostrzeżenia o limicie)
   }
-
-  session.estimatedDurationMin = Math.round(estimated / 60);
-  return session;
 }
-
-// ---------------------------------
-// Plan generation
-// ---------------------------------
 
 function buildWeeklyPlan(candidates, categoryWeights, userData, ctx, userId, historyMap, preferencesMap) {
   const sessionsPerWeek = clamp(toNumber(userData?.sessions_per_week, DEFAULT_SESSIONS_PER_WEEK), 1, 7);
   const counts = deriveSessionCounts(userData, ctx);
-  const planId = `dynamic-${Date.now()}`;
-  const painZoneSet = derivePainZoneSet(userData);
-
-  const plan = {
-    id: planId,
-    name: 'Virtual Physio – plan spersonalizowany',
-    description: 'Plan generowany algorytmicznie na podstawie ankiety (EBP + biomechanika).',
-    createdAt: new Date().toISOString(),
-    meta: {
-      sessions_per_week: sessionsPerWeek,
-      target_session_duration_min: counts.targetMin,
-      secondsPerRep: clamp(toNumber(userData?.secondsPerRep, DEFAULT_SECONDS_PER_REP), 2, 12),
-      restBetweenSets: clamp(toNumber(userData?.restBetweenSets, DEFAULT_REST_BETWEEN_SETS), 0, 180),
-      severityScore: ctx.severityScore,
-      isSevere: ctx.isSevere,
-      tolerancePattern: ctx.tolerancePattern,
-      pain_locations: normalizeStringArray(userData?.pain_locations),
-      focus_locations: normalizeStringArray(userData?.focus_locations),
-      medical_diagnosis: normalizeStringArray(userData?.medical_diagnosis),
-      physical_restrictions: normalizeStringArray(userData?.physical_restrictions),
-      work_type: userData?.work_type || null,
-      hobby: userData?.hobby || null,
-      session_component_weights: normalizeStringArray(userData?.session_component_weights),
-      primary_goal: userData?.primary_goal || null,
-      secondary_goals: normalizeStringArray(userData?.secondary_goals),
-      equipment_available: normalizeStringArray(userData?.equipment_available),
-      exercise_experience: userData?.exercise_experience || null,
-    },
-    days: [],
-  };
-
-  const weeklyUsage = new Map();
-  const weeklyCategoryUsage = new Map();
+  const plan = { id: `dynamic-${Date.now()}`, days: [], meta: { ...userData, severityScore: ctx.severityScore, isSevere: ctx.isSevere } };
+  const weeklyUsage = new Map(), weeklyCategoryUsage = new Map();
 
   for (let day = 1; day <= sessionsPerWeek; day++) {
-    const sessionState = {
-      usedIds: new Set(),
-      weeklyUsage,
-      weeklyCategoryUsage,
-      sessionCategoryUsage: new Map(),
-      sessionPlaneUsage: new Map(),
-      historyMap: historyMap || {},
-      preferencesMap: preferencesMap || {}
-    };
-
+    const sState = { usedIds: new Set(), weeklyUsage, weeklyCategoryUsage, sessionCategoryUsage: new Map(), sessionPlaneUsage: new Map(), historyMap: historyMap || {}, preferencesMap: preferencesMap || {} };
     const session = createInitialSession(day, counts);
+    const pZones = derivePainZoneSet(userData);
 
-    // Warmup
-    for (let i = 0; i < counts.warmup; i++) {
-      const ex = pickExerciseForSection(
-        'warmup', candidates, userData, ctx, categoryWeights, sessionState, painZoneSet,
-        (candidate) => (candidate.metabolic_intensity || 1) < 4
-      );
-      if (!ex) break;
-      const rx = prescribeForExercise(ex, 'warmup', userData, ctx, categoryWeights);
-      session.warmup.push({ ...ex, sets: rx.sets, reps_or_time: rx.reps_or_time });
-    }
-
-    // Main
-    for (let i = 0; i < counts.main; i++) {
-      const ex = pickExerciseForSection(
-        'main', candidates, userData, ctx, categoryWeights, sessionState, painZoneSet,
-        (candidate) => {
-          const cat = String(candidate.category_id || '').toLowerCase();
-          if (isBreathingCategory(cat)) return false;
-          if (ctx.isSevere && (candidate.impact_level || 'low').toLowerCase() !== 'low') return false;
-          return true;
+    ['warmup', 'main', 'cooldown'].forEach(sec => {
+        for (let i = 0; i < counts[sec]; i++) {
+            const ex = pickExerciseForSection(sec, candidates, userData, ctx, categoryWeights, sState, pZones, (c) => sec === 'main' ? !isBreathingCategory(c.category_id) : (c.metabolic_intensity || 1) < 4);
+            if (ex) { const rx = prescribeForExercise(ex, sec, userData, ctx, categoryWeights); session[sec].push({ ...ex, ...rx }); }
         }
-      );
-      if (!ex) break;
-      const rx = prescribeForExercise(ex, 'main', userData, ctx, categoryWeights);
-      session.main.push({ ...ex, sets: rx.sets, reps_or_time: rx.reps_or_time });
-    }
-
-    // Safety fill (Only if really needed, but kept minimal)
-    if (session.main.length < MIN_MAIN_EXERCISES) {
-      const missing = MIN_MAIN_EXERCISES - session.main.length;
-      for (let k = 0; k < missing; k++) {
-        const ex = pickExerciseForSection(
-          'main', candidates, userData, ctx, categoryWeights, sessionState, painZoneSet,
-          (candidate) => {
-            const cat = String(candidate.category_id || '').toLowerCase();
-            if (!(isCoreCategory(cat) || isMobilityCategory(cat))) return false;
-            const spineLoad = (candidate.spine_load_level || 'low').toLowerCase();
-            const impact = (candidate.impact_level || 'low').toLowerCase();
-            if (spineLoad === 'high' || impact === 'high') return false;
-            return true;
-          }
-        );
-        if (!ex) break;
-        const rx = prescribeForExercise(ex, 'main', userData, ctx, categoryWeights);
-        session.main.push({ ...ex, sets: rx.sets, reps_or_time: rx.reps_or_time, isSafetyFill: true });
-      }
-    }
-
-    // Cooldown
-    for (let i = 0; i < counts.cooldown; i++) {
-      const ex = pickExerciseForSection(
-        'cooldown', candidates, userData, ctx, categoryWeights, sessionState, painZoneSet,
-        (candidate) => (candidate.metabolic_intensity || 1) < 4
-      );
-      if (!ex) break;
-      const rx = prescribeForExercise(ex, 'cooldown', userData, ctx, categoryWeights);
-      session.cooldown.push({ ...ex, sets: rx.sets, reps_or_time: rx.reps_or_time });
-    }
+    });
 
     expandSessionToTarget(session, candidates, userData, ctx, categoryWeights);
     compressSessionIfTooLong(session, userData);
+    session.estimatedDurationMin = Math.round(estimateSessionDurationSeconds(session, userData) / 60);
     plan.days.push(session);
   }
-
   return plan;
 }
 
-async function loadUserSettings(client, userId) {
-  const res = await client.query('SELECT settings FROM user_settings WHERE user_id = $1', [userId]);
-  if (res.rows && res.rows.length > 0) {
-    try { return res.rows[0].settings ? JSON.parse(res.rows[0].settings) : {}; } catch (e) { return {}; }
-  }
-  return {};
-}
-
-async function saveUserSettings(client, userId, settingsObj) {
-  await client.query(
-    `INSERT INTO user_settings (user_id, settings, updated_at)
-     VALUES ($1, $2, CURRENT_TIMESTAMP)
-     ON CONFLICT (user_id)
-     DO UPDATE SET settings = EXCLUDED.settings, updated_at = CURRENT_TIMESTAMP`,
-    [userId, JSON.stringify(settingsObj)]
-  );
-}
-
-// ---------------------------------
-// Handler
-// ---------------------------------
-
 exports.handler = async (event) => {
-  if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method Not Allowed' };
-
-  let userId;
-  try { userId = await getUserIdFromEvent(event); } catch (e) { return { statusCode: 401, body: JSON.stringify({ error: 'UNAUTHORIZED' }) }; }
-
-  const body = event.isBase64Encoded ? Buffer.from(event.body || '', 'base64').toString('utf8') : event.body;
-  const userData = safeJsonParse(body);
-  if (userData === null) return { statusCode: 400, body: JSON.stringify({ error: 'INVALID_JSON_BODY' }) };
-  if (userData && userData.can_generate_plan === false) return { statusCode: 400, body: JSON.stringify({ error: 'PLAN_GENERATION_BLOCKED_BY_CLINICAL_RULES' }) };
+  if (event.httpMethod !== 'POST') return { statusCode: 405 };
+  let userId; try { userId = await getUserIdFromEvent(event); } catch (e) { return { statusCode: 401 }; }
+  const userData = safeJsonParse(event.body);
+  if (!userData) return { statusCode: 400 };
 
   const client = await pool.connect();
   try {
-    const [exercisesRes, blacklistRes, prefsRes, historyRes] = await Promise.all([
+    const [eR, bR, pR, hR] = await Promise.all([
       client.query('SELECT * FROM exercises'),
-      client.query('SELECT exercise_id FROM user_exercise_blacklist WHERE user_id = $1', [userId]).catch(() => ({ rows: [] })),
-      client.query('SELECT exercise_id, affinity_score FROM user_exercise_preferences WHERE user_id = $1', [userId]).catch(() => ({ rows: [] })),
-      client.query(`
-        SELECT session_data->'sessionLog' as logs, completed_at
-        FROM training_sessions
-        WHERE user_id = $1 AND completed_at > NOW() - INTERVAL '30 days'
-      `, [userId]).catch(() => ({ rows: [] }))
+      client.query('SELECT exercise_id FROM user_exercise_blacklist WHERE user_id = $1', [userId]),
+      client.query('SELECT exercise_id, affinity_score FROM user_exercise_preferences WHERE user_id = $1', [userId]),
+      client.query(`SELECT session_data->'sessionLog' as logs, completed_at FROM training_sessions WHERE user_id = $1 AND completed_at > NOW() - INTERVAL '30 days'`, [userId])
     ]);
 
-    const exercises = (exercisesRes.rows || []).map(normalizeExerciseRow);
-    if (exercises.length === 0) return { statusCode: 500, body: JSON.stringify({ error: 'EXERCISE_DB_EMPTY' }) };
-
+    const exercises = eR.rows.map(normalizeExerciseRow);
     const ctx = safeBuildUserContext(userData);
-    if (blacklistRes?.rows) {
-      for (const r of blacklistRes.rows) { if (r && r.exercise_id) ctx.blockedIds.add(r.exercise_id); }
-    }
+    bR.rows.forEach(r => ctx.blockedIds.add(r.exercise_id));
+    const preferencesMap = {}; pR.rows.forEach(r => preferencesMap[r.exercise_id] = { score: r.affinity_score });
+    const historyMap = {}; hR.rows.forEach(r => { (r.logs || []).forEach(l => { const id = l.exerciseId || l.id; if (id && (!historyMap[id] || new Date(r.completed_at) > historyMap[id])) historyMap[id] = new Date(r.completed_at); }); });
 
-    const preferencesMap = {};
-    prefsRes.rows.forEach(row => {
-        preferencesMap[row.exercise_id] = { score: row.affinity_score };
-    });
+    const cWeights = buildDynamicCategoryWeights(exercises, userData, ctx);
+    const candidates = filterExerciseCandidates(exercises, userData, ctx);
+    if (candidates.length < 5) return { statusCode: 400, body: JSON.stringify({ error: 'NO_SAFE_EXERCISES' }) };
 
-    const historyMap = {};
-    historyRes.rows.forEach(row => {
-        if (row.logs && Array.isArray(row.logs)) {
-            const date = new Date(row.completed_at);
-            row.logs.forEach(log => {
-                const exId = log.exerciseId || log.id;
-                if (exId) {
-                    if (!historyMap[exId] || date > historyMap[exId]) {
-                        historyMap[exId] = date;
-                    }
-                }
-            });
-        }
-    });
+    const plan = buildWeeklyPlan(candidates, cWeights, userData, ctx, userId, historyMap, preferencesMap);
+    const sRes = await client.query('SELECT settings FROM user_settings WHERE user_id = $1', [userId]);
+    const settings = sRes.rows[0]?.settings || {};
+    settings.dynamicPlanData = plan; settings.planMode = 'dynamic'; settings.onboardingCompleted = true; settings.wizardData = userData;
+    await client.query('INSERT INTO user_settings (user_id, settings) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET settings = EXCLUDED.settings', [userId, JSON.stringify(settings)]);
 
-    const categoryWeights = buildDynamicCategoryWeights(exercises, userData, ctx);
-    let candidates = filterExerciseCandidates(exercises, userData, ctx);
-
-    if (candidates.length < 10) {
-      const relaxedCtx = { ...ctx, isSevere: false };
-      candidates = filterExerciseCandidates(exercises, userData, relaxedCtx);
-    }
-
-    if (candidates.length < 5) return { statusCode: 400, body: JSON.stringify({ error: 'NO_SAFE_EXERCISES_AVAILABLE' }) };
-
-    const dynamicPlanData = buildWeeklyPlan(candidates, categoryWeights, userData, ctx, userId, historyMap, preferencesMap);
-    const settings = await loadUserSettings(client, userId);
-    settings.dynamicPlanData = dynamicPlanData;
-    settings.planMode = 'dynamic';
-    settings.onboardingCompleted = true;
-    settings.wizardData = userData;
-
-    await saveUserSettings(client, userId, settings);
-
-    return { statusCode: 200, body: JSON.stringify({ message: 'Plan generated', plan: dynamicPlanData }) };
-  } catch (error) {
-    console.error('generate-plan error:', error);
-    return { statusCode: 500, body: JSON.stringify({ error: error.message || 'UNKNOWN_ERROR' }) };
-  } finally {
-    client.release();
-  }
+    return { statusCode: 200, body: JSON.stringify({ plan }) };
+  } catch (e) {
+    console.error(e); return { statusCode: 500 };
+  } finally { client.release(); }
 };

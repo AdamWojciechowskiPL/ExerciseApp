@@ -66,7 +66,6 @@ export const renderMainScreen = (isLoading = false) => {
 
     const hasDynamicData = state.settings.dynamicPlanData && state.settings.dynamicPlanData.days && state.settings.dynamicPlanData.days.length > 0;
 
-    // Jeśli brak danych planu, wyświetl komunikat/wizard
     if (!hasDynamicData) {
         containers.days.innerHTML = `
             <div style="text-align:center; padding: 3rem 1rem;">
@@ -76,7 +75,6 @@ export const renderMainScreen = (isLoading = false) => {
             </div>
         `;
         document.getElementById('start-wizard-btn').addEventListener('click', () => initWizard(true));
-        // Mimo braku planu, wyświetlamy Hero (jeśli user ma statystyki z przeszłości)
         renderHero();
         renderBioHub();
         return;
@@ -84,10 +82,8 @@ export const renderMainScreen = (isLoading = false) => {
 
     const currentPlanId = state.settings.dynamicPlanData.id;
 
-    // 1. RENDEROWANIE HERO STATS
     renderHero();
 
-    // 2. RENDEROWANIE ZAWARTOŚCI GŁÓWNEJ
     containers.days.innerHTML = '';
 
     const today = new Date();
@@ -111,9 +107,12 @@ export const renderMainScreen = (isLoading = false) => {
 
     const todaysSessions = state.userProgress[todayISO] || [];
 
-    // Sprawdzamy czy dzisiaj wykonano już trening z AKTUALNEGO planu
+    // FIX: Sprawdzamy czy dzisiaj wykonano trening typu dynamicznego.
+    // Szukamy albo obecnego ID, albo dowolnego ID zaczynającego się od 'dynamic-'.
+    // To zapobiega znikaniu karty po regeneracji planu w ustawieniach.
     const completedSession = todaysSessions.find(s =>
-        s.planId === currentPlanId && s.status === 'completed'
+        (s.planId === currentPlanId || (typeof s.planId === 'string' && s.planId.startsWith('dynamic-'))) && 
+        s.status === 'completed'
     );
 
     let currentSequenceDayNum = 1;
@@ -161,7 +160,7 @@ export const renderMainScreen = (isLoading = false) => {
 
     } else {
         // ============================================================
-        // B. TRENING DO WYKONANIA (Dynamic Only)
+        // B. TRENING DO WYKONANIA
         // ============================================================
         let finalPlan = null;
         let estimatedMinutes = 0;
@@ -186,17 +185,12 @@ export const renderMainScreen = (isLoading = false) => {
             return;
         }
 
-        // Ładujemy plan bezpośrednio (zamiast mieszać)
-        console.log(`[Dashboard] Ładuję dzień ${currentSequenceDayNum} (bez automatycznego miksera)`);
-        
-        // Hydracja - zamiana ID na pełne obiekty z bazy
         finalPlan = getHydratedDay(rawDay);
         finalPlan.dayNumber = currentSequenceDayNum;
         finalPlan.planId = currentPlanId;
-        
+
         state.todaysDynamicPlan = finalPlan;
-        
-        // Zapisz do cache, aby mieć "stan na dziś"
+
         savePlanToStorage(finalPlan);
 
         if (finalPlan) {
@@ -275,10 +269,6 @@ export const renderMainScreen = (isLoading = false) => {
 
     renderBioHub();
 
-    // ============================================================
-    // C. SEKCJA "KOLEJNE W CYKLU" (Tylko jeśli plan nieukończony)
-    // ============================================================
-    // W trybie dynamicznym pokazujemy podgląd następnych dni
     if (hasDynamicData) {
         let upcomingHTML = '';
         const planDays = state.settings.dynamicPlanData.days;

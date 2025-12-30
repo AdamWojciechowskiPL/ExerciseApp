@@ -171,7 +171,8 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
             <div class="workout-context-card">
                 <div class="wc-header">
                     <h3 class="wc-title">${dayData.title}</h3>
-                    <div style="font-weight:700; color:var(--primary-color); font-size:0.9rem;">
+                    <!-- ZMIANA: DODANO ID DO WYŚWIETLACZA CZASU -->
+                    <div id="today-duration-display" style="font-weight:700; color:var(--primary-color); font-size:0.9rem;">
                         ⏱ ${estimatedMinutes} min
                     </div>
                 </div>
@@ -179,7 +180,7 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
                     ${tagsHTML}
                     <span class="meta-tag tag-equipment">🛠️ ${equipmentText}</span>
                 </div>
-                
+
                 <div class="sheet-wellness">
                     <div class="sheet-wellness-label">Jak się czujesz dzisiaj?</div>
                     <div class="pain-selector">

@@ -1,3 +1,4 @@
+
 // netlify/functions/generate-plan.js
 'use strict';
 
@@ -5,8 +6,8 @@ const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
 const { buildUserContext, checkExerciseAvailability } = require('./_clinical-rule-engine.js');
 
 /**
- * Virtual Physio v4.0: Strict Iterative Time-Boxing.
- * Gwarantuje, że czas sesji <= targetTime, stosując agresywne przycinanie (pruning).
+ * Virtual Physio v5.0: Sync-Lock Time-Boxing.
+ * Gwarantuje zgodność czasu Backend = Frontend poprzez uwzględnienie Adaptive Pacing.
  */
 
 const DEFAULT_SECONDS_PER_REP = 6;
@@ -15,12 +16,9 @@ const DEFAULT_REST_BETWEEN_EXERCISES = 30;
 const DEFAULT_TARGET_MIN = 30;
 const DEFAULT_SESSIONS_PER_WEEK = 3;
 
-const MIN_MAIN_EXERCISES = 1; // Pozwalamy zejść do 1, jeśli czas jest bardzo krótki
-const MAX_SETS_MAIN = 5;
-const MAX_SETS_MOBILITY = 3;
-const GLOBAL_MAX_REPS = 25;
-const GLOBAL_MAX_TIME_SEC = 90;
+const MIN_MAIN_EXERCISES = 1;
 const MAX_BREATHING_SEC = 240;
+const GLOBAL_MAX_REPS = 25;
 
 const HARD_EXCLUDED_KNEE_LOAD_FOR_DIAGNOSES = new Set([
   'chondromalacia', 'meniscus_tear', 'acl_rehab', 'mcl_rehab', 'lcl_rehab',
@@ -259,7 +257,7 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
     boost(weights, 'core_anti_rotation', 0.3);
     multiplyMatching(weights, (cat) => String(cat).toLowerCase().includes('rotation_mobility'), 0.6);
   }
-  if (diagnosis.has('chondmalacia')) {
+  if (diagnosis.has('chondromalacia')) {
     boost(weights, 'vmo_activation', 0.8);
     boost(weights, 'knee_stability', 0.8);
     boost(weights, 'glute_activation', 0.6);
@@ -718,35 +716,61 @@ function parseRepsOrTimeToSeconds(repsOrTime) {
   return parseInt(t, 10) || 10;
 }
 
-function estimateExerciseDurationSeconds(exEntry, userData) {
-  const spr = clamp(toNumber(userData?.secondsPerRep, DEFAULT_SECONDS_PER_REP), 2, 12);
+// --- FIX: ADAPTIVE PACING & UNILATERAL LOGIC ---
+function estimateExerciseDurationSeconds(exEntry, userData, paceMap) {
+  // 1. Ustawienia globalne
+  const globalSpr = clamp(toNumber(userData?.secondsPerRep, DEFAULT_SECONDS_PER_REP), 2, 12);
   const rbs = clamp(toNumber(userData?.restBetweenSets, DEFAULT_REST_BETWEEN_SETS), 0, 180);
+  
+  // 2. Adaptive Pacing (Per-Exercise)
+  let tempoToUse = globalSpr;
+  if (paceMap && paceMap[exEntry.id]) {
+      tempoToUse = paceMap[exEntry.id];
+  }
+
   const sets = parseInt(exEntry.sets, 10) || 1;
-  const unilateralMult = (exEntry.is_unilateral || String(exEntry.reps_or_time || '').includes('/str')) ? 2 : 1;
-  let workPerSet = 0;
-  if (String(exEntry.reps_or_time).toLowerCase().includes('s')) workPerSet = parseRepsOrTimeToSeconds(exEntry.reps_or_time);
-  else workPerSet = parseRepsOrTimeToSeconds(exEntry.reps_or_time) * spr;
-  const work = sets * workPerSet * unilateralMult;
-  const rests = (sets > 1) ? (sets - 1) * rbs : 0;
-  // Transition added for unilateral side switch (15s) vs exercise switch (10s buffer in set calc)
-  const transition = sets * (exEntry.is_unilateral ? 15 : 5);
-  return work + rests + transition;
+  
+  // 3. Multiplier logic (IDENTYCZNA JAK FRONTEND)
+  const isUnilateral = exEntry.is_unilateral || String(exEntry.reps_or_time || '').includes('/str');
+  const multiplier = isUnilateral ? 2 : 1;
+
+  let workTimePerSet = 0;
+  
+  const valStr = String(exEntry.reps_or_time).toLowerCase();
+  if (valStr.includes('s') || valStr.includes('min')) {
+      // Czas (np. 30s) jest na stronę, więc x2 jeśli jednostronne
+      workTimePerSet = parseRepsOrTimeToSeconds(exEntry.reps_or_time) * multiplier; 
+  } else {
+      // Powtórzenia (np. 10) -> 10 * tempo * multiplier
+      const reps = parseRepsOrTimeToSeconds(exEntry.reps_or_time);
+      workTimePerSet = reps * tempoToUse * multiplier;
+  }
+
+  // 4. Kalkulacja całkowita
+  // Czas pracy + Przerwy między seriami
+  let totalSeconds = (sets * workTimePerSet);
+  if (sets > 1) {
+      totalSeconds += (sets - 1) * rbs;
+  }
+
+  // NIE dodajemy tutaj restBetweenExercises (dodajemy go w pętli sesji)
+  return totalSeconds;
 }
 
-function estimateSessionDurationSeconds(session, userData) {
+function estimateSessionDurationSeconds(session, userData, paceMap) {
   const rbe = clamp(toNumber(userData?.restBetweenExercises, DEFAULT_REST_BETWEEN_EXERCISES), 0, 180);
   const all = [...session.warmup, ...session.main, ...session.cooldown];
   let total = 0;
   for (let i = 0; i < all.length; i++) {
-    total += estimateExerciseDurationSeconds(all[i], userData);
+    total += estimateExerciseDurationSeconds(all[i], userData, paceMap);
     if (i < all.length - 1) total += rbe;
   }
   return total;
 }
 
-function expandSessionToTarget(session, candidates, userData, ctx, categoryWeights) {
+function expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, paceMap) {
   const targetSec = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90) * 60;
-  let estimated = estimateSessionDurationSeconds(session, userData);
+  let estimated = estimateSessionDurationSeconds(session, userData, paceMap);
   let guard = 0;
   while (estimated < targetSec * 0.92 && guard < 20) {
     guard++;
@@ -757,30 +781,29 @@ function expandSessionToTarget(session, candidates, userData, ctx, categoryWeigh
       const maxS = (isMobilityCategory(ex.category_id) && !ex.category_id.includes('stretch')) ? MAX_SETS_MOBILITY : MAX_SETS_MAIN;
       if (s < maxS) { ex.sets = String(s + 1); changed = true; break; }
     }
-    estimated = estimateSessionDurationSeconds(session, userData);
+    estimated = estimateSessionDurationSeconds(session, userData, paceMap);
     if (!changed || estimated >= targetSec * 0.95) break;
   }
 }
 
 /**
- * enforceStrictTimeLimit v4.0 (Iterative Pruning Strategy)
- * Redukuje czas sesji aż do osiągnięcia celu, usuwając najcięższe ćwiczenia lub serie.
+ * enforceStrictTimeLimit v5.0
+ * Używa poprawionego estymatora (z tempem użytkownika) do przycinania sesji.
  */
-function enforceStrictTimeLimit(session, userData) {
+function enforceStrictTimeLimit(session, userData, paceMap) {
     const targetSec = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90) * 60;
-    // Tolerancja 60 sekund
-    const hardLimit = targetSec + 60; 
+    const hardLimit = targetSec + 30; // Bardzo ścisła tolerancja (30s)
 
-    let maxIterations = 50; // Bezpiecznik pętli
+    let maxIterations = 50;
 
     while (maxIterations-- > 0) {
-        const totalDur = estimateSessionDurationSeconds(session, userData);
-        if (totalDur <= hardLimit) return; // Cel osiągnięty
+        const totalDur = estimateSessionDurationSeconds(session, userData, paceMap);
+        if (totalDur <= hardLimit) return; 
 
         // 1. Oblicz czasy sekcji
-        const warmDur = session.warmup.reduce((acc, ex) => acc + estimateExerciseDurationSeconds(ex, userData), 0);
-        const mainDur = session.main.reduce((acc, ex) => acc + estimateExerciseDurationSeconds(ex, userData), 0);
-        const coolDur = session.cooldown.reduce((acc, ex) => acc + estimateExerciseDurationSeconds(ex, userData), 0);
+        const warmDur = session.warmup.reduce((acc, ex) => acc + estimateExerciseDurationSeconds(ex, userData, paceMap), 0);
+        const mainDur = session.main.reduce((acc, ex) => acc + estimateExerciseDurationSeconds(ex, userData, paceMap), 0);
+        const coolDur = session.cooldown.reduce((acc, ex) => acc + estimateExerciseDurationSeconds(ex, userData, paceMap), 0);
 
         // 2. Znajdź najdłuższe ćwiczenie w MAIN
         let heaviestEx = null;
@@ -788,7 +811,7 @@ function enforceStrictTimeLimit(session, userData) {
         let heaviestIdx = -1;
 
         session.main.forEach((ex, idx) => {
-            const d = estimateExerciseDurationSeconds(ex, userData);
+            const d = estimateExerciseDurationSeconds(ex, userData, paceMap);
             if (d > heaviestDur) {
                 heaviestDur = d;
                 heaviestEx = ex;
@@ -808,8 +831,6 @@ function enforceStrictTimeLimit(session, userData) {
             } 
             // STRATEGIA 2: Usunięcie ćwiczenia (jeśli ma 1 serię)
             else {
-                // Sprawdzenie balansu: Czy Main nie stanie się krótszy od dodatków?
-                // Jeśli usunięcie heaviestEx sprawi, że Main < (Warm + Cool), to najpierw tnijmy Warm/Cool.
                 const projectedMain = mainDur - heaviestDur;
                 const isBalanceThreatened = projectedMain < (warmDur + coolDur);
 
@@ -821,25 +842,22 @@ function enforceStrictTimeLimit(session, userData) {
             }
         }
 
-        // STRATEGIA 3: Redukcja serii w Warmup/Cooldown (jeśli Main jest nienaruszalne lub balans zagrożony)
+        // STRATEGIA 3: Redukcja serii w Warmup/Cooldown
         if (!actionTaken) {
-            // Najpierw tniemy cooldown (mniej ważny)
             for (const ex of session.cooldown) {
                 const s = parseInt(ex.sets, 10);
                 if (s > 1) { ex.sets = String(s - 1); actionTaken = true; break; }
             }
         }
         if (!actionTaken) {
-            // Potem tniemy warmup
             for (const ex of session.warmup) {
                 const s = parseInt(ex.sets, 10);
                 if (s > 1) { ex.sets = String(s - 1); actionTaken = true; break; }
             }
         }
 
-        // STRATEGIA 4: Ostateczność - Usuwamy ćwiczenie z Main nawet jeśli psuje to balans
+        // STRATEGIA 4: Ostateczność - Usuwamy ćwiczenie z Main
         if (!actionTaken && session.main.length > MIN_MAIN_EXERCISES) {
-             // Usuwamy najcięższe (znalezione wcześniej)
              if (heaviestIdx > -1) {
                  session.main.splice(heaviestIdx, 1);
                  actionTaken = true;
@@ -861,12 +879,11 @@ function enforceStrictTimeLimit(session, userData) {
             }
         }
 
-        // Jeśli nic się nie udało zmienić, przerywamy (by uniknąć infinite loop)
         if (!actionTaken) break;
     }
 }
 
-function buildWeeklyPlan(candidates, categoryWeights, userData, ctx, userId, historyMap, preferencesMap) {
+function buildWeeklyPlan(candidates, categoryWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap) {
   const sessionsPerWeek = clamp(toNumber(userData?.sessions_per_week, DEFAULT_SESSIONS_PER_WEEK), 1, 7);
   const counts = deriveSessionCounts(userData, ctx);
   const plan = { id: `dynamic-${Date.now()}`, days: [], meta: { ...userData, severityScore: ctx.severityScore, isSevere: ctx.isSevere } };
@@ -884,13 +901,12 @@ function buildWeeklyPlan(candidates, categoryWeights, userData, ctx, userId, his
         }
     });
 
-    // 1. Najpierw próbujemy wypełnić czas (jeśli za krótko)
-    expandSessionToTarget(session, candidates, userData, ctx, categoryWeights);
+    expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, paceMap);
     
-    // 2. Następnie BEZWZGLĘDNIE ucinamy nadmiar (Strict Pruning)
-    enforceStrictTimeLimit(session, userData);
+    // UŻYWAMY NOWEGO LIMITERA Z PACE MAP
+    enforceStrictTimeLimit(session, userData, paceMap);
     
-    session.estimatedDurationMin = Math.round(estimateSessionDurationSeconds(session, userData) / 60);
+    session.estimatedDurationMin = Math.round(estimateSessionDurationSeconds(session, userData, paceMap) / 60);
     plan.days.push(session);
   }
   return plan;
@@ -904,11 +920,13 @@ exports.handler = async (event) => {
 
   const client = await pool.connect();
   try {
-    const [eR, bR, pR, hR] = await Promise.all([
+    // --- NOWOŚĆ: Pobieramy `user_exercise_stats` dla tempa ---
+    const [eR, bR, pR, hR, sR] = await Promise.all([
       client.query('SELECT * FROM exercises'),
       client.query('SELECT exercise_id FROM user_exercise_blacklist WHERE user_id = $1', [userId]),
       client.query('SELECT exercise_id, affinity_score FROM user_exercise_preferences WHERE user_id = $1', [userId]),
-      client.query(`SELECT session_data->'sessionLog' as logs, completed_at FROM training_sessions WHERE user_id = $1 AND completed_at > NOW() - INTERVAL '30 days'`, [userId])
+      client.query(`SELECT session_data->'sessionLog' as logs, completed_at FROM training_sessions WHERE user_id = $1 AND completed_at > NOW() - INTERVAL '30 days'`, [userId]),
+      client.query('SELECT exercise_id, avg_seconds_per_rep FROM user_exercise_stats WHERE user_id = $1', [userId])
     ]);
 
     const exercises = eR.rows.map(normalizeExerciseRow);
@@ -916,12 +934,20 @@ exports.handler = async (event) => {
     bR.rows.forEach(r => ctx.blockedIds.add(r.exercise_id));
     const preferencesMap = {}; pR.rows.forEach(r => preferencesMap[r.exercise_id] = { score: r.affinity_score });
     const historyMap = {}; hR.rows.forEach(r => { (r.logs || []).forEach(l => { const id = l.exerciseId || l.id; if (id && (!historyMap[id] || new Date(r.completed_at) > historyMap[id])) historyMap[id] = new Date(r.completed_at); }); });
+    
+    // Mapa tempa
+    const paceMap = {};
+    sR.rows.forEach(r => {
+        paceMap[r.exercise_id] = parseFloat(r.avg_seconds_per_rep);
+    });
 
     const cWeights = buildDynamicCategoryWeights(exercises, userData, ctx);
     const candidates = filterExerciseCandidates(exercises, userData, ctx);
     if (candidates.length < 5) return { statusCode: 400, body: JSON.stringify({ error: 'NO_SAFE_EXERCISES' }) };
 
-    const plan = buildWeeklyPlan(candidates, cWeights, userData, ctx, userId, historyMap, preferencesMap);
+    // Przekazujemy paceMap do buildera
+    const plan = buildWeeklyPlan(candidates, cWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap);
+    
     const sRes = await client.query('SELECT settings FROM user_settings WHERE user_id = $1', [userId]);
     const settings = sRes.rows[0]?.settings || {};
     settings.dynamicPlanData = plan; settings.planMode = 'dynamic'; settings.onboardingCompleted = true; settings.wizardData = userData;

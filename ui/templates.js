@@ -59,9 +59,7 @@ export const getAffinityBadge = (exerciseId) => {
     `;
 };
 
-function getCurrentWeekDays() { const now = new Date(); const day = now.getDay(); const diff = now.getDate() - day + (day === 0 ? -6 : 1); const monday = new Date(now.setDate(diff)); const weekDays = []; for (let i = 0; i < 7; i++) { const d = new Date(monday); d.setDate(monday.getDate() + i); weekDays.push(d); } return weekDays; }
-function getIsoDateKey(date) { const year = date.getFullYear(); const month = String(date.getMonth() + 1).padStart(2, '0'); const day = String(date.getDate()).padStart(2, '0'); return `${year}-${month}-${day}`; }
-
+// Funkcja generująca Hero Dashboard (z usuniętym wykresem tygodniowym dla mobile w CSS)
 export function generateHeroDashboardHTML(stats) {
     const isLoading = !stats.resilience;
     const resilienceScore = isLoading ? '--' : stats.resilience.score;
@@ -87,11 +85,34 @@ export function generateHeroDashboardHTML(stats) {
     const totalMin = stats.totalMinutes || 0;
     if (totalMin > 60) { const h = Math.floor(totalMin / 60); const m = totalMin % 60; timeLabel = `${h}h ${m}m`; } else { timeLabel = `${totalMin}m`; }
 
-    return `<div class="hero-avatar-wrapper"><div class="progress-ring" style="--progress-deg: ${progressDegrees}deg;"></div><img src="${stats.iconPath || '/icons/badge-level-1.svg'}" class="hero-avatar" alt="Ranga"><div class="level-badge">LVL ${stats.level || 1}</div></div><div class="hero-content"><h3 class="hero-rank-title ${loadingClass}">${stats.tierName || 'Ładowanie...'}</h3><div class="hero-metrics-grid"><div class="metric-item" title="Twoja aktualna seria dni treningowych"><img src="/icons/streak-fire.svg" class="metric-icon" alt="Streak"><div class="metric-text"><span class="metric-label">Seria</span><span class="metric-value ${loadingClass}">${stats.streak !== undefined ? stats.streak : '-'} Dni</span></div></div><div class="metric-item" title="Wskaźnik odporności (Resilience)"><img src="/icons/shield-check.svg" class="metric-icon" alt="Shield"><div class="metric-text"><span class="metric-label">Tarcza</span><span class="metric-value shield-score ${shieldClass} ${loadingClass}">${resilienceScore}${isLoading ? '' : '%'}</span></div></div><div class="metric-item" title="Całkowity czas spędzony na ćwiczeniach"><img src="/icons/clock.svg" class="metric-icon" alt="Time"><div class="metric-text"><span class="metric-label">Czas</span><span class="metric-value ${loadingClass}">${isLoading ? '--' : timeLabel}</span></div></div></div></div><div class="hero-weekly-rhythm"><div class="weekly-chart-label">TWÓJ TYDZIEŃ</div><div class="weekly-chart-grid">${weeklyBarsHTML}</div></div>`;
+    return `
+    <div class="hero-avatar-wrapper"><div class="progress-ring" style="--progress-deg: ${progressDegrees}deg;"></div><img src="${stats.iconPath || '/icons/badge-level-1.svg'}" class="hero-avatar" alt="Ranga"><div class="level-badge">LVL ${stats.level || 1}</div></div>
+    <div class="hero-content">
+        <h3 class="hero-rank-title ${loadingClass}">${stats.tierName || 'Ładowanie...'}</h3>
+        <div class="hero-metrics-grid">
+            <div class="metric-item" title="Twoja aktualna seria"><img src="/icons/streak-fire.svg" class="metric-icon" alt="Streak"><div class="metric-text"><span class="metric-label">Seria</span><span class="metric-value ${loadingClass}">${stats.streak !== undefined ? stats.streak : '-'} Dni</span></div></div>
+            <div class="metric-item" title="Wskaźnik odporności"><img src="/icons/shield-check.svg" class="metric-icon" alt="Shield"><div class="metric-text"><span class="metric-label">Tarcza</span><span class="metric-value shield-score ${shieldClass} ${loadingClass}">${resilienceScore}${isLoading ? '' : '%'}</span></div></div>
+            <div class="metric-item" title="Czas treningów"><img src="/icons/clock.svg" class="metric-icon" alt="Time"><div class="metric-text"><span class="metric-label">Czas</span><span class="metric-value ${loadingClass}">${isLoading ? '--' : timeLabel}</span></div></div>
+        </div>
+    </div>
+    <div class="hero-weekly-rhythm"><div class="weekly-chart-label">TWÓJ TYDZIEŃ</div><div class="weekly-chart-grid">${weeklyBarsHTML}</div></div>`;
 }
 
 export function generateSkeletonDashboardHTML() {
-    return `<div class="section-title">Ładowanie Asystenta...</div><div class="skeleton-card"><div class="skeleton-header"><div style="flex:1"><div class="skeleton-text skeleton-loading sm"></div><div class="skeleton-text skeleton-loading md"></div></div><div class="skeleton-text skeleton-loading" style="width:60px; border-radius:20px;"></div></div><div class="skeleton-text skeleton-loading lg"></div><div class="skeleton-wellness skeleton-loading"></div><div class="skeleton-btn skeleton-loading"></div></div><div class="section-title" style="margin-top:2rem;">Kolejne w cyklu</div><div class="skeleton-queue-item skeleton-loading"></div><div class="skeleton-queue-item skeleton-loading"></div><div class="skeleton-queue-item skeleton-loading"></div>`;
+    return `
+    <div class="skeleton-card" style="height: 400px; opacity: 0.8; margin-top: 20px;">
+        <div class="skeleton-header" style="height: 150px; background: #eee;"></div>
+        <div style="padding: 20px;">
+            <div class="skeleton-text lg"></div>
+            <div class="skeleton-text md"></div>
+            <div class="skeleton-btn" style="margin-top: 40px;"></div>
+        </div>
+    </div>
+    <div class="section-title" style="margin-top:2rem;">Oś Czasu</div>
+    <div style="display:flex; gap:10px;">
+        <div class="skeleton-queue-item skeleton-loading" style="width: 85px; height: 100px;"></div>
+        <div class="skeleton-queue-item skeleton-loading" style="width: 85px; height: 100px;"></div>
+    </div>`;
 }
 
 function getSmartAiTags(wizardData) {
@@ -104,17 +125,19 @@ function getSmartAiTags(wizardData) {
     else if (wizardData.medical_diagnosis?.includes('disc_herniation')) tags.unshift({ icon: '🛡️', text: 'Bezpieczne' });
     else if (wizardData.pain_locations?.includes('cervical')) tags.push({ icon: '🦒', text: 'Szyja' });
 
-    if (wizardData.hobby?.includes('running')) tags.push({ icon: '🏃', text: 'Miednica' });
-    else if (wizardData.hobby?.includes('cycling')) tags.push({ icon: '🚴', text: 'Biodra' });
-    if (wizardData.physical_restrictions?.includes('no_kneeling')) tags.push({ icon: '🚫', text: 'Bez klękania' });
-    if (wizardData.physical_restrictions?.includes('no_deep_squat')) tags.push({ icon: '🚫', text: 'Bez przysiadów' });
-
     if (tags.length < 2 && wizardData.primary_goal === 'pain_relief') tags.push({ icon: '💊', text: 'Redukcja bólu' });
 
-    return tags.slice(0, 4);
+    return tags.slice(0, 3);
 }
 
-export function generateMissionCardHTML(dayData, estimatedMinutes, wizardData = null) {
+// --- NOWA FUNKCJA GENERUJĄCA KARTKĘ Z KALENDARZA ---
+export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wizardData = null) {
+    // 1. Data w nagłówku
+    const dayName = dateObj.toLocaleDateString('pl-PL', { weekday: 'long' });
+    const dayNumber = dateObj.getDate();
+    const monthYear = dateObj.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' });
+
+    // 2. Sprzęt
     const equipmentSet = new Set();
     [...(dayData.warmup || []), ...(dayData.main || []), ...(dayData.cooldown || [])].forEach(ex => {
         if (Array.isArray(ex.equipment)) {
@@ -123,58 +146,112 @@ export function generateMissionCardHTML(dayData, estimatedMinutes, wizardData = 
             ex.equipment.split(',').forEach(item => equipmentSet.add(item.trim().toLowerCase()));
         }
     });
-
     const ignoreList = ['brak', 'none', 'brak sprzętu', 'masa własna', 'bodyweight', ''];
     const filteredEquipment = [...equipmentSet].filter(item => !ignoreList.includes(item));
+    const equipmentText = filteredEquipment.length > 0
+        ? filteredEquipment.map(item => item.charAt(0).toUpperCase() + item.slice(1)).join(', ')
+        : 'Brak sprzętu';
 
-    const equipmentBadgesHTML = filteredEquipment.length > 0 
-        ? filteredEquipment.map(item => {
-            const display = item.charAt(0).toUpperCase() + item.slice(1);
-            return `<span class="meta-tag tag-equipment" style="margin-bottom: 2px;">🏋️ ${display}</span>`;
-          }).join(' ')
-        : '<span style="font-size:0.8rem; opacity:0.5;">Brak sprzętu</span>';
-
-    let aiHeaderHTML = '';
-    let aiTagsHTML = '';
-    let aiClass = '';
-
+    // 3. Tagi AI
+    let tagsHTML = '';
     if (wizardData) {
-        aiClass = 'ai-mode';
         const smartTags = getSmartAiTags(wizardData);
-        if (smartTags.length === 0) smartTags.push({ icon: '🧬', text: 'Personalizacja' });
-        aiHeaderHTML = `<div class="ai-header-strip"><div class="ai-header-left"><span class="ai-dna-icon">🧬</span><span>Virtual Physio</span></div><span style="opacity:0.9; font-size:0.6rem; letter-spacing:0.5px;">DOPASOWANO DO CIEBIE</span></div>`;
-        aiTagsHTML = `<div class="ai-mini-tags">${smartTags.map(t => `<div class="ai-mini-tag"><span>${t.icon}</span> ${t.text}</div>`).join('')}</div>`;
+        tagsHTML = smartTags.map(t => `<span class="meta-tag tag-category">${t.icon} ${t.text}</span>`).join('');
     }
 
     return `
-    <div class="mission-card ${aiClass}">
-        ${aiHeaderHTML}
-        <div class="mission-header">
-            <div><span class="mission-day-badge">DZIEŃ ${dayData.dayNumber}</span><h3 class="mission-title">${dayData.title}</h3></div>
-            <div class="estimated-time-badge"><img src="/icons/clock.svg" width="16" height="16" alt="Czas"><span id="mission-time-val">${estimatedMinutes} min</span></div>
+    <div class="calendar-sheet">
+        <div class="calendar-top-binding"></div>
+        <div class="calendar-date-header">
+            <span class="calendar-day-name">${dayName}</span>
+            <span class="calendar-day-number">${dayNumber}</span>
+            <span class="calendar-month-year">${monthYear}</span>
         </div>
-        ${aiTagsHTML}
-        
-        <div style="margin-bottom: 0.8rem; border-top: 1px solid rgba(0,0,0,0.05); padding-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-            <strong style="font-size:0.7rem; text-transform:uppercase; opacity:0.6; margin-right: 4px;">Sprzęt:</strong>
-            ${equipmentBadgesHTML}
-        </div>
+        <div class="calendar-body">
+            <div class="workout-context-card">
+                <div class="wc-header">
+                    <h3 class="wc-title">${dayData.title}</h3>
+                    <div style="font-weight:700; color:var(--primary-color); font-size:0.9rem;">
+                        ⏱ ${estimatedMinutes} min
+                    </div>
+                </div>
+                <div class="wc-tags">
+                    ${tagsHTML}
+                    <span class="meta-tag tag-equipment">🛠️ ${equipmentText}</span>
+                </div>
+                
+                <div class="sheet-wellness">
+                    <div class="sheet-wellness-label">Jak się czujesz dzisiaj?</div>
+                    <div class="pain-selector">
+                        <div class="pain-option" data-level="0">🚀 <span>Świetnie</span></div>
+                        <div class="pain-option selected" data-level="3">🙂 <span>Dobrze</span></div>
+                        <div class="pain-option" data-level="5">😐 <span>Średnio</span></div>
+                        <div class="pain-option" data-level="7">🤕 <span>Boli</span></div>
+                        <div class="pain-option" data-level="9">🛑 <span>Źle</span></div>
+                    </div>
+                </div>
 
-        <div class="wellness-section">
-            <div class="wellness-label"><span>Wellness Check-in</span><span style="font-weight:400">Jak się czujesz?</span></div>
-            <div class="pain-selector">
-                <div class="pain-option" data-level="0">🚀 <span>Świetnie</span></div>
-                <div class="pain-option selected" data-level="3">🙂 <span>Dobrze</span></div>
-                <div class="pain-option" data-level="5">😐 <span>Średnio</span></div>
-                <div class="pain-option" data-level="7">🤕 <span>Boli</span></div>
-                <div class="pain-option" data-level="9">🛑 <span>Krytycznie</span></div>
+                <button id="start-mission-btn" class="calendar-action-btn" data-initial-pain="3">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" style="display:block;"><path d="M8 5v14l11-7z"></path></svg>
+                    Rozpocznij Trening
+                </button>
             </div>
         </div>
-
-        <button id="start-mission-btn" class="action-btn" data-initial-pain="3">Start Misji</button>
     </div>`;
 }
 
+// Karta regeneracyjna w stylu kalendarza
+export function generateRestCalendarPageHTML(dateObj) {
+    const dayName = dateObj.toLocaleDateString('pl-PL', { weekday: 'long' });
+    const dayNumber = dateObj.getDate();
+    const monthYear = dateObj.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' });
+
+    return `
+    <div class="calendar-sheet rest-mode">
+        <div class="calendar-top-binding"></div>
+        <div class="calendar-date-header">
+            <span class="calendar-day-name">${dayName}</span>
+            <span class="calendar-day-number">${dayNumber}</span>
+            <span class="calendar-month-year">${monthYear}</span>
+        </div>
+        <div class="calendar-body">
+            <div class="workout-context-card" style="background-color: #f8f9fa; border: none;">
+                <div style="text-align: center; padding: 1rem 0;">
+                    <span style="font-size: 3rem; display: block; margin-bottom: 10px;">🔋</span>
+                    <h3 class="wc-title" style="color: #64748b; margin-bottom: 5px;">Dzień Regeneracji</h3>
+                    <p style="font-size: 0.9rem; color: #94a3b8; margin: 0;">Odpocznij i zregeneruj siły.</p>
+                </div>
+                <button id="force-workout-btn" class="calendar-action-btn" style="margin-top: 1rem;">
+                    🔥 Zrób dodatkowy trening
+                </button>
+            </div>
+        </div>
+    </div>`;
+}
+
+export function generateCompletedMissionCardHTML(session) { const durationSeconds = session.netDurationSeconds || 0; const minutes = Math.floor(durationSeconds / 60); const feedbackInfo = formatFeedback(session); return `<div class="mission-card completed"><div class="completed-header"><div class="completed-icon"><img src="/icons/check-circle.svg" width="32" height="32" alt="Check" style="filter: invert(34%) sepia(95%) saturate(464%) hue-rotate(96deg) brightness(94%) contrast(90%);"></div><h3 class="completed-title">Misja Wykonana!</h3><p class="completed-subtitle">Dobra robota. Odpocznij przed jutrem.</p></div><div class="completed-stats"><div class="c-stat"><div class="c-stat-val">${minutes} min</div><div class="c-stat-label">Czas</div></div><div class="c-stat"><div class="c-stat-val" style="font-size:0.9rem;">${feedbackInfo.label}</div><div class="c-stat-label">Feedback</div></div></div><button class="view-details-btn" data-date="${session.completedAt}">Zobacz Szczegóły ➝</button></div>`; }
+
+export function generatePlanFinishedCardHTML(sessionsCount) {
+    return `
+    <div class="mission-card ai-mode" style="background: linear-gradient(135deg, #0f1c2e 0%, var(--primary-color) 100%); color: #fff; border: none; box-shadow: 0 10px 30px rgba(0,95,115,0.4);">
+        <div class="completed-header" style="color: #fff;">
+            <div class="completed-icon" style="background: var(--gold-color); box-shadow: 0 0 20px rgba(233,196,106,0.6);">
+                <span style="font-size: 1.8rem;">🏆</span>
+            </div>
+            <h3 class="completed-title" style="color: #fff;">Plan Ukończony!</h3>
+            <p class="completed-subtitle" style="color: rgba(255,255,255,0.8);">Zrealizowałeś wszystkie ${sessionsCount} sesji.</p>
+        </div>
+        <div style="margin-top: 1.5rem; text-align: center;">
+            <p style="font-size: 0.9rem; opacity: 0.9; margin-bottom: 1.5rem;">Twój cykl dobiegł końca. Czas na nowe wyzwania!</p>
+            <div style="display:flex; flex-direction: column; gap: 10px;">
+                <button id="quick-regen-btn" class="action-btn" style="background: var(--gold-color); color: #000; font-weight: 800; border: none;">⚡ Wygeneruj kolejny cykl</button>
+                <button id="edit-settings-btn" class="nav-btn" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: #fff;">📝 Zmień cele (Kreator)</button>
+            </div>
+        </div>
+    </div>`;
+}
+
+// Reszta funkcji (PreTrainingCard, SessionCard, etc.) pozostaje bez zmian
 export function generatePreTrainingCardHTML(ex, index) {
     const uniqueId = `ex-${index}`;
     const exerciseId = ex.id || ex.exerciseId;
@@ -418,7 +495,7 @@ export function generateSessionCardHTML(session) {
                 flex-direction: column;
                 gap: 4px;
                 flex-grow: 1;
-                min-width: 0; /* Ważne dla flexa */
+                min-width: 0;
             }
 
             .hex-name {
@@ -487,35 +564,5 @@ export function generateSessionCardHTML(session) {
         `;
 }
 
-export function generateCompletedMissionCardHTML(session) { const durationSeconds = session.netDurationSeconds || 0; const minutes = Math.floor(durationSeconds / 60); const feedbackInfo = formatFeedback(session); return `<div class="mission-card completed"><div class="completed-header"><div class="completed-icon"><img src="/icons/check-circle.svg" width="32" height="32" alt="Check" style="filter: invert(34%) sepia(95%) saturate(464%) hue-rotate(96deg) brightness(94%) contrast(90%);"></div><h3 class="completed-title">Misja Wykonana!</h3><p class="completed-subtitle">Dobra robota. Odpocznij przed jutrem.</p></div><div class="completed-stats"><div class="c-stat"><div class="c-stat-val">${minutes} min</div><div class="c-stat-label">Czas</div></div><div class="c-stat"><div class="c-stat-val" style="font-size:0.9rem;">${feedbackInfo.label}</div><div class="c-stat-label">Feedback</div></div></div><button class="view-details-btn" data-date="${session.completedAt}">Zobacz Szczegóły ➝</button></div>`; }
-
-// --- NOWOŚĆ: KARTA UKOŃCZENIA CYKLU ---
-export function generatePlanFinishedCardHTML(sessionsCount) {
-    return `
-    <div class="mission-card ai-mode" style="background: linear-gradient(135deg, #0f1c2e 0%, var(--primary-color) 100%); color: #fff; border: none; box-shadow: 0 10px 30px rgba(0,95,115,0.4);">
-        <div class="completed-header" style="color: #fff;">
-            <div class="completed-icon" style="background: var(--gold-color); box-shadow: 0 0 20px rgba(233,196,106,0.6);">
-                <span style="font-size: 1.8rem;">🏆</span>
-            </div>
-            <h3 class="completed-title" style="color: #fff;">Plan Ukończony!</h3>
-            <p class="completed-subtitle" style="color: rgba(255,255,255,0.8);">Zrealizowałeś wszystkie ${sessionsCount} sesji.</p>
-        </div>
-
-        <div style="margin-top: 1.5rem; text-align: center;">
-            <p style="font-size: 0.9rem; opacity: 0.9; margin-bottom: 1.5rem;">Twój cykl dobiegł końca. Czas na nowe wyzwania!</p>
-
-            <div style="display:flex; flex-direction: column; gap: 10px;">
-                <button id="quick-regen-btn" class="action-btn" style="background: var(--gold-color); color: #000; font-weight: 800; border: none;">
-                    ⚡ Wygeneruj kolejny cykl
-                </button>
-                <button id="edit-settings-btn" class="nav-btn" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: #fff;">
-                    📝 Zmień cele (Kreator)
-                </button>
-            </div>
-
-            <p style="font-size: 0.75rem; opacity: 0.6; margin-top: 10px;">
-                "Szybka generacja" użyje obecnych ustawień (ból, czas, sprzęt).
-            </p>
-        </div>
-    </div>`;
-}
+function getCurrentWeekDays() { const now = new Date(); const day = now.getDay(); const diff = now.getDate() - day + (day === 0 ? -6 : 1); const monday = new Date(now.setDate(diff)); const weekDays = []; for (let i = 0; i < 7; i++) { const d = new Date(monday); d.setDate(monday.getDate() + i); weekDays.push(d); } return weekDays; }
+function getIsoDateKey(date) { const year = date.getFullYear(); const month = String(date.getMonth() + 1).padStart(2, '0'); const day = String(date.getDate()).padStart(2, '0'); return `${year}-${month}-${day}`; }

@@ -6,7 +6,13 @@ import { getIsCasting, sendUserStats } from '../../cast.js';
 import { getGamificationState } from '../../gamification.js';
 import { assistant } from '../../assistantEngine.js';
 import { navigateTo, showLoader, hideLoader } from '../core.js';
-import { generateHeroDashboardHTML, generateMissionCardHTML, generateCompletedMissionCardHTML, generateSkeletonDashboardHTML } from '../templates.js';
+import { 
+    generateHeroDashboardHTML, 
+    generateCalendarPageHTML, 
+    generateRestCalendarPageHTML,
+    generateCompletedMissionCardHTML, 
+    generateSkeletonDashboardHTML 
+} from '../templates.js';
 import { renderPreTrainingScreen, renderProtocolStart } from './training.js';
 import { renderDayDetailsScreen } from './history.js';
 import { generateBioProtocol } from '../../protocolGenerator.js';
@@ -46,7 +52,7 @@ const savePlanToDB = async (planData) => {
 
 const handleTurnToRest = async (dayDateISO) => {
     if (!confirm("Czy na pewno chcesz anulować ten trening i zamienić go na dzień regeneracji?")) return;
-    
+
     showLoader();
     const plan = JSON.parse(JSON.stringify(state.settings.dynamicPlanData));
     const dayIndex = plan.days.findIndex(d => d.date === dayDateISO);
@@ -62,7 +68,7 @@ const handleTurnToRest = async (dayDateISO) => {
         const success = await savePlanToDB(plan);
         if (success) {
             clearPlanFromStorage(); // Ważne: czyścimy cache dzisiejszego dnia
-            
+
             // Decyzja o regeneracji (po krótkiej pauzie dla lepszego UX)
             setTimeout(async () => {
                 if (confirm("Zmodyfikowałeś ten dzień. Czy chcesz przeliczyć pozostałe dni planu?")) {
@@ -156,6 +162,7 @@ const handleResetPlan = async () => {
 
 const getContextMenuHTML = (dateISO, isRest) => {
     // Menu dla dnia dzisiejszego lub przyszłego
+    // Zastąpiono <img> kodem SVG (inline), aby naprawić brakujące ikony
     return `
         <div class="ctx-menu-wrapper">
             <button class="ctx-menu-btn" aria-label="Opcje dnia" onclick="this.nextElementSibling.classList.toggle('active'); event.stopPropagation();">
@@ -163,21 +170,29 @@ const getContextMenuHTML = (dateISO, isRest) => {
             </button>
             <div class="ctx-menu-dropdown">
                 ${!isRest ? `<button class="ctx-action" data-action="rest" data-date="${dateISO}">
-                    <img src="/icons/trash.svg" alt="Usuń">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                     <span>Zmień na Wolne</span>
                 </button>` : ''}
                 ${!isRest ? `<button class="ctx-action" data-action="move" data-date="${dateISO}">
-                    <img src="/icons/calendar.svg" alt="Przenieś">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
                     <span>Przenieś...</span>
                 </button>` : ''}
                 <button class="ctx-action" data-action="reset">
-                    <img src="/icons/refresh-ccw.svg" alt="Reset">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
                     <span>Resetuj Plan</span>
                 </button>
             </div>
         </div>
     `;
 };
+
+// --- GLOBAL CLICK HANDLER (Dla zamykania menu) ---
+// Dodajemy to raz, aby kliknięcie gdziekolwiek zamykało menu
+window.addEventListener('click', (e) => {
+    if (!e.target.closest('.ctx-menu-btn')) {
+        document.querySelectorAll('.ctx-menu-dropdown.active').forEach(m => m.classList.remove('active'));
+    }
+});
 
 // --- GŁÓWNA FUNKCJA RENDERUJĄCA ---
 
@@ -200,11 +215,6 @@ export const renderMainScreen = async (isLoading = false) => {
                 if (action === 'move') handleMoveDay(date);
                 if (action === 'reset') handleResetPlan();
                 return;
-            }
-
-            // Zamykanie menu przy kliknięciu gdziekolwiek indziej
-            if (!e.target.closest('.ctx-menu-btn')) {
-                document.querySelectorAll('.ctx-menu-dropdown.active').forEach(m => m.classList.remove('active'));
             }
         });
         containers.days._hasDashboardListeners = true;
@@ -263,23 +273,6 @@ export const renderMainScreen = async (isLoading = false) => {
     renderHero();
     containers.days.innerHTML = '';
 
-    // Nagłówek dnia
-    const dateOptions = { weekday: 'long', day: 'numeric', month: 'long' };
-    const dateString = today.toLocaleDateString('pl-PL', dateOptions);
-    const capitalizedDate = dateString.charAt(0).toUpperCase() + dateString.slice(1);
-
-    containers.days.innerHTML += `
-        <div class="daily-mission-header">
-            <div class="dm-text">
-                <span class="dm-subtitle">${capitalizedDate}</span>
-                <h2 class="dm-title">TWOJA MISJA</h2>
-            </div>
-            <div class="dm-icon-wrapper">
-                <div class="dm-icon">📅</div>
-            </div>
-        </div>
-    `;
-
     const todaysSessions = state.userProgress[todayISO] || [];
     const completedSession = todaysSessions.find(s => s.status === 'completed');
 
@@ -295,30 +288,20 @@ export const renderMainScreen = async (isLoading = false) => {
 
     } else if (todayPlanEntry.type === 'rest') {
         const ctxMenu = getContextMenuHTML(todayISO, true);
-
-        const card = document.createElement('div');
-        card.innerHTML = `
-            <div class="mission-card" style="border-left-color: #aaa; background: linear-gradient(135deg, #fff, #f8f9fa); position: relative;">
-                <div style="position:absolute; right:10px; top:10px; z-index:20;">${ctxMenu}</div>
-                <div class="mission-header">
-                    <div>
-                        <span class="mission-day-badge" style="background:#64748b;">REGENERACJA</span>
-                        <h3 class="mission-title">Dzień Odnowy</h3>
-                        <p style="opacity:0.7; margin:5px 0 0 0; font-size:0.9rem;">Twój plan przewiduje dzisiaj odpoczynek.</p>
-                    </div>
-                    <div style="font-size:2.5rem;">🔋</div>
-                </div>
-                <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px dashed var(--border-color);">
-                    <button id="force-workout-btn" class="nav-btn" style="width:100%; border: 1px solid var(--gold-color); color: var(--text-color);">
-                        🔥 Chcę zrobić dodatkowy trening
-                    </button>
-                </div>
-            </div>
-        `;
-        containers.days.appendChild(card);
+        const cardWrapper = document.createElement('div');
+        // Pozycjonowanie względne dla menu
+        cardWrapper.style.position = 'relative'; 
+        
+        // Generujemy kartkę "Rest Mode"
+        cardWrapper.innerHTML = generateRestCalendarPageHTML(today);
+        
+        // Wstrzykujemy menu kontekstowe
+        cardWrapper.insertAdjacentHTML('beforeend', `<div style="position:absolute; right:15px; top:15px; z-index:20;">${ctxMenu}</div>`);
+        
+        containers.days.appendChild(cardWrapper);
         clearPlanFromStorage();
 
-        card.querySelector('#force-workout-btn').addEventListener('click', () => {
+        cardWrapper.querySelector('#force-workout-btn').addEventListener('click', () => {
             const bioHub = document.querySelector('.bio-hub-container');
             if (bioHub) bioHub.scrollIntoView({ behavior: 'smooth' });
         });
@@ -333,29 +316,27 @@ export const renderMainScreen = async (isLoading = false) => {
         let estimatedMinutes = calculateSmartDuration(finalPlan);
         if (todayPlanEntry.estimatedDurationMin) estimatedMinutes = todayPlanEntry.estimatedDurationMin;
 
+        // --- ZMIANA: Używamy nowej funkcji do generowania Kartki z Kalendarza ---
         const missionWrapper = document.createElement('div');
         missionWrapper.className = 'mission-card-wrapper';
-        missionWrapper.innerHTML = generateMissionCardHTML(finalPlan, estimatedMinutes, wizardData);
+        // Przekazujemy obiekt Date, aby wyrenderować "Kartkę"
+        missionWrapper.innerHTML = generateCalendarPageHTML(finalPlan, estimatedMinutes, today, wizardData);
 
         // Dodanie menu kontekstowego do karty treningu
         const ctxMenu = getContextMenuHTML(todayISO, false);
-        const cardContainer = missionWrapper.querySelector('.mission-card');
-        const headerStrip = cardContainer.querySelector('.ai-header-strip');
+        const cardContainer = missionWrapper.querySelector('.calendar-sheet');
         
-        // Wstrzykiwanie menu - pozycjonowanie absolutne wewnątrz karty
-        if (headerStrip) {
-            headerStrip.insertAdjacentHTML('beforebegin', `<div style="position:absolute; right:10px; top:10px; z-index:20;">${ctxMenu}</div>`);
-        } else {
-            cardContainer.insertAdjacentHTML('afterbegin', `<div style="position:absolute; right:10px; top:10px; z-index:20;">${ctxMenu}</div>`);
+        // Wstrzykiwanie menu - pozycjonowanie absolutne wewnątrz kartki
+        if (cardContainer) {
+            // Ustawiamy styl relative, aby absolute działał względem kartki
+            cardContainer.style.position = 'relative';
+            cardContainer.insertAdjacentHTML('beforeend', `<div style="position:absolute; right:15px; top:15px; z-index:20;">${ctxMenu}</div>`);
         }
 
         containers.days.appendChild(missionWrapper);
 
-        // POPRAWKA BŁĘDU ZMIENNEJ: Definiujemy cardEl poprawnie
-        const cardEl = missionWrapper.querySelector('.mission-card');
-        
-        // Pobieramy elementy wewnątrz karty
-        const timeBadgeEl = cardEl.querySelector('#mission-time-val');
+        // --- LOGIKA OBSŁUGI ZDARZEŃ W KARTCE ---
+        const cardEl = missionWrapper.querySelector('.calendar-sheet'); // Nowa klasa
         const startBtn = cardEl.querySelector('#start-mission-btn');
         const painOptions = cardEl.querySelectorAll('.pain-option');
 
@@ -364,6 +345,8 @@ export const renderMainScreen = async (isLoading = false) => {
                 painOptions.forEach(o => o.classList.remove('selected'));
                 opt.classList.add('selected');
                 const painLevel = parseInt(opt.dataset.level, 10);
+                
+                // Sprawdzenie czy włączyć SOS
                 const checkPlan = assistant.adjustTrainingVolume(finalPlan, painLevel);
                 const isSOS = checkPlan?._modificationInfo?.shouldSuggestSOS;
 
@@ -371,11 +354,9 @@ export const renderMainScreen = async (isLoading = false) => {
                     startBtn.textContent = "🏥 Aktywuj Protokół SOS";
                     startBtn.style.backgroundColor = "var(--danger-color)";
                     startBtn.dataset.mode = 'sos';
-                    if (timeBadgeEl) timeBadgeEl.textContent = "10 min";
                 } else {
-                    const newDuration = calculateSmartDuration(checkPlan);
-                    if (timeBadgeEl) timeBadgeEl.textContent = `${newDuration} min`;
-                    startBtn.textContent = "Start Misji";
+                    // Przywracamy ikonę Play przy normalnym trybie
+                    startBtn.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="display:block;"><path d="M8 5v14l11-7z"></path></svg> Rozpocznij Trening`;
                     startBtn.style.backgroundColor = "";
                     startBtn.dataset.mode = 'normal';
                 }
@@ -402,8 +383,8 @@ export const renderMainScreen = async (isLoading = false) => {
         });
     }
 
-    renderBioHub();
     renderUpcomingQueue(dynamicPlan.days, todayISO);
+    renderBioHub(); // Przeniosłem na dół
     navigateTo('main');
 };
 
@@ -451,7 +432,7 @@ function renderBioHub() {
         </div>
     `).join('');
 
-    bioHubContainer.innerHTML = `<div class="section-title" style="margin-top:1.5rem; margin-bottom:0.8rem; padding-left:4px;">PROTOKOŁY CELOWANE</div><div class="bio-hub-scroll">${cardsHTML}</div>`;
+    bioHubContainer.innerHTML = `<div class="section-title" style="margin-top:2.5rem; margin-bottom:0.8rem; padding-left:4px;">PROTOKOŁY CELOWANE</div><div class="bio-hub-scroll">${cardsHTML}</div>`;
     containers.days.appendChild(bioHubContainer);
 
     bioHubContainer.querySelectorAll('.bio-card').forEach(card => {
@@ -474,27 +455,31 @@ function renderUpcomingQueue(days, todayISO) {
     if (futureDays.length === 0) return;
 
     let upcomingHTML = `<div class="section-title" style="margin-top:1.5rem; margin-bottom:0.8rem; padding-left:4px;">NADCHODZĄCE DNI</div>`;
-    upcomingHTML += `<div class="upcoming-scroll-container">`;
+    upcomingHTML += `<div class="upcoming-timeline">`; // Zmiana klasy na timeline
 
     futureDays.slice(0, 5).forEach(dayRaw => {
         const dayData = getHydratedDay(dayRaw);
         const dateObj = new Date(dayData.date);
-        const dayName = dateObj.toLocaleDateString('pl-PL', { weekday: 'long' });
-        const dayLabel = dayName.charAt(0).toUpperCase() + dayName.slice(1);
+        
+        // Formatowanie daty: "CZW 12"
+        const dayShort = dateObj.toLocaleDateString('pl-PL', { weekday: 'short' }).toUpperCase().replace('.', '');
+        const dayNum = dateObj.getDate();
+        
         const isRest = dayData.type === 'rest';
-        const cardStyle = isRest ? 'background: #f8f9fa; border-color: #ddd;' : '';
-        const titleColor = isRest ? 'color: #777;' : '';
-
+        
+        // Stylizacja osi czasu
+        const cardClass = isRest ? 'timeline-card rest' : 'timeline-card workout';
+        
+        // Menu kontekstowe
         const ctxMenu = getContextMenuHTML(dayData.date, isRest);
 
         upcomingHTML += `
-            <div class="upcoming-card" style="${cardStyle}; position: relative;" data-day-id="${dayData.dayNumber}" data-is-rest="${isRest}">
-                <div style="position:absolute; top:5px; right:5px; z-index:10;">${ctxMenu}</div>
-                <div>
-                    <div class="upcoming-day-label">${dayLabel}</div>
-                    <div class="upcoming-title" style="${titleColor}">${dayData.title}</div>
-                </div>
-                ${!isRest ? '<button class="upcoming-btn">Podgląd</button>' : '<span style="font-size:1.5rem; display:block; text-align:right; opacity:0.5;">☕</span>'}
+            <div class="${cardClass}" data-day-id="${dayData.dayNumber}" data-is-rest="${isRest}">
+                <div style="position:absolute; top:2px; right:2px; z-index:10;">${ctxMenu}</div>
+                <div class="tl-day-name">${dayShort}</div>
+                <div class="tl-day-number">${dayNum}</div>
+                <div class="tl-dot"></div>
+                <div style="font-size:0.6rem; opacity:0.7; margin-top:6px; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%;">${isRest ? 'Wolne' : 'Trening'}</div>
             </div>
         `;
     });
@@ -504,7 +489,8 @@ function renderUpcomingQueue(days, todayISO) {
     upcomingWrapper.innerHTML = upcomingHTML;
     containers.days.appendChild(upcomingWrapper);
 
-    upcomingWrapper.querySelectorAll('.upcoming-card').forEach(card => {
+    // Listener używający klasy timeline-card
+    upcomingWrapper.querySelectorAll('.timeline-card').forEach(card => {
         if (card.dataset.isRest === 'true') return;
         card.addEventListener('click', (e) => {
             if (e.target.closest('.ctx-menu-btn') || e.target.closest('.ctx-menu-dropdown')) return;

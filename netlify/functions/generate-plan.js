@@ -1,4 +1,3 @@
-
 // netlify/functions/generate-plan.js
 'use strict';
 
@@ -6,8 +5,7 @@ const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
 const { buildUserContext, checkExerciseAvailability } = require('./_clinical-rule-engine.js');
 
 /**
- * Virtual Physio v5.1: Sync-Lock Time-Boxing + Fix Constants.
- * Naprawiono błąd ReferenceError: MAX_SETS_MAIN is not defined.
+ * Virtual Physio v5.5: Final Time-Boxing.
  */
 
 const DEFAULT_SECONDS_PER_REP = 6;
@@ -17,8 +15,8 @@ const DEFAULT_TARGET_MIN = 30;
 const DEFAULT_SESSIONS_PER_WEEK = 3;
 
 const MIN_MAIN_EXERCISES = 1;
-const MAX_SETS_MAIN = 5;       // PRZYWRÓCONO
-const MAX_SETS_MOBILITY = 3;   // PRZYWRÓCONO
+const MAX_SETS_MAIN = 5;
+const MAX_SETS_MOBILITY = 3;
 const MAX_BREATHING_SEC = 240;
 const GLOBAL_MAX_REPS = 25;
 
@@ -755,8 +753,11 @@ function estimateExerciseDurationSeconds(exEntry, userData, paceMap) {
       totalSeconds += (sets - 1) * rbs;
   }
 
-  // NIE dodajemy tutaj restBetweenExercises (dodajemy go w pętli sesji)
-  return totalSeconds;
+  // Czas na przejście (identycznie jak w frontend utils.js)
+  // 15s na zmianę strony dla jednostronnych, 5s dla zwykłych
+  const transition = sets * (isUnilateral ? 15 : 5);
+  
+  return totalSeconds + transition;
 }
 
 function estimateSessionDurationSeconds(session, userData, paceMap) {
@@ -770,44 +771,64 @@ function estimateSessionDurationSeconds(session, userData, paceMap) {
   return total;
 }
 
-function expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, paceMap) {
+function expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, sState, pZones, paceMap) {
   const targetSec = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90) * 60;
-  let estimated = estimateSessionDurationSeconds(session, userData, paceMap);
   let guard = 0;
-  while (estimated < targetSec * 0.92 && guard < 20) {
+
+  while (guard < 20) {
+    const estimated = estimateSessionDurationSeconds(session, userData, paceMap);
+    if (estimated >= targetSec * 0.95) break; 
+
     guard++;
+
     let changed = false;
+
+    // 1. Najpierw próbujemy zwiększyć serie
     for (const ex of session.main) {
       if (isBreathingCategory(ex.category_id)) continue;
       const s = parseInt(ex.sets, 10) || 1;
       const maxS = (isMobilityCategory(ex.category_id) && !ex.category_id.includes('stretch')) ? MAX_SETS_MOBILITY : MAX_SETS_MAIN;
-      if (s < maxS) { ex.sets = String(s + 1); changed = true; break; }
+      if (s < maxS) { 
+        ex.sets = String(s + 1); 
+        changed = true; 
+        break; 
+      }
     }
-    estimated = estimateSessionDurationSeconds(session, userData, paceMap);
-    if (!changed || estimated >= targetSec * 0.95) break;
+
+    // 2. Jeśli serie są max, dodajemy NOWE ćwiczenie do Main
+    if (!changed) {
+      const ex = pickExerciseForSection('main', candidates, userData, ctx, categoryWeights, sState, pZones, (c) => !isBreathingCategory(c.category_id));
+      if (ex) {
+        const rx = prescribeForExercise(ex, 'main', userData, ctx, categoryWeights);
+        const newEx = { ...ex, ...rx };
+        session.main.push(newEx);
+        changed = true;
+      } else {
+        break; 
+      }
+    }
+
+    if (!changed) break;
   }
 }
 
-/**
- * enforceStrictTimeLimit v5.0
- * Używa poprawionego estymatora (z tempem użytkownika) do przycinania sesji.
- */
 function enforceStrictTimeLimit(session, userData, paceMap) {
     const targetSec = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90) * 60;
-    const hardLimit = targetSec + 30; // Bardzo ścisła tolerancja (30s)
+    const hardLimit = targetSec + 30; 
 
     let maxIterations = 50;
 
     while (maxIterations-- > 0) {
         const totalDur = estimateSessionDurationSeconds(session, userData, paceMap);
-        if (totalDur <= hardLimit) return; 
+        
+        if (totalDur <= hardLimit) {
+            return; 
+        }
 
-        // 1. Oblicz czasy sekcji
         const warmDur = session.warmup.reduce((acc, ex) => acc + estimateExerciseDurationSeconds(ex, userData, paceMap), 0);
         const mainDur = session.main.reduce((acc, ex) => acc + estimateExerciseDurationSeconds(ex, userData, paceMap), 0);
         const coolDur = session.cooldown.reduce((acc, ex) => acc + estimateExerciseDurationSeconds(ex, userData, paceMap), 0);
 
-        // 2. Znajdź najdłuższe ćwiczenie w MAIN
         let heaviestEx = null;
         let heaviestDur = -1;
         let heaviestIdx = -1;
@@ -826,12 +847,10 @@ function enforceStrictTimeLimit(session, userData, paceMap) {
         if (heaviestEx) {
             const currentSets = parseInt(heaviestEx.sets, 10);
 
-            // STRATEGIA 1: Redukcja serii najdłuższego ćwiczenia
             if (currentSets > 1) {
                 heaviestEx.sets = String(currentSets - 1);
                 actionTaken = true;
             } 
-            // STRATEGIA 2: Usunięcie ćwiczenia (jeśli ma 1 serię)
             else {
                 const projectedMain = mainDur - heaviestDur;
                 const isBalanceThreatened = projectedMain < (warmDur + coolDur);
@@ -844,21 +863,27 @@ function enforceStrictTimeLimit(session, userData, paceMap) {
             }
         }
 
-        // STRATEGIA 3: Redukcja serii w Warmup/Cooldown
         if (!actionTaken) {
             for (const ex of session.cooldown) {
                 const s = parseInt(ex.sets, 10);
-                if (s > 1) { ex.sets = String(s - 1); actionTaken = true; break; }
+                if (s > 1) { 
+                    ex.sets = String(s - 1); 
+                    actionTaken = true; 
+                    break; 
+                }
             }
         }
         if (!actionTaken) {
             for (const ex of session.warmup) {
                 const s = parseInt(ex.sets, 10);
-                if (s > 1) { ex.sets = String(s - 1); actionTaken = true; break; }
+                if (s > 1) { 
+                    ex.sets = String(s - 1); 
+                    actionTaken = true; 
+                    break; 
+                }
             }
         }
 
-        // STRATEGIA 4: Ostateczność - Usuwamy ćwiczenie z Main
         if (!actionTaken && session.main.length > MIN_MAIN_EXERCISES) {
              if (heaviestIdx > -1) {
                  session.main.splice(heaviestIdx, 1);
@@ -867,7 +892,6 @@ function enforceStrictTimeLimit(session, userData, paceMap) {
              }
         }
 
-        // STRATEGIA 5: Nuklearna - Redukcja powtórzeń/czasu wszędzie
         if (!actionTaken) {
             const allEx = [...session.warmup, ...session.main, ...session.cooldown];
             for (const ex of allEx) {
@@ -881,7 +905,9 @@ function enforceStrictTimeLimit(session, userData, paceMap) {
             }
         }
 
-        if (!actionTaken) break;
+        if (!actionTaken) {
+            break;
+        }
     }
 }
 
@@ -903,9 +929,7 @@ function buildWeeklyPlan(candidates, categoryWeights, userData, ctx, userId, his
         }
     });
 
-    expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, paceMap);
-    
-    // UŻYWAMY NOWEGO LIMITERA Z PACE MAP
+    expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, sState, pZones, paceMap);
     enforceStrictTimeLimit(session, userData, paceMap);
     
     session.estimatedDurationMin = Math.round(estimateSessionDurationSeconds(session, userData, paceMap) / 60);
@@ -922,7 +946,6 @@ exports.handler = async (event) => {
 
   const client = await pool.connect();
   try {
-    // --- NOWOŚĆ: Pobieramy `user_exercise_stats` dla tempa ---
     const [eR, bR, pR, hR, sR] = await Promise.all([
       client.query('SELECT * FROM exercises'),
       client.query('SELECT exercise_id FROM user_exercise_blacklist WHERE user_id = $1', [userId]),
@@ -937,7 +960,6 @@ exports.handler = async (event) => {
     const preferencesMap = {}; pR.rows.forEach(r => preferencesMap[r.exercise_id] = { score: r.affinity_score });
     const historyMap = {}; hR.rows.forEach(r => { (r.logs || []).forEach(l => { const id = l.exerciseId || l.id; if (id && (!historyMap[id] || new Date(r.completed_at) > historyMap[id])) historyMap[id] = new Date(r.completed_at); }); });
     
-    // Mapa tempa
     const paceMap = {};
     sR.rows.forEach(r => {
         paceMap[r.exercise_id] = parseFloat(r.avg_seconds_per_rep);
@@ -947,7 +969,6 @@ exports.handler = async (event) => {
     const candidates = filterExerciseCandidates(exercises, userData, ctx);
     if (candidates.length < 5) return { statusCode: 400, body: JSON.stringify({ error: 'NO_SAFE_EXERCISES' }) };
 
-    // Przekazujemy paceMap do buildera
     const plan = buildWeeklyPlan(candidates, cWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap);
     
     const sRes = await client.query('SELECT settings FROM user_settings WHERE user_id = $1', [userId]);
@@ -957,6 +978,7 @@ exports.handler = async (event) => {
 
     return { statusCode: 200, body: JSON.stringify({ plan }) };
   } catch (e) {
-    console.error(e); return { statusCode: 500 };
+    console.error(e); 
+    return { statusCode: 500 };
   } finally { client.release(); }
 };

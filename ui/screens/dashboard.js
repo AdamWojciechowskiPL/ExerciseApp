@@ -1,7 +1,7 @@
 // js/ui/screens/dashboard.js
 import { state } from '../../state.js';
 import { containers } from '../../dom.js';
-import { getActiveTrainingPlan, getHydratedDay, getISODate, isTodayRestDay } from '../../utils.js';
+import { getActiveTrainingPlan, getHydratedDay, getISODate, isTodayRestDay, calculateSmartDuration } from '../../utils.js';
 import { getIsCasting, sendUserStats } from '../../cast.js';
 import { getGamificationState } from '../../gamification.js';
 import { assistant } from '../../assistantEngine.js';
@@ -107,19 +107,13 @@ export const renderMainScreen = (isLoading = false) => {
 
     const todaysSessions = state.userProgress[todayISO] || [];
 
-    // FIX: Sprawdzamy czy dzisiaj wykonano trening typu dynamicznego.
-    // Szukamy albo obecnego ID, albo dowolnego ID zaczynającego się od 'dynamic-'.
-    // To zapobiega znikaniu karty po regeneracji planu w ustawieniach.
     const completedSession = todaysSessions.find(s =>
-        (s.planId === currentPlanId || (typeof s.planId === 'string' && s.planId.startsWith('dynamic-'))) && 
+        (s.planId === currentPlanId || (typeof s.planId === 'string' && s.planId.startsWith('dynamic-'))) &&
         s.status === 'completed'
     );
 
     let currentSequenceDayNum = 1;
 
-    // ============================================================
-    // A. TRENING UKOŃCZONY DZISIAJ
-    // ============================================================
     if (completedSession) {
         const missionWrapper = document.createElement('div');
         missionWrapper.className = 'mission-card-wrapper';
@@ -159,9 +153,6 @@ export const renderMainScreen = (isLoading = false) => {
         currentSequenceDayNum = completedInPlan.length;
 
     } else {
-        // ============================================================
-        // B. TRENING DO WYKONANIA
-        // ============================================================
         let finalPlan = null;
         let estimatedMinutes = 0;
 
@@ -189,16 +180,27 @@ export const renderMainScreen = (isLoading = false) => {
         finalPlan.dayNumber = currentSequenceDayNum;
         finalPlan.planId = currentPlanId;
 
-        state.todaysDynamicPlan = finalPlan;
+        // --- INICJALIZACJA CZASU (TYLKO PRZY RENDERZE) ---
+        // Przy pierwszym wejściu ufamy backendowi, bo wykonał "Time Boxing"
+        if (rawDay.estimatedDurationMin) {
+            finalPlan.estimatedDurationMin = rawDay.estimatedDurationMin;
+            estimatedMinutes = rawDay.estimatedDurationMin;
+        } else {
+            // Fallback (powinien być rzadko używany)
+            estimatedMinutes = calculateSmartDuration(finalPlan);
+        }
 
+        if (rawDay.compressionApplied) {
+            finalPlan.compressionApplied = rawDay.compressionApplied;
+        }
+
+        state.todaysDynamicPlan = finalPlan;
         savePlanToStorage(finalPlan);
 
         if (finalPlan) {
             const missionWrapper = document.createElement('div');
             missionWrapper.className = 'mission-card-wrapper';
             containers.days.appendChild(missionWrapper);
-
-            estimatedMinutes = assistant.estimateDuration(finalPlan);
 
             const wizardData = state.settings.wizardData;
             missionWrapper.innerHTML = generateMissionCardHTML(finalPlan, estimatedMinutes, wizardData);
@@ -220,6 +222,11 @@ export const renderMainScreen = (isLoading = false) => {
                     opt.classList.add('selected');
 
                     const painLevel = parseInt(opt.dataset.level, 10);
+                    
+                    // --- ZMIANA: ZAWSZE PRZELICZAMY ---
+                    // Usunęliśmy blokadę "if (painLevel <= 3) return".
+                    // Teraz kliknięcie zawsze aktualizuje czas, uwzględniając tryb BOOST (Level 0-1)
+                    
                     const checkPlan = assistant.adjustTrainingVolume(finalPlan, painLevel);
                     const isSOS = checkPlan?._modificationInfo?.shouldSuggestSOS;
 
@@ -229,8 +236,14 @@ export const renderMainScreen = (isLoading = false) => {
                         startBtn.dataset.mode = 'sos';
                         timeBadge.textContent = "10 min";
                     } else {
-                        const newDuration = assistant.estimateDuration(checkPlan);
+                        // Używamy zsynchronizowanej funkcji calculateSmartDuration
+                        const newDuration = calculateSmartDuration(checkPlan);
                         timeBadge.textContent = `${newDuration} min`;
+
+                        // Jeśli czas drastycznie różni się od bazy, pokazujemy zmianę
+                        if (finalPlan.estimatedDurationMin && newDuration > finalPlan.estimatedDurationMin) {
+                             timeBadge.textContent += " (Boost)";
+                        }
 
                         startBtn.textContent = "Start Misji";
                         startBtn.style.backgroundColor = "";

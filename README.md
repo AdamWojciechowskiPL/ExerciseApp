@@ -1,4 +1,4 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v15.1.0
+# Aplikacja Treningowa (Smart Rehab PWA) v15.2.0
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją (metodyka McGill, prehab kolan i bioder). System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Virtual Physio"**, który w czasie rzeczywistym buduje plany treningowe na podstawie profilu medycznego, historii postępów i dostępnego sprzętu.
 

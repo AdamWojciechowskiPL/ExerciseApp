@@ -1,11 +1,11 @@
 // assistantEngine.js
 
 import { state } from './state.js';
-import { parseSetCount, getExerciseDuration } from './utils.js';
+import { parseSetCount, calculateSmartDuration } from './utils.js';
 
 /**
- * MÓZG SYSTEMU (ASSISTANT ENGINE) v3.7 (Linear Scaling Fix)
- * Naprawiono błąd, w którym tryb CARE był dłuższy od ECO przez różnice w limicie serii jednostronnych.
+ * MÓZG SYSTEMU (ASSISTANT ENGINE) v4.0 (Unified Time-Boxing)
+ * Teraz używa wspólnej logiki obliczania czasu z utils.js, identycznej jak w backendzie.
  */
 
 export const assistant = {
@@ -17,58 +17,9 @@ export const assistant = {
         return { score: 0, status: 'Vulnerable', daysSinceLast: 0, sessionCount: 0 };
     },
 
+    // ZMIANA: Używamy nowej, dokładnej funkcji z utils.js
     estimateDuration: (dayPlan) => {
-        if (!dayPlan) return 0;
-
-        const globalSecondsPerRep = state.settings.secondsPerRep || 6;
-        const restBetweenSets = state.settings.restBetweenSets || 30;
-        const restBetweenExercises = state.settings.restBetweenExercises || 30;
-
-        let totalSeconds = 0;
-        const allExercises = [
-            ...(dayPlan.warmup || []),
-            ...(dayPlan.main || []),
-            ...(dayPlan.cooldown || [])
-        ];
-
-        allExercises.forEach((exercise, index) => {
-            const sets = parseSetCount(exercise.sets);
-            
-            const isUnilateral = exercise.isUnilateral ||
-                                 exercise.is_unilateral ||
-                                 String(exercise.reps_or_time).includes('/str') ||
-                                 String(exercise.reps_or_time).includes('stron');
-
-            const multiplier = isUnilateral ? 2 : 1;
-
-            // workTimePerSet uwzględnia już multiplier w getExerciseDuration dla ćwiczeń na czas
-            let workTimePerSet = getExerciseDuration(exercise);
-
-            if (workTimePerSet === null) {
-                const repsString = String(exercise.reps_or_time).toLowerCase();
-                const repsMatch = repsString.match(/(\d+)/);
-                const reps = repsMatch ? parseInt(repsMatch[0], 10) : 10;
-
-                const exId = exercise.id || exercise.exerciseId;
-                const personalPace = state.exercisePace ? state.exercisePace[exId] : null;
-                const tempoToUse = personalPace || globalSecondsPerRep;
-
-                // Czas = Powtórzenia * Tempo * 2 (jeśli na stronę)
-                workTimePerSet = reps * tempoToUse * multiplier;
-            }
-
-            totalSeconds += sets * workTimePerSet;
-
-            if (sets > 1) {
-                totalSeconds += (sets - 1) * restBetweenSets;
-            }
-
-            if (index < allExercises.length - 1) {
-                totalSeconds += restBetweenExercises;
-            }
-        });
-
-        return Math.ceil(totalSeconds / 60);
+        return calculateSmartDuration(dayPlan);
     },
 
     adjustTrainingVolume: (dayPlan, painLevel, timeFactor = 1.0) => {
@@ -79,7 +30,7 @@ export const assistant = {
         let mode = 'standard';
         let painMessage = null;
 
-        let targetSetsMode = 'normal'; 
+        let targetSetsMode = 'normal';
         let addBoostSet = false;
         let intensityScale = 1.0;
 
@@ -162,12 +113,12 @@ export const assistant = {
                 if (intensityScale < 1.0) {
                     const rawVal = String(exercise.reps_or_time);
                     const numMatch = rawVal.match(/(\d+)/);
-                    
+
                     if (numMatch) {
                         const rawNum = parseInt(numMatch[0]);
                         // Math.ceil zamiast floor, aby nie zejść do zera
                         const newNum = Math.max(rawVal.includes('s') ? 5 : 3, Math.ceil(rawNum * intensityScale));
-                        
+
                         if (newNum < rawNum) {
                             exercise.reps_or_time = rawVal.replace(rawNum, newNum);
                         }

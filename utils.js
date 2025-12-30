@@ -2,7 +2,7 @@
 
 import { state } from './state.js';
 
-// --- ZADANIE 10: SVG SANITIZER & SCALER ---
+// --- SVG SANITIZER ---
 export const processSVG = (svgString) => {
     if (!svgString) return '';
     if (!svgString.includes('<svg')) return svgString;
@@ -58,7 +58,6 @@ export const getISODate = (date) => {
     return `${year}-${month}-${day}`;
 };
 
-// ZMIANA: Zawsze zwraca dynamicPlanData
 export const getActiveTrainingPlan = () => {
     return state.settings.dynamicPlanData;
 };
@@ -81,7 +80,6 @@ export const getNextLogicalDay = () => {
     const activePlan = getActiveTrainingPlan();
     if (!activePlan || !activePlan.days) return null;
 
-    // Pobieramy historię dla obecnego planu dynamicznego
     let allSessions = [];
     if (state.userProgress) {
         allSessions = Object.values(state.userProgress).flat();
@@ -93,24 +91,15 @@ export const getNextLogicalDay = () => {
         s.status === 'completed'
     );
 
-    // Liczba ukończonych sesji = indeks następnej sesji
     const completedCount = planSessions.length;
     const totalDays = activePlan.days.length;
 
-    if (completedCount >= totalDays) {
-        // Plan ukończony
-        return null; 
-    }
-
-    // Zwracamy następny dzień z tablicy (indeks 0-based)
+    if (completedCount >= totalDays) return null;
     return activePlan.days[completedCount];
 };
 
-// ZMIANA: Deprecated/Simplified for dynamic logic context
 export const getTrainingDayForDate = (date) => {
-    // W systemie dynamicznym nie ma sztywnego mapowania daty na dzień.
-    // Zwracamy null, aby historia korzystała z danych zapisanych w sesji (snapshots).
-    return null; 
+    return null;
 };
 
 export const getHydratedDay = (dayData) => {
@@ -124,12 +113,7 @@ export const getHydratedDay = (dayData) => {
                 const exerciseId = exerciseRef.exerciseId || exerciseRef.id;
                 const libraryDetails = state.exerciseLibrary[exerciseId];
 
-                if (exerciseRef.name && libraryDetails && exerciseRef.name !== libraryDetails.name) {
-                    console.log(`🔍 [Hydration] Mixer swap detected: ${exerciseRef.name} (from mixer) vs ${libraryDetails.name} (from library)`);
-                }
-
                 if (!libraryDetails) {
-                    console.warn(`⚠️ Ostrzeżenie: Ćwiczenie ${exerciseId} jest w planie, ale brak go w bibliotece.`);
                     return exerciseRef;
                 }
 
@@ -162,29 +146,88 @@ export const parseSetCount = (setsString) => {
 };
 
 export const getExerciseDuration = (exercise) => {
-    if (exercise.isRest) {
-        return exercise.duration;
-    }
+    if (exercise.isRest) return exercise.duration;
+    // Fallback do starej metody (nieużywany w nowym silniku, ale dla bezpieczeństwa)
+    return null; 
+};
 
-    const text = (exercise.reps_or_time || '').trim().toLowerCase();
+// --- CALCULATE SMART DURATION (MIRROR OF BACKEND) ---
+export const calculateSmartDuration = (dayPlan) => {
+    if (!dayPlan) return 0;
 
-    const isUnilateralStr = text.includes('/str') || text.includes('stron');
-    const isUnilateralProp = exercise.isUnilateral || false;
-    const multiplier = (isUnilateralStr || isUnilateralProp) ? 2 : 1;
+    // 1. Ustawienia globalne
+    // Kluczowe: Muszą być identyczne jak w backendzie.
+    // Backend: clamp(toNumber(userData?.secondsPerRep, 6), 2, 12);
+    const globalSpr = state.settings.secondsPerRep || 6;
+    const rbs = state.settings.restBetweenSets || 30;
+    const rbe = state.settings.restBetweenExercises || 30;
 
-    const minMatch = text.match(/(\d+(?:[.,]\d+)?)\s*min/);
-    if (minMatch) {
-        const minutes = parseFloat(minMatch[1].replace(',', '.'));
-        return Math.round(minutes * 60 * multiplier);
-    }
+    const allExercises = [
+        ...(dayPlan.warmup || []),
+        ...(dayPlan.main || []),
+        ...(dayPlan.cooldown || [])
+    ];
 
-    const secMatch = text.match(/(\d+)\s*s\b/);
-    if (secMatch) {
-        const seconds = parseInt(secMatch[1], 10);
-        return seconds * multiplier;
-    }
+    let totalSeconds = 0;
 
-    return null;
+    const parseRepsOrTime = (val) => {
+        const t = String(val || '').trim().toLowerCase();
+        if (t.includes('s')) return Math.max(5, parseInt(t, 10) || 30);
+        if (t.includes('min')) return Math.max(10, (parseInt(t, 10) || 1) * 60);
+        return parseInt(t, 10) || 10;
+    };
+
+    allExercises.forEach((ex, index) => {
+        const sets = parseSetCount(ex.sets);
+        const isUnilateral = ex.isUnilateral || ex.is_unilateral || String(ex.reps_or_time).includes('/str');
+        
+        // Backend: multiplier = isUnilateral ? 2 : 1;
+        const multiplier = isUnilateral ? 2 : 1;
+
+        // 2. Adaptive Pacing
+        // Backend: Pace Map z DB. Frontend: state.exercisePace z DB.
+        const exId = ex.id || ex.exerciseId;
+        let tempoToUse = globalSpr;
+        
+        if (state.exercisePace && state.exercisePace[exId]) {
+            tempoToUse = state.exercisePace[exId];
+        }
+
+        let workTimePerSet = 0;
+        const valStr = String(ex.reps_or_time).toLowerCase();
+
+        if (valStr.includes('s') || valStr.includes('min')) {
+            // Czas jest na stronę, więc x2 jeśli jednostronne
+            workTimePerSet = parseRepsOrTime(ex.reps_or_time) * multiplier;
+        } else {
+            // Reps * Tempo * Multiplier
+            const reps = parseRepsOrTime(ex.reps_or_time);
+            workTimePerSet = reps * tempoToUse * multiplier;
+        }
+
+        // 3. Kalkulacja bloku
+        // Backend: let totalSeconds = (sets * workTimePerSet);
+        let exDuration = sets * workTimePerSet;
+
+        // Backend: if (sets > 1) { totalSeconds += (sets - 1) * rbs; }
+        if (sets > 1) {
+            exDuration += (sets - 1) * rbs;
+        }
+
+        // Backend: const transition = sets * (exEntry.is_unilateral ? 15 : 5);
+        // Uwaga: Backend używał 15s na zmianę strony i 5s na zwykłe
+        const transition = sets * (isUnilateral ? 15 : 5);
+        exDuration += transition;
+
+        totalSeconds += exDuration;
+
+        // Backend loop: if (i < all.length - 1) total += rbe;
+        if (index < allExercises.length - 1) {
+            totalSeconds += rbe;
+        }
+    });
+
+    return Math.round(totalSeconds / 60);
 };
 
 export const formatForTTS = (text) => {

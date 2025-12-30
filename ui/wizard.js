@@ -1,4 +1,4 @@
-// ui/wizard.js
+// ExerciseApp/ui/wizard.js
 import { state } from '../state.js';
 import dataStore from '../dataStore.js';
 import { navigateTo, showLoader, hideLoader } from './core.js';
@@ -20,7 +20,7 @@ const STEPS = [
     { id: 'p9', title: 'Aktywność', render: renderP9 },
     { id: 'p10', title: 'Sprzęt', render: renderP10 },
     { id: 'p11', title: 'Doświadczenie', render: renderP11 },
-    { id: 'p12', title: 'Czas', render: renderP12 },
+    { id: 'p12', title: 'Twój Kalendarz', render: renderP12 }, // ZMIANA NAZWY
     { id: 'p13', title: 'Priorytety', render: renderP13 },
     { id: 'p14', title: 'Główny Cel', render: renderP14 },
     { id: 'p15', title: 'Cele Extra', render: renderP15 },
@@ -32,12 +32,12 @@ const STEPS = [
 export function initWizard(forceStart = false) {
     if (state.settings.onboardingCompleted && !forceStart) return false;
     const saved = state.settings.wizardData || {};
-    
+
     // Inicjalizacja stanu
     wizardAnswers = {
         pain_locations: saved.pain_locations || [],
-        focus_locations: saved.focus_locations || [], 
-        
+        focus_locations: saved.focus_locations || [],
+
         pain_intensity: saved.pain_intensity !== undefined ? saved.pain_intensity : 0,
         pain_character: saved.pain_character || [],
         medical_diagnosis: saved.medical_diagnosis || [],
@@ -48,14 +48,17 @@ export function initWizard(forceStart = false) {
         hobby: saved.hobby || [],
         equipment_available: saved.equipment_available || [''],
         exercise_experience: saved.exercise_experience || '',
-        sessions_per_week: saved.sessions_per_week || 3,
+        
+        // NOWOŚĆ: Wzorzec dni (Domyślnie Pn, Śr, Pt)
+        schedule_pattern: saved.schedule_pattern || [1, 3, 5],
+        
         target_session_duration_min: saved.target_session_duration_min || 30,
         session_component_weights: saved.session_component_weights || [],
         primary_goal: saved.primary_goal || '',
         secondary_goals: saved.secondary_goals || [],
         physical_restrictions: saved.physical_restrictions || []
     };
-    
+
     wizardAnswers.hasPain = wizardAnswers.pain_locations.length > 0;
 
     let wizardScreen = document.getElementById('wizard-screen');
@@ -68,11 +71,11 @@ export function initWizard(forceStart = false) {
         wizardContainer.id = 'wizard-container';
         wizardScreen.appendChild(wizardContainer);
     }
-    
+
     document.querySelector('header').style.display = 'none';
     const bottomNav = document.getElementById('app-bottom-nav');
     if (bottomNav) bottomNav.style.display = 'none';
-    
+
     wizardScreen.classList.add('active');
     currentStep = 0;
     renderStep();
@@ -91,9 +94,8 @@ function closeWizardWithoutSaving() {
 // --- LOGIKA NAWIGACJI (POMIJANIE KROKÓW) ---
 
 function getStepsToSkip() {
-    // Pomijamy pytania o ból (W TYM DIAGNOZĘ), jeśli nie zaznaczono stref bólowych
     if (wizardAnswers.pain_locations.length === 0) {
-        return ['p2', 'p3', 'p4', 'p5', 'p6', 'p7']; // Dodano 'p4' do pomijanych
+        return ['p2', 'p3', 'p4', 'p5', 'p6', 'p7'];
     }
     return [];
 }
@@ -121,7 +123,7 @@ function resetSkippedStepData(stepId) {
     switch (stepId) {
         case 'p2': wizardAnswers.pain_intensity = 0; break;
         case 'p3': wizardAnswers.pain_character = []; break;
-        case 'p4': wizardAnswers.medical_diagnosis = ['none']; break; // Domyślnie brak diagnozy
+        case 'p4': wizardAnswers.medical_diagnosis = ['none']; break;
         case 'p5': wizardAnswers.trigger_movements = []; break;
         case 'p6': wizardAnswers.relief_movements = []; break;
         case 'p7': wizardAnswers.daily_impact = 0; break;
@@ -132,10 +134,10 @@ async function renderStep() {
     const container = document.getElementById('wizard-container');
     if (!container) return;
     container.innerHTML = '';
-    
+
     const step = STEPS[currentStep];
     const progressPct = Math.round(((currentStep) / (STEPS.length - 1)) * 100);
-    
+
     const closeBtn = document.createElement('button');
     closeBtn.id = 'wiz-close';
     closeBtn.className = 'wizard-close-btn';
@@ -143,15 +145,15 @@ async function renderStep() {
     closeBtn.innerHTML = '<img src="/icons/close.svg" alt="X" style="width:20px; height:20px;">';
     closeBtn.onclick = () => { if (confirm("Przerwać konfigurację? Postęp zostanie utracony.")) closeWizardWithoutSaving(); };
     container.appendChild(closeBtn);
-    
+
     const content = document.createElement('div');
     content.className = 'wizard-content';
     content.style.cssText = "display: flex; flex-direction: column; height: 100%; padding-top: 4rem; box-sizing: border-box; overflow: hidden;";
-    
+
     const isIntro = step.id === 'start';
     const isProcessing = step.id === 'generating';
     let navHTML = '';
-    
+
     if (!isProcessing) {
         navHTML = `
         <div class="wizard-nav ${isIntro ? 'single-btn' : ''}" style="margin-top: 0; padding-top: 10px; flex-shrink: 0;">
@@ -159,7 +161,7 @@ async function renderStep() {
             <button id="wiz-next" class="action-btn">${step.id === 'summary' ? 'Generuj Plan' : 'Dalej'}</button>
         </div>`;
     }
-    
+
     content.innerHTML = `
         <div class="wizard-progress-bar" style="flex-shrink: 0; margin-bottom: 10px;">
             <div class="wizard-progress-fill" style="width: ${progressPct}%;"></div>
@@ -168,29 +170,28 @@ async function renderStep() {
         <div id="step-body" style="flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; display: flex; flex-direction: column; padding: 5px;"></div>
         ${navHTML}
     `;
-    
+
     container.appendChild(content);
-    
+
     const bodyContainer = content.querySelector('#step-body');
     await step.render(bodyContainer);
-    
+
     const prevBtn = content.querySelector('#wiz-prev');
     const nextBtn = content.querySelector('#wiz-next');
-    
-    if (prevBtn) prevBtn.onclick = () => { 
-        currentStep = calculatePrevStep(currentStep); 
-        renderStep(); 
+
+    if (prevBtn) prevBtn.onclick = () => {
+        currentStep = calculatePrevStep(currentStep);
+        renderStep();
     };
-    
+
     if (nextBtn) nextBtn.onclick = () => {
-        // Aktualizacja flagi hasPain przed walidacją/przejściem
         wizardAnswers.hasPain = wizardAnswers.pain_locations.length > 0;
-        
-        if (validateStep(step.id)) { 
-            currentStep = calculateNextStep(currentStep); 
-            renderStep(); 
-        } else { 
-            alert("Proszę wybrać przynajmniej jedną opcję, aby kontynuować."); 
+
+        if (validateStep(step.id)) {
+            currentStep = calculateNextStep(currentStep);
+            renderStep();
+        } else {
+            alert("Proszę wybrać przynajmniej jedną opcję, aby kontynuować.");
         }
     };
 }
@@ -206,6 +207,8 @@ function validateStep(stepId) {
         case 'p9': return wizardAnswers.hobby.length > 0;
         case 'p10': return wizardAnswers.equipment_available.length > 0;
         case 'p11': return wizardAnswers.exercise_experience !== '';
+        // Walidacja kalendarza: musi być min 1 dzień
+        case 'p12': return wizardAnswers.schedule_pattern && wizardAnswers.schedule_pattern.length > 0;
         case 'p13': return wizardAnswers.session_component_weights.length > 0;
         case 'p14': return wizardAnswers.primary_goal !== '';
         case 'p15': return wizardAnswers.secondary_goals.length > 0;
@@ -233,7 +236,7 @@ async function renderP1(c) {
                 <div style="display:flex; align-items:center; gap:6px; font-size:0.75rem;"><span style="width:10px; height:10px; background:var(--danger-color); border-radius:50%; display:block;"></span> Ból / Uraz</div>
                 <div style="display:flex; align-items:center; gap:6px; font-size:0.75rem;"><span style="width:10px; height:10px; background:#3b82f6; border-radius:50%; display:block;"></span> Cel / Focus</div>
             </div>
-            
+
             <label class="switch-container" style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
                 <div style="text-align: left;">
                     <div id="tool-label" style="font-weight: 700; font-size: 0.95rem; color: #fff;">
@@ -248,7 +251,7 @@ async function renderP1(c) {
                 </div>
             </label>
         </div>
-        
+
         <p class="wizard-step-desc" style="font-size:0.8rem; margin: 5px 0 0 0; text-align: center; opacity: 0.6;">
             Dotknij miejsc na ciele.
         </p>
@@ -300,12 +303,12 @@ async function renderP1(c) {
     </svg>`;
 
     document.getElementById('svg-placeholder').innerHTML = svgContent;
-    
+
     const updateVisuals = () => {
         c.querySelectorAll('.zone').forEach(el => {
             el.classList.remove('pain', 'focus');
             const val = el.dataset.val || el.id;
-            
+
             if (wizardAnswers.pain_locations.includes(val)) {
                 el.classList.add('pain');
             } else if (wizardAnswers.focus_locations.includes(val)) {
@@ -318,7 +321,7 @@ async function renderP1(c) {
 
     const toggle = c.querySelector('#paint-tool-toggle');
     const label = c.querySelector('#tool-label');
-    
+
     toggle.addEventListener('change', (e) => {
         label.textContent = e.target.checked ? '🖊️ Zaznaczam: BÓL' : '🖊️ Zaznaczam: CEL';
     });
@@ -351,12 +354,8 @@ async function renderP1(c) {
 function renderP2(c) { c.innerHTML = `<p class="wizard-step-desc">Poziom bólu (0-10)</p><div style="padding:2rem 0; text-align:center;"><div id="pain-val-display" style="font-size:4rem; font-weight:800; color:var(--danger-color); text-shadow:0 0 20px rgba(231,111,81,0.4);">${wizardAnswers.pain_intensity}</div><input type="range" min="0" max="10" value="${wizardAnswers.pain_intensity}" style="width:100%; margin-top:2rem;" id="pain-slider"><div style="display:flex; justify-content:space-between; opacity:0.6; font-size:0.8rem; margin-top:10px;"><span>Brak</span><span>Ekstremalny</span></div></div>`; c.querySelector('#pain-slider').addEventListener('input', (e) => { wizardAnswers.pain_intensity = parseInt(e.target.value); c.querySelector('#pain-val-display').textContent = wizardAnswers.pain_intensity; }); }
 function renderP3(c) { renderMultiSelect(c, 'Jaki to rodzaj bólu?', [{ val: 'sharp', label: '🔪 Ostry / Kłujący' }, { val: 'dull', label: '🪨 Tępy / Uciskający' }, { val: 'burning', label: '🔥 Palący' }, { val: 'stiffness', label: '🪵 Sztywność' }, { val: 'radiating', label: '⚡ Promieniujący' }, { val: 'numbness', label: '🧊 Mrowienie' }], 'pain_character'); }
 
-// --- KROK 4: DIAGNOZA (FILTROWANA) ---
 function renderP4(c) {
     const title = 'Czy masz diagnozę lekarską?';
-    
-    // Mapowanie diagnoz do stref bólowych
-    // Klucz = ID diagnozy, Wartość = Lista stref, które ją aktywują
     const diagnosisTriggerMap = {
         'scoliosis': ['thoracic', 'lumbar_general', 'cervical'],
         'disc_herniation': ['lumbar_general', 'cervical', 'sciatica'],
@@ -383,15 +382,10 @@ function renderP4(c) {
     ];
 
     const currentPainZones = wizardAnswers.pain_locations;
-
-    // Filtrujemy opcje
     const filteredOptions = allOptions.filter(opt => {
-        if (opt.val === 'none') return true; // Zawsze pokazujemy "Brak"
-        
+        if (opt.val === 'none') return true;
         const requiredZones = diagnosisTriggerMap[opt.val];
-        if (!requiredZones) return true; // Jeśli diagnoza nie ma przypisanych stref, pokazujemy ją (fallback)
-
-        // Sprawdzamy czy którakolwiek z wymaganych stref jest w obecnych strefach bólu
+        if (!requiredZones) return true;
         return requiredZones.some(zone => currentPainZones.includes(zone));
     });
 
@@ -441,7 +435,101 @@ function renderP10(c) {
 }
 
 function renderP11(c) { renderSingleSelect(c, 'Doświadczenie w treningu?', [{ val: 'none', label: 'Początkujący (0)' }, { val: 'occasional', label: 'Okazjonalne' }, { val: 'regular', label: 'Regularne (2+/tydz)' }, { val: 'advanced', label: 'Zaawansowane' }], 'exercise_experience'); }
-function renderP12(c) { c.innerHTML = `<p class="wizard-step-desc">Ile masz czasu?</p><div style="padding: 0 10px;"><div class="form-group" style="margin-bottom:2.5rem;"><label style="display:flex; justify-content:space-between; margin-bottom:10px;"><span>Sesji w tygodniu:</span><span id="freq-disp" style="font-weight:bold; color:var(--gold-color); min-width: 20px; text-align: right;">${wizardAnswers.sessions_per_week}</span></label><input type="range" min="2" max="7" value="${wizardAnswers.sessions_per_week}" id="freq-slider" style="width: 100%;"></div><div class="form-group"><label style="display:flex; justify-content:space-between; margin-bottom:10px;"><span>Czas na sesję:</span><span id="dur-disp" style="font-weight:bold; color:var(--gold-color); min-width: 60px; text-align: right;">${wizardAnswers.target_session_duration_min} min</span></label><input type="range" min="15" max="60" step="5" value="${wizardAnswers.target_session_duration_min}" id="dur-slider" style="width: 100%;"></div></div>`; c.querySelector('#freq-slider').addEventListener('input', (e) => { wizardAnswers.sessions_per_week = parseInt(e.target.value); c.querySelector('#freq-disp').textContent = e.target.value; }); c.querySelector('#dur-slider').addEventListener('input', (e) => { wizardAnswers.target_session_duration_min = parseInt(e.target.value); c.querySelector('#dur-disp').textContent = e.target.value + " min"; }); }
+
+// --- NOWY KROK 12: KALENDARZ TYGODNIOWY ---
+function renderP12(c) {
+    const days = [
+        { label: 'Pn', val: 1 },
+        { label: 'Wt', val: 2 },
+        { label: 'Śr', val: 3 },
+        { label: 'Cz', val: 4 },
+        { label: 'Pt', val: 5 },
+        { label: 'So', val: 6 },
+        { label: 'Nd', val: 0 }
+    ];
+
+    let pattern = wizardAnswers.schedule_pattern || [];
+    if (pattern.length === 0) pattern = [1, 3, 5]; // Domyślnie Pn, Śr, Pt
+
+    c.innerHTML = `
+        <p class="wizard-step-desc">W które dni chcesz ćwiczyć?</p>
+        <div style="padding: 0 10px;">
+            
+            <div class="day-selector-container">
+                ${days.map(d => `
+                    <div class="day-toggle ${pattern.includes(d.val) ? 'active' : ''}" data-val="${d.val}">
+                        ${d.label}
+                    </div>
+                `).join('')}
+            </div>
+
+            <div style="text-align: center; margin: 15px 0; font-size: 0.9rem; opacity: 0.7;">
+                Wybrano: <strong id="days-count">${pattern.length}</strong> dni w tygodniu
+            </div>
+
+            <div class="form-group" style="margin-top:2.5rem;">
+                <label style="display:flex; justify-content:space-between; margin-bottom:10px;">
+                    <span>Czas na sesję:</span>
+                    <span id="dur-disp" style="font-weight:bold; color:var(--gold-color); min-width: 60px; text-align: right;">${wizardAnswers.target_session_duration_min} min</span>
+                </label>
+                <input type="range" min="15" max="60" step="5" value="${wizardAnswers.target_session_duration_min}" id="dur-slider" style="width: 100%;">
+            </div>
+        </div>
+
+        <style>
+            .day-selector-container {
+                display: flex;
+                justify-content: space-between;
+                gap: 5px;
+                margin-top: 10px;
+            }
+            .day-toggle {
+                width: 40px;
+                height: 40px;
+                border-radius: 50%;
+                background: rgba(255,255,255,0.1);
+                border: 1px solid rgba(255,255,255,0.2);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: 700;
+                cursor: pointer;
+                transition: all 0.2s;
+                font-size: 0.9rem;
+            }
+            .day-toggle.active {
+                background: var(--gold-color);
+                color: #000;
+                box-shadow: 0 0 10px rgba(233, 196, 106, 0.4);
+                transform: scale(1.1);
+            }
+        </style>
+    `;
+
+    const toggles = c.querySelectorAll('.day-toggle');
+    const countDisplay = c.querySelector('#days-count');
+
+    toggles.forEach(toggle => {
+        toggle.addEventListener('click', () => {
+            const val = parseInt(toggle.dataset.val);
+            if (pattern.includes(val)) {
+                pattern = pattern.filter(d => d !== val);
+                toggle.classList.remove('active');
+            } else {
+                pattern.push(val);
+                toggle.classList.add('active');
+            }
+            pattern.sort();
+            wizardAnswers.schedule_pattern = pattern;
+            countDisplay.textContent = pattern.length;
+        });
+    });
+
+    c.querySelector('#dur-slider').addEventListener('input', (e) => {
+        wizardAnswers.target_session_duration_min = parseInt(e.target.value);
+        c.querySelector('#dur-disp').textContent = e.target.value + " min";
+    });
+}
 
 function renderP13(c) {
     renderMultiSelect(c, 'Priorytety treningowe?', [
@@ -485,10 +573,10 @@ function renderP16(c) {
     ], 'physical_restrictions');
 }
 
-function renderSummary(c) { 
+function renderSummary(c) {
     const painCount = wizardAnswers.pain_locations.length;
     const focusCount = wizardAnswers.focus_locations.length;
-    
+
     let painSection = '';
     if (painCount > 0) {
         painSection = `
@@ -504,6 +592,11 @@ function renderSummary(c) {
         focusSection = `<li style="color:#3b82f6">🔵 <strong>Cel:</strong> ${wizardAnswers.focus_locations.join(', ')}</li>`;
     }
 
+    // Formatowanie dni
+    const dayLabels = { 1: 'Pn', 2: 'Wt', 3: 'Śr', 4: 'Cz', 5: 'Pt', 6: 'So', 0: 'Nd' };
+    const pattern = wizardAnswers.schedule_pattern || [];
+    const formattedDays = pattern.map(d => dayLabels[d]).join(', ');
+
     c.innerHTML = `
     <div style="text-align:left; font-size:0.95rem; background:rgba(255,255,255,0.05); padding:1.5rem; border-radius:12px;">
         <h3 style="margin-top:0; color:var(--gold-color);">Twój Profil</h3>
@@ -512,11 +605,11 @@ function renderSummary(c) {
             ${focusSection}
             <li>🛠️ <strong>Sprzęt:</strong> ${wizardAnswers.equipment_available.join(', ')}</li>
             <li>🎯 <strong>Główny cel:</strong> ${wizardAnswers.primary_goal}</li>
-            <li>📅 <strong>Plan:</strong> ${wizardAnswers.sessions_per_week}x w tygodniu</li>
+            <li>📅 <strong>Dni:</strong> ${formattedDays || 'Brak'}</li>
             <li>⏱️ <strong>Czas:</strong> ${wizardAnswers.target_session_duration_min} min</li>
         </ul>
-        <p style="margin-top:1.5rem; opacity:0.8; font-size:0.85rem;">Asystent AI przeanalizuje te dane i ułoży spersonalizowany plan tygodniowy.</p>
-    </div>`; 
+        <p style="margin-top:1.5rem; opacity:0.8; font-size:0.85rem;">Asystent AI przeanalizuje Twój kalendarz i ułoży spersonalizowany plan.</p>
+    </div>`;
 }
 
 async function renderProcessing(c) { c.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%;"><div style="width:50px; height:50px; border:4px solid var(--gold-color); border-top-color:transparent; border-radius:50%; animation:spin 1s linear infinite; margin-bottom:20px;"></div><div id="console-output" style="font-family:monospace; color:var(--accent-color); font-size:0.9rem;">Analiza danych...</div></div><style>@keyframes spin { to { transform: rotate(360deg); } }</style>`; const consoleDiv = c.querySelector('#console-output'); const logs = ["Mapowanie stref...", "Analiza sprzętu...", "Wybór ćwiczeń...", "Optymalizacja...", "Gotowe!"]; let delay = 0; logs.forEach((log, index) => { setTimeout(() => { consoleDiv.textContent = log; if (index === logs.length - 1) { setTimeout(finalizeGeneration, 500); } }, delay); delay += 800; }); }

@@ -1,53 +1,57 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v15.2.0
+# Aplikacja Treningowa (Smart Rehab PWA) v16.0.0
 
-Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją (metodyka McGill, prehab kolan i bioder). System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Virtual Physio"**, który w czasie rzeczywistym buduje plany treningowe na podstawie profilu medycznego, historii postępów i dostępnego sprzętu.
+Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
 ---
 
 ## 🚀 Kluczowe Funkcjonalności
 
+### 📅 Adaptive Calendar Engine (ACE)
+Rewolucja w planowaniu treningów. Zamiast statycznego "Planu A" na 4 tygodnie, system działa w modelu **Rolling Window (Kroczące Okno)**:
+*   **Planowanie ciągłe:** System zawsze utrzymuje plan na 7 dni do przodu od "Dzisiaj".
+*   **Auto-Synchronizacja:** Przy każdym uruchomieniu aplikacja sprawdza, czy plan jest aktualny. Jeśli minął dzień lub brakuje danych, backend automatycznie "dopycha" brakujące dni w tle.
+*   **Reality Check:** Algorytm analizuje historię z ostatnich 24-72h. Jeśli ominąłeś trening, dzisiejsza sesja zostanie zmodyfikowana (np. zwiększona objętość "Carry Over"). Jeśli trenowałeś ekstra, dzisiejsza sesja będzie lżejsza ("Fatigue Management").
+
 ### 🧠 Adaptive Pacing & Recalculation
 System uczy się tempa użytkownika, aby estymacje czasu trwania sesji były idealnie dopasowane.
-*   **Analiza Historii:** Backend wylicza medianę czasu wykonania jednego powtórzenia dla każdego ćwiczenia (np. jeśli robisz pompki wolniej niż domyślne 6s, system to zapamięta).
-*   **Manualna Rekalibracja:** W ustawieniach dostępna jest funkcja "Przelicz Statystyki Tempa", która analizuje całą historię treningową w celu aktualizacji bazy Adaptive Pacing.
-*   **Globalna Kalibracja:** Możliwość ręcznego ustawienia bazowego tempa i długości przerw.
+*   **Analiza Historii:** Backend wylicza medianę czasu wykonania jednego powtórzenia dla każdego ćwiczenia.
+*   **Manualna Rekalibracja:** Funkcja przeliczania statystyk na żądanie analizuje całą historię treningową.
 
 ### 🛡️ Session Recovery (Crash Protection)
 *   **Stan sesji:** Pozycja w treningu, czasy serii, timer i logi są zapisywane lokalnie co 2 sekundy.
-*   **Auto-Resume:** Po odświeżeniu strony lub zamknięciu przeglądarki, aplikacja wykrywa przerwany trening i oferuje jego wznowienie z uwzględnieniem czasu, który upłynął w trakcie pauzy.
+*   **Auto-Resume:** Po odświeżeniu strony aplikacja oferuje wznowienie treningu, uwzględniając czas przerwy.
 
-### 🏥 Clinical Engine v5.8 (Knee & Spine)
+### 🏥 Clinical Engine v6.0 (Safety First)
 Zaawansowany silnik reguł współdzielony między Frontend i Backend:
-*   **Knee Protection:** Blokuje wysokie obciążenia (High Load) i głębokie przysiady u osób z chondromalacją, uszkodzeniami łąkotek lub zgłoszonym ostrym bólem kolana.
-*   **Wzorce Tolerancji:** Automatyczne wykluczanie ruchów wyprostnych lub zgięciowych w zależności od zdiagnozowanego wzorca bólowego (np. przepuklina L5-S1).
-*   **Wellness Check-in:** Każdy trening zaczyna się od oceny stanu dnia (0-10), co pozwala Asystentowi na dynamiczną redukcję objętości (tryby ECO, CARE, SOS).
-
-### 📺 Cast Receiver v8.0 (Anti-Idle Nuclear Option)
-Dedykowana aplikacja na TV (Chromecast) z najbardziej agresywnym na rynku systemem zapobiegania wygaszaniu ekranu:
-*   **Keep-Alive:** Wykorzystuje Web Audio API (oscylator ciszy co 5s), MediaSession API (emulacja odtwarzacza), Wake Lock API oraz niewidoczną animację Canvas (GPU activity).
+*   **Knee & Spine Protection:** Blokuje wysokie obciążenia (High Load) u osób zdiagnozowanych (np. chondromalacia, dyskopatia) lub zgłaszających ostry ból.
+*   **Wzorce Tolerancji:** Wyklucza ruchy (zgięcie/wyprost), które historycznie nasilały ból u danego użytkownika.
+*   **Fatigue Filter:** Jeśli system wykryje przemęczenie (np. 3 dni treningowe z rzędu), automatycznie blokuje ćwiczenia o najwyższym poziomie trudności (Lvl 4-5) w kolejnym dniu.
 
 ---
 
-## 🧠 Moduły Logiczne
+## 🧠 Moduły Logiczne (Backend)
 
-### 1. Virtual Physio (Dynamic Generator)
-Generator planów tygodniowych oparty wyłącznie na logice dynamicznej.
-*   **Brak sztywnych szablonów:** Każdy dzień cyklu jest generowany indywidualnie.
-*   **Priorytetyzacja:** Jeśli zgłosisz "Siedzący tryb pracy", system automatycznie wstrzyknie ćwiczenia typu "Anti-Office" do rozgrzewki.
+### 1. Virtual Physio (Rolling Planner)
+Generator oparty na pętli kalendarzowej, a nie sekwencyjnej.
+*   **Schedule Pattern:** Użytkownik wybiera konkretne dni tygodnia (np. Pn, Śr, Pt). System generuje treningi tylko w te dni, a w pozostałe wstawia regenerację.
+*   **Frequency Scaling:** Algorytm analizuje gęstość treningów.
+    *   *Wysoka częstotliwość (5-7 dni):* Lżejsze sesje, mniejsza objętość na sesję (uniknięcie wypalenia CUN).
+    *   *Niska częstotliwość (1-2 dni):* Cięższe sesje, maksymalizacja bodźca ("Weekend Warrior").
+*   **Global Freshness:** Algorytm pamięta użycie mięśni w obrębie całego generowanego okna, aby uniknąć katowania tej samej partii dzień po dniu.
 
-### 2. Workout Mixer Lite & Tuner Synaptyczny
-Zrezygnowano z losowego tasowania na rzecz świadomej personalizacji:
-*   **Smart Swap:** Pozwala wymienić dowolne ćwiczenie na bezpieczną alternatywę z tej samej kategorii biomechanicznej.
-*   **Tuner:** Możliwość precyzyjnego ustawienia "Affinity Score" (lubię/nie lubię) oraz zgłoszenia poziomu trudności (za łatwe -> Ewolucja / za trudne -> Dewolucja).
-*   **Micro-Dosing:** Jeśli system wykryje, że ewolucja była zbyt szybka, zastosuje tryb mikro-serii (więcej serii, ale bardzo mało powtórzeń), aby zbudować technikę.
+### 2. Workout Mixer Lite
+Obsługa modyfikacji "w locie":
+*   **Smart Swap:** Wymiana ćwiczenia na bezpieczną alternatywę z tej samej kategorii biomechanicznej.
+*   **Tuner Synaptyczny:** Użytkownik może ocenić ćwiczenie jako "Za łatwe" (Ewolucja -> trudniejszy wariant) lub "Za trudne" (Dewolucja -> łatwiejszy wariant).
 
-### 3. Bio-Protocol Hub (Front-end Generated)
+### 3. Bio-Protocol Hub (Front-end)
 Sesje celowane generowane natychmiastowo po stronie klienta (Time-Boxing):
-*   🚑 **SOS:** Ratunek przeciwbólowy dla wybranej strefy.
-*   ⚡ **Neuro:** Ślizgi nerwowe dla rwy kulszowej/udowej.
+*   🚑 **SOS:** Ratunek przeciwbólowy.
+*   ⚡ **Neuro:** Ślizgi nerwowe.
 *   🌊 **Flow:** Mobilność całego ciała.
-*   🔥 **Metabolic Burn:** Intensywne spalanie w trybie Low-Impact.
+*   🔥 **Metabolic Burn:** Intensywne spalanie Low-Impact.
 *   🧗 **Ladder:** Budowanie progresji technicznej.
+
 
 
 ---
@@ -153,7 +157,17 @@ Katalog ćwiczeń (Baza Wiedzy).
 ### 3. `user_settings`
 Przechowuje konfigurację oraz **wygenerowany plan dynamiczny**.
 *   `user_id` (FK, VARCHAR).
-*   `settings` (JSONB): Przechowuje m.in. `dynamicPlanData` (Lekki JSON z referencjami do ćwiczeń).
+*   Pole `settings` (JSONB) przechowuje teraz nowy format planu:
+    **   `wizardData.schedule_pattern`: Tablica int `[1, 3, 5]` (dni treningowe).
+    **  `dynamicPlanData`: Obiekt typu `RollingPlan`:
+        ```json
+        {
+        "id": "rolling-1715000...",
+        "days": [
+            { "date": "2025-05-27", "type": "workout", "title": "Trening Wtorek", ... },
+            { "date": "2025-05-28", "type": "rest", "title": "Regeneracja", ... }
+        ]
+        }
 *   `updated_at` (TIMESTAMP).
 
 ### 4. `training_sessions`

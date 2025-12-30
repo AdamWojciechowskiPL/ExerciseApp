@@ -45,8 +45,6 @@ const dataStore = {
 
             const data = await response.json();
             state.exerciseLibrary = data.exercises || {};
-            
-            // Usunięto ładowanie trainingPlans (static)
 
             const total = Object.keys(state.exerciseLibrary).length;
             const blocked = Object.values(state.exerciseLibrary).filter(ex => ex.isAllowed === false).length;
@@ -90,8 +88,8 @@ const dataStore = {
             if (data.settings) {
                 state.settings = { ...state.settings, ...data.settings };
                 state.tts.isSoundOn = state.settings.ttsEnabled ?? true;
-                
-                // Zawsze wymuszamy tryb dynamiczny
+
+                // Zawsze wymuszamy tryb dynamiczny w nowym modelu
                 state.settings.planMode = 'dynamic';
             }
 
@@ -139,7 +137,10 @@ const dataStore = {
             state.settings.dynamicPlanData = result.plan;
             state.settings.planMode = 'dynamic';
             state.settings.onboardingCompleted = true;
-            state.settings.wizardData = q;
+            
+            // Aktualizujemy dane wizarda w stanie, łącząc stare z nowymi
+            state.settings.wizardData = { ...state.settings.wizardData, ...q };
+            
             return result;
         } else throw new Error("Pusta odpowiedź z generatora.");
     },
@@ -212,10 +213,12 @@ const dataStore = {
             sessionData.exerciseRatings.forEach(rating => {
                 const id = rating.exerciseId;
                 if (!state.userPreferences[id]) state.userPreferences[id] = { score: 0, difficulty: 0 };
-                let delta = 0;
-                if (rating.action === 'like') delta = 20; else if (rating.action === 'dislike') delta = -20;
-                else if (rating.action === 'hard') delta = -10; else if (rating.action === 'easy') delta = -5;
-                state.userPreferences[id].score = Math.max(-100, Math.min(100, state.userPreferences[id].score + delta));
+                
+                // Optymistyczna aktualizacja lokalna (spójna z save-session.js)
+                if (rating.action === 'like') state.userPreferences[id].score = 50;
+                else if (rating.action === 'dislike') state.userPreferences[id].score = -50;
+                else if (rating.action === 'neutral') state.userPreferences[id].score = 0;
+                
                 if (rating.action === 'hard') state.userPreferences[id].difficulty = 1;
                 else if (rating.action === 'easy') state.userPreferences[id].difficulty = -1;
             });
@@ -240,19 +243,23 @@ const dataStore = {
             state.userPreferences[exerciseId].score = value;
         } else if (action === 'set_difficulty') {
             state.userPreferences[exerciseId].difficulty = value;
+        } else if (action === 'reset_difficulty') {
+            state.userPreferences[exerciseId].difficulty = 0;
         } else {
-            let delta = 0;
-            if (action === 'like') delta = 20; else if (action === 'dislike') delta = -20;
-            else if (action === 'hard') { delta = -10; state.userPreferences[exerciseId].difficulty = 1; }
-            else if (action === 'easy') { delta = -5; state.userPreferences[exerciseId].difficulty = -1; }
-            state.userPreferences[exerciseId].score += delta;
+            // Logika dla like/dislike/hard/easy (dla przycisków w historii)
+            if (action === 'like') state.userPreferences[exerciseId].score = 50;
+            else if (action === 'dislike') state.userPreferences[exerciseId].score = -50;
+            else if (action === 'neutral') state.userPreferences[exerciseId].score = 0;
+            
+            if (action === 'hard') state.userPreferences[exerciseId].difficulty = 1;
+            else if (action === 'easy') state.userPreferences[exerciseId].difficulty = -1;
         }
 
         try {
             const res = await callAPI('update-preference', { method: 'POST', body: { exerciseId, action, value } });
             if (res) {
-                state.userPreferences[exerciseId].score = res.newScore;
-                state.userPreferences[exerciseId].difficulty = res.newDifficulty;
+                if (res.newScore !== undefined) state.userPreferences[exerciseId].score = res.newScore;
+                if (res.newDifficulty !== undefined) state.userPreferences[exerciseId].difficulty = res.newDifficulty;
             }
             return res;
         } catch (error) { console.error("Update pref failed:", error); }

@@ -4,55 +4,91 @@ import dataStore from '../dataStore.js';
 import { processSVG } from '../utils.js';
 import { buildClinicalContext, checkExerciseAvailability } from '../clinicalEngine.js';
 
+// --- NOWOŚĆ: MODAL PRZENOSZENIA DNIA ---
+export function renderMoveDayModal(availableTargets, onConfirm) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+
+    const datesHtml = availableTargets.map(d => {
+        const dateObj = new Date(d.date);
+        const dayName = dateObj.toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'short' });
+        return `
+            <button class="target-date-btn" data-date="${d.date}">
+                📅 ${dayName}
+            </button>
+        `;
+    }).join('');
+
+    overlay.innerHTML = `
+        <div class="swap-modal">
+            <h3>Przenieś trening</h3>
+            <p style="font-size:0.9rem; color:#666; margin-bottom:1rem;">Wybierz dzień wolny, na który chcesz przenieść ten trening:</p>
+            <div class="target-dates-list" style="display:flex; flex-direction:column; gap:8px; max-height:300px; overflow-y:auto;">
+                ${datesHtml}
+            </div>
+            <button id="cancel-move" class="nav-btn" style="margin-top:1.5rem; width:100%;">Anuluj</button>
+        </div>
+        <style>
+            .target-date-btn {
+                background: #f8f9fa; border: 1px solid #e2e8f0; padding: 12px; border-radius: 8px;
+                text-align: left; font-weight: 600; cursor: pointer; transition: all 0.2s;
+                color: var(--text-color);
+            }
+            .target-date-btn:hover {
+                background: #e0f2fe; border-color: var(--primary-color);
+            }
+        </style>
+    `;
+
+    document.body.appendChild(overlay);
+
+    overlay.querySelectorAll('.target-date-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            onConfirm(btn.dataset.date);
+            overlay.remove();
+        });
+    });
+
+    overlay.querySelector('#cancel-move').addEventListener('click', () => overlay.remove());
+}
+
 export function renderSwapModal(currentExercise, onConfirm) {
     const currentId = currentExercise.id || currentExercise.exerciseId;
     let categoryId = currentExercise.categoryId;
     const libraryExercise = state.exerciseLibrary[currentId];
-    
-    // Fallback kategorii z biblioteki
+
     if (!categoryId && libraryExercise) categoryId = libraryExercise.categoryId;
     if (!categoryId) { alert("Błąd danych: brak kategorii."); return; }
 
-    // --- BUDOWANIE KONTEKSTU KLINICZNEGO ---
     const wizardData = state.settings.wizardData;
     let clinicalCtx = null;
-    
+
     if (wizardData) {
         clinicalCtx = buildClinicalContext(wizardData);
-        // Dodajemy czarną listę do kontekstu, aby filtrować zablokowane
         if (clinicalCtx) {
             clinicalCtx.blockedIds = new Set(state.blacklist || []);
         }
     }
 
-    // --- FILTROWANIE ALTERNATYW (KLINICZNE) ---
     const alternatives = Object.entries(state.exerciseLibrary)
         .map(([id, data]) => ({ id, ...data }))
         .filter(ex => {
-            // 1. Musi być ta sama kategoria
             if (ex.categoryId !== categoryId) return false;
-            
-            // 2. Nie może to być to samo ćwiczenie
             if (String(ex.id) === String(currentId)) return false;
-
-            // 3. WALIDACJA KLINICZNA
             if (clinicalCtx) {
-                // Sprawdzamy bezpieczeństwo, sprzęt i blacklistę
                 const result = checkExerciseAvailability(ex, clinicalCtx, {
-                    ignoreEquipment: false, // Wymagamy sprzętu przy swapie
-                    strictSeverity: true,   // Wymagamy bezpieczeństwa (tarcza, ból)
-                    ignoreDifficulty: false // Opcjonalnie: można dać true, jeśli chcemy pozwolić na trudniejsze
+                    ignoreEquipment: false,
+                    strictSeverity: true,
+                    ignoreDifficulty: false
                 });
                 return result.allowed;
             }
-
-            // Fallback jeśli brak wizardData (np. user niezalogowany/bez ankiety)
-            return true; 
+            return true;
         });
 
-    if (alternatives.length === 0) { 
-        alert(`Brak bezpiecznych alternatyw dla kategorii "${categoryId}" spełniających Twoje kryteria kliniczne i sprzętowe.`); 
-        return; 
+    if (alternatives.length === 0) {
+        alert(`Brak bezpiecznych alternatyw dla kategorii "${categoryId}".`);
+        return;
     }
 
     const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
@@ -123,8 +159,6 @@ export function renderSwapModal(currentExercise, onConfirm) {
 
 export function renderPreviewModal(svgContent, title) {
     const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
-
-    // Przetwarzanie SVG przed wyświetleniem w modalu
     const cleanSvg = processSVG(svgContent);
 
     overlay.innerHTML = `

@@ -23,6 +23,7 @@ import { loadVoices } from './tts.js';
 import { initializeCastApi, getIsCasting, sendShowIdle } from './cast.js';
 import { getSessionBackup, clearSessionBackup, calculateTimeGap, formatTimeGap } from './sessionRecovery.js';
 import { renderSessionRecoveryModal } from './ui/modals.js';
+import { shouldSynchronizePlan } from './utils.js';
 
 
 // === 2. POMOCNICZE FUNKCJE NAWIGACJI ===
@@ -117,8 +118,6 @@ function initAppLogic() {
 
     const searchInput = document.getElementById('library-search-input');
     if (searchInput) searchInput.addEventListener('input', (e) => { renderLibraryScreen(e.target.value); });
-
-    // USUNIĘTO: stary listener settingsForm, który powodował błędy, ponieważ formularz nie istnieje przy starcie aplikacji.
 
     if (screens.training) {
         screens.training.addEventListener('click', (e) => {
@@ -218,6 +217,37 @@ export async function main() {
 
                 if (bottomNav) bottomNav.classList.remove('hidden');
                 hideLoader();
+
+                // --- NOWOŚĆ: PLAN SYNCHRONIZATION LOGIC ---
+                const wizardData = state.settings.wizardData;
+                const hasWizardData = wizardData && Object.keys(wizardData).length > 0;
+                
+                if (hasWizardData) {
+                    const syncStatus = shouldSynchronizePlan(state.settings.dynamicPlanData);
+                    
+                    if (syncStatus.needed) {
+                        console.log(`[App] Sync needed: ${syncStatus.reason}`);
+                        if (syncStatus.reason === 'missing_today') {
+                            // Krytyczne: Brak planu na dzisiaj - blokujemy UI loaderem
+                            showLoader();
+                            try {
+                                await dataStore.generateDynamicPlan(wizardData);
+                                console.log("[App] Critical Plan generated.");
+                            } catch (e) {
+                                console.error("[App] Critical Sync Failed:", e);
+                            } finally {
+                                hideLoader();
+                            }
+                        } else {
+                            // Background Sync: Dopychanie bufora w tle
+                            dataStore.generateDynamicPlan(wizardData)
+                                .then(() => console.log("[App] Background Sync complete."))
+                                .catch(e => console.warn("[App] Background Sync failed:", e));
+                        }
+                    }
+                }
+                // --- END SYNC LOGIC ---
+
                 renderMainScreen(true);
 
                 await dataStore.loadRecentHistory(90);
@@ -251,6 +281,7 @@ export async function main() {
                 if (mainScreen && mainScreen.classList.contains('active')) renderMainScreen(false);
             } catch (initError) {
                 hideLoader();
+                console.error(initError);
             }
 
         } else {
@@ -264,6 +295,7 @@ export async function main() {
         }
     } catch (error) {
         hideLoader();
+        console.error(error);
     }
 }
 

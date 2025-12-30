@@ -1,4 +1,4 @@
-/* style.css - Full Version v12.4 (Double-Click Skip Logic) */
+/* style.css - Full Version v13.0 (Context Menu & Layout Fixes) */
 
 /* ============================================= */
 /* === 1. ZMIENNE GLOBALNE I RESET === */
@@ -328,11 +328,13 @@ main {
 .mission-card {
     background: #fff; border-radius: var(--radius-lg); padding: 1rem; margin-bottom: 1rem;
     box-shadow: 0 8px 25px rgba(0, 95, 115, 0.15); border: 2px solid var(--primary-color);
-    position: relative; overflow: hidden;
+    position: relative; 
+    /* overflow: hidden; USUNIĘTO DLA OBSŁUGI MENU KONTEKSTOWEGO */
 }
 .mission-card::before {
     content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 6px;
     background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 .mission-card.ai-mode { border: 2px solid transparent; background-clip: padding-box; box-shadow: 0 10px 30px rgba(10, 147, 150, 0.15); }
 .mission-card.ai-mode::after {
@@ -347,12 +349,13 @@ main {
     margin: -1rem -1rem 0.8rem -1rem; padding: 0.4rem 1rem;
     display: flex; align-items: center; justify-content: space-between;
     color: #fff; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; font-weight: 700;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 .ai-header-left { display: flex; align-items: center; gap: 8px; }
 .ai-dna-icon { font-size: 1.1rem; animation: spin-slow 4s linear infinite; }
 @keyframes spin-slow { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-.mission-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+.mission-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; padding-right: 30px; /* Miejsce na przycisk menu */ }
 .mission-day-badge { background: var(--primary-color); color: #fff; padding: 2px 8px; border-radius: 6px; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; }
 .mission-title { font-size: 1.3rem; margin: 0.2rem 0; color: var(--text-color); line-height: 1.2; }
 .estimated-time-badge {
@@ -409,11 +412,89 @@ main {
     min-width: 140px; width: 140px; background: #fff; border: 1px solid var(--border-color);
     border-radius: 12px; padding: 1rem; display: flex; flex-direction: column; justify-content: space-between;
     flex-shrink: 0; box-shadow: 0 2px 5px rgba(0,0,0,0.03); transition: transform 0.2s;
+    position: relative; /* overflow: hidden; USUNIĘTE */
 }
 .upcoming-card:active { transform: scale(0.98); }
 .upcoming-day-label { font-size: 0.7rem; text-transform: uppercase; color: #999; font-weight: 700; }
 .upcoming-title { font-size: 0.9rem; font-weight: 600; margin: 5px 0 10px 0; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .upcoming-btn { background: rgba(0,0,0,0.05); border: none; color: var(--text-color); font-size: 0.75rem; padding: 6px; border-radius: 6px; font-weight: 600; width: 100%; }
+
+/* --- CONTEXT MENU STYLES --- */
+.ctx-menu-wrapper {
+    position: relative;
+    width: 24px;
+    height: 24px;
+}
+
+.ctx-menu-btn {
+    background: transparent;
+    border: none;
+    font-size: 1.5rem;
+    color: #666;
+    cursor: pointer;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+}
+
+.ctx-menu-btn:hover { background: rgba(0,0,0,0.05); }
+
+.ctx-menu-dropdown {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: 100%;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    min-width: 180px;
+    z-index: 10000; /* Wysoki index */
+    flex-direction: column;
+    padding: 6px 0;
+    margin-top: 4px;
+}
+
+.ctx-menu-dropdown.active {
+    display: flex;
+    animation: fadeIn 0.1s ease;
+}
+
+.ctx-action {
+    background: transparent;
+    border: none;
+    padding: 10px 16px;
+    text-align: left;
+    font-size: 0.9rem;
+    cursor: pointer;
+    width: 100%;
+    color: #333;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    white-space: nowrap;
+    transition: background 0.1s;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.ctx-action img {
+    opacity: 0.7;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+}
+
+.ctx-action:hover {
+    background: #f3f4f6;
+    color: var(--primary-color);
+}
+
+.ctx-action:hover img { opacity: 1; }
+.ctx-action:last-child { border-bottom: none; }
 
 /* ============================================= */
 /* === 7. BIO-HUB (PROTOKOŁY) === */
@@ -1448,9 +1529,6 @@ box-shadow: 0 2px 5px rgba(0,0,0,0.03);
 
 .ac-actions { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 55px; border-left: 1px solid #eee; padding-left: 10px; justify-content: center; height: 100%; }
 .ac-score { font-weight: 800; font-size: 0.85rem; opacity: 0.8; background: #f3f4f6; padding: 4px 8px; border-radius: 6px; min-width: 40px; text-align: center; }
-
-.icon-btn { background: transparent; border: 1px solid transparent; cursor: pointer; padding: 8px; border-radius: 50%; transition: all 0.2s; font-size: 1.2rem; line-height: 1; }
-.icon-btn:hover { background: #f0f0f0; transform: scale(1.1); }
 
 /* Tier Borders */
 .atlas-card[data-tier="S"] { border-left-color: #f59e0b; background: linear-gradient(90deg, #fffbeb 0%, #fff 100%); }

@@ -1,4 +1,4 @@
-// utils.js
+// ExerciseApp/utils.js
 
 import { state } from './state.js';
 
@@ -58,11 +58,52 @@ export const getISODate = (date) => {
     return `${year}-${month}-${day}`;
 };
 
+// --- NOWOŚĆ: Logika decyzyjna dla Rolling Window ---
+export const shouldSynchronizePlan = (plan) => {
+    // 1. Jeśli nie ma planu, a user jest skonfigurowany -> SYNCHRONIZUJ
+    if (!plan || !plan.days || plan.days.length === 0) return { needed: true, reason: 'missing_plan' };
+
+    const todayISO = getISODate(new Date());
+
+    // 2. Jeśli plan nie zawiera DZISIEJSZEGO dnia -> SYNCHRONIZUJ KRYTYCZNIE
+    const hasToday = plan.days.some(d => d.date === todayISO);
+    if (!hasToday) return { needed: true, reason: 'missing_today' };
+
+    // 3. Sprawdzenie bufora przyszłości (np. czy mamy plan na 3 dni do przodu?)
+    // Backend generuje na 7 dni. Jeśli zostało mniej niż 3 dni, dopychamy.
+    const lastDayEntry = plan.days[plan.days.length - 1];
+    
+    // Jeśli z jakiegoś powodu wpis nie ma daty, wymuś regen
+    if (!lastDayEntry.date) return { needed: true, reason: 'corrupt_data' };
+
+    const lastDate = new Date(lastDayEntry.date);
+    const bufferThresholdDate = new Date();
+    bufferThresholdDate.setDate(bufferThresholdDate.getDate() + 3); // Chcemy mieć min. 3 dni zapasu
+
+    // Porównujemy daty (ignorując godziny poprzez setHours)
+    lastDate.setHours(0,0,0,0);
+    bufferThresholdDate.setHours(0,0,0,0);
+
+    if (lastDate < bufferThresholdDate) {
+        return { needed: true, reason: 'buffer_low' };
+    }
+
+    return { needed: false, reason: null };
+};
+
 export const getActiveTrainingPlan = () => {
     return state.settings.dynamicPlanData;
 };
 
 export const isTodayRestDay = () => {
+    // W nowym modelu (Rolling) to pole 'type' w obiekcie dnia decyduje, a nie statyczny harmonogram
+    const todayISO = getISODate(new Date());
+    const plan = getActiveTrainingPlan();
+    if (plan && plan.days) {
+        const todayEntry = plan.days.find(d => d.date === todayISO);
+        if (todayEntry) return todayEntry.type === 'rest';
+    }
+    // Fallback do starej metody
     const todayIndex = new Date().getDay();
     const scheduleIndex = todayIndex === 0 ? 6 : todayIndex - 1;
     if (!state.settings.schedule || !state.settings.schedule[scheduleIndex]) return false;
@@ -77,25 +118,7 @@ export const getAvailableMinutesForToday = () => {
 };
 
 export const getNextLogicalDay = () => {
-    const activePlan = getActiveTrainingPlan();
-    if (!activePlan || !activePlan.days) return null;
-
-    let allSessions = [];
-    if (state.userProgress) {
-        allSessions = Object.values(state.userProgress).flat();
-    }
-
-    const currentPlanId = activePlan.id;
-    const planSessions = allSessions.filter(s =>
-        s.planId === currentPlanId &&
-        s.status === 'completed'
-    );
-
-    const completedCount = planSessions.length;
-    const totalDays = activePlan.days.length;
-
-    if (completedCount >= totalDays) return null;
-    return activePlan.days[completedCount];
+    return null; // Deprecated in Rolling Model
 };
 
 export const getTrainingDayForDate = (date) => {
@@ -147,17 +170,13 @@ export const parseSetCount = (setsString) => {
 
 export const getExerciseDuration = (exercise) => {
     if (exercise.isRest) return exercise.duration;
-    // Fallback do starej metody (nieużywany w nowym silniku, ale dla bezpieczeństwa)
-    return null; 
+    return null;
 };
 
 // --- CALCULATE SMART DURATION (MIRROR OF BACKEND) ---
 export const calculateSmartDuration = (dayPlan) => {
     if (!dayPlan) return 0;
 
-    // 1. Ustawienia globalne
-    // Kluczowe: Muszą być identyczne jak w backendzie.
-    // Backend: clamp(toNumber(userData?.secondsPerRep, 6), 2, 12);
     const globalSpr = state.settings.secondsPerRep || 6;
     const rbs = state.settings.restBetweenSets || 30;
     const rbe = state.settings.restBetweenExercises || 30;
@@ -180,15 +199,11 @@ export const calculateSmartDuration = (dayPlan) => {
     allExercises.forEach((ex, index) => {
         const sets = parseSetCount(ex.sets);
         const isUnilateral = ex.isUnilateral || ex.is_unilateral || String(ex.reps_or_time).includes('/str');
-        
-        // Backend: multiplier = isUnilateral ? 2 : 1;
         const multiplier = isUnilateral ? 2 : 1;
 
-        // 2. Adaptive Pacing
-        // Backend: Pace Map z DB. Frontend: state.exercisePace z DB.
         const exId = ex.id || ex.exerciseId;
         let tempoToUse = globalSpr;
-        
+
         if (state.exercisePace && state.exercisePace[exId]) {
             tempoToUse = state.exercisePace[exId];
         }
@@ -197,31 +212,23 @@ export const calculateSmartDuration = (dayPlan) => {
         const valStr = String(ex.reps_or_time).toLowerCase();
 
         if (valStr.includes('s') || valStr.includes('min')) {
-            // Czas jest na stronę, więc x2 jeśli jednostronne
             workTimePerSet = parseRepsOrTime(ex.reps_or_time) * multiplier;
         } else {
-            // Reps * Tempo * Multiplier
             const reps = parseRepsOrTime(ex.reps_or_time);
             workTimePerSet = reps * tempoToUse * multiplier;
         }
 
-        // 3. Kalkulacja bloku
-        // Backend: let totalSeconds = (sets * workTimePerSet);
         let exDuration = sets * workTimePerSet;
 
-        // Backend: if (sets > 1) { totalSeconds += (sets - 1) * rbs; }
         if (sets > 1) {
             exDuration += (sets - 1) * rbs;
         }
 
-        // Backend: const transition = sets * (exEntry.is_unilateral ? 15 : 5);
-        // Uwaga: Backend używał 15s na zmianę strony i 5s na zwykłe
         const transition = sets * (isUnilateral ? 15 : 5);
         exDuration += transition;
 
         totalSeconds += exDuration;
 
-        // Backend loop: if (i < all.length - 1) total += rbe;
         if (index < allExercises.length - 1) {
             totalSeconds += rbe;
         }

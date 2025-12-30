@@ -5,14 +5,16 @@ const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
 const { buildUserContext, checkExerciseAvailability } = require('./_clinical-rule-engine.js');
 
 /**
- * Virtual Physio v5.5: Final Time-Boxing.
+ * Virtual Physio v6.1: Rolling Calendar Engine (Fixed Frequency).
  */
 
 const DEFAULT_SECONDS_PER_REP = 6;
 const DEFAULT_REST_BETWEEN_SETS = 30;
 const DEFAULT_REST_BETWEEN_EXERCISES = 30;
 const DEFAULT_TARGET_MIN = 30;
-const DEFAULT_SESSIONS_PER_WEEK = 3;
+
+// Domyślny wzorzec: Poniedziałek (1), Środa (3), Piątek (5)
+const DEFAULT_SCHEDULE_PATTERN = [1, 3, 5];
 
 const MIN_MAIN_EXERCISES = 1;
 const MAX_SETS_MAIN = 5;
@@ -423,7 +425,7 @@ function applyCheckExerciseAvailability(ex, ctx, userData) {
   }
 }
 
-function filterExerciseCandidates(exercises, userData, ctx) {
+function filterExerciseCandidates(exercises, userData, ctx, fatigueState) {
   const userEquipment = normalizeEquipmentList(userData?.equipment_available);
   const diagnosisSet = normalizeLowerSet(userData?.medical_diagnosis);
   const restrictionsSet = normalizeLowerSet(userData?.physical_restrictions);
@@ -437,6 +439,13 @@ function filterExerciseCandidates(exercises, userData, ctx) {
     if (violatesPhysicalRestrictions(ex, restrictionsSet)) continue;
     if (violatesDiagnosisHardContraindications(ex, diagnosisSet)) continue;
     if (violatesSeverePainRules(ex, ctx)) continue;
+
+    // --- FATIGUE FILTER ---
+    if (fatigueState === 'fatigued') {
+        if ((ex.difficulty_level || 1) >= 4) continue;
+        if ((ex.impact_level || 'low') === 'high') continue;
+    }
+
     filtered.push(ex);
   }
   return filtered;
@@ -531,14 +540,18 @@ function painReliefFitMultiplier(ex, section, painZoneSet) {
 function varietyPenalty(ex, state, section) {
   let p = 1.0;
   const weeklyUsed = state.weeklyUsage.get(ex.id) || 0;
-  p *= 1.0 / (1.0 + weeklyUsed * 0.7);
+  p *= 1.0 / (1.0 + weeklyUsed * 2.0);
+
   const weeklyCat = state.weeklyCategoryUsage.get(ex.category_id) || 0;
   p *= 1.0 / (1.0 + weeklyCat * 0.35);
+
   const sessionCat = state.sessionCategoryUsage.get(ex.category_id) || 0;
   p *= 1.0 / (1.0 + sessionCat * (section === 'main' ? 0.9 : 0.6));
+
   const plane = (ex.primary_plane || 'multi').toLowerCase();
   const sessionPlane = state.sessionPlaneUsage.get(plane) || 0;
   p *= 1.0 / (1.0 + sessionPlane * 0.35);
+
   return p;
 }
 
@@ -614,8 +627,7 @@ function pickExerciseForSection(section, candidates, userData, ctx, categoryWeig
 // Session structure
 // ---------------------------------
 
-function deriveSessionCounts(userData, ctx) {
-  const targetMin = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90);
+function deriveSessionCounts(userData, ctx, targetMin) {
   const componentWeights = normalizeLowerSet(userData?.session_component_weights);
 
   let warmup = 3;
@@ -632,38 +644,47 @@ function deriveSessionCounts(userData, ctx) {
   if (componentWeights.has('conditioning')) { main += ctx.isSevere ? 0 : 1; }
   if (ctx.isSevere) { warmup += 1; main = Math.max(MIN_MAIN_EXERCISES, main - 1); }
 
-  return { warmup, main: Math.max(MIN_MAIN_EXERCISES, main), cooldown, targetMin };
+  return { warmup, main: Math.max(MIN_MAIN_EXERCISES, main), cooldown };
 }
 
-function createInitialSession(dayNumber, counts) {
-  return { dayNumber, title: `Sesja ${dayNumber}`, warmup: [], main: [], cooldown: [], targetMinutes: counts.targetMin };
+function createInitialSession(dayNumber, targetMinutes) {
+  return { dayNumber, title: `Sesja ${dayNumber}`, warmup: [], main: [], cooldown: [], targetMinutes };
 }
 
 // ---------------------------------
 // Volume prescription & time estimation
 // ---------------------------------
 
-function loadFactorFromExperienceAndPain(userData, ctx) {
+function loadFactorFromState(userData, ctx, fatigueState) {
   const exp = String(userData?.exercise_experience || 'none').toLowerCase();
-  const sessionsPerWeek = clamp(toNumber(userData?.sessions_per_week, DEFAULT_SESSIONS_PER_WEEK), 1, 7);
+  const schedule = userData?.schedule_pattern || DEFAULT_SCHEDULE_PATTERN;
+  const sessionsPerWeek = schedule.length;
+
   const painIntensity = clamp(toNumber(userData?.pain_intensity, 0), 0, 10);
   let base = 1.0;
+
   if (exp === 'none') base = 0.70;
   else if (exp === 'occasional') base = 0.85;
   else if (exp === 'regular') base = 1.0;
   else if (exp === 'advanced') base = 1.10;
+
   const severity = clamp(toNumber(ctx?.severityScore, painIntensity), 0, 10);
   if (severity >= 7) base *= 0.55;
   else if (severity >= 4) base *= 0.80;
-  if (sessionsPerWeek >= 6) base *= 0.85;
-  if (sessionsPerWeek <= 2) base *= 1.10;
+
+  if (sessionsPerWeek >= 5) base *= 0.90;
+  if (sessionsPerWeek <= 2) base *= 1.15;
+
+  if (fatigueState === 'fatigued') base *= 0.8;
+  if (fatigueState === 'fresh') base *= 1.1;
+
   return clamp(base, 0.45, 1.25);
 }
 
-function prescribeForExercise(ex, section, userData, ctx, categoryWeights) {
-  const factor = loadFactorFromExperienceAndPain(userData, ctx);
+function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatigueState, targetMin) {
+  const factor = loadFactorFromState(userData, ctx, fatigueState);
   const cat = String(ex.category_id || '').toLowerCase();
-  const targetMin = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90);
+
   let sets = 1;
   let repsOrTime = '10';
 
@@ -716,47 +737,33 @@ function parseRepsOrTimeToSeconds(repsOrTime) {
   return parseInt(t, 10) || 10;
 }
 
-// --- FIX: ADAPTIVE PACING & UNILATERAL LOGIC ---
 function estimateExerciseDurationSeconds(exEntry, userData, paceMap) {
-  // 1. Ustawienia globalne
   const globalSpr = clamp(toNumber(userData?.secondsPerRep, DEFAULT_SECONDS_PER_REP), 2, 12);
   const rbs = clamp(toNumber(userData?.restBetweenSets, DEFAULT_REST_BETWEEN_SETS), 0, 180);
-  
-  // 2. Adaptive Pacing (Per-Exercise)
+
   let tempoToUse = globalSpr;
   if (paceMap && paceMap[exEntry.id]) {
       tempoToUse = paceMap[exEntry.id];
   }
 
   const sets = parseInt(exEntry.sets, 10) || 1;
-  
-  // 3. Multiplier logic (IDENTYCZNA JAK FRONTEND)
   const isUnilateral = exEntry.is_unilateral || String(exEntry.reps_or_time || '').includes('/str');
   const multiplier = isUnilateral ? 2 : 1;
 
   let workTimePerSet = 0;
-  
   const valStr = String(exEntry.reps_or_time).toLowerCase();
   if (valStr.includes('s') || valStr.includes('min')) {
-      // Czas (np. 30s) jest na stronę, więc x2 jeśli jednostronne
-      workTimePerSet = parseRepsOrTimeToSeconds(exEntry.reps_or_time) * multiplier; 
+      workTimePerSet = parseRepsOrTimeToSeconds(exEntry.reps_or_time) * multiplier;
   } else {
-      // Powtórzenia (np. 10) -> 10 * tempo * multiplier
       const reps = parseRepsOrTimeToSeconds(exEntry.reps_or_time);
       workTimePerSet = reps * tempoToUse * multiplier;
   }
 
-  // 4. Kalkulacja całkowita
-  // Czas pracy + Przerwy między seriami
   let totalSeconds = (sets * workTimePerSet);
   if (sets > 1) {
       totalSeconds += (sets - 1) * rbs;
   }
-
-  // Czas na przejście (identycznie jak w frontend utils.js)
-  // 15s na zmianę strony dla jednostronnych, 5s dla zwykłych
   const transition = sets * (isUnilateral ? 15 : 5);
-  
   return totalSeconds + transition;
 }
 
@@ -771,40 +778,37 @@ function estimateSessionDurationSeconds(session, userData, paceMap) {
   return total;
 }
 
-function expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, sState, pZones, paceMap) {
-  const targetSec = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90) * 60;
+function expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, sState, pZones, paceMap, fatigueState, targetMin) {
+  const targetSec = targetMin * 60;
   let guard = 0;
 
   while (guard < 20) {
     const estimated = estimateSessionDurationSeconds(session, userData, paceMap);
-    if (estimated >= targetSec * 0.95) break; 
+    if (estimated >= targetSec * 0.95) break;
 
     guard++;
-
     let changed = false;
 
-    // 1. Najpierw próbujemy zwiększyć serie
     for (const ex of session.main) {
       if (isBreathingCategory(ex.category_id)) continue;
       const s = parseInt(ex.sets, 10) || 1;
       const maxS = (isMobilityCategory(ex.category_id) && !ex.category_id.includes('stretch')) ? MAX_SETS_MOBILITY : MAX_SETS_MAIN;
-      if (s < maxS) { 
-        ex.sets = String(s + 1); 
-        changed = true; 
-        break; 
+      if (s < maxS) {
+        ex.sets = String(s + 1);
+        changed = true;
+        break;
       }
     }
 
-    // 2. Jeśli serie są max, dodajemy NOWE ćwiczenie do Main
     if (!changed) {
       const ex = pickExerciseForSection('main', candidates, userData, ctx, categoryWeights, sState, pZones, (c) => !isBreathingCategory(c.category_id));
       if (ex) {
-        const rx = prescribeForExercise(ex, 'main', userData, ctx, categoryWeights);
+        const rx = prescribeForExercise(ex, 'main', userData, ctx, categoryWeights, fatigueState, targetMin);
         const newEx = { ...ex, ...rx };
         session.main.push(newEx);
         changed = true;
       } else {
-        break; 
+        break;
       }
     }
 
@@ -812,18 +816,14 @@ function expandSessionToTarget(session, candidates, userData, ctx, categoryWeigh
   }
 }
 
-function enforceStrictTimeLimit(session, userData, paceMap) {
-    const targetSec = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90) * 60;
-    const hardLimit = targetSec + 30; 
-
+function enforceStrictTimeLimit(session, userData, paceMap, targetMin) {
+    const targetSec = targetMin * 60;
+    const hardLimit = targetSec + 30;
     let maxIterations = 50;
 
     while (maxIterations-- > 0) {
         const totalDur = estimateSessionDurationSeconds(session, userData, paceMap);
-        
-        if (totalDur <= hardLimit) {
-            return; 
-        }
+        if (totalDur <= hardLimit) return;
 
         const warmDur = session.warmup.reduce((acc, ex) => acc + estimateExerciseDurationSeconds(ex, userData, paceMap), 0);
         const mainDur = session.main.reduce((acc, ex) => acc + estimateExerciseDurationSeconds(ex, userData, paceMap), 0);
@@ -835,26 +835,19 @@ function enforceStrictTimeLimit(session, userData, paceMap) {
 
         session.main.forEach((ex, idx) => {
             const d = estimateExerciseDurationSeconds(ex, userData, paceMap);
-            if (d > heaviestDur) {
-                heaviestDur = d;
-                heaviestEx = ex;
-                heaviestIdx = idx;
-            }
+            if (d > heaviestDur) { heaviestDur = d; heaviestEx = ex; heaviestIdx = idx; }
         });
 
         let actionTaken = false;
 
         if (heaviestEx) {
             const currentSets = parseInt(heaviestEx.sets, 10);
-
             if (currentSets > 1) {
                 heaviestEx.sets = String(currentSets - 1);
                 actionTaken = true;
-            } 
-            else {
+            } else {
                 const projectedMain = mainDur - heaviestDur;
                 const isBalanceThreatened = projectedMain < (warmDur + coolDur);
-
                 if (!isBalanceThreatened && session.main.length > MIN_MAIN_EXERCISES) {
                     session.main.splice(heaviestIdx, 1);
                     actionTaken = true;
@@ -866,21 +859,13 @@ function enforceStrictTimeLimit(session, userData, paceMap) {
         if (!actionTaken) {
             for (const ex of session.cooldown) {
                 const s = parseInt(ex.sets, 10);
-                if (s > 1) { 
-                    ex.sets = String(s - 1); 
-                    actionTaken = true; 
-                    break; 
-                }
+                if (s > 1) { ex.sets = String(s - 1); actionTaken = true; break; }
             }
         }
         if (!actionTaken) {
             for (const ex of session.warmup) {
                 const s = parseInt(ex.sets, 10);
-                if (s > 1) { 
-                    ex.sets = String(s - 1); 
-                    actionTaken = true; 
-                    break; 
-                }
+                if (s > 1) { ex.sets = String(s - 1); actionTaken = true; break; }
             }
         }
 
@@ -905,37 +890,112 @@ function enforceStrictTimeLimit(session, userData, paceMap) {
             }
         }
 
-        if (!actionTaken) {
-            break;
-        }
+        if (!actionTaken) break;
     }
 }
 
-function buildWeeklyPlan(candidates, categoryWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap) {
-  const sessionsPerWeek = clamp(toNumber(userData?.sessions_per_week, DEFAULT_SESSIONS_PER_WEEK), 1, 7);
-  const counts = deriveSessionCounts(userData, ctx);
-  const plan = { id: `dynamic-${Date.now()}`, days: [], meta: { ...userData, severityScore: ctx.severityScore, isSevere: ctx.isSevere } };
-  const weeklyUsage = new Map(), weeklyCategoryUsage = new Map();
+// ---------------------------------
+// NEW: Context Analysis
+// ---------------------------------
 
-  for (let day = 1; day <= sessionsPerWeek; day++) {
-    const sState = { usedIds: new Set(), weeklyUsage, weeklyCategoryUsage, sessionCategoryUsage: new Map(), sessionPlaneUsage: new Map(), historyMap: historyMap || {}, preferencesMap: preferencesMap || {} };
-    const session = createInitialSession(day, counts);
-    const pZones = derivePainZoneSet(userData);
+function analyzeInitialFatigue(userId, lastSession) {
+    if (!lastSession) return 'fresh';
 
-    ['warmup', 'main', 'cooldown'].forEach(sec => {
-        for (let i = 0; i < counts[sec]; i++) {
-            const ex = pickExerciseForSection(sec, candidates, userData, ctx, categoryWeights, sState, pZones, (c) => sec === 'main' ? !isBreathingCategory(c.category_id) : (c.metabolic_intensity || 1) < 4);
-            if (ex) { const rx = prescribeForExercise(ex, sec, userData, ctx, categoryWeights); session[sec].push({ ...ex, ...rx }); }
+    const now = new Date();
+    const lastDate = new Date(lastSession.completed_at);
+    const diffHours = (now - lastDate) / (1000 * 60 * 60);
+
+    if (diffHours < 20) return 'fatigued';
+    if (diffHours > 72) return 'fresh';
+    return 'normal';
+}
+
+// ---------------------------------
+// NEW: Rolling Plan Builder
+// ---------------------------------
+
+function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap, initialFatigue) {
+    const schedulePattern = userData?.schedule_pattern || DEFAULT_SCHEDULE_PATTERN;
+    const targetMin = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90);
+
+    const plan = {
+        id: `rolling-${Date.now()}`,
+        days: [],
+        meta: { ...userData, severityScore: ctx.severityScore, isSevere: ctx.isSevere, generatedAt: new Date().toISOString() }
+    };
+
+    const weeklyUsage = new Map();
+    const weeklyCategoryUsage = new Map();
+
+    let fatigueState = initialFatigue;
+    let consecutiveTrainings = 0;
+
+    for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+        const currentDate = new Date();
+        currentDate.setDate(currentDate.getDate() + dayOffset);
+        const dayOfWeek = currentDate.getDay(); // 0 = Sunday, 1 = Monday...
+
+        const isScheduled = schedulePattern.includes(dayOfWeek);
+        
+        // ZMIANA: Zwiększony limit ciągu (14 dni), aby respektować wybór użytkownika (nawet 7 dni w tygodniu)
+        const forceRest = consecutiveTrainings >= 14;
+
+        if (isScheduled && !forceRest) {
+            consecutiveTrainings++;
+
+            const sState = {
+                usedIds: new Set(),
+                weeklyUsage,
+                weeklyCategoryUsage,
+                sessionCategoryUsage: new Map(),
+                sessionPlaneUsage: new Map(),
+                historyMap: historyMap || {},
+                preferencesMap: preferencesMap || {}
+            };
+
+            const counts = deriveSessionCounts(userData, ctx, targetMin);
+            const dayTitle = `Trening ${currentDate.toLocaleDateString('pl-PL', {weekday: 'long'})}`;
+            const session = createInitialSession(dayOffset + 1, targetMin);
+            session.title = dayTitle;
+            session.date = currentDate.toISOString().split('T')[0];
+            session.type = 'workout';
+
+            const pZones = derivePainZoneSet(userData);
+
+            ['warmup', 'main', 'cooldown'].forEach(sec => {
+                for (let i = 0; i < counts[sec]; i++) {
+                    const ex = pickExerciseForSection(sec, candidates, userData, ctx, categoryWeights, sState, pZones, (c) => sec === 'main' ? !isBreathingCategory(c.category_id) : (c.metabolic_intensity || 1) < 4);
+                    if (ex) {
+                        const rx = prescribeForExercise(ex, sec, userData, ctx, categoryWeights, fatigueState, targetMin);
+                        session[sec].push({ ...ex, ...rx });
+                    }
+                }
+            });
+
+            expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, sState, pZones, paceMap, fatigueState, targetMin);
+            enforceStrictTimeLimit(session, userData, paceMap, targetMin);
+
+            session.estimatedDurationMin = Math.round(estimateSessionDurationSeconds(session, userData, paceMap) / 60);
+            plan.days.push(session);
+
+            fatigueState = 'fatigued';
+
+        } else {
+            consecutiveTrainings = 0;
+            fatigueState = 'fresh';
+
+            plan.days.push({
+                dayNumber: dayOffset + 1,
+                title: 'Regeneracja',
+                date: currentDate.toISOString().split('T')[0],
+                type: 'rest',
+                warmup: [], main: [], cooldown: [],
+                estimatedDurationMin: 0
+            });
         }
-    });
+    }
 
-    expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, sState, pZones, paceMap);
-    enforceStrictTimeLimit(session, userData, paceMap);
-    
-    session.estimatedDurationMin = Math.round(estimateSessionDurationSeconds(session, userData, paceMap) / 60);
-    plan.days.push(session);
-  }
-  return plan;
+    return plan;
 }
 
 exports.handler = async (event) => {
@@ -946,12 +1006,13 @@ exports.handler = async (event) => {
 
   const client = await pool.connect();
   try {
-    const [eR, bR, pR, hR, sR] = await Promise.all([
+    const [eR, bR, pR, hR, sR, lastSessionR] = await Promise.all([
       client.query('SELECT * FROM exercises'),
       client.query('SELECT exercise_id FROM user_exercise_blacklist WHERE user_id = $1', [userId]),
       client.query('SELECT exercise_id, affinity_score FROM user_exercise_preferences WHERE user_id = $1', [userId]),
       client.query(`SELECT session_data->'sessionLog' as logs, completed_at FROM training_sessions WHERE user_id = $1 AND completed_at > NOW() - INTERVAL '30 days'`, [userId]),
-      client.query('SELECT exercise_id, avg_seconds_per_rep FROM user_exercise_stats WHERE user_id = $1', [userId])
+      client.query('SELECT exercise_id, avg_seconds_per_rep FROM user_exercise_stats WHERE user_id = $1', [userId]),
+      client.query(`SELECT completed_at FROM training_sessions WHERE user_id = $1 ORDER BY completed_at DESC LIMIT 1`, [userId])
     ]);
 
     const exercises = eR.rows.map(normalizeExerciseRow);
@@ -959,18 +1020,21 @@ exports.handler = async (event) => {
     bR.rows.forEach(r => ctx.blockedIds.add(r.exercise_id));
     const preferencesMap = {}; pR.rows.forEach(r => preferencesMap[r.exercise_id] = { score: r.affinity_score });
     const historyMap = {}; hR.rows.forEach(r => { (r.logs || []).forEach(l => { const id = l.exerciseId || l.id; if (id && (!historyMap[id] || new Date(r.completed_at) > historyMap[id])) historyMap[id] = new Date(r.completed_at); }); });
-    
+
     const paceMap = {};
     sR.rows.forEach(r => {
         paceMap[r.exercise_id] = parseFloat(r.avg_seconds_per_rep);
     });
 
+    const initialFatigue = analyzeInitialFatigue(userId, lastSessionR.rows[0]);
+
     const cWeights = buildDynamicCategoryWeights(exercises, userData, ctx);
-    const candidates = filterExerciseCandidates(exercises, userData, ctx);
+    const candidates = filterExerciseCandidates(exercises, userData, ctx, initialFatigue);
+
     if (candidates.length < 5) return { statusCode: 400, body: JSON.stringify({ error: 'NO_SAFE_EXERCISES' }) };
 
-    const plan = buildWeeklyPlan(candidates, cWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap);
-    
+    const plan = buildRollingPlan(candidates, cWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap, initialFatigue);
+
     const sRes = await client.query('SELECT settings FROM user_settings WHERE user_id = $1', [userId]);
     const settings = sRes.rows[0]?.settings || {};
     settings.dynamicPlanData = plan; settings.planMode = 'dynamic'; settings.onboardingCompleted = true; settings.wizardData = userData;
@@ -978,7 +1042,7 @@ exports.handler = async (event) => {
 
     return { statusCode: 200, body: JSON.stringify({ plan }) };
   } catch (e) {
-    console.error(e); 
+    console.error(e);
     return { statusCode: 500 };
   } finally { client.release(); }
 };

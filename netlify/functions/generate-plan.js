@@ -5,8 +5,8 @@ const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
 const { buildUserContext, checkExerciseAvailability } = require('./_clinical-rule-engine.js');
 
 /**
- * Virtual Physio v4.0: Iterative Hard-Limit Optimizer.
- * Gwarantuje, że czas sesji <= czas zadeklarowany przez użytkownika.
+ * Virtual Physio v4.0: Strict Iterative Time-Boxing.
+ * Gwarantuje, że czas sesji <= targetTime, stosując agresywne przycinanie (pruning).
  */
 
 const DEFAULT_SECONDS_PER_REP = 6;
@@ -15,16 +15,12 @@ const DEFAULT_REST_BETWEEN_EXERCISES = 30;
 const DEFAULT_TARGET_MIN = 30;
 const DEFAULT_SESSIONS_PER_WEEK = 3;
 
+const MIN_MAIN_EXERCISES = 1; // Pozwalamy zejść do 1, jeśli czas jest bardzo krótki
 const MAX_SETS_MAIN = 5;
 const MAX_SETS_MOBILITY = 3;
 const GLOBAL_MAX_REPS = 25;
 const GLOBAL_MAX_TIME_SEC = 90;
 const MAX_BREATHING_SEC = 240;
-const MAX_STRETCH_SEC = 120;
-
-const MIN_MAIN_EXERCISES = 2;
-const MIN_WARMUP_EXERCISES = 1;
-const MIN_COOLDOWN_EXERCISES = 1;
 
 const HARD_EXCLUDED_KNEE_LOAD_FOR_DIAGNOSES = new Set([
   'chondromalacia', 'meniscus_tear', 'acl_rehab', 'mcl_rehab', 'lcl_rehab',
@@ -263,7 +259,7 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
     boost(weights, 'core_anti_rotation', 0.3);
     multiplyMatching(weights, (cat) => String(cat).toLowerCase().includes('rotation_mobility'), 0.6);
   }
-  if (diagnosis.has('chondromalacia')) {
+  if (diagnosis.has('chondmalacia')) {
     boost(weights, 'vmo_activation', 0.8);
     boost(weights, 'knee_stability', 0.8);
     boost(weights, 'glute_activation', 0.6);
@@ -732,7 +728,8 @@ function estimateExerciseDurationSeconds(exEntry, userData) {
   else workPerSet = parseRepsOrTimeToSeconds(exEntry.reps_or_time) * spr;
   const work = sets * workPerSet * unilateralMult;
   const rests = (sets > 1) ? (sets - 1) * rbs : 0;
-  const transition = sets * (exEntry.is_unilateral ? 15 : 10);
+  // Transition added for unilateral side switch (15s) vs exercise switch (10s buffer in set calc)
+  const transition = sets * (exEntry.is_unilateral ? 15 : 5);
   return work + rests + transition;
 }
 
@@ -766,80 +763,107 @@ function expandSessionToTarget(session, candidates, userData, ctx, categoryWeigh
 }
 
 /**
- * REGENERATED: optimizeToHardLimit v4.0
- * Agresywna pętla iteracyjna do momentu osiągnięcia celu czasowego.
+ * enforceStrictTimeLimit v4.0 (Iterative Pruning Strategy)
+ * Redukuje czas sesji aż do osiągnięcia celu, usuwając najcięższe ćwiczenia lub serie.
  */
-function optimizeToHardLimit(session, userData) {
-  const targetSec = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90) * 60;
-  let estimated = estimateSessionDurationSeconds(session, userData);
-  
-  if (estimated <= targetSec) return;
+function enforceStrictTimeLimit(session, userData) {
+    const targetSec = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90) * 60;
+    // Tolerancja 60 sekund
+    const hardLimit = targetSec + 60; 
 
-  let loopGuard = 0;
-  while (estimated > targetSec && loopGuard < 100) {
-    loopGuard++;
+    let maxIterations = 50; // Bezpiecznik pętli
 
-    // 1. Obliczamy czasy sekcji
-    const wTime = session.warmup.reduce((s, ex) => s + estimateExerciseDurationSeconds(ex, userData), 0);
-    const mTime = session.main.reduce((s, ex) => s + estimateExerciseDurationSeconds(ex, userData), 0);
-    const cTime = session.cooldown.reduce((s, ex) => s + estimateExerciseDurationSeconds(ex, userData), 0);
+    while (maxIterations-- > 0) {
+        const totalDur = estimateSessionDurationSeconds(session, userData);
+        if (totalDur <= hardLimit) return; // Cel osiągnięty
 
-    // 2. Wybieramy pulę do cięcia
-    // Zasada: Rozgrzewka lub Schłodzenie nie mogą być dłuższe niż Main.
-    // Jeśli tak jest, tniemy je bezlitośnie.
-    let pool = [];
-    if (wTime > mTime && session.warmup.length > MIN_WARMUP_EXERCISES) {
-      pool = session.warmup;
-    } else if (cTime > mTime && session.cooldown.length > MIN_COOLDOWN_EXERCISES) {
-      pool = session.cooldown;
-    } else {
-      // W przeciwnym razie tniemy z całej sesji (szukamy najdłuższego ćwiczenia)
-      pool = [...session.warmup, ...session.main, ...session.cooldown];
-    }
+        // 1. Oblicz czasy sekcji
+        const warmDur = session.warmup.reduce((acc, ex) => acc + estimateExerciseDurationSeconds(ex, userData), 0);
+        const mainDur = session.main.reduce((acc, ex) => acc + estimateExerciseDurationSeconds(ex, userData), 0);
+        const coolDur = session.cooldown.reduce((acc, ex) => acc + estimateExerciseDurationSeconds(ex, userData), 0);
 
-    // 3. Znajdujemy najdłuższe ćwiczenie w wybranej puli
-    let longestEx = null;
-    let maxD = -1;
-    pool.forEach(ex => {
-      const d = estimateExerciseDurationSeconds(ex, userData);
-      if (d > maxD) {
-        maxD = d;
-        longestEx = ex;
-      }
-    });
+        // 2. Znajdź najdłuższe ćwiczenie w MAIN
+        let heaviestEx = null;
+        let heaviestDur = -1;
+        let heaviestIdx = -1;
 
-    if (!longestEx) break;
+        session.main.forEach((ex, idx) => {
+            const d = estimateExerciseDurationSeconds(ex, userData);
+            if (d > heaviestDur) {
+                heaviestDur = d;
+                heaviestEx = ex;
+                heaviestIdx = idx;
+            }
+        });
 
-    // 4. Redukcja serii lub Pruning (usuwanie)
-    const sets = parseInt(longestEx.sets, 10) || 1;
-    if (sets > 1) {
-      longestEx.sets = String(sets - 1);
-    } else {
-      // Ćwiczenie ma już tylko 1 serię -> Usuwamy je całkowicie (Pruning)
-      if (session.main.includes(longestEx) && session.main.length > MIN_MAIN_EXERCISES) {
-        session.main = session.main.filter(e => e !== longestEx);
-      } else if (session.warmup.includes(longestEx) && session.warmup.length > MIN_WARMUP_EXERCISES) {
-        session.warmup = session.warmup.filter(e => e !== longestEx);
-      } else if (session.cooldown.includes(longestEx) && session.cooldown.length > MIN_COOLDOWN_EXERCISES) {
-        session.cooldown = session.cooldown.filter(e => e !== longestEx);
-      } else {
-        // Jeśli nie możemy już usunąć ćwiczenia (minimum sekcji), tniemy powtórzenia o 20%
-        const curVal = parseRepsOrTimeToSeconds(longestEx.reps_or_time);
-        const nextVal = Math.max(longestEx.reps_or_time.includes('s') ? 10 : 5, Math.floor(curVal * 0.8));
-        if (nextVal < curVal) {
-          longestEx.reps_or_time = longestEx.reps_or_time.includes('s') ? `${nextVal} s` : (longestEx.reps_or_time.includes('/str') ? `${nextVal}/str.` : String(nextVal));
-        } else {
-          // Ostateczny bezpiecznik - jeśli nic nie da się zrobić, przerywamy pętlę
-          break;
+        let actionTaken = false;
+
+        if (heaviestEx) {
+            const currentSets = parseInt(heaviestEx.sets, 10);
+
+            // STRATEGIA 1: Redukcja serii najdłuższego ćwiczenia
+            if (currentSets > 1) {
+                heaviestEx.sets = String(currentSets - 1);
+                actionTaken = true;
+            } 
+            // STRATEGIA 2: Usunięcie ćwiczenia (jeśli ma 1 serię)
+            else {
+                // Sprawdzenie balansu: Czy Main nie stanie się krótszy od dodatków?
+                // Jeśli usunięcie heaviestEx sprawi, że Main < (Warm + Cool), to najpierw tnijmy Warm/Cool.
+                const projectedMain = mainDur - heaviestDur;
+                const isBalanceThreatened = projectedMain < (warmDur + coolDur);
+
+                if (!isBalanceThreatened && session.main.length > MIN_MAIN_EXERCISES) {
+                    session.main.splice(heaviestIdx, 1);
+                    actionTaken = true;
+                    session.compressionApplied = true;
+                }
+            }
         }
-      }
+
+        // STRATEGIA 3: Redukcja serii w Warmup/Cooldown (jeśli Main jest nienaruszalne lub balans zagrożony)
+        if (!actionTaken) {
+            // Najpierw tniemy cooldown (mniej ważny)
+            for (const ex of session.cooldown) {
+                const s = parseInt(ex.sets, 10);
+                if (s > 1) { ex.sets = String(s - 1); actionTaken = true; break; }
+            }
+        }
+        if (!actionTaken) {
+            // Potem tniemy warmup
+            for (const ex of session.warmup) {
+                const s = parseInt(ex.sets, 10);
+                if (s > 1) { ex.sets = String(s - 1); actionTaken = true; break; }
+            }
+        }
+
+        // STRATEGIA 4: Ostateczność - Usuwamy ćwiczenie z Main nawet jeśli psuje to balans
+        if (!actionTaken && session.main.length > MIN_MAIN_EXERCISES) {
+             // Usuwamy najcięższe (znalezione wcześniej)
+             if (heaviestIdx > -1) {
+                 session.main.splice(heaviestIdx, 1);
+                 actionTaken = true;
+                 session.compressionApplied = true;
+             }
+        }
+
+        // STRATEGIA 5: Nuklearna - Redukcja powtórzeń/czasu wszędzie
+        if (!actionTaken) {
+            const allEx = [...session.warmup, ...session.main, ...session.cooldown];
+            for (const ex of allEx) {
+                const cur = parseRepsOrTimeToSeconds(ex.reps_or_time);
+                const isSec = String(ex.reps_or_time).includes('s');
+                const next = Math.max(isSec ? 15 : 5, Math.floor(cur * 0.9));
+                if (next < cur) {
+                    ex.reps_or_time = isSec ? `${next} s` : (String(ex.reps_or_time).includes('/str') ? `${next}/str.` : String(next));
+                    actionTaken = true;
+                }
+            }
+        }
+
+        // Jeśli nic się nie udało zmienić, przerywamy (by uniknąć infinite loop)
+        if (!actionTaken) break;
     }
-
-    estimated = estimateSessionDurationSeconds(session, userData);
-  }
-
-  // Flaga informująca frontend o zastosowaniu drastycznej kompresji
-  if (loopGuard > 0) session.compressionApplied = true;
 }
 
 function buildWeeklyPlan(candidates, categoryWeights, userData, ctx, userId, historyMap, preferencesMap) {
@@ -860,9 +884,11 @@ function buildWeeklyPlan(candidates, categoryWeights, userData, ctx, userId, his
         }
     });
 
+    // 1. Najpierw próbujemy wypełnić czas (jeśli za krótko)
     expandSessionToTarget(session, candidates, userData, ctx, categoryWeights);
-    // STARA FUNKCJA ZASTĄPIONA NOWĄ
-    optimizeToHardLimit(session, userData);
+    
+    // 2. Następnie BEZWZGLĘDNIE ucinamy nadmiar (Strict Pruning)
+    enforceStrictTimeLimit(session, userData);
     
     session.estimatedDurationMin = Math.round(estimateSessionDurationSeconds(session, userData) / 60);
     plan.days.push(session);

@@ -5,8 +5,9 @@ const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
 const { buildUserContext, checkExerciseAvailability } = require('./_clinical-rule-engine.js');
 
 /**
- * Virtual Physio v3.5: Advanced Time-Boxing & Pruning Fix.
- * Naprawiono problem przekraczania czasu trwania sesji poprzez wprowadzenie usuwania ćwiczeń (pruning).
+ * Virtual Physio v3.7: Atomic Iterative Pruning.
+ * Naprawiono problem przekraczania czasu poprzez inteligentną redukcję najdłuższych ćwiczeń
+ * oraz zachowanie proporcji między sekcjami.
  */
 
 const DEFAULT_SECONDS_PER_REP = 6;
@@ -23,6 +24,8 @@ const MAX_BREATHING_SEC = 240;
 const MAX_STRETCH_SEC = 120;
 
 const MIN_MAIN_EXERCISES = 2;
+const MIN_WARMUP_EXERCISES = 1;
+const MIN_COOLDOWN_EXERCISES = 1;
 
 const HARD_EXCLUDED_KNEE_LOAD_FOR_DIAGNOSES = new Set([
   'chondromalacia', 'meniscus_tear', 'acl_rehab', 'mcl_rehab', 'lcl_rehab',
@@ -261,7 +264,7 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
     boost(weights, 'core_anti_rotation', 0.3);
     multiplyMatching(weights, (cat) => String(cat).toLowerCase().includes('rotation_mobility'), 0.6);
   }
-  if (diagnosis.has('chondmalacia')) {
+  if (diagnosis.has('chondromalacia')) {
     boost(weights, 'vmo_activation', 0.8);
     boost(weights, 'knee_stability', 0.8);
     boost(weights, 'glute_activation', 0.6);
@@ -734,14 +737,27 @@ function estimateExerciseDurationSeconds(exEntry, userData) {
   return work + rests + transition;
 }
 
+function estimateSectionDurationSeconds(exercises, userData) {
+    const rbe = clamp(toNumber(userData?.restBetweenExercises, DEFAULT_REST_BETWEEN_EXERCISES), 0, 180);
+    let total = 0;
+    for (let i = 0; i < exercises.length; i++) {
+        total += estimateExerciseDurationSeconds(exercises[i], userData);
+        if (i < exercises.length - 1) total += rbe;
+    }
+    return total;
+}
+
 function estimateSessionDurationSeconds(session, userData) {
   const rbe = clamp(toNumber(userData?.restBetweenExercises, DEFAULT_REST_BETWEEN_EXERCISES), 0, 180);
-  const all = [...session.warmup, ...session.main, ...session.cooldown];
-  let total = 0;
-  for (let i = 0; i < all.length; i++) {
-    total += estimateExerciseDurationSeconds(all[i], userData);
-    if (i < all.length - 1) total += rbe;
-  }
+  const warmup = estimateSectionDurationSeconds(session.warmup, userData);
+  const main = estimateSectionDurationSeconds(session.main, userData);
+  const cooldown = estimateSectionDurationSeconds(session.cooldown, userData);
+  
+  // Plus przerwy między sekcjami
+  let total = warmup + main + cooldown;
+  if (session.warmup.length > 0 && session.main.length > 0) total += rbe;
+  if (session.main.length > 0 && session.cooldown.length > 0) total += rbe;
+  
   return total;
 }
 
@@ -764,61 +780,89 @@ function expandSessionToTarget(session, candidates, userData, ctx, categoryWeigh
 }
 
 /**
- * FIXED: compressSessionIfTooLong v3.5
- * Dodano iteracyjną redukcję powtórzeń oraz "pruning" (usuwanie ćwiczeń), 
- * jeśli plan nadal przekracza limit.
+ * FIXED: compressSessionIfTooLong v3.7 (Atomic Iterative Pruning)
+ * Redukuje najdłuższe ćwiczenia i pilnuje balansu sekcji.
  */
 function compressSessionIfTooLong(session, userData) {
-  const targetSec = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90) * 60;
-  let estimated = estimateSessionDurationSeconds(session, userData);
-  
-  if (estimated <= targetSec * 1.05) return;
+    const targetSec = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90) * 60;
+    let estimated = estimateSessionDurationSeconds(session, userData);
+    
+    if (estimated <= targetSec * 1.03) return;
 
-  // KROK 1: Redukcja serii (do minimum 1)
-  let guard = 0;
-  while (estimated > targetSec * 1.05 && guard < 20) {
-    guard++;
-    let changed = false;
-    // Najpierw tniemy sekcję Main, potem Warmup
-    for (const ex of [...session.main, ...session.warmup]) {
-      const s = parseInt(ex.sets, 10) || 1;
-      if (s > 1) { 
-        ex.sets = String(s - 1); 
-        changed = true; 
-        break; 
-      }
+    let iterations = 0;
+    const maxIterations = 40; // Hard safety cap
+
+    while (estimated > targetSec * 1.02 && iterations < maxIterations) {
+        iterations++;
+
+        const durWarmup = estimateSectionDurationSeconds(session.warmup, userData);
+        const durMain = estimateSectionDurationSeconds(session.main, userData);
+        const durCooldown = estimateSectionDurationSeconds(session.cooldown, userData);
+
+        let targetSectionName = 'all';
+
+        // REGUŁA BALANSU: Rozgrzewka/Schłodzenie nie mogą być dłuższe niż Main
+        if (durWarmup > durMain) targetSectionName = 'warmup';
+        else if (durCooldown > durMain) targetSectionName = 'cooldown';
+
+        // Znajdź najdłuższe ćwiczenie w wybranej sekcji (lub w całym planie)
+        let longestEx = null;
+        let longestExDuration = -1;
+        let longestExIndex = -1;
+        let longestExSection = null;
+
+        const sectionsToSearch = targetSectionName === 'all' 
+            ? ['warmup', 'main', 'cooldown'] 
+            : [targetSectionName];
+
+        for (const secName of sectionsToSearch) {
+            const list = session[secName];
+            list.forEach((ex, idx) => {
+                const dur = estimateExerciseDurationSeconds(ex, userData);
+                if (dur > longestExDuration) {
+                    longestExDuration = dur;
+                    longestEx = ex;
+                    longestExIndex = idx;
+                    longestExSection = secName;
+                }
+            });
+        }
+
+        if (!longestEx) break;
+
+        const currentSets = parseInt(longestEx.sets, 10) || 1;
+
+        if (currentSets > 1) {
+            // SCENARIUSZ A: Odejmij serię najdłuższemu
+            longestEx.sets = String(currentSets - 1);
+        } else {
+            // SCENARIUSZ B: Usuń całe ćwiczenie (z zachowaniem minimum)
+            const minCount = longestExSection === 'main' ? MIN_MAIN_EXERCISES : 1;
+            if (session[longestExSection].length > minCount) {
+                session[longestExSection].splice(longestExIndex, 1);
+            } else if (targetSectionName !== 'all') {
+                // Jeśli sekcja jest już na minimum, ale musimy ją skrócić bo łamie balans:
+                // Skracamy powtórzenia/czas najdłuższego
+                const curVal = parseRepsOrTimeToSeconds(longestEx.reps_or_time);
+                const isSec = longestEx.reps_or_time.includes('s');
+                const newVal = Math.max(isSec ? 10 : 5, Math.floor(curVal * 0.8));
+                longestEx.reps_or_time = isSec ? `${newVal} s` : (longestEx.reps_or_time.includes('/str') ? `${newVal}/str.` : String(newVal));
+            } else {
+                // Ostateczność: Skróć powtórzenia w Main
+                const mainEx = session.main[0];
+                if (mainEx) {
+                   const curVal = parseRepsOrTimeToSeconds(mainEx.reps_or_time);
+                   const isSec = mainEx.reps_or_time.includes('s');
+                   const newVal = Math.max(isSec ? 10 : 5, Math.floor(curVal * 0.8));
+                   mainEx.reps_or_time = isSec ? `${newVal} s` : (mainEx.reps_or_time.includes('/str') ? `${newVal}/str.` : String(newVal));
+                }
+            }
+        }
+
+        estimated = estimateSessionDurationSeconds(session, userData);
     }
-    estimated = estimateSessionDurationSeconds(session, userData);
-    if (!changed) break;
-  }
-
-  // KROK 2: Redukcja powtórzeń/czasu (iteracyjnie o 10% do momentu celu)
-  if (estimated > targetSec * 1.08) {
-      let repGuard = 0;
-      while (estimated > targetSec * 1.05 && repGuard < 5) {
-          repGuard++;
-          for (const ex of [...session.main, ...session.warmup]) {
-              const cur = parseRepsOrTimeToSeconds(ex.reps_or_time);
-              const isSec = ex.reps_or_time.includes('s');
-              const next = Math.max(isSec ? 10 : 5, Math.floor(cur * 0.9));
-              
-              if (next < cur) {
-                  ex.reps_or_time = isSec ? `${next} s` : (ex.reps_or_time.includes('/str') ? `${next}/str.` : String(next));
-              }
-              estimated = estimateSessionDurationSeconds(session, userData);
-              if (estimated <= targetSec * 1.05) break;
-          }
-      }
-  }
-
-  // KROK 3: Agresywne usuwanie (Pruning) - jeśli nadal za długo, usuwamy ostatnie ćwiczenie z MAIN
-  if (estimated > targetSec * 1.15 && session.main.length > MIN_MAIN_EXERCISES) {
-      while (estimated > targetSec * 1.10 && session.main.length > MIN_MAIN_EXERCISES) {
-          session.main.pop();
-          estimated = estimateSessionDurationSeconds(session, userData);
-      }
-      session.compressionApplied = true; // Flaga dla UI (wyświetlenie ostrzeżenia o limicie)
-  }
+    
+    session.compressionApplied = (estimated > targetSec * 1.05);
 }
 
 function buildWeeklyPlan(candidates, categoryWeights, userData, ctx, userId, historyMap, preferencesMap) {

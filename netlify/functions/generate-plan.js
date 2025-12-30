@@ -6,8 +6,8 @@ const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
 const { buildUserContext, checkExerciseAvailability } = require('./_clinical-rule-engine.js');
 
 /**
- * Virtual Physio v5.0: Sync-Lock Time-Boxing.
- * Gwarantuje zgodność czasu Backend = Frontend poprzez uwzględnienie Adaptive Pacing.
+ * Virtual Physio v5.1: Sync-Lock Time-Boxing + Fix Constants.
+ * Naprawiono błąd ReferenceError: MAX_SETS_MAIN is not defined.
  */
 
 const DEFAULT_SECONDS_PER_REP = 6;
@@ -17,6 +17,8 @@ const DEFAULT_TARGET_MIN = 30;
 const DEFAULT_SESSIONS_PER_WEEK = 3;
 
 const MIN_MAIN_EXERCISES = 1;
+const MAX_SETS_MAIN = 5;       // PRZYWRÓCONO
+const MAX_SETS_MOBILITY = 3;   // PRZYWRÓCONO
 const MAX_BREATHING_SEC = 240;
 const GLOBAL_MAX_REPS = 25;
 
@@ -257,7 +259,7 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
     boost(weights, 'core_anti_rotation', 0.3);
     multiplyMatching(weights, (cat) => String(cat).toLowerCase().includes('rotation_mobility'), 0.6);
   }
-  if (diagnosis.has('chondromalacia')) {
+  if (diagnosis.has('chondmalacia')) {
     boost(weights, 'vmo_activation', 0.8);
     boost(weights, 'knee_stability', 0.8);
     boost(weights, 'glute_activation', 0.6);

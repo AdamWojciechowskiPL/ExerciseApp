@@ -5,7 +5,7 @@ const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
 const { buildUserContext, checkExerciseAvailability } = require('./_clinical-rule-engine.js');
 
 /**
- * Virtual Physio v6.1: Rolling Calendar Engine (Fixed Frequency).
+ * Virtual Physio v6.2: Rolling Calendar Engine with Forced Rest Support.
  */
 
 const DEFAULT_SECONDS_PER_REP = 6;
@@ -918,6 +918,9 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
     const schedulePattern = userData?.schedule_pattern || DEFAULT_SCHEDULE_PATTERN;
     const targetMin = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90);
 
+    // Pobierz daty wymuszonego odpoczynku (np. ustawione ręcznie przez usera w dashboardzie)
+    const forcedRestDates = new Set(normalizeStringArray(userData?.forced_rest_dates));
+
     const plan = {
         id: `rolling-${Date.now()}`,
         days: [],
@@ -934,13 +937,15 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
         const currentDate = new Date();
         currentDate.setDate(currentDate.getDate() + dayOffset);
         const dayOfWeek = currentDate.getDay(); // 0 = Sunday, 1 = Monday...
+        const dateString = currentDate.toISOString().split('T')[0];
 
         const isScheduled = schedulePattern.includes(dayOfWeek);
-        
+        const isForcedRest = forcedRestDates.has(dateString);
+
         // ZMIANA: Zwiększony limit ciągu (14 dni), aby respektować wybór użytkownika (nawet 7 dni w tygodniu)
         const forceRest = consecutiveTrainings >= 14;
 
-        if (isScheduled && !forceRest) {
+        if (isScheduled && !forceRest && !isForcedRest) {
             consecutiveTrainings++;
 
             const sState = {
@@ -957,7 +962,7 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
             const dayTitle = `Trening ${currentDate.toLocaleDateString('pl-PL', {weekday: 'long'})}`;
             const session = createInitialSession(dayOffset + 1, targetMin);
             session.title = dayTitle;
-            session.date = currentDate.toISOString().split('T')[0];
+            session.date = dateString;
             session.type = 'workout';
 
             const pZones = derivePainZoneSet(userData);
@@ -987,7 +992,7 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
             plan.days.push({
                 dayNumber: dayOffset + 1,
                 title: 'Regeneracja',
-                date: currentDate.toISOString().split('T')[0],
+                date: dateString,
                 type: 'rest',
                 warmup: [], main: [], cooldown: [],
                 estimatedDurationMin: 0

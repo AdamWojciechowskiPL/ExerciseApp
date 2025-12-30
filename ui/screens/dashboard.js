@@ -73,7 +73,20 @@ const handleTurnToRest = async (dayDateISO) => {
             setTimeout(async () => {
                 if (confirm("Zmodyfikowałeś ten dzień. Czy chcesz przeliczyć pozostałe dni planu?")) {
                     showLoader();
-                    await dataStore.generateDynamicPlan(state.settings.wizardData);
+
+                    // PRZYGOTOWUJEMY PAYLOAD Z WYMUSZONĄ DATĄ WOLNĄ
+                    const payload = JSON.parse(JSON.stringify(state.settings.wizardData || {}));
+
+                    // Inicjalizujemy tablicę, jeśli nie istnieje
+                    if (!payload.forced_rest_dates) payload.forced_rest_dates = [];
+
+                    // Dodajemy datę, jeśli jeszcze jej nie ma
+                    if (!payload.forced_rest_dates.includes(dayDateISO)) {
+                        payload.forced_rest_dates.push(dayDateISO);
+                    }
+
+                    // Wysyłamy do backendu z informacją o wymuszonym dniu wolnym
+                    await dataStore.generateDynamicPlan(payload);
                 }
                 hideLoader();
                 renderMainScreen(false);
@@ -132,6 +145,12 @@ const handleMoveDay = (sourceDateISO) => {
                 setTimeout(async () => {
                     if (confirm("Trening został przeniesiony. Czy chcesz przeliczyć pozostałe dni planu?")) {
                         showLoader();
+                        // Tutaj również możemy dodać logikę forced_rest_dates dla daty źródłowej,
+                        // jeśli chcemy, aby "dziura" po przeniesieniu była trwała przy regeneracji.
+                        // Ale w przypadku 'Move' zazwyczaj chodzi o jednorazową zamianę w obecnym oknie.
+                        // Zostawiamy standardowe generowanie - system i tak wypełni lukę,
+                        // co może być pożądane (Move = przełożenie + zwolnienie miejsca na coś nowego?).
+                        // Jeśli użytkownik chce, żeby to miejsce zostało puste, powinien użyć "Zmień na Wolne".
                         await dataStore.generateDynamicPlan(state.settings.wizardData);
                     }
                     hideLoader();
@@ -150,7 +169,15 @@ const handleResetPlan = async () => {
     if (!confirm("Czy na pewno chcesz zresetować wszystkie manualne zmiany i wygenerować plan na nowo?")) return;
     showLoader();
     try {
-        await dataStore.generateDynamicPlan(state.settings.wizardData);
+        // Przy pełnym resecie czyścimy wymuszone daty wolne (opcjonalnie)
+        // Jeśli chcemy zachować ustawienia użytkownika, używamy wizardData as-is.
+        // Jeśli "Reset" ma oznaczać "Powrót do czystego harmonogramu", czyścimy forced_rest_dates.
+        const cleanPayload = { ...state.settings.wizardData };
+        if (cleanPayload.forced_rest_dates) {
+            cleanPayload.forced_rest_dates = [];
+        }
+
+        await dataStore.generateDynamicPlan(cleanPayload);
         clearPlanFromStorage();
         hideLoader();
         renderMainScreen(false);
@@ -203,7 +230,7 @@ const createGlobalMenu = () => {
 
 const openGlobalMenu = (btn, dateISO, isRest, dayNumber) => {
     const menu = createGlobalMenu();
-    
+
     // Generate content
     let content = '';
     if (!isRest) {
@@ -230,11 +257,11 @@ const openGlobalMenu = (btn, dateISO, isRest, dayNumber) => {
     // Positioning
     const rect = btn.getBoundingClientRect();
     const menuWidth = 200; // Estimated or min-width
-    
+
     let left = rect.right - menuWidth;
     // If goes off-screen left, align left
     if (left < 10) left = 10;
-    
+
     // Also check right edge
     if (left + menuWidth > window.innerWidth) {
         left = window.innerWidth - menuWidth - 10;
@@ -265,11 +292,11 @@ export const renderMainScreen = async (isLoading = false) => {
             if (btn) {
                 e.stopPropagation();
                 e.preventDefault(); // Prevent scrolling or other defaults
-                
+
                 const date = btn.dataset.date;
                 const isRest = btn.dataset.isRest === 'true';
                 const dayId = btn.dataset.dayId;
-                
+
                 openGlobalMenu(btn, date, isRest, dayId);
             }
         });
@@ -335,9 +362,9 @@ export const renderMainScreen = async (isLoading = false) => {
     // Helper for generating context button HTML
     const getMenuBtn = (date, isRest, dayNum) => `
         <div class="ctx-menu-wrapper" style="position: absolute; top: 10px; right: 10px; z-index: 20;">
-            <button class="ctx-menu-btn" 
-                data-date="${date}" 
-                data-is-rest="${isRest}" 
+            <button class="ctx-menu-btn"
+                data-date="${date}"
+                data-is-rest="${isRest}"
                 data-day-id="${dayNum}">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>
             </button>
@@ -357,10 +384,10 @@ export const renderMainScreen = async (isLoading = false) => {
     } else if (todayPlanEntry.type === 'rest') {
         const cardWrapper = document.createElement('div');
         cardWrapper.style.position = 'relative';
-        
+
         // Generate card
         cardWrapper.innerHTML = generateRestCalendarPageHTML(today);
-        
+
         // Inject button
         cardWrapper.insertAdjacentHTML('beforeend', getMenuBtn(todayISO, true, todayPlanEntry.dayNumber));
 
@@ -532,9 +559,9 @@ function renderUpcomingQueue(days, todayISO) {
 
         // Use ONLY the button HTML, not the complex wrapper with dropdown
         const btnHtml = `
-            <button class="ctx-menu-btn" 
-                data-date="${dayData.date}" 
-                data-is-rest="${isRest}" 
+            <button class="ctx-menu-btn"
+                data-date="${dayData.date}"
+                data-is-rest="${isRest}"
                 data-day-id="${dayData.dayNumber}"
                 style="position:absolute; top:2px; right:2px; width:24px; height:24px;">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>

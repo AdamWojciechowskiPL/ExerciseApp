@@ -72,7 +72,7 @@ export const shouldSynchronizePlan = (plan) => {
     // 3. Sprawdzenie bufora przyszłości (np. czy mamy plan na 3 dni do przodu?)
     // Backend generuje na 7 dni. Jeśli zostało mniej niż 3 dni, dopychamy.
     const lastDayEntry = plan.days[plan.days.length - 1];
-    
+
     // Jeśli z jakiegoś powodu wpis nie ma daty, wymuś regen
     if (!lastDayEntry.date) return { needed: true, reason: 'corrupt_data' };
 
@@ -173,7 +173,16 @@ export const getExerciseDuration = (exercise) => {
     return null;
 };
 
-// --- CALCULATE SMART DURATION (MIRROR OF BACKEND) ---
+// --- CALCULATE SMART DURATION & LOAD METRICS ---
+
+// Helper: Parsowanie wartości tekstowych (np. "30 s", "10") na liczby
+const parseRepsOrTime = (val) => {
+    const t = String(val || '').trim().toLowerCase();
+    if (t.includes('s')) return Math.max(5, parseInt(t, 10) || 30);
+    if (t.includes('min')) return Math.max(10, (parseInt(t, 10) || 1) * 60);
+    return parseInt(t, 10) || 10;
+};
+
 export const calculateSmartDuration = (dayPlan) => {
     if (!dayPlan) return 0;
 
@@ -188,13 +197,6 @@ export const calculateSmartDuration = (dayPlan) => {
     ];
 
     let totalSeconds = 0;
-
-    const parseRepsOrTime = (val) => {
-        const t = String(val || '').trim().toLowerCase();
-        if (t.includes('s')) return Math.max(5, parseInt(t, 10) || 30);
-        if (t.includes('min')) return Math.max(10, (parseInt(t, 10) || 1) * 60);
-        return parseInt(t, 10) || 10;
-    };
 
     allExercises.forEach((ex, index) => {
         const sets = parseSetCount(ex.sets);
@@ -235,6 +237,123 @@ export const calculateSmartDuration = (dayPlan) => {
     });
 
     return Math.round(totalSeconds / 60);
+};
+
+// 1. Obliczanie obciążenia systemu (0-100)
+export const calculateSystemLoad = (dayPlan) => {
+    if (!dayPlan) return 0;
+    let totalWorkSeconds = 0;
+    let weightedDifficultySum = 0;
+
+    const allExercises = [
+        ...(dayPlan.warmup || []),
+        ...(dayPlan.main || []),
+        ...(dayPlan.cooldown || [])
+    ];
+
+    const globalSpr = state.settings.secondsPerRep || 6;
+
+    allExercises.forEach(ex => {
+        const difficulty = parseInt(ex.difficultyLevel || 1, 10);
+        const sets = parseSetCount(ex.sets);
+        const isUnilateral = ex.isUnilateral || ex.is_unilateral || String(ex.reps_or_time).includes('/str');
+        const multiplier = isUnilateral ? 2 : 1;
+
+        // Obliczamy czas pracy netto (BEZ przerw) dla jednej serii
+        let singleSetWorkTime = 0;
+        const valStr = String(ex.reps_or_time).toLowerCase();
+
+        if (valStr.includes('s') || valStr.includes('min')) {
+            singleSetWorkTime = parseRepsOrTime(ex.reps_or_time);
+        } else {
+            const reps = parseRepsOrTime(ex.reps_or_time);
+            singleSetWorkTime = reps * globalSpr;
+        }
+
+        const totalExWorkTime = singleSetWorkTime * sets * multiplier;
+
+        totalWorkSeconds += totalExWorkTime;
+        weightedDifficultySum += (difficulty * totalExWorkTime);
+    });
+
+    if (totalWorkSeconds === 0) return 0;
+
+    const avgDifficulty = weightedDifficultySum / totalWorkSeconds;
+
+    // Normalizacja: Max to Lvl 5 przez 45 min (2700s) pracy netto
+    // Przyjmijmy realniejszy max workload dla amatora: 30 min pracy netto na Lvl 4
+    // 1800s * 4 = 7200 pkt
+    const maxScoreRef = 7200;
+    const rawScore = (avgDifficulty * totalWorkSeconds);
+
+    let score = Math.round((rawScore / maxScoreRef) * 100);
+    return Math.min(100, Math.max(1, score));
+};
+
+// 2. Profil Kliniczny (Tagi bezpieczeństwa)
+export const calculateClinicalProfile = (dayPlan) => {
+    if (!dayPlan) return [];
+    let maxSpine = 0; // 0: Low, 1: Med, 2: High
+    let maxKnee = 0;
+    let maxImpact = 0;
+
+    // Analizujemy głównie część główną, bo tam są największe obciążenia
+    const mainEx = dayPlan.main || [];
+
+    mainEx.forEach(ex => {
+        // Spine
+        const spine = (ex.spineLoadLevel || 'low').toLowerCase();
+        if (spine === 'high') maxSpine = Math.max(maxSpine, 2);
+        else if (spine === 'medium' || spine === 'moderate') maxSpine = Math.max(maxSpine, 1);
+
+        // Knee
+        const knee = (ex.kneeLoadLevel || 'low').toLowerCase();
+        if (knee === 'high') maxKnee = Math.max(maxKnee, 2);
+        else if (knee === 'medium') maxKnee = Math.max(maxKnee, 1);
+
+        // Impact
+        const imp = (ex.impactLevel || 'low').toLowerCase();
+        if (imp === 'high') maxImpact = Math.max(maxImpact, 2);
+        else if (imp === 'moderate') maxImpact = Math.max(maxImpact, 1);
+    });
+
+    const tags = [];
+
+    // Logika priorytetów
+    if (maxImpact === 2) tags.push({ label: 'High Impact', color: 'red' });
+    else if (maxImpact === 0 && mainEx.length > 0) tags.push({ label: 'Low Impact', color: 'green' });
+
+    if (maxSpine === 2) tags.push({ label: 'Spine Load', color: 'orange' });
+    if (maxKnee === 2) tags.push({ label: 'Knee Load', color: 'orange' });
+
+    if (tags.length === 0 && mainEx.length > 0) tags.push({ label: 'Joint Friendly', color: 'green' });
+
+    return tags;
+};
+
+// 3. Dominujący cel sesji (Focus)
+export const getSessionFocus = (dayPlan) => {
+    if (!dayPlan || !dayPlan.main) return 'Ogólnorozwojowy';
+    const counts = {};
+
+    dayPlan.main.forEach(ex => {
+        const cat = (ex.categoryId || '').toLowerCase();
+        let group = 'Ogólne';
+
+        if (cat.includes('core') || cat.includes('abs')) group = 'Core / Brzuch';
+        else if (cat.includes('glute') || cat.includes('hip') || cat.includes('hinge')) group = 'Biodra / Pośladki';
+        else if (cat.includes('spine') || cat.includes('mobility') || cat.includes('thoracic')) group = 'Mobilność';
+        else if (cat.includes('strength') || cat.includes('push') || cat.includes('pull') || cat.includes('squat') || cat.includes('lunge')) group = 'Siła';
+        else if (cat.includes('nerve') || cat.includes('neuro')) group = 'Neuro';
+        else if (cat.includes('balance') || cat.includes('stability')) group = 'Stabilizacja';
+        else if (cat.includes('conditioning') || cat.includes('cardio')) group = 'Kondycja';
+
+        counts[group] = (counts[group] || 0) + 1;
+    });
+
+    if (Object.keys(counts).length === 0) return 'Ogólnorozwojowy';
+
+    return Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b);
 };
 
 export const formatForTTS = (text) => {

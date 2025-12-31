@@ -1,4 +1,4 @@
-/* style.css - Full Version v14.2 (Global Menu Fix) */
+/* style.css - Full Version v16.3 (Compact Dashboard) */
 
 /* ============================================= */
 /* === 1. ZMIENNE GLOBALNE I RESET === */
@@ -222,23 +222,25 @@ main {
 .welcome-content p { color: var(--text-color); opacity: 0.8; font-size: 1.1rem; line-height: 1.7; margin-bottom: 2.5rem; }
 
 /* ============================================= */
-/* === 5. HERO DASHBOARD (GAMIFIKACJA) === */
+/* === 5. HERO DASHBOARD (COMPACT UPDATE) === */
 /* ============================================= */
 #hero-dashboard {
     background: linear-gradient(160deg, #0f1c2e 0%, var(--primary-color) 100%);
     color: var(--light-text-color);
     border-radius: var(--radius-lg);
-    padding: 1rem 1.2rem;
-    margin-bottom: 1rem;
+    
+    /* COMPACT CHANGES */
+    padding: 0.6rem 1rem;
+    min-height: auto;
+    margin-bottom: 0.8rem;
+    gap: 1rem;
+    
     box-shadow: 0 10px 30px rgba(0, 95, 115, 0.3);
     position: relative;
     overflow: hidden;
     display: grid;
-    /* Domyślny layout (Desktop) */
     grid-template-columns: auto 1fr auto;
-    gap: 1.5rem;
     align-items: center;
-    min-height: 100px;
 }
 
 #hero-dashboard::before {
@@ -251,7 +253,9 @@ main {
 }
 
 .hero-avatar-wrapper {
-    position: relative; width: 60px; height: 60px;
+    position: relative; 
+    width: 48px; /* Compact */
+    height: 48px; /* Compact */
     display: flex; justify-content: center; align-items: center; flex-shrink: 0;
 }
 .progress-ring {
@@ -264,28 +268,31 @@ main {
 .hero-avatar { width: 84%; height: 84%; border-radius: 50%; z-index: 1; border: 2px solid var(--primary-color); object-fit: cover; }
 .level-badge {
     position: absolute; bottom: -5px; background: var(--gold-color); color: #000;
-    font-size: 0.7rem; font-weight: 800; padding: 2px 6px; border-radius: 10px;
+    font-size: 0.6rem; font-weight: 800; padding: 1px 5px; border-radius: 10px;
     box-shadow: 0 2px 5px rgba(0,0,0,0.3); z-index: 2; white-space: nowrap;
 }
 
 .hero-content { display: flex; flex-direction: column; justify-content: center; overflow: hidden; min-width: 0; }
 .hero-rank-title {
-    font-size: 1rem; font-weight: 800; margin: 0 0 0.4rem 0;
+    font-size: 0.9rem; /* Compact */
+    font-weight: 800; margin: 0 0 0.2rem 0;
     text-transform: uppercase; letter-spacing: 1px; line-height: 1;
     background: linear-gradient(90deg, #fff, #ccc);
     -webkit-background-clip: text; -webkit-text-fill-color: transparent; white-space: nowrap;
 }
 
-.hero-metrics-grid { display: flex; gap: 8px; flex-wrap: wrap; }
+.hero-metrics-grid { display: flex; gap: 6px; flex-wrap: wrap; }
 .metric-item {
-    background: rgba(0, 0, 0, 0.25); padding: 4px 8px; border-radius: 8px;
-    display: flex; align-items: center; gap: 8px; border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.25); 
+    padding: 2px 6px; /* Compact */
+    border-radius: 6px;
+    display: flex; align-items: center; gap: 6px; border: 1px solid rgba(255, 255, 255, 0.1);
     flex-grow: 0; min-width: max-content;
 }
-.metric-icon { width: 20px !important; height: 20px !important; display: block; flex-shrink: 0; }
-.metric-text { display: flex; flex-direction: column; line-height: 1.1; }
-.metric-label { font-size: 0.6rem; text-transform: uppercase; opacity: 0.7; letter-spacing: 0.5px; }
-.metric-value { font-size: 0.8rem; font-weight: 700; color: #fff; white-space: nowrap; line-height: 1.2; }
+.metric-icon { width: 16px !important; height: 16px !important; display: block; flex-shrink: 0; }
+.metric-text { display: flex; flex-direction: column; line-height: 1; }
+.metric-label { font-size: 0.55rem; text-transform: uppercase; opacity: 0.7; letter-spacing: 0.5px; display: none; /* Hide label on compact */ }
+.metric-value { font-size: 0.75rem; font-weight: 700; color: #fff; white-space: nowrap; line-height: 1.2; }
 
 /* Statusy Tarczy */
 .shield-score.strong { color: var(--success-color); }
@@ -296,39 +303,23 @@ main {
 /* Wykres Tygodniowy */
 .hero-weekly-rhythm {
     display: flex; flex-direction: column; align-items: flex-end;
-    border-left: 1px solid rgba(255,255,255,0.15); padding-left: 1.5rem; min-width: 140px; flex-shrink: 0;
+    border-left: 1px solid rgba(255,255,255,0.15); padding-left: 1rem; min-width: 120px; flex-shrink: 0;
 }
-.weekly-chart-label { font-size: 0.6rem; text-transform: uppercase; opacity: 0.6; letter-spacing: 1px; margin-bottom: 6px; font-weight: 700; }
-.weekly-chart-grid { display: flex; gap: 5px; }
-.week-day-col { display: flex; flex-direction: column; align-items: center; gap: 3px; }
-.day-bar { width: 6px; height: 24px; border-radius: 4px; background: rgba(255,255,255,0.1); transition: all 0.3s; }
-.day-label { font-size: 0.55rem; opacity: 0.5; font-weight: 600; }
-.day-bar.filled { background: var(--gold-color); box-shadow: 0 0 8px rgba(233, 196, 106, 0.5); height: 24px; }
+.weekly-chart-label { font-size: 0.55rem; text-transform: uppercase; opacity: 0.6; letter-spacing: 1px; margin-bottom: 4px; font-weight: 700; display: none; }
+.weekly-chart-grid { display: flex; gap: 4px; }
+.week-day-col { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.day-bar { width: 5px; height: 20px; border-radius: 4px; background: rgba(255,255,255,0.1); transition: all 0.3s; }
+.day-label { font-size: 0.5rem; opacity: 0.5; font-weight: 600; }
+.day-bar.filled { background: var(--gold-color); box-shadow: 0 0 8px rgba(233, 196, 106, 0.5); height: 20px; }
 .day-bar.current { background: rgba(255,255,255,0.3); border: 1px solid rgba(255,255,255,0.5); animation: pulse-bar 2s infinite; }
-.day-bar.empty { height: 12px; margin-top: auto; }
+.day-bar.empty { height: 10px; margin-top: auto; }
 
 @keyframes pulse-text { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
 @keyframes pulse-bar { 0% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4); } 70% { box-shadow: 0 0 0 4px rgba(255, 255, 255, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); } }
 
 /* ============================================= */
-/* === 6. CALENDAR SHEET (DASHBOARD) === */
+/* === 6. CALENDAR SHEET (COMPACT UPDATE) === */
 /* ============================================= */
-
-/* Nagłówek sekcji "TWOJA MISJA" */
-.daily-mission-header {
-    display: flex; justify-content: space-between; align-items: flex-end;
-    margin: 1.5rem 0 1rem 0; padding: 0 4px;
-}
-.dm-text { display: flex; flex-direction: column; }
-.dm-subtitle { font-size: 0.75rem; font-weight: 600; color: var(--muted-text-color); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 2px; }
-.dm-title {
-    font-size: 2rem; font-weight: 900; margin: 0; line-height: 0.9; text-transform: uppercase; letter-spacing: -1px;
-    background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
-}
-.dm-icon-wrapper { position: relative; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
-.dm-icon { font-size: 2rem; animation: slow-pulse 3s infinite ease-in-out; filter: drop-shadow(0 0 10px rgba(10, 147, 150, 0.4)); }
-@keyframes slow-pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
 
 /* Główny kontener "Kartki z kalendarza" */
 .calendar-sheet {
@@ -337,16 +328,16 @@ main {
     box-shadow: var(--shadow-float);
     overflow: hidden;
     position: relative;
-    margin-bottom: 2rem;
+    margin-bottom: 1rem; /* Compact */
     transition: transform 0.2s;
     background-image: linear-gradient(to bottom, #ffffff, #fafafa);
     border: 1px solid rgba(0,0,0,0.03);
 }
 
-/* Czerwony pasek górny (jak w kalendarzach zdzierakach) */
+/* Czerwony pasek górny */
 .calendar-top-binding {
     background: linear-gradient(135deg, #e11d48 0%, #be123c 100%);
-    height: 12px;
+    height: 8px; /* Compact */
     width: 100%;
     position: absolute;
     top: 0;
@@ -354,51 +345,57 @@ main {
     z-index: 2;
 }
 
-/* Nagłówek daty - duży i wyraźny */
+/* Nagłówek daty - COMPACT MODE */
 .calendar-date-header {
-    padding: 2rem 1.5rem 0.5rem 1.5rem;
+    padding: 1rem 1rem 0.2rem 1rem; /* Reduced padding */
     text-align: center;
     position: relative;
     border-bottom: 1px dashed var(--border-color);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1;
 }
 
 .calendar-day-name {
     display: block;
-    font-size: 1rem;
+    font-size: 0.8rem; /* Compact */
     font-weight: 700;
     text-transform: uppercase;
     color: var(--danger-color);
     letter-spacing: 2px;
     margin-bottom: 0px;
+    line-height: 1.2;
 }
 
 .calendar-day-number {
     display: block;
-    font-size: 5.5rem;
+    font-size: 3.5rem; /* Drastic reduction from 5.5rem */
     font-weight: 800;
-    line-height: 1;
+    line-height: 0.9;
     color: var(--text-color);
     letter-spacing: -2px;
+    margin: 0;
 }
 
 .calendar-month-year {
     display: block;
-    font-size: 1.1rem;
+    font-size: 0.85rem; /* Compact */
     color: var(--muted-text-color);
     font-weight: 500;
-    margin-top: -5px;
+    margin-top: 0;
 }
 
 /* Kontekst treningowy wewnątrz kartki */
 .calendar-body {
-    padding: 1.5rem;
+    padding: 0.8rem; /* Compact padding */
     position: relative;
 }
 
 .workout-context-card {
-    background: var(--background-color);
+    background: #f8f9fa; /* Slightly darker bg for contrast */
     border-radius: var(--radius-lg);
-    padding: 1rem;
+    padding: 0.8rem; /* Compact */
     border: 1px solid rgba(0,0,0,0.05);
 }
 
@@ -406,22 +403,36 @@ main {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 8px;
+    margin-bottom: 4px; /* Compact */
 }
 
 .wc-title {
-    font-size: 1.2rem;
+    font-size: 1.1rem; /* Compact */
     font-weight: 800;
     color: var(--primary-color);
     margin: 0;
     line-height: 1.2;
+    margin-bottom: 2px;
 }
 
+/* Pasek obciążenia - ciaśniej */
+.load-metric-container {
+    margin-top: 8px !important;
+    margin-bottom: 8px !important;
+}
+
+/* Tagi - ciaśniej */
 .wc-tags {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
-    margin-bottom: 1rem;
+    gap: 4px;
+    margin-top: 5px !important;
+    margin-bottom: 0.5rem;
+}
+
+.meta-badge {
+    font-size: 0.6rem; /* Compact */
+    padding: 2px 6px;
 }
 
 .wc-footer {
@@ -436,9 +447,9 @@ main {
 /* Przycisk Start na kartce */
 .calendar-action-btn {
     width: 100%;
-    padding: 1rem;
+    padding: 0.8rem; /* Compact */
     border-radius: 12px;
-    font-size: 1.1rem;
+    font-size: 1rem; /* Compact */
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 1px;
@@ -451,7 +462,8 @@ main {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
+    gap: 8px;
+    margin-top: 0;
 }
 
 .calendar-action-btn svg {
@@ -469,19 +481,19 @@ main {
 
 /* Oś czasu nadchodzących dni */
 .timeline-section-title {
-    font-size: 0.8rem;
+    font-size: 0.75rem; /* Compact */
     text-transform: uppercase;
     letter-spacing: 1.5px;
     color: var(--muted-text-color);
-    margin: 0 0 1rem 4px;
+    margin: 0.8rem 0 0.5rem 4px; /* Adjusted margins */
     font-weight: 700;
 }
 
 .upcoming-timeline {
     display: flex;
-    gap: 12px;
+    gap: 8px; /* Compact */
     overflow-x: auto;
-    padding-bottom: 15px;
+    padding-bottom: 10px;
     padding-left: 4px;
     padding-right: 4px;
     scrollbar-width: none;
@@ -489,14 +501,14 @@ main {
 }
 
 .timeline-card {
-    min-width: 85px;
+    min-width: 75px; /* Compact */
     background: #fff;
-    border-radius: 16px;
+    border-radius: 12px;
     border: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 12px 8px;
+    padding: 8px 6px; /* Compact */
     text-align: center;
     position: relative;
     box-shadow: 0 2px 5px rgba(0,0,0,0.03);
@@ -507,7 +519,7 @@ main {
 .timeline-card:active { transform: scale(0.95); }
 
 .tl-day-name {
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     font-weight: 700;
     text-transform: uppercase;
     color: var(--danger-color);
@@ -515,16 +527,16 @@ main {
 }
 
 .tl-day-number {
-    font-size: 1.4rem;
+    font-size: 1.2rem;
     font-weight: 800;
     color: var(--text-color);
     line-height: 1;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
 }
 
 .tl-dot {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
     border-radius: 50%;
     background: var(--border-color);
 }
@@ -533,16 +545,17 @@ main {
 .timeline-card.rest .tl-dot { background: #cbd5e1; }
 .timeline-card.rest .tl-day-name { color: #94a3b8; }
 
-/* Wellness Check-in w nowym stylu */
+/* Wellness Check-in - COMPACT MODE */
 .sheet-wellness {
-    margin-bottom: 1.5rem;
+    margin-top: 0.8rem !important;
+    margin-bottom: 0.8rem;
 }
 .sheet-wellness-label {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     font-weight: 600;
     color: var(--muted-text-color);
-    margin-bottom: 8px;
-    text-align: center;
+    margin-bottom: 4px;
+    text-align: left;
 }
 
 /* Stare klasy Mission Card dla zachowania kompatybilności z Completed State */
@@ -579,16 +592,16 @@ main {
 .ai-mini-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 0.5rem; padding-bottom: 0.5rem; border-bottom: 1px dashed var(--border-color); }
 .ai-mini-tag { font-size: 0.7rem; background: rgba(10, 147, 150, 0.1); color: var(--primary-color); padding: 3px 8px; border-radius: 4px; font-weight: 600; display: flex; align-items: center; gap: 4px; }
 
-/* Wellness Components */
-.pain-selector { display: flex; justify-content: space-between; gap: 5px; margin-bottom: 1rem; }
+/* Wellness Components - COMPACT MODE */
+.pain-selector { display: flex; justify-content: space-between; gap: 4px; margin-bottom: 0; }
 .pain-option {
-    background: var(--background-color); border: 2px solid transparent; border-radius: 8px;
-    padding: 6px 4px; flex: 1; text-align: center; cursor: pointer;
-    transition: all 0.2s; font-size: 1.2rem; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    background: var(--background-color); border: 2px solid transparent; border-radius: 6px;
+    padding: 6px 2px; flex: 1; text-align: center; cursor: pointer;
+    transition: all 0.2s; font-size: 1.1rem; display: flex; flex-direction: column; align-items: center; gap: 2px;
 }
-.pain-option span { font-size: 0.55rem; font-weight: 600; color: var(--muted-text-color); }
-.pain-option:hover { transform: translateY(-3px); }
-.pain-option.selected { background: #fff; border-color: var(--primary-color); box-shadow: 0 4px 12px rgba(0,0,0,0.1); transform: scale(1.05); }
+.pain-option span { font-size: 0.5rem; font-weight: 600; color: var(--muted-text-color); }
+.pain-option:hover { transform: translateY(-2px); }
+.pain-option.selected { background: #fff; border-color: var(--primary-color); box-shadow: 0 4px 12px rgba(0,0,0,0.1); transform: scale(1.02); }
 .pain-option[data-level="0"].selected { border-color: var(--success-color); background: #e6fffa; }
 .pain-option[data-level="3"].selected { border-color: #9acd32; background: #f0fff4; }
 .pain-option[data-level="5"].selected { border-color: var(--inprogress-color); background: #fffaf0; }
@@ -1623,6 +1636,15 @@ box-shadow: 0 2px 5px rgba(0,0,0,0.03);
     #logout-btn { padding: 0.4rem; background: transparent; border: none; }
     #app-bottom-nav { display: flex; }
 
+    main {
+        padding: 0.5rem; /* Mniejszy padding główny */
+        padding-bottom: 80px !important;
+    }
+
+    #hero-dashboard {
+        border-radius: 12px; /* Mniejsze zaokrąglenia */
+    }
+
     /* --- FIX: SINGLE LINE HERO (MOBILE) --- */
     #hero-dashboard {
         display: flex;
@@ -1731,9 +1753,13 @@ box-shadow: 0 2px 5px rgba(0,0,0,0.03);
     .action-btn { margin-top: 0.8rem; padding: 0.8rem; font-size: 1rem; }
 
     /* Stylizacja Kartki z Kalendarza na Mobile */
-    .calendar-day-number { font-size: 4.5rem; }
-    .calendar-date-header { padding: 1.5rem 1rem 0.5rem 1rem; }
-    .calendar-body { padding: 1rem; }
+    .calendar-sheet {
+        border-radius: 16px;
+    }
+    .calendar-day-number { font-size: 3rem; }
+    .calendar-date-header { padding: 1rem 1rem 0.2rem 1rem; }
+    .calendar-body { padding: 0.8rem; }
+    .wc-title { font-size: 1rem; }
 
     #app-footer { padding-bottom: 100px !important; }
 }

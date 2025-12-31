@@ -1,6 +1,8 @@
 // js/ui/templates.js
 import { state } from '../state.js';
-import { extractYoutubeId } from '../utils.js';
+import { extractYoutubeId, calculateSystemLoad, calculateClinicalProfile, getSessionFocus } from '../utils.js';
+
+// --- HELPERY (WEWNĘTRZNE) ---
 
 const formatCategoryName = (catId) => {
     if (!catId) return 'Ogólne';
@@ -36,6 +38,44 @@ const formatFeedback = (session) => {
     return { label: '-', class: '' };
 };
 
+function getCurrentWeekDays() { 
+    const now = new Date(); 
+    const day = now.getDay(); 
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1); 
+    const monday = new Date(now.setDate(diff)); 
+    const weekDays = []; 
+    for (let i = 0; i < 7; i++) { 
+        const d = new Date(monday); 
+        d.setDate(monday.getDate() + i); 
+        weekDays.push(d); 
+    } 
+    return weekDays; 
+}
+
+function getIsoDateKey(date) { 
+    const year = date.getFullYear(); 
+    const month = String(date.getMonth() + 1).padStart(2, '0'); 
+    const day = String(date.getDate()).padStart(2, '0'); 
+    return `${year}-${month}-${day}`; 
+}
+
+function getSmartAiTags(wizardData) {
+    let tags = [];
+    if (wizardData.work_type === 'sedentary') tags.push({ icon: '🪑', text: 'Anti-Office' });
+    else if (wizardData.work_type === 'standing') tags.push({ icon: '🧍', text: 'Odciążenie' });
+
+    if (wizardData.pain_locations?.includes('knee')) tags.push({ icon: '🦵', text: 'Kolana' });
+    if (wizardData.pain_locations?.includes('sciatica') || wizardData.medical_diagnosis?.includes('piriformis')) tags.unshift({ icon: '⚡', text: 'Neuro' });
+    else if (wizardData.medical_diagnosis?.includes('disc_herniation')) tags.unshift({ icon: '🛡️', text: 'Bezpieczne' });
+    else if (wizardData.pain_locations?.includes('cervical')) tags.push({ icon: '🦒', text: 'Szyja' });
+
+    if (tags.length < 2 && wizardData.primary_goal === 'pain_relief') tags.push({ icon: '💊', text: 'Redukcja bólu' });
+
+    return tags.slice(0, 3);
+}
+
+// --- EKSPORTY (TEMPLATE GENERATORS) ---
+
 export const getAffinityBadge = (exerciseId) => {
     const pref = state.userPreferences[exerciseId] || { score: 0 };
     const score = pref.score || 0;
@@ -59,7 +99,6 @@ export const getAffinityBadge = (exerciseId) => {
     `;
 };
 
-// Funkcja generująca Hero Dashboard (z usuniętym wykresem tygodniowym dla mobile w CSS)
 export function generateHeroDashboardHTML(stats) {
     const isLoading = !stats.resilience;
     const resilienceScore = isLoading ? '--' : stats.resilience.score;
@@ -115,29 +154,12 @@ export function generateSkeletonDashboardHTML() {
     </div>`;
 }
 
-function getSmartAiTags(wizardData) {
-    let tags = [];
-    if (wizardData.work_type === 'sedentary') tags.push({ icon: '🪑', text: 'Anti-Office' });
-    else if (wizardData.work_type === 'standing') tags.push({ icon: '🧍', text: 'Odciążenie' });
-
-    if (wizardData.pain_locations?.includes('knee')) tags.push({ icon: '🦵', text: 'Kolana' });
-    if (wizardData.pain_locations?.includes('sciatica') || wizardData.medical_diagnosis?.includes('piriformis')) tags.unshift({ icon: '⚡', text: 'Neuro' });
-    else if (wizardData.medical_diagnosis?.includes('disc_herniation')) tags.unshift({ icon: '🛡️', text: 'Bezpieczne' });
-    else if (wizardData.pain_locations?.includes('cervical')) tags.push({ icon: '🦒', text: 'Szyja' });
-
-    if (tags.length < 2 && wizardData.primary_goal === 'pain_relief') tags.push({ icon: '💊', text: 'Redukcja bólu' });
-
-    return tags.slice(0, 3);
-}
-
-// --- NOWA FUNKCJA GENERUJĄCA KARTKĘ Z KALENDARZA ---
+// --- GŁÓWNA KARTKA KALENDARZA (COMPACT) ---
 export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wizardData = null) {
-    // 1. Data w nagłówku
     const dayName = dateObj.toLocaleDateString('pl-PL', { weekday: 'long' });
     const dayNumber = dateObj.getDate();
     const monthYear = dateObj.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' });
 
-    // 2. Sprzęt
     const equipmentSet = new Set();
     [...(dayData.warmup || []), ...(dayData.main || []), ...(dayData.cooldown || [])].forEach(ex => {
         if (Array.isArray(ex.equipment)) {
@@ -152,12 +174,41 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
         ? filteredEquipment.map(item => item.charAt(0).toUpperCase() + item.slice(1)).join(', ')
         : 'Brak sprzętu';
 
-    // 3. Tagi AI
     let tagsHTML = '';
     if (wizardData) {
         const smartTags = getSmartAiTags(wizardData);
         tagsHTML = smartTags.map(t => `<span class="meta-tag tag-category">${t.icon} ${t.text}</span>`).join('');
     }
+
+    const systemLoad = calculateSystemLoad(dayData);
+    const clinicalTags = calculateClinicalProfile(dayData);
+    const focusArea = getSessionFocus(dayData);
+
+    let loadColor = '#4ade80';
+    let loadLabel = 'Lekki';
+    if (systemLoad > 30) { loadColor = '#facc15'; loadLabel = 'Umiarkowany'; }
+    if (systemLoad > 60) { loadColor = '#fb923c'; loadLabel = 'Wymagający'; }
+    if (systemLoad > 85) { loadColor = '#ef4444'; loadLabel = 'Maksymalny'; }
+
+    const loadBarHTML = `
+        <div class="load-metric-container">
+            <div style="display:flex; justify-content:space-between; font-size:0.65rem; color:#666; margin-bottom:3px;">
+                <span style="font-weight:700;">OBCIĄŻENIE: ${loadLabel.toUpperCase()}</span>
+                <span>${systemLoad}%</span>
+            </div>
+            <div style="width:100%; height:5px; background:#e5e7eb; border-radius:3px; overflow:hidden;">
+                <div style="width:${systemLoad}%; height:100%; background:${loadColor}; border-radius:3px;"></div>
+            </div>
+        </div>
+    `;
+
+    const clinicalTagsHTML = clinicalTags.map(tag =>
+        `<span class="meta-badge" style="
+            background:${tag.color === 'red' ? '#fee2e2' : (tag.color === 'green' ? '#dcfce7' : '#ffedd5')};
+            color:${tag.color === 'red' ? '#991b1b' : (tag.color === 'green' ? '#166534' : '#9a3412')};
+            border: 1px solid ${tag.color === 'red' ? '#fecaca' : (tag.color === 'green' ? '#bbf7d0' : '#fed7aa')};
+        ">${tag.label}</span>`
+    ).join(' ');
 
     return `
     <div class="calendar-sheet">
@@ -171,18 +222,22 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
             <div class="workout-context-card">
                 <div class="wc-header">
                     <h3 class="wc-title">${dayData.title}</h3>
-                    <!-- ZMIANA: DODANO ID DO WYŚWIETLACZA CZASU -->
-                    <div id="today-duration-display" style="font-weight:700; color:var(--primary-color); font-size:0.9rem;">
+                    <div id="today-duration-display" style="font-weight:700; color:var(--primary-color); font-size:0.85rem;">
                         ⏱ ${estimatedMinutes} min
                     </div>
                 </div>
+
+                <div style="font-size:0.75rem; color:#888; margin-bottom:2px;">Cel: <strong>${focusArea}</strong></div>
+
+                ${loadBarHTML}
+
                 <div class="wc-tags">
-                    ${tagsHTML}
-                    <span class="meta-tag tag-equipment">🛠️ ${equipmentText}</span>
+                    ${clinicalTagsHTML}
+                    <span class="meta-badge tag-equipment" style="margin-left: 0;">🛠️ ${equipmentText}</span>
                 </div>
 
                 <div class="sheet-wellness">
-                    <div class="sheet-wellness-label">Jak się czujesz dzisiaj?</div>
+                    <div class="sheet-wellness-label">Jak się czujesz?</div>
                     <div class="pain-selector">
                         <div class="pain-option" data-level="0">🚀 <span>Świetnie</span></div>
                         <div class="pain-option selected" data-level="3">🙂 <span>Dobrze</span></div>
@@ -193,15 +248,14 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
                 </div>
 
                 <button id="start-mission-btn" class="calendar-action-btn" data-initial-pain="3">
-                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" style="display:block;"><path d="M8 5v14l11-7z"></path></svg>
-                    Rozpocznij Trening
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="display:block;"><path d="M8 5v14l11-7z"></path></svg>
+                    Start
                 </button>
             </div>
         </div>
     </div>`;
 }
 
-// Karta regeneracyjna w stylu kalendarza
 export function generateRestCalendarPageHTML(dateObj) {
     const dayName = dateObj.toLocaleDateString('pl-PL', { weekday: 'long' });
     const dayNumber = dateObj.getDate();
@@ -216,13 +270,13 @@ export function generateRestCalendarPageHTML(dateObj) {
             <span class="calendar-month-year">${monthYear}</span>
         </div>
         <div class="calendar-body">
-            <div class="workout-context-card" style="background-color: #f8f9fa; border: none;">
-                <div style="text-align: center; padding: 1rem 0;">
-                    <span style="font-size: 3rem; display: block; margin-bottom: 10px;">🔋</span>
-                    <h3 class="wc-title" style="color: #64748b; margin-bottom: 5px;">Dzień Regeneracji</h3>
-                    <p style="font-size: 0.9rem; color: #94a3b8; margin: 0;">Odpocznij i zregeneruj siły.</p>
+            <div class="workout-context-card" style="background-color: #f8f9fa; border: none; padding: 1rem;">
+                <div style="text-align: center; padding: 0.5rem 0;">
+                    <span style="font-size: 2.5rem; display: block; margin-bottom: 5px;">🔋</span>
+                    <h3 class="wc-title" style="color: #64748b; margin-bottom: 2px;">Regeneracja</h3>
+                    <p style="font-size: 0.8rem; color: #94a3b8; margin: 0;">Odpocznij i zregeneruj siły.</p>
                 </div>
-                <button id="force-workout-btn" class="calendar-action-btn" style="margin-top: 1rem;">
+                <button id="force-workout-btn" class="calendar-action-btn" style="margin-top: 0.8rem; font-size: 0.9rem; padding: 0.6rem;">
                     🔥 Zrób dodatkowy trening
                 </button>
             </div>
@@ -230,7 +284,12 @@ export function generateRestCalendarPageHTML(dateObj) {
     </div>`;
 }
 
-export function generateCompletedMissionCardHTML(session) { const durationSeconds = session.netDurationSeconds || 0; const minutes = Math.floor(durationSeconds / 60); const feedbackInfo = formatFeedback(session); return `<div class="mission-card completed"><div class="completed-header"><div class="completed-icon"><img src="/icons/check-circle.svg" width="32" height="32" alt="Check" style="filter: invert(34%) sepia(95%) saturate(464%) hue-rotate(96deg) brightness(94%) contrast(90%);"></div><h3 class="completed-title">Misja Wykonana!</h3><p class="completed-subtitle">Dobra robota. Odpocznij przed jutrem.</p></div><div class="completed-stats"><div class="c-stat"><div class="c-stat-val">${minutes} min</div><div class="c-stat-label">Czas</div></div><div class="c-stat"><div class="c-stat-val" style="font-size:0.9rem;">${feedbackInfo.label}</div><div class="c-stat-label">Feedback</div></div></div><button class="view-details-btn" data-date="${session.completedAt}">Zobacz Szczegóły ➝</button></div>`; }
+export function generateCompletedMissionCardHTML(session) { 
+    const durationSeconds = session.netDurationSeconds || 0; 
+    const minutes = Math.floor(durationSeconds / 60); 
+    const feedbackInfo = formatFeedback(session); 
+    return `<div class="mission-card completed"><div class="completed-header"><div class="completed-icon"><img src="/icons/check-circle.svg" width="32" height="32" alt="Check" style="filter: invert(34%) sepia(95%) saturate(464%) hue-rotate(96deg) brightness(94%) contrast(90%);"></div><h3 class="completed-title">Misja Wykonana!</h3><p class="completed-subtitle">Dobra robota. Odpocznij przed jutrem.</p></div><div class="completed-stats"><div class="c-stat"><div class="c-stat-val">${minutes} min</div><div class="c-stat-label">Czas</div></div><div class="c-stat"><div class="c-stat-val" style="font-size:0.9rem;">${feedbackInfo.label}</div><div class="c-stat-label">Feedback</div></div></div><button class="view-details-btn" data-date="${session.completedAt}">Zobacz Szczegóły ➝</button></div>`; 
+}
 
 export function generatePlanFinishedCardHTML(sessionsCount) {
     return `
@@ -252,7 +311,6 @@ export function generatePlanFinishedCardHTML(sessionsCount) {
     </div>`;
 }
 
-// Reszta funkcji (PreTrainingCard, SessionCard, etc.) pozostaje bez zmian
 export function generatePreTrainingCardHTML(ex, index) {
     const uniqueId = `ex-${index}`;
     const exerciseId = ex.id || ex.exerciseId;
@@ -564,6 +622,3 @@ export function generateSessionCardHTML(session) {
         </style>
         `;
 }
-
-function getCurrentWeekDays() { const now = new Date(); const day = now.getDay(); const diff = now.getDate() - day + (day === 0 ? -6 : 1); const monday = new Date(now.setDate(diff)); const weekDays = []; for (let i = 0; i < 7; i++) { const d = new Date(monday); d.setDate(monday.getDate() + i); weekDays.push(d); } return weekDays; }
-function getIsoDateKey(date) { const year = date.getFullYear(); const month = String(date.getMonth() + 1).padStart(2, '0'); const day = String(date.getDate()).padStart(2, '0'); return `${year}-${month}-${day}`; }

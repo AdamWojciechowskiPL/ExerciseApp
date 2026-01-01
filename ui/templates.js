@@ -38,25 +38,25 @@ const formatFeedback = (session) => {
     return { label: '-', class: '' };
 };
 
-function getCurrentWeekDays() { 
-    const now = new Date(); 
-    const day = now.getDay(); 
-    const diff = now.getDate() - day + (day === 0 ? -6 : 1); 
-    const monday = new Date(now.setDate(diff)); 
-    const weekDays = []; 
-    for (let i = 0; i < 7; i++) { 
-        const d = new Date(monday); 
-        d.setDate(monday.getDate() + i); 
-        weekDays.push(d); 
-    } 
-    return weekDays; 
+function getCurrentWeekDays() {
+    const now = new Date();
+    const day = now.getDay();
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(now.setDate(diff));
+    const weekDays = [];
+    for (let i = 0; i < 7; i++) {
+        const d = new Date(monday);
+        d.setDate(monday.getDate() + i);
+        weekDays.push(d);
+    }
+    return weekDays;
 }
 
-function getIsoDateKey(date) { 
-    const year = date.getFullYear(); 
-    const month = String(date.getMonth() + 1).padStart(2, '0'); 
-    const day = String(date.getDate()).padStart(2, '0'); 
-    return `${year}-${month}-${day}`; 
+function getIsoDateKey(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
 }
 
 function getSmartAiTags(wizardData) {
@@ -174,12 +174,6 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
         ? filteredEquipment.map(item => item.charAt(0).toUpperCase() + item.slice(1)).join(', ')
         : 'Brak sprzętu';
 
-    let tagsHTML = '';
-    if (wizardData) {
-        const smartTags = getSmartAiTags(wizardData);
-        tagsHTML = smartTags.map(t => `<span class="meta-tag tag-category">${t.icon} ${t.text}</span>`).join('');
-    }
-
     const systemLoad = calculateSystemLoad(dayData);
     const clinicalTags = calculateClinicalProfile(dayData);
     const focusArea = getSessionFocus(dayData);
@@ -284,11 +278,60 @@ export function generateRestCalendarPageHTML(dateObj) {
     </div>`;
 }
 
-export function generateCompletedMissionCardHTML(session) { 
-    const durationSeconds = session.netDurationSeconds || 0; 
-    const minutes = Math.floor(durationSeconds / 60); 
-    const feedbackInfo = formatFeedback(session); 
-    return `<div class="mission-card completed"><div class="completed-header"><div class="completed-icon"><img src="/icons/check-circle.svg" width="32" height="32" alt="Check" style="filter: invert(34%) sepia(95%) saturate(464%) hue-rotate(96deg) brightness(94%) contrast(90%);"></div><h3 class="completed-title">Misja Wykonana!</h3><p class="completed-subtitle">Dobra robota. Odpocznij przed jutrem.</p></div><div class="completed-stats"><div class="c-stat"><div class="c-stat-val">${minutes} min</div><div class="c-stat-label">Czas</div></div><div class="c-stat"><div class="c-stat-val" style="font-size:0.9rem;">${feedbackInfo.label}</div><div class="c-stat-label">Feedback</div></div></div><button class="view-details-btn" data-date="${session.completedAt}">Zobacz Szczegóły ➝</button></div>`; 
+// --- NOWOŚĆ: GENERATOR KARTY ZALICZONEGO TRENINGU (WOW EFFECT) ---
+export function generateCompletedMissionCardHTML(session) {
+    const durationSeconds = session.netDurationSeconds || 0;
+    const minutes = Math.floor(durationSeconds / 60);
+    const feedbackInfo = formatFeedback(session);
+
+    // Data z sesji (aby kartka miała właściwą datę)
+    const completionDate = new Date(session.completedAt || new Date());
+    const dayName = completionDate.toLocaleDateString('pl-PL', { weekday: 'long' });
+    const dayNumber = completionDate.getDate();
+    const monthYear = completionDate.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' });
+
+    // Tytuł treningu
+    const title = session.trainingTitle || "Trening";
+
+    return `
+    <div class="calendar-sheet completed-mode shine-effect">
+        <!-- Złoty pasek na górze -->
+        <div class="calendar-top-binding success-binding"></div>
+
+        <div class="calendar-date-header">
+            <span class="calendar-day-name success-text">${dayName}</span>
+            <span class="calendar-day-number success-text">${dayNumber}</span>
+            <span class="calendar-month-year">${monthYear}</span>
+        </div>
+
+        <div class="calendar-body" style="position: relative;">
+            <!-- PIECZĄTKA 'WYKONANE' -->
+            <div class="completion-stamp">WYKONANE</div>
+
+            <div class="workout-context-card" style="background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%); border-color: var(--success-color);">
+                <div class="wc-header" style="justify-content: center; flex-direction: column; text-align: center;">
+                    <div style="font-size: 2rem; margin-bottom: 5px;">🏆</div>
+                    <h3 class="wc-title" style="color: var(--text-color); font-size: 1.2rem;">${title}</h3>
+                    <p style="font-size: 0.8rem; color: #666; margin: 2px 0 10px 0;">Misja zakończona sukcesem</p>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 1rem;">
+                    <div style="text-align: center; background: rgba(255,255,255,0.6); padding: 8px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.05);">
+                        <div style="font-size: 0.7rem; text-transform: uppercase; color: #888; font-weight: 700;">Czas</div>
+                        <div style="font-weight: 800; color: var(--success-color); font-size: 1.1rem;">${minutes} min</div>
+                    </div>
+                    <div style="text-align: center; background: rgba(255,255,255,0.6); padding: 8px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.05);">
+                        <div style="font-size: 0.7rem; text-transform: uppercase; color: #888; font-weight: 700;">Ocena</div>
+                        <div style="font-weight: 800; color: var(--text-color); font-size: 0.9rem; line-height: 1.6;">${feedbackInfo.label}</div>
+                    </div>
+                </div>
+
+                <button class="view-details-btn" data-date="${getIsoDateKey(completionDate)}" style="width: 100%; border-color: var(--success-color); color: var(--success-color); background: transparent;">
+                    Zobacz Szczegóły ➝
+                </button>
+            </div>
+        </div>
+    </div>`;
 }
 
 export function generatePlanFinishedCardHTML(sessionsCount) {

@@ -4,16 +4,9 @@
 const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
 const { buildUserContext, checkExerciseAvailability } = require('./_clinical-rule-engine.js');
 
-/**
- * Virtual Physio v6.2: Rolling Calendar Engine with Forced Rest Support.
- */
-
+// DEFAULT CONSTANTS
 const DEFAULT_SECONDS_PER_REP = 6;
-const DEFAULT_REST_BETWEEN_SETS = 30;
-const DEFAULT_REST_BETWEEN_EXERCISES = 30;
 const DEFAULT_TARGET_MIN = 30;
-
-// Domyślny wzorzec: Poniedziałek (1), Środa (3), Piątek (5)
 const DEFAULT_SCHEDULE_PATTERN = [1, 3, 5];
 
 const MIN_MAIN_EXERCISES = 1;
@@ -737,9 +730,30 @@ function parseRepsOrTimeToSeconds(repsOrTime) {
   return parseInt(t, 10) || 10;
 }
 
+// --- NEW: BACKEND SMART REST CALCULATOR ---
+function calculateBackendSmartRest(exercise, userRestFactor = 1.0) {
+    const cat = String(exercise.category_id || '').toLowerCase();
+    const load = parseInt(exercise.difficulty_level || 1, 10);
+    let baseRest = 30;
+
+    if (cat.includes('nerve') || cat.includes('flossing') || cat.includes('neuro')) {
+        baseRest = 35;
+    } else if (cat.includes('mobility') || cat.includes('stretch') || cat.includes('flow')) {
+        baseRest = 20;
+    } else if (cat.includes('conditioning') || cat.includes('cardio') || cat.includes('burn')) {
+        baseRest = 20;
+    } else if (load >= 4 || cat.includes('strength') || cat.includes('squat') || cat.includes('deadlift')) {
+        baseRest = 60;
+    } else if (cat.includes('core_stability') || cat.includes('anti_')) {
+        baseRest = 45;
+    }
+
+    return Math.max(10, Math.round(baseRest * userRestFactor));
+}
+
 function estimateExerciseDurationSeconds(exEntry, userData, paceMap) {
   const globalSpr = clamp(toNumber(userData?.secondsPerRep, DEFAULT_SECONDS_PER_REP), 2, 12);
-  const rbs = clamp(toNumber(userData?.restBetweenSets, DEFAULT_REST_BETWEEN_SETS), 0, 180);
+  const restFactor = toNumber(userData?.restTimeFactor, 1.0); // Nowy parametr z settings
 
   let tempoToUse = globalSpr;
   if (paceMap && paceMap[exEntry.id]) {
@@ -760,15 +774,24 @@ function estimateExerciseDurationSeconds(exEntry, userData, paceMap) {
   }
 
   let totalSeconds = (sets * workTimePerSet);
+
   if (sets > 1) {
-      totalSeconds += (sets - 1) * rbs;
+      // Używamy Smart Rest Calculator dla backendu
+      const smartRest = calculateBackendSmartRest(exEntry, restFactor);
+      totalSeconds += (sets - 1) * smartRest;
   }
-  const transition = sets * (isUnilateral ? 15 : 5);
+
+  // Skalowany czas zmiany strony
+  const transitionTime = Math.max(12, Math.round(12 * restFactor));
+  const transition = sets * (isUnilateral ? transitionTime : 5);
+
   return totalSeconds + transition;
 }
 
 function estimateSessionDurationSeconds(session, userData, paceMap) {
-  const rbe = clamp(toNumber(userData?.restBetweenExercises, DEFAULT_REST_BETWEEN_EXERCISES), 0, 180);
+  const restFactor = toNumber(userData?.restTimeFactor, 1.0);
+  const rbe = Math.round(30 * restFactor); // Skalujemy też przerwę między ćwiczeniami
+
   const all = [...session.warmup, ...session.main, ...session.cooldown];
   let total = 0;
   for (let i = 0; i < all.length; i++) {
@@ -918,7 +941,6 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
     const schedulePattern = userData?.schedule_pattern || DEFAULT_SCHEDULE_PATTERN;
     const targetMin = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90);
 
-    // Pobierz daty wymuszonego odpoczynku (np. ustawione ręcznie przez usera w dashboardzie)
     const forcedRestDates = new Set(normalizeStringArray(userData?.forced_rest_dates));
 
     const plan = {
@@ -936,13 +958,12 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
     for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
         const currentDate = new Date();
         currentDate.setDate(currentDate.getDate() + dayOffset);
-        const dayOfWeek = currentDate.getDay(); // 0 = Sunday, 1 = Monday...
+        const dayOfWeek = currentDate.getDay(); 
         const dateString = currentDate.toISOString().split('T')[0];
 
         const isScheduled = schedulePattern.includes(dayOfWeek);
         const isForcedRest = forcedRestDates.has(dateString);
 
-        // ZMIANA: Zwiększony limit ciągu (14 dni), aby respektować wybór użytkownika (nawet 7 dni w tygodniu)
         const forceRest = consecutiveTrainings >= 14;
 
         if (isScheduled && !forceRest && !isForcedRest) {

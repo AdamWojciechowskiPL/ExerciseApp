@@ -3,13 +3,10 @@ import { state } from './state.js';
 import { checkExerciseAvailability, buildClinicalContext } from './clinicalEngine.js';
 
 /**
- * PROTOCOL GENERATOR v5.8 (Knee Support Added)
+ * PROTOCOL GENERATOR v5.9 (Rest Factor Aware)
  */
 
-// ============================================================
-// KONFIGURACJA (STREFY I TRYBY)
-// ============================================================
-
+// ... (ZONE_MAP bez zmian) ...
 const ZONE_MAP = {
     'cervical': { type: 'zone', keys: ['cervical', 'neck', 'upper_traps'] },
     'thoracic': { type: 'zone', keys: ['thoracic', 'posture', 'shoulder_mobility'] },
@@ -17,10 +14,7 @@ const ZONE_MAP = {
     'sciatica': { type: 'zone', keys: ['sciatica', 'piriformis', 'nerve_flossing', 'lumbar_radiculopathy'] },
     'hips': { type: 'cat', keys: ['hip_mobility', 'glute_activation', 'femoral_nerve'] },
     'legs': { type: 'cat', keys: ['stretching', 'nerve_flossing'] },
-    
-    // --- NOWA STREFA: KOLANA ---
     'knee': { type: 'mixed', keys: ['knee', 'knee_anterior', 'knee_stability', 'vmo_activation', 'terminal_knee_extension', 'eccentric_control'] },
-
     'office': { type: 'mixed', keys: ['thoracic', 'hip_mobility', 'neck'] },
     'sleep': { type: 'cat', keys: ['breathing', 'muscle_relaxation', 'stretching'] },
     'core': { type: 'cat', keys: ['core_anti_extension', 'core_anti_rotation', 'core_anti_flexion', 'core_anti_lateral_flexion'] },
@@ -42,19 +36,21 @@ const TIMING_CONFIG = {
 
 const DEFAULT_MAX_DURATION = 60;
 const DEFAULT_MAX_REPS = 15;
-const INTRA_SET_REST = 15;
+// INTRA_SET_REST przeniesione do funkcji, aby było dynamiczne
 
 // ============================================================
 // GŁÓWNA FUNKCJA GENERUJĄCA
 // ============================================================
 
 export function generateBioProtocol({ mode, focusZone, durationMin, userContext, timeFactor = 1.0 }) {
-    console.log(`🧪 [ProtocolGenerator] Generowanie v5.8: ${mode} / ${focusZone}`);
+    console.log(`🧪 [ProtocolGenerator] Generowanie v5.9: ${mode} / ${focusZone}`);
 
     const targetSeconds = durationMin * 60;
     const config = TIMING_CONFIG[mode] || TIMING_CONFIG['reset'];
 
-    // Budowa kontekstu klinicznego dla silnika
+    // Pobieramy globalny faktor przerw (bezpiecznik: 1.0)
+    const globalRestFactor = state.settings.restTimeFactor || 1.0;
+
     const clinicalCtx = buildClinicalContext(userContext);
     clinicalCtx.blockedIds = new Set(state.blacklist || []);
 
@@ -68,7 +64,7 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext,
     scoreCandidates(candidates, mode, userContext);
 
     // 2. Selekcja sekwencji
-    const { sequence, generatedSeconds } = selectExercisesByMode(candidates, mode, targetSeconds, config, timeFactor);
+    const { sequence, generatedSeconds } = selectExercisesByMode(candidates, mode, targetSeconds, config, timeFactor, globalRestFactor);
 
     // 3. Time Stretch
     let finalTimeFactor = timeFactor;
@@ -78,13 +74,17 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext,
     }
 
     // 4. Budowa finalnego planu
-    const flatExercises = buildSteps(sequence, config, mode, finalTimeFactor);
+    const flatExercises = buildSteps(sequence, config, mode, finalTimeFactor, globalRestFactor);
 
     const realTotalDuration = flatExercises.reduce((sum, step) => {
         const sets = parseInt(step.sets) || 1;
         const duration = step.duration || 0;
+        
+        // Obliczamy dynamiczną przerwę między seriami
+        const intraSetRest = Math.round(15 * globalRestFactor);
+
         if (step.isWork) {
-            return sum + (duration * sets) + ((sets - 1) * INTRA_SET_REST);
+            return sum + (duration * sets) + ((sets - 1) * intraSetRest);
         }
         return sum + duration;
     }, 0);
@@ -106,8 +106,11 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext,
 // LOGIKA SELEKCJI
 // ============================================================
 
-function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFactor) {
-    const baseCycleTime = (config.work + config.rest) * timeFactor;
+function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFactor, globalRestFactor) {
+    // Obliczamy czas cyklu z uwzględnieniem Global Rest Factor
+    const scaledRest = config.rest * globalRestFactor;
+    const baseCycleTime = (config.work * timeFactor) + scaledRest;
+    
     const maxSteps = Math.ceil(targetSeconds / baseCycleTime) + 15;
 
     let sequence = [];
@@ -122,7 +125,8 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
         let cycleDuration = baseCycleTime;
         if (mode === 'burn' && ex.recommendedInterval) {
             const rec = ex.recommendedInterval;
-            cycleDuration = (rec.work + rec.rest) * timeFactor;
+            // Tutaj też skalujemy przerwę
+            cycleDuration = (rec.work * timeFactor) + (rec.rest * timeFactor * globalRestFactor);
         }
         currentSeconds += cycleDuration * mult;
     };
@@ -172,8 +176,11 @@ function getStrictUnique(pool, usedIds) {
 // BUDOWANIE KROKÓW
 // ============================================================
 
-function buildSteps(exercises, config, mode, timeFactor) {
+function buildSteps(exercises, config, mode, timeFactor, globalRestFactor) {
     const SECONDS_PER_REP_ESTIMATE = state.settings.secondsPerRep || 6;
+    
+    // Obliczamy dynamiczną przerwę wewnątrz serii
+    const INTRA_SET_REST = Math.round(15 * globalRestFactor);
 
     const steps = [];
 
@@ -190,11 +197,13 @@ function buildSteps(exercises, config, mode, timeFactor) {
 
     exercises.forEach((ex, index) => {
         let baseWork = config.work * timeFactor;
-        let transitionRest = Math.round(config.rest * timeFactor);
+        
+        // Mnożymy czas przerwy przez globalny faktor
+        let transitionRest = Math.round(config.rest * timeFactor * globalRestFactor);
 
         if (mode === 'burn' && ex.recommendedInterval) {
             baseWork = ex.recommendedInterval.work * timeFactor;
-            transitionRest = Math.round(ex.recommendedInterval.rest * timeFactor);
+            transitionRest = Math.round(ex.recommendedInterval.rest * timeFactor * globalRestFactor);
         }
 
         const randomJitter = 0.7 + (Math.random() * 0.6);
@@ -215,7 +224,7 @@ function buildSteps(exercises, config, mode, timeFactor) {
         const isIso = tempoStr.includes("izo") || tempoStr.includes("iso");
         const hasMaxDuration = (ex.maxDuration > 0) || (ex.max_recommended_duration > 0);
 
-        const isTimeBased = hasTimeUnits || isIso || hasMaxDuration || mode === 'burn'; 
+        const isTimeBased = hasTimeUnits || isIso || hasMaxDuration || mode === 'burn';
         const isRepBased = !isTimeBased;
 
         let sets = 1;
@@ -262,12 +271,16 @@ function buildSteps(exercises, config, mode, timeFactor) {
             reps_or_time: displayValue,
             duration: durationPerSet,
             tempo_or_iso: tempoDisplay,
-            uniqueId: `${ex.id}_p${index}${suffix ? suffix.replace(/[\s()]/g, '') : ''}`
+            uniqueId: `${ex.id}_p${index}${suffix ? suffix.replace(/[\s()]/g, '') : ''}`,
+            // WSTRZYKUJEMY PRZERWĘ DO OBIEKTU ĆWICZENIA, ABY training.js WIEDZIAŁ ILE ODPOCZYWAĆ
+            restBetweenSets: INTRA_SET_REST
         });
 
         if (isUnilateral) {
             steps.push(createCompactStep(' (Lewa)'));
-            steps.push({ name: "Zmiana Strony", isWork: false, isRest: true, duration: 5, sectionName: "Przejście", description: "Druga strona" });
+            // Zmiana strony też powinna być lekko skalowalna
+            const transitionTime = Math.max(5, Math.round(5 * globalRestFactor));
+            steps.push({ name: "Zmiana Strony", isWork: false, isRest: true, duration: transitionTime, sectionName: "Przejście", description: "Druga strona" });
             steps.push(createCompactStep(' (Prawa)'));
         } else {
             steps.push(createCompactStep(''));
@@ -283,9 +296,7 @@ function buildSteps(exercises, config, mode, timeFactor) {
     return steps;
 }
 
-// ============================================================
-// HELPERY DANYCH
-// ============================================================
+// ... (Pozostałe helpery: getCandidates, getCandidatesSafeFallback, scoreCandidates, etc. bez zmian) ...
 
 function getCandidates(mode, focusZone, ctx = {}) {
     const { ignoreEquipment, clinicalCtx } = ctx;
@@ -314,10 +325,8 @@ function getCandidates(mode, focusZone, ctx = {}) {
         if (mode === 'sos' && difficulty > 2) return false;
         if (mode === 'booster' && difficulty < 2) return false;
         if (mode === 'reset' && difficulty > 3) return false;
-        
-        // --- SPECYFIKA KOLANOWA ---
+
         if (focusZone === 'knee') {
-            // SOS na kolana: Izometria, niskie obciążenie, stabilizacja
             if (mode === 'sos') {
                 if (ex.kneeLoadLevel === 'high' || ex.kneeLoadLevel === 'medium') return false;
             }
@@ -389,7 +398,7 @@ function generateTitle(mode, zone) {
         'sciatica': 'Nerw Kulszowy', 'hips': 'Biodra', 'core': 'Brzuch / Core',
         'office': 'Anty-Biuro', 'sleep': 'Sen', 'glute': 'Pośladki', 'full_body': 'Całe Ciało',
         'legs': 'Nogi',
-        'knee': 'Kolana', // NOWE
+        'knee': 'Kolana',
         'metabolic': 'Kondycja'
     }[zone] || 'Bio-Protokół';
     const suffix = {

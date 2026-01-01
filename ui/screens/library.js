@@ -13,13 +13,12 @@ let atlasState = {
     collapsedMap: false
 };
 
-// --- ZMIANA: Dodano strefę 'knee' ---
 const ZONE_MAPPING = {
     'cervical': { label: 'Szyja', icon: '🧣', cats: ['neck', 'cervical'] },
     'thoracic': { label: 'Górne Plecy', icon: '🔙', cats: ['thoracic', 'posture'] },
     'lumbar_general': { label: 'Lędźwia / Core', icon: '🧱', cats: ['core_anti_extension', 'core_anti_flexion', 'core_anti_rotation', 'lumbar'] },
     'hip_mobility': { label: 'Biodra', icon: '⚙️', cats: ['hip_mobility', 'glute_activation', 'piriformis'] },
-    'knee': { label: 'Kolana', icon: '🦵', cats: ['knee_stability', 'vmo_activation', 'terminal_knee_extension', 'eccentric_control'] }, // NOWE
+    'knee': { label: 'Kolana', icon: '🦵', cats: ['knee_stability', 'vmo_activation', 'terminal_knee_extension', 'eccentric_control'] },
     'sciatica': { label: 'Nogi / Nerw', icon: '⚡', cats: ['nerve_flossing', 'sciatica', 'legs'] },
     'metabolic': { label: 'Spalanie', icon: '🔥', cats: [] }
 };
@@ -59,6 +58,51 @@ export const renderLibraryScreen = async (searchTerm = '') => {
         .atlas-card.clinically-blocked:hover { opacity: 1; filter: grayscale(0%); }
         .restriction-banner { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 4px 8px; border-radius: 4px; display: inline-flex; align-items: center; gap: 5px; margin-bottom: 6px; width: 100%; }
         .preview-btn.loading { opacity: 0.7; cursor: wait; }
+
+        /* --- STYLE KAFELKÓW (META TAGS) --- */
+        .ac-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 6px;
+            margin-bottom: 8px;
+        }
+        .meta-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            line-height: 1.2;
+            white-space: nowrap;
+        }
+        
+        /* Warianty kolorystyczne */
+        .tag-level {
+            background-color: #fff7ed;
+            color: #c2410c;
+            border: 1px solid #fdba74; /* Orange */
+        }
+        .tag-category {
+            background-color: #fefce8;
+            color: #854d0e;
+            border: 1px solid #fde047; /* Yellow/Gold */
+        }
+        .tag-equipment {
+            background-color: #f8fafc;
+            color: #334155;
+            border: 1px solid #cbd5e1; /* Slate/Gray */
+        }
+        
+        /* Pace Badge (zdefiniowany inline w JS, ale tutaj bazowe style) */
+        .meta-tag[style*="background:#fefce8"] {
+            /* To dotyczy Pace Badge generowanego dynamicznie */
+            box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+        }
     </style>
 `;
     renderChips();
@@ -147,7 +191,6 @@ function renderExerciseList() {
             if (atlasState.activeFilter === 'metabolic') {
                 items = items.filter(ex => ex.goalTags && (ex.goalTags.includes('fat_loss') || ex.goalTags.includes('conditioning')));
             } else {
-                // Rozszerzone filtrowanie o nowe kategorie kolanowe
                 items = items.filter(ex => zData.cats.includes(ex.categoryId) || (ex.painReliefZones && ex.painReliefZones.includes(atlasState.activeFilter)));
             }
         }
@@ -196,7 +239,6 @@ function renderExerciseList() {
             burnBadge = `<span class="meta-tag" style="background:#fff1f2; color:#be123c; border:1px solid #fda4af;">🔥 MET: ${ex.metabolicIntensity}/5</span>`;
         }
 
-        // NOWOŚĆ: Badge obciążenia kolan (tylko jeśli high/medium)
         let kneeBadge = '';
         if (ex.kneeLoadLevel && ex.kneeLoadLevel !== 'low') {
             const kColor = ex.kneeLoadLevel === 'high' ? '#b91c1c' : '#b45309';
@@ -205,7 +247,6 @@ function renderExerciseList() {
             kneeBadge = `<span class="meta-tag" style="background:${kBg}; color:${kColor}; border:1px solid ${kBorder};">🦵 ${ex.kneeLoadLevel === 'high' ? 'HIGH' : 'MED'} LOAD</span>`;
         }
 
-        // --- NOWOŚĆ: Pace Badge (Twoje Tempo) ---
         const userPace = state.exercisePace && state.exercisePace[ex.id];
         let paceBadge = '';
         if (userPace) {
@@ -237,7 +278,7 @@ function renderExerciseList() {
                 ${burnBadge}
                 ${kneeBadge}
                 <span class="meta-tag tag-category">📂 ${catLabel}</span>
-                ${showEquipBadge ? `<span class="meta-tag tag-equipment">🏋️ ${equipLabel}</span>` : ''}
+                ${showEquipBadge ? `<span class="meta-tag tag-equipment">🏆 ${equipLabel}</span>` : ''}
             </div>
             <div class="ac-desc" title="Kliknij, aby rozwinąć/zwinąć">${descriptionShort}</div>
             ${footerHtml ? `<div class="ac-footer">${footerHtml}</div>` : ''}
@@ -250,7 +291,6 @@ function renderExerciseList() {
     </div>`;
     }).join('');
 
-    // ... (rest of logic: event listeners)
     grid.querySelectorAll('.atlas-card').forEach(card => {
         const exId = card.dataset.id;
         const descEl = card.querySelector('.ac-desc');

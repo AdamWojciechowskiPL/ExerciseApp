@@ -111,11 +111,40 @@ export const startStopwatch = () => {
 
     if (currentEx && currentEx.isWork) {
         const valStr = String(currentEx.reps_or_time || "").toLowerCase();
-        
-        // Sprawdzamy czy to FAKTYCZNIE ćwiczenie na powtórzenia
+
+        // Sprawdzamy typ celu (czas czy powtórzenia)
         const isTimeBased = valStr.includes('s') || valStr.includes('min') || valStr.includes(':');
 
-        if (!isTimeBased) {
+        if (isTimeBased) {
+            // --- NAPRAWA: Obsługa sygnału dla ćwiczeń czasowych (np. Plank 30s) ---
+            let seconds = 0;
+            if (valStr.includes('min')) {
+                // np. "1 min", "1.5 min"
+                const minMatch = valStr.match(/(\d+(?:[.,]\d+)?)/);
+                if (minMatch) {
+                    seconds = Math.round(parseFloat(minMatch[0].replace(',', '.')) * 60);
+                }
+            } else if (valStr.includes(':')) {
+                // np. "1:30"
+                const parts = valStr.split(':');
+                if (parts.length === 2) {
+                    seconds = (parseInt(parts[0], 10) * 60) + parseInt(parts[1], 10);
+                }
+            } else {
+                // np. "30 s", "45s"
+                const secMatch = valStr.match(/(\d+)/);
+                if (secMatch) {
+                    seconds = parseInt(secMatch[0], 10);
+                }
+            }
+
+            if (seconds > 0) {
+                targetAudioAlertTime = seconds;
+                console.log(`[AudioPace] Czasówka: Cel ustawiony na ${targetAudioAlertTime}s`);
+            }
+
+        } else {
+            // --- Logika dla powtórzeń (Adaptive Pacing) ---
             // Regex bierze pierwszą liczbę (np. "10-12" -> 10)
             const repsMatch = valStr.match(/(\d+)/);
             const reps = repsMatch ? parseInt(repsMatch[0], 10) : 0;
@@ -134,7 +163,7 @@ export const startStopwatch = () => {
                 }
 
                 targetAudioAlertTime = Math.round(reps * pace);
-                console.log(`[AudioPace] Setup for "${currentEx.name}": Target=${targetAudioAlertTime}s (Reps=${reps}, Pace=${pace}s [${source}])`);
+                console.log(`[AudioPace] Powtórzenia: Cel ustawiony na ${targetAudioAlertTime}s (Reps=${reps}, Pace=${pace}s [${source}])`);
             }
         }
     }

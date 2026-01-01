@@ -16,13 +16,13 @@ export const renderSettingsScreen = () => {
     const hasDynamicData = !!state.settings.dynamicPlanData;
 
     const secondsPerRep = state.settings.secondsPerRep || 6;
-    const restBetweenSets = state.settings.restBetweenSets || 30;
-    const restBetweenExercises = state.settings.restBetweenExercises || 30;
+    
+    // Nowe ustawienie: Rest Time Factor (domyślnie 1.0)
+    const restTimeFactor = state.settings.restTimeFactor || 1.0;
+    const restTimePercent = Math.round(restTimeFactor * 100);
 
-    // Pobieramy aktualny wzorzec dni lub domyślny [1,3,5] (Pn, Śr, Pt)
     let currentSchedule = state.settings.wizardData?.schedule_pattern || [1, 3, 5];
 
-    // Helper do generowania kafelków dni
     const days = [
         { label: 'Pn', val: 1 },
         { label: 'Wt', val: 2 },
@@ -42,12 +42,12 @@ export const renderSettingsScreen = () => {
     screen.innerHTML = `
         <h2 style="margin-bottom: 1.5rem;">Ustawienia</h2>
         <form id="settings-form-rebuild">
-            
+
             <div class="settings-card">
                 <div class="card-header-icon">📅</div>
                 <h3>Twój Harmonogram</h3>
                 <p class="settings-desc">Wybierz dni, w które chcesz ćwiczyć. Plan automatycznie dostosuje się do zmian.</p>
-                
+
                 <div class="day-selector-container" style="justify-content: space-between; margin-bottom: 1.5rem;">
                     ${daysHtml}
                 </div>
@@ -65,14 +65,17 @@ export const renderSettingsScreen = () => {
                     <label>Czas 1 powtórzenia: <span id="val-rep" style="font-weight:bold; color:var(--primary-color)">${secondsPerRep}s</span></label>
                     <input type="range" id="setting-rep-time" min="3" max="10" value="${secondsPerRep}">
                 </div>
+                
                 <div class="form-group slider-group">
-                    <label>Przerwa między seriami: <span id="val-rest-set" style="font-weight:bold; color:var(--primary-color)">${restBetweenSets}s</span></label>
-                    <input type="range" id="setting-rest-set" min="5" max="120" step="5" value="${restBetweenSets}">
+                    <label>Tempo Przerw: <span id="val-rest-factor" style="font-weight:bold; color:var(--primary-color)">${restTimePercent}%</span></label>
+                    <input type="range" id="setting-rest-factor" min="50" max="150" step="10" value="${restTimePercent}">
+                    <div style="display:flex; justify-content:space-between; font-size:0.75rem; opacity:0.6; margin-top:5px;">
+                        <span>Szybko (Metabolic)</span>
+                        <span>Standard</span>
+                        <span>Spokojnie (Siła)</span>
+                    </div>
                 </div>
-                <div class="form-group slider-group">
-                    <label>Przerwa między ćwiczeniami: <span id="val-rest-ex" style="font-weight:bold; color:var(--primary-color)">${restBetweenExercises}s</span></label>
-                    <input type="range" id="setting-rest-ex" min="5" max="120" step="5" value="${restBetweenExercises}">
-                </div>
+
                 <button type="button" id="recalc-stats-btn" class="nav-btn" style="width:100%; margin-top:10px;">🔄 Przelicz Statystyki Tempa</button>
             </div>
 
@@ -133,8 +136,6 @@ export const renderSettingsScreen = () => {
             .slider-group { margin-bottom: 1.5rem; }
             .slider-group input[type=range] { width: 100%; margin-top: 8px; }
             .danger-zone { border: 1px solid var(--danger-color); background: #fff5f5; }
-            
-            /* Dni Treningowe Styles */
             .day-selector-container { display: flex; gap: 5px; margin-top: 10px; }
             .day-toggle {
                 width: 38px; height: 38px; border-radius: 50%;
@@ -152,11 +153,9 @@ export const renderSettingsScreen = () => {
 
     const form = screen.querySelector('#settings-form-rebuild');
     const repSlider = screen.querySelector('#setting-rep-time');
-    const restSetSlider = screen.querySelector('#setting-rest-set');
-    const restExSlider = screen.querySelector('#setting-rest-ex');
+    const restFactorSlider = screen.querySelector('#setting-rest-factor');
     const dayToggles = screen.querySelectorAll('.settings-day-toggle');
 
-    // Obsługa selektora dni
     dayToggles.forEach(toggle => {
         toggle.addEventListener('click', () => {
             const val = parseInt(toggle.dataset.val);
@@ -167,14 +166,12 @@ export const renderSettingsScreen = () => {
                 currentSchedule.push(val);
                 toggle.classList.add('active');
             }
-            // Sortowanie dla spójności
             currentSchedule.sort((a, b) => a - b);
         });
     });
 
     if (repSlider) repSlider.addEventListener('input', (e) => screen.querySelector('#val-rep').textContent = e.target.value + 's');
-    if (restSetSlider) restSetSlider.addEventListener('input', (e) => screen.querySelector('#val-rest-set').textContent = e.target.value + 's');
-    if (restExSlider) restExSlider.addEventListener('input', (e) => screen.querySelector('#val-rest-ex').textContent = e.target.value + 's');
+    if (restFactorSlider) restFactorSlider.addEventListener('input', (e) => screen.querySelector('#val-rest-factor').textContent = e.target.value + '%');
 
     if (form) {
         form.addEventListener('submit', async (e) => {
@@ -186,13 +183,10 @@ export const renderSettingsScreen = () => {
             }
 
             const newSecondsPerRep = parseInt(repSlider.value, 10);
-            const newRestSet = parseInt(restSetSlider.value, 10);
-            const newRestEx = parseInt(restExSlider.value, 10);
+            const newRestFactor = parseInt(restFactorSlider.value, 10) / 100.0;
 
-            // Sprawdzamy co się zmieniło
             const timingChanged = newSecondsPerRep !== state.settings.secondsPerRep ||
-                                  newRestSet !== state.settings.restBetweenSets ||
-                                  newRestEx !== state.settings.restBetweenExercises;
+                                  newRestFactor !== (state.settings.restTimeFactor || 1.0);
 
             const oldSchedule = (state.settings.wizardData?.schedule_pattern || []).sort().toString();
             const newScheduleStr = currentSchedule.sort().toString();
@@ -201,11 +195,15 @@ export const renderSettingsScreen = () => {
             state.settings.appStartDate = screen.querySelector('#setting-start-date').value;
             state.settings.ttsEnabled = screen.querySelector('#setting-tts').checked;
             state.tts.isSoundOn = state.settings.ttsEnabled;
+            
+            // Zapisujemy nowe wartości
             state.settings.secondsPerRep = newSecondsPerRep;
-            state.settings.restBetweenSets = newRestSet;
-            state.settings.restBetweenExercises = newRestEx;
+            state.settings.restTimeFactor = newRestFactor;
 
-            // Zapisujemy nowy harmonogram w stanie
+            // Czyścimy stare (nieużywane już) klucze, aby nie myliły
+            delete state.settings.restBetweenSets;
+            delete state.settings.restBetweenExercises;
+
             if (!state.settings.wizardData) state.settings.wizardData = {};
             state.settings.wizardData.schedule_pattern = currentSchedule;
 
@@ -213,18 +211,16 @@ export const renderSettingsScreen = () => {
             try {
                 await dataStore.saveSettings();
 
-                // Jeśli zmieniono dni lub czasy -> Regeneracja planu
                 if ((scheduleChanged || timingChanged) && Object.keys(state.settings.wizardData).length > 0) {
                     let msg = "Zapisano ustawienia.";
-                    if (scheduleChanged) msg = "Zmieniono dni treningowe. Plan zostanie dostosowany do nowego kalendarza.";
-                    else if (timingChanged) msg = "Parametry czasowe zmienione. Przeliczam plan...";
+                    if (scheduleChanged) msg = "Zmieniono dni treningowe. Plan zostanie dostosowany.";
+                    else if (timingChanged) msg = "Zmieniono tempo treningu. Przeliczam plan...";
 
                     if (confirm(`${msg} Kontynuować?`)) {
                         const payload = {
                             ...state.settings.wizardData,
                             secondsPerRep: newSecondsPerRep,
-                            restBetweenSets: newRestSet,
-                            restBetweenExercises: newRestEx
+                            restTimeFactor: newRestFactor // Wysyłamy nowy parametr
                         };
                         await dataStore.generateDynamicPlan(payload);
                         clearPlanFromStorage();

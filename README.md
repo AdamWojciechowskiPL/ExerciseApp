@@ -1,4 +1,4 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v16.4.0
+# Aplikacja Treningowa (Smart Rehab PWA) v17.0.0
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
@@ -61,20 +61,30 @@ Sesje celowane generowane natychmiastowo po stronie klienta (Time-Boxing):
 /ExerciseApp
 │
 ├── index.html                  # Główny kontener SPA
-├── style.css                   # Globalne style (CSS Variables, Dark/Glass Mode)
+├── style.css                   # Główny plik stylów (importuje moduły z folderu /css)
 ├── app.js                      # Punkt wejścia, routing, init, session recovery check
 ├── auth.js                     # Obsługa logowania (Auth0 SDK + JWT)
 ├── state.js                    # Globalny stan aplikacji (+ userPreferences)
 ├── dataStore.js                # Warstwa API (Fetch, Cache, Sync, Preferences)
-├── utils.js                    # Helpery (Daty, Parsowanie, Hydracja)
+├── utils.js                    # Helpery (Daty, Parsowanie, Hydracja, SVG)
 ├── sessionRecovery.js          # Backup/restore sesji treningowej
+│
+├── CSS (MODULAR STYLES):
+│   ├── css/
+│   │   ├── variables.css       # Zmienne globalne (kolory, fonty), reset, animacje
+│   │   ├── global.css          # Layout, Header, Footer, wspólne komponenty UI
+│   │   ├── dashboard.css       # Ekran Główny: Hero, Kalendarz, Oś czasu
+│   │   ├── training.css        # Tryb Focus (trening) i podgląd (Pre-training)
+│   │   ├── modules.css         # Pozostałe ekrany: Historia, Wizard, Atlas, Podsumowanie
+│   │   └── responsive.css      # Media Queries (Mobile/Desktop overrides)
 │
 ├── LOGIKA BIZNESOWA (FRONTEND):
 │   ├── protocolGenerator.js    # Generator Bio-Protokołów (Time-Boxing logic)
-│   ├── workoutMixer.js         # Mixer v2.0 (Affinity Scoring Logic)
-│   ├── assistantEngine.js      # Skalowanie objętości (Ból/Czas)
-│   ├── training.js             # Kontroler przebiegu treningu + backup
-│   ├── timer.js                # Obsługa stopera i timera
+│   ├── workoutMixer.js         # Mixer v3.0 Lite (Manual swap logic)
+│   ├── assistantEngine.js      # Skalowanie objętości (Pain/Time adaptation)
+│   ├── clinicalEngine.js       # Frontendowy walidator reguł medycznych
+│   ├── training.js             # Kontroler przebiegu treningu + pętla backupu
+│   ├── timer.js                # Obsługa stopera (z Audio Pacing) i timera
 │   ├── tts.js                  # Text-to-Speech (Synteza mowy)
 │   ├── cast.js                 # Google Cast Sender SDK
 │   ├── gamification.js         # Obliczanie poziomów i statystyk
@@ -84,45 +94,54 @@ Sesje celowane generowane natychmiastowo po stronie klienta (Time-Boxing):
 │   ├── ui.js                   # Eksporter modułów UI
 │   ├── ui/
 │   │   ├── core.js             # Loader, WakeLock, Nawigacja
-│   │   ├── templates.js        # Generatory HTML (Affinity Badges, Karty)
-│   │   ├── modals.js           # Okna dialogowe (Tuner Synaptyczny, Swap, Evolution)
+│   │   ├── templates.js        # Generatory HTML (Karty Kalendarza, Badges)
+│   │   ├── modals.js           # Okna dialogowe (Tuner, Swap, Evolution, Move Day)
 │   │   ├── wizard.js           # Kreator konfiguracji (Ankieta medyczna, SVG Body Map)
 │   │   └── screens/            # Widoki poszczególnych ekranów:
-│   │       ├── dashboard.js    # Ekran Główny
-│   │       ├── training.js     # Ekran Treningu (Live Affinity Badge update)
-│   │       ├── history.js      # Historia + edycja ocen
-│   │       ├── library.js      # Baza Ćwiczeń + filtry Tierów
+│   │       ├── dashboard.js    # Ekran Główny (Logic + Render)
+│   │       ├── training.js     # Ekran Treningu (Render + Eventy)
+│   │       ├── history.js      # Historia + edycja ocen/trudności
+│   │       ├── library.js      # Baza Ćwiczeń + filtry
 │   │       ├── settings.js     # Ustawienia i Integracje
-│   │       ├── summary.js      # Podsumowanie z kafelkami ocen
-│   │       └── help.js         # Ekran Pomocy
-│   │  
+│   │       └── summary.js      # Podsumowanie z kafelkami ocen
+│   │
 ├── BACKEND (NETLIFY FUNCTIONS):
 │   ├── netlify/functions/
-│   │   ├── generate-plan.js         # Generator planów dynamicznych (v3.3)
-│   │   ├── _clinical-rule-engine.js # Walidator logiki medycznej i sprzętowej
-│   │   ├── get-app-content.js       # Pobieranie bazy wiedzy
-│   │   ├── get-or-create-user.js    # Inicjalizacja usera
-│   │   ├── get-user-preferences.js  # Pobieranie affinity score/difficulty
-│   │   ├── update-preference.js     # Aktualizacja pojedynczej oceny
-│   │   ├── save-session.js          # Zapis treningu + Batch Update ocen + Ewolucja
+│   │   ├── _auth-helper.js          # Weryfikacja JWT i puli połączeń DB
+│   │   ├── _clinical-rule-engine.js # Backendowy walidator medyczny
+│   │   ├── _crypto-helper.js        # Szyfrowanie tokenów (AES-256-GCM)
+│   │   ├── _stats-helper.js         # Logika statystyk (Streak, Resilience, Pacing)
+│   │   ├── generate-plan.js         # Generator planów dynamicznych (Rolling Window)
+│   │   ├── get-app-content.js       # Pobieranie bazy wiedzy i personalizacji
+│   │   ├── get-or-create-user-data.js # Bootstrap usera (Parallel Fetch)
+│   │   ├── get-user-preferences.js  # Pobieranie affinity score
+│   │   ├── get-user-stats.js        # Pobieranie statystyk głównych
+│   │   ├── get-recent-history.js    # Historia sesji
+│   │   ├── get-history-by-month.js  # Historia kalendarzowa
+│   │   ├── get-exercise-animation.js # Pobieranie SVG (Cacheable)
+│   │   ├── get-exercise-mastery.js  # Statystyki objętości per ćwiczenie
+│   │   ├── save-session.js          # Zapis treningu + Ewolucja + Analiza Pacingu
 │   │   ├── save-settings.js         # Zapis ustawień i planów
-│   │   ├── get-user-stats.js        # Statystyki (Streak, Resilience)
-│   │   ├── get-exercise-mastery.js  # (Legacy/Support) Agregacja statystyk
+│   │   ├── update-preference.js     # Pojedyncza aktualizacja oceny
+│   │   ├── recalculate-stats.js     # Wymuszone przeliczenie tempa
 │   │   ├── manage-blacklist.js      # Zarządzanie czarną listą
-│   │   ├── strava-*.js              # Integracja OAuth ze Strava
-│   │   ├── _auth-helper.js          # Weryfikacja JWT i połączenie DB
-│   │   └── _stats-helper.js         # Logika statystyk (współdzielona)
-│
+│   │   ├── delete-session.js        # Usuwanie sesji + korekta statystyk
+│   │   ├── delete-user-data.js      # GDPR: Pełne usunięcie konta
+│   │   ├── migrate-data.js          # Migracja z LocalStorage do DB
+│   │   └── strava-*.js              # Endpointy integracji OAuth ze Strava
+│   │
 ├── RECEIVER (APLIKACJA TV):
 │   └── receiver/
 │       ├── index.html          # Widok na telewizorze
 │       ├── style.css           # Style TV
-│       └── receiver.js         # Logika odbiornika (Anti-Idle v8)
+│       └── receiver.js         # Logika odbiornika (Anti-Idle v8, MediaSession)
 │
 └── KONFIGURACJA:
     ├── netlify.toml            # Config hostingu
     ├── package.json            # Zależności Node.js
     ├── manifest.json           # PWA Manifest
+    ├── privacy.html            # RODO / Polityka prywatności
+    ├── terms.html              # Regulamin
     └── service-worker.js       # Cache PWA
 ```
 ---

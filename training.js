@@ -1,10 +1,11 @@
+// ExerciseApp/training.js
 // === WAŻNE: To jest plik LOGIKI w głównym folderze: ExerciseApp/training.js ===
 
 import { state } from './state.js';
 import { focus, screens, initializeFocusElements } from './dom.js';
 import { speak } from './tts.js';
 import { startTimer, stopTimer, startStopwatch, stopStopwatch, updateTimerDisplay, updateStopwatchDisplay } from './timer.js';
-import { getExerciseDuration, parseSetCount, formatForTTS, getHydratedDay, processSVG } from './utils.js';
+import { getExerciseDuration, parseSetCount, formatForTTS, getHydratedDay, processSVG, calculateSmartRest } from './utils.js';
 import { navigateTo } from './ui.js';
 import { renderSummaryScreen } from './ui/screens/summary.js';
 import { getIsCasting, sendTrainingStateUpdate } from './cast.js';
@@ -13,7 +14,7 @@ import { getAffinityBadge } from './ui/templates.js';
 import dataStore from './dataStore.js';
 
 // --- ZMIENNE LOKALNE ---
-let backupInterval = null; // Interwał do zapisu stanu co 2s
+let backupInterval = null;
 
 // --- HELPER: SKALOWANIE CZCIONKI ---
 function fitText(element) {
@@ -90,15 +91,12 @@ function logCurrentStep(status) {
     }
 }
 
-// --- BACKUP STANU (Wykonywany cyklicznie) ---
+// --- BACKUP STANU ---
 function triggerSessionBackup() {
     let trainingTitle = 'Trening';
-    
-    // Zawsze używamy planu dynamicznego (lub protokołu)
     if (state.todaysDynamicPlan && state.todaysDynamicPlan.type === 'protocol') {
         trainingTitle = state.todaysDynamicPlan.title;
-    }
-    else if (state.settings.dynamicPlanData) {
+    } else if (state.settings.dynamicPlanData) {
         const days = state.settings.dynamicPlanData.days || [];
         const day = days.find(d => d.dayNumber === state.currentTrainingDayId);
         if (day) trainingTitle = day.title;
@@ -124,18 +122,11 @@ function triggerSessionBackup() {
 
 function startBackupInterval() {
     if (backupInterval) clearInterval(backupInterval);
-    backupInterval = setInterval(() => {
-        if (!state.isPaused) {
-            triggerSessionBackup();
-        }
-    }, 2000);
+    backupInterval = setInterval(() => { if (!state.isPaused) triggerSessionBackup(); }, 2000);
 }
 
 function stopBackupInterval() {
-    if (backupInterval) {
-        clearInterval(backupInterval);
-        backupInterval = null;
-    }
+    if (backupInterval) { clearInterval(backupInterval); backupInterval = null; }
 }
 
 function initProgressBar() {
@@ -172,18 +163,12 @@ function updateProgressBar() {
         if (segRealIndex < currentIndex) {
             seg.classList.add('completed');
         } else if (segRealIndex === currentIndex) {
-            if (state.isPaused) {
-                seg.classList.add('paused-active');
-            } else {
-                seg.classList.add('active');
-            }
+            if (state.isPaused) seg.classList.add('paused-active');
+            else seg.classList.add('active');
         } else if (currentEx && !currentEx.isWork && segRealIndex > currentIndex) {
             let nextWorkIndex = -1;
             for(let i = currentIndex + 1; i < state.flatExercises.length; i++) {
-                if (state.flatExercises[i].isWork) {
-                    nextWorkIndex = i;
-                    break;
-                }
+                if (state.flatExercises[i].isWork) { nextWorkIndex = i; break; }
             }
             if (segRealIndex === nextWorkIndex && !state.isPaused) {
                 seg.classList.add('rest-pulse');
@@ -368,9 +353,16 @@ export async function startExercise(index, isResuming = false) {
 export function generateFlatExercises(dayData) {
     const plan = [];
 
-    const REST_BETWEEN_SETS = state.settings.restBetweenSets || 30;
-    const REST_BETWEEN_EXERCISES = state.settings.restBetweenExercises || 30;
-    const TRANSITION_DURATION = 5;
+    // --- SMART REST LOGIC ---
+    // Pobieramy Globalny Faktor Użytkownika (domyślnie 1.0)
+    const restFactor = state.settings.restTimeFactor || 1.0;
+
+    // Przerwy między ćwiczeniami (również skalowane)
+    const GLOBAL_REST_EXERCISE = Math.round((state.settings.restBetweenExercises || 30) * restFactor);
+    const REST_BETWEEN_SECTIONS = Math.round(60 * restFactor);
+
+    // HUMANITARNA ZMIANA STRONY (Bezpieczeństwo: min 12s, ale skaluje się w górę)
+    const TRANSITION_DURATION = Math.max(12, Math.round(12 * restFactor));
 
     let unilateralGlobalIndex = 0;
     let globalStepCounter = 0;
@@ -381,13 +373,17 @@ export function generateFlatExercises(dayData) {
         { name: 'Schłodzenie', exercises: dayData.cooldown || [] }
     ];
 
-    sections.forEach(section => {
+    sections.forEach((section, sectionIndex) => {
         section.exercises.forEach((exercise, exerciseIndex) => {
             const totalSetsDeclared = parseSetCount(exercise.sets);
             const isUnilateral = exercise.isUnilateral ||
                                  exercise.is_unilateral ||
                                  String(exercise.reps_or_time).includes('/str') ||
                                  String(exercise.reps_or_time).includes('stron');
+
+            // --- SMART REST ---
+            // Funkcja z utils.js uwzględnia kategorię i userRestFactor
+            const smartRestTime = calculateSmartRest(exercise, restFactor);
 
             let loopLimit = totalSetsDeclared;
             let displayTotalSets = totalSetsDeclared;
@@ -482,21 +478,35 @@ export function generateFlatExercises(dayData) {
                         name: 'Odpoczynek',
                         isRest: true,
                         isWork: false,
-                        duration: REST_BETWEEN_SETS,
+                        duration: smartRestTime, // Używamy wartości z utils.js
                         sectionName: 'Przerwa między seriami',
                         uniqueId: `rest_set_${globalStepCounter++}`
                     });
                 }
             }
 
-            if (exerciseIndex < section.exercises.length - 1) {
+            const isLastExerciseInSection = exerciseIndex === section.exercises.length - 1;
+            const isLastSection = sectionIndex === sections.length - 1;
+
+            if (!isLastExerciseInSection) {
                 plan.push({
                     name: 'Przerwa',
                     isRest: true,
                     isWork: false,
-                    duration: REST_BETWEEN_EXERCISES,
+                    duration: GLOBAL_REST_EXERCISE,
                     sectionName: 'Przerwa',
                     uniqueId: `rest_exercise_${globalStepCounter++}`
+                });
+            } else if (!isLastSection) {
+                const nextSectionName = sections[sectionIndex + 1].name;
+                plan.push({
+                    name: `Start: ${nextSectionName}`,
+                    isRest: true,
+                    isWork: false,
+                    duration: REST_BETWEEN_SECTIONS,
+                    sectionName: 'Zmiana Sekcji',
+                    description: 'Przygotuj sprzęt do kolejnej części.',
+                    uniqueId: `rest_section_${globalStepCounter++}`
                 });
             }
         });
@@ -533,7 +543,6 @@ export async function startModifiedTraining() {
         sourcePlan = state.todaysDynamicPlan;
     }
 
-    // Bezpiecznik na wypadek braku planu (powinno być niemożliwe przy poprawnej nawigacji)
     if (!sourcePlan) {
         console.error("Critical: No source plan found in startModifiedTraining!");
         alert("Błąd: Nie znaleziono planu. Powrót do menu.");

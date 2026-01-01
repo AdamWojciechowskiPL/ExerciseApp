@@ -87,9 +87,14 @@ const dataStore = {
             // 1. SETTINGS & PACING
             if (data.settings) {
                 state.settings = { ...state.settings, ...data.settings };
+                
+                // --- MIGRACJA/BEZPIECZNIK ---
+                // Jeśli użytkownik ma stare ustawienia w bazie, ustawiamy domyślny restTimeFactor
+                if (typeof state.settings.restTimeFactor !== 'number') {
+                    state.settings.restTimeFactor = 1.0;
+                }
+                
                 state.tts.isSoundOn = state.settings.ttsEnabled ?? true;
-
-                // Zawsze wymuszamy tryb dynamiczny w nowym modelu
                 state.settings.planMode = 'dynamic';
             }
 
@@ -132,15 +137,22 @@ const dataStore = {
     },
 
     generateDynamicPlan: async (q) => {
-        const result = await callAPI('generate-plan', { method: 'POST', body: q });
+        // Dodajemy aktualne ustawienia globalne do payloadu generatora, 
+        // aby backend wiedział jaki jest restTimeFactor
+        const payload = {
+            ...q,
+            secondsPerRep: state.settings.secondsPerRep || 6,
+            restTimeFactor: state.settings.restTimeFactor || 1.0
+        };
+
+        const result = await callAPI('generate-plan', { method: 'POST', body: payload });
         if (result && result.plan) {
             state.settings.dynamicPlanData = result.plan;
             state.settings.planMode = 'dynamic';
             state.settings.onboardingCompleted = true;
-            
-            // Aktualizujemy dane wizarda w stanie, łącząc stare z nowymi
+
             state.settings.wizardData = { ...state.settings.wizardData, ...q };
-            
+
             return result;
         } else throw new Error("Pusta odpowiedź z generatora.");
     },
@@ -213,12 +225,11 @@ const dataStore = {
             sessionData.exerciseRatings.forEach(rating => {
                 const id = rating.exerciseId;
                 if (!state.userPreferences[id]) state.userPreferences[id] = { score: 0, difficulty: 0 };
-                
-                // Optymistyczna aktualizacja lokalna (spójna z save-session.js)
+
                 if (rating.action === 'like') state.userPreferences[id].score = 50;
                 else if (rating.action === 'dislike') state.userPreferences[id].score = -50;
                 else if (rating.action === 'neutral') state.userPreferences[id].score = 0;
-                
+
                 if (rating.action === 'hard') state.userPreferences[id].difficulty = 1;
                 else if (rating.action === 'easy') state.userPreferences[id].difficulty = -1;
             });
@@ -246,11 +257,10 @@ const dataStore = {
         } else if (action === 'reset_difficulty') {
             state.userPreferences[exerciseId].difficulty = 0;
         } else {
-            // Logika dla like/dislike/hard/easy (dla przycisków w historii)
             if (action === 'like') state.userPreferences[exerciseId].score = 50;
             else if (action === 'dislike') state.userPreferences[exerciseId].score = -50;
             else if (action === 'neutral') state.userPreferences[exerciseId].score = 0;
-            
+
             if (action === 'hard') state.userPreferences[exerciseId].difficulty = 1;
             else if (action === 'easy') state.userPreferences[exerciseId].difficulty = -1;
         }

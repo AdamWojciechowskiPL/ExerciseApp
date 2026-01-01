@@ -1,4 +1,4 @@
-// state.js
+// ExerciseApp/state.js
 
 export const state = {
     // --- FLAGA GLOBALNEJ INICJALIZACJI ---
@@ -34,15 +34,16 @@ export const state = {
 
         // --- PARAMETRY CZASOWE ---
         secondsPerRep: 6,
-        restBetweenSets: 30,
-        restBetweenExercises: 30,
+        
+        // NOWOŚĆ: Globalny Mnożnik Przerw (1.0 = 100% = Standard Medyczny)
+        // Zastępuje sztywne restBetweenSets i restBetweenExercises
+        restTimeFactor: 1.0, 
 
         wizardData: {} // Pełne dane z ankiety
     },
 
     exerciseLibrary: {},
 
-    // Usunięto trainingPlans (static)
     blacklist: [],
 
     isHistoryLoaded: false,

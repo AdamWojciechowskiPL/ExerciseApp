@@ -1,0 +1,68 @@
+/* 6. RESPONSYWNOŚĆ (MEDIA QUERIES) */
+
+@media (max-width: 768px) {
+    .desktop-only { display: none !important; }
+    .mobile-only { display: block !important; }
+    header { padding: 0.8rem 1rem; justify-content: space-between; }
+    header nav#main-nav { display: none !important; }
+    #user-display-name { display: none; }
+    #user-info-container { border-left: none; padding-left: 0; gap: 10px; }
+    #logout-btn { padding: 0.4rem; background: transparent; border: none; }
+    #app-bottom-nav { display: flex; }
+
+    main {
+        padding: 0.5rem; padding-bottom: 80px !important;
+    }
+
+    /* FIX: Single Line Hero (Mobile) */
+    #hero-dashboard {
+        display: flex; flex-wrap: nowrap; align-items: center; gap: 10px;
+        padding: 10px 12px; min-height: auto; border-radius: 12px;
+        background: linear-gradient(160deg, #0f1c2e 0%, var(--primary-color) 90%);
+    }
+    .hero-avatar-wrapper { width: 50px; height: 50px; margin: 0; }
+    .level-badge { font-size: 0.6rem; padding: 1px 4px; bottom: -3px; }
+    .hero-content { flex: 1; min-width: 0; padding: 0 4px; }
+    .hero-rank-title { font-size: 0.9rem; margin-bottom: 2px; }
+    .hero-metrics-grid { display: flex; gap: 6px; margin-top: 0; flex-wrap: nowrap; }
+    .metric-item { padding: 3px 6px; min-height: auto; gap: 4px; background: rgba(0,0,0,0.2); }
+    .metric-icon { width: 14px !important; height: 14px !important; }
+    .metric-value { font-size: 0.75rem; font-weight: 600; }
+    .metric-text { line-height: 1; }
+    .metric-label { display: none; }
+    .hero-weekly-rhythm {
+        display: flex; min-width: auto; padding-left: 8px; border-left: 1px solid rgba(255,255,255,0.1);
+        transform: scale(0.9); transform-origin: right center;
+    }
+    .weekly-chart-label { display: none; }
+    .weekly-chart-grid { gap: 3px; }
+    .day-bar { width: 4px; height: 18px; }
+    .day-bar.filled { height: 18px; }
+    .day-bar.empty { height: 8px; }
+    .day-label { font-size: 0.5rem; }
+
+    .mission-card { padding: 1rem; margin-bottom: 1rem; }
+    .ai-header-strip { margin: -1rem -1rem 0.8rem -1rem; padding: 0.4rem 1rem; font-size: 0.7rem; }
+    .mission-title { font-size: 1.3rem; margin: 0.2rem 0; line-height: 1.2; }
+    .mission-day-badge { font-size: 0.65rem; padding: 2px 8px; }
+    .estimated-time-badge { font-size: 0.8rem; padding: 2px 8px; }
+    .ai-mini-tags { margin-bottom: 0.5rem; padding-bottom: 0.5rem; gap: 6px; }
+    .wellness-section { margin-top: 0.8rem; padding-top: 0.8rem; }
+    .wellness-label { margin-bottom: 0.5rem; font-size: 0.8rem; }
+    .pain-option { padding: 6px 4px; font-size: 1.2rem; border-radius: 8px; gap: 2px; }
+    .pain-option span { font-size: 0.55rem; font-weight: 600; }
+    .action-btn { margin-top: 0.8rem; padding: 0.8rem; font-size: 1rem; }
+
+    .calendar-sheet { border-radius: 16px; }
+    .calendar-day-number { font-size: 3rem; }
+    .calendar-date-header { padding: 1rem 1rem 0.2rem 1rem; }
+    .calendar-body { padding: 0.8rem; }
+    .wc-title { font-size: 1rem; }
+
+    #app-footer { padding-bottom: 100px !important; }
+}
+
+@media (min-width: 769px) {
+    .mobile-only { display: none !important; }
+    .desktop-only { display: inline-block !important; }
+}

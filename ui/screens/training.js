@@ -1,4 +1,3 @@
-// ExerciseApp/ui/screens/training.js
 import { state } from '/state.js';
 import { screens, initializeFocusElements, focus } from '/dom.js';
 import { getActiveTrainingPlan, getHydratedDay, getISODate, calculateSmartDuration, calculateSystemLoad, calculateClinicalProfile, getSessionFocus } from '/utils.js';
@@ -92,18 +91,40 @@ export const renderProtocolStart = (protocol) => {
     const slider = screen.querySelector('#time-slider');
     const display = screen.querySelector('#time-factor-display');
 
+    // --- LOGIKA SUWAKA (Z POPRAWKĄ REPS vs TIME) ---
     slider.addEventListener('input', (e) => {
         const timeFactor = parseFloat(e.target.value);
         display.textContent = `${Math.round(timeFactor * 100)}%`;
 
         const previewProtocol = JSON.parse(JSON.stringify(protocol));
-        previewProtocol.flatExercises.forEach(ex => {
+        
+        previewProtocol.flatExercises.forEach((ex, i) => {
+            const originalEx = protocol.flatExercises[i]; // Bierzemy oryginał, żeby znać typ (reps/time)
+
             if (ex.duration) {
-                const newDuration = Math.round(ex.duration * timeFactor);
+                // Skalujemy duration zawsze (bo to używane przez timer)
+                const newDuration = Math.round(originalEx.duration * timeFactor);
                 ex.duration = newDuration;
-                if (ex.isWork) ex.reps_or_time = `${newDuration} s`;
+
+                if (ex.isWork) {
+                    const valStr = String(originalEx.reps_or_time || "").toLowerCase();
+                    const isTimeBased = valStr.includes('s') || valStr.includes('min');
+
+                    if (isTimeBased) {
+                        // Jeśli to czasówka -> aktualizujemy tekst "XX s"
+                        ex.reps_or_time = `${newDuration} s`;
+                    } else {
+                        // Jeśli to powtórzenia -> skalujemy liczbę powtórzeń
+                        const baseReps = parseInt(valStr, 10) || 0;
+                        if (baseReps > 0) {
+                            const newReps = Math.max(1, Math.round(baseReps * timeFactor));
+                            ex.reps_or_time = `${newReps}`;
+                        }
+                    }
+                }
             }
         });
+
         previewProtocol.totalDuration = Math.round(protocol.totalDuration * timeFactor);
         renderList(previewProtocol);
 
@@ -143,16 +164,10 @@ export const renderProtocolStart = (protocol) => {
                      }
                 }
 
+                // Odśwież widok z zachowaniem aktualnego timeFactor
                 const timeFactor = parseFloat(slider.value) || 1.0;
-                const previewProtocol = JSON.parse(JSON.stringify(protocol));
-                previewProtocol.flatExercises.forEach(ex => {
-                    if (ex.duration) {
-                        const newDuration = Math.round(ex.duration * timeFactor);
-                        ex.duration = newDuration;
-                        if (ex.isWork) ex.reps_or_time = `${newDuration} s`;
-                    }
-                });
-                renderList(previewProtocol);
+                // Wyzwalamy zdarzenie input, aby przeliczyć listę z nowym ćwiczeniem i aktualnym suwakiem
+                slider.dispatchEvent(new Event('input'));
             });
         }
     });
@@ -163,15 +178,35 @@ export const renderProtocolStart = (protocol) => {
         renderMainScreen();
     });
 
+    // --- LOGIKA STARTU (Z POPRAWKĄ REPS vs TIME) ---
     screen.querySelector('#proto-start-btn').addEventListener('click', () => {
         const timeFactor = parseFloat(slider.value) || 1.0;
         const scaledProtocol = JSON.parse(JSON.stringify(protocol));
-        scaledProtocol.flatExercises.forEach(ex => {
+        
+        scaledProtocol.flatExercises.forEach((ex, i) => {
+            const originalEx = protocol.flatExercises[i];
+
             if (ex.duration) {
-                ex.duration = Math.round(ex.duration * timeFactor);
-                if (ex.isWork) ex.reps_or_time = `${ex.duration} s`;
+                const newDuration = Math.round(originalEx.duration * timeFactor);
+                ex.duration = newDuration;
+
+                if (ex.isWork) {
+                    const valStr = String(originalEx.reps_or_time || "").toLowerCase();
+                    const isTimeBased = valStr.includes('s') || valStr.includes('min');
+
+                    if (isTimeBased) {
+                        ex.reps_or_time = `${newDuration} s`;
+                    } else {
+                        const baseReps = parseInt(valStr, 10) || 0;
+                        if (baseReps > 0) {
+                            const newReps = Math.max(1, Math.round(baseReps * timeFactor));
+                            ex.reps_or_time = `${newReps}`;
+                        }
+                    }
+                }
             }
         });
+
         scaledProtocol.totalDuration = Math.round(protocol.totalDuration * timeFactor);
         state.todaysDynamicPlan = scaledProtocol;
         state.sessionParams = { initialPainLevel: 0, timeFactor: timeFactor };
@@ -189,7 +224,7 @@ export const renderProtocolStart = (protocol) => {
             btn.style.opacity = "0.7";
             try {
                 const svg = await dataStore.fetchExerciseAnimation(exId);
-                if (svg) renderPreviewModal(svg, exName);
+                if (svg) renderPreviewModal(svg, state.exerciseLibrary[exId]?.name || "Podgląd");
                 else alert("Brak podglądu.");
             } catch (err) { console.error("Preview Error:", err); }
             finally {
@@ -228,7 +263,7 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
     if (!rawDayData) { navigateTo('main'); return; }
 
     const basePlanData = getHydratedDay(rawDayData);
-    
+
     // Utrzymujemy lokalny stan poziomu bólu
     let currentPainLevel = initialPainLevel;
     let currentAdjustedPlan = assistant.adjustTrainingVolume(basePlanData, currentPainLevel, 1.0);
@@ -268,12 +303,12 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
 
         return `
         <div class="workout-context-card" style="margin-bottom: 1.5rem; background: #fff; border-radius: 12px; padding: 1.2rem; border: 1px solid rgba(0,0,0,0.05); box-shadow: 0 4px 20px rgba(0,0,0,0.03);">
-            
+
             <div class="wc-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                 <h3 class="wc-title" style="font-size:1.25rem; font-weight:800; color:var(--primary-color); margin:0; line-height:1.2;">
                     ${currentAdjustedPlan.title}
                 </h3>
-                
+
                 <div class="pre-training-actions" style="display:flex; gap:8px;">
                     ${isCurrentDynamicDay ?
                         `<button id="reset-workout-btn" class="reset-workout-btn" title="Przywróć Plan Bazowy" style="width:32px; height:32px;">
@@ -381,18 +416,12 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
         // Obliczanie planu na podstawie bólu (asystent)
         currentAdjustedPlan = assistant.adjustTrainingVolume(basePlanData, currentPainLevel, 1.0);
         currentAdjustedPlan = getHydratedDay(currentAdjustedPlan);
-        
+
         headerContainer.innerHTML = renderHeader();
-        
-        // --- AKTUALIZACJA UI NA PODSTAWIE POZIOMU BÓLU ---
-        // Dla poziomu 9 (Źle) i 7 (Boli) przycisk Start powinien wyglądać ostrzegawczo,
-        // ale jego akcja to po prostu uruchomienie zmodyfikowanego (lżejszego) treningu.
-        // Jeśli użytkownik wybierze 9 -> od razu proponujemy SOS. Jeśli anuluje SOS, zostaje w tym widoku z opcją Start.
-        
+
         if (currentPainLevel >= 7) {
             startBtn.style.backgroundColor = "var(--danger-color)";
             startBtn.style.boxShadow = "0 8px 20px rgba(231, 111, 81, 0.4)";
-            // Ikona apteczki dla wysokiego bólu
             startBtn.innerHTML = `🚑 Start (Tryb Ostrożny)`;
         } else {
             startBtn.style.backgroundColor = "";
@@ -404,13 +433,12 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
         painOptions.forEach(opt => {
             opt.addEventListener('click', () => {
                 const newLevel = parseInt(opt.dataset.level, 10);
-                
-                // --- LOGIKA SOS PRZY KLIKNIĘCIU "ŹLE" ---
+
                 if (newLevel === 9) {
                     if (confirm("Twój poziom bólu jest bardzo wysoki. Czy chcesz uruchomić bezpieczny Protokół SOS?")) {
                         const wiz = state.settings.wizardData || {};
                         const focusZone = (wiz.pain_locations && wiz.pain_locations.length > 0) ? wiz.pain_locations[0] : 'lumbar_general';
-                        
+
                         const protocol = generateBioProtocol({
                             mode: 'sos',
                             focusZone: focusZone,
@@ -418,7 +446,7 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
                             userContext: wiz
                         });
                         renderProtocolStart(protocol);
-                        return; // Przerywamy renderowanie obecnego ekranu, bo wychodzimy do protokołu
+                        return;
                     }
                 }
 
@@ -444,7 +472,7 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
         renderList(currentAdjustedPlan);
     };
 
-    updateScreen(); 
+    updateScreen();
 
     listContainer.addEventListener('click', (e) => {
         const btn = e.target.closest('.swap-btn');
@@ -488,7 +516,7 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
                 }
 
                 savePlanToStorage(planToModify);
-                renderPreTrainingScreen(dayId, currentPainLevel, true); 
+                renderPreTrainingScreen(dayId, currentPainLevel, true);
 
                 if (swapType === 'blacklist') {
                     if (confirm(`Dodać "${foundExercise.name}" do czarnej listy?`)) {
@@ -527,10 +555,10 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
                 savePlanToStorage(currentAdjustedPlan);
             } else return;
         }
-        
+
         state.sessionParams.initialPainLevel = currentPainLevel;
-        state.sessionParams.timeFactor = 1.0; 
-        
+        state.sessionParams.timeFactor = 1.0;
+
         startModifiedTraining();
     });
 

@@ -10,7 +10,6 @@ import {
     renderDayDetailsScreen,
     renderLibraryScreen,
     renderTrainingScreen,
-    renderHelpScreen,
     navigateTo,
     showLoader,
     hideLoader,
@@ -129,7 +128,19 @@ function initAppLogic() {
             }
 
             if (target.closest('#exit-training-btn')) { if (confirm('Przerwać trening?')) { stopTimer(); stopStopwatch(); if (state.tts.isSupported) state.tts.synth.cancel(); if (getIsCasting()) sendShowIdle(); clearSessionBackup(); state.currentTrainingDate = null; state.sessionLog = []; state.isPaused = false; navigateTo('main'); renderMainScreen(); } return; }
-            if (target.closest('#tts-toggle-btn')) { state.tts.isSoundOn = !state.tts.isSoundOn; const icon = document.getElementById('tts-icon'); if (icon) icon.src = state.tts.isSoundOn ? '/icons/sound-on.svg' : '/icons/sound-off.svg'; if (!state.tts.isSoundOn && state.tts.isSupported) state.tts.synth.cancel(); return; }
+
+            // --- ZMIANA DLA TTS TOGGLE (SPRITE SUPPORT) ---
+            const ttsBtn = target.closest('#tts-toggle-btn');
+            if (ttsBtn) {
+                state.tts.isSoundOn = !state.tts.isSoundOn;
+                const iconUse = document.getElementById('tts-icon').querySelector('use');
+                if (iconUse) {
+                    iconUse.setAttribute('href', state.tts.isSoundOn ? '#icon-sound-on' : '#icon-sound-off');
+                }
+                if (!state.tts.isSoundOn && state.tts.isSupported) state.tts.synth.cancel();
+                return;
+            }
+
             if (target.closest('#prev-step-btn')) { moveToPreviousExercise(); return; }
             if (target.closest('#pause-resume-btn')) { togglePauseTimer(); return; }
 
@@ -218,17 +229,15 @@ export async function main() {
                 if (bottomNav) bottomNav.classList.remove('hidden');
                 hideLoader();
 
-                // --- NOWOŚĆ: PLAN SYNCHRONIZATION LOGIC ---
                 const wizardData = state.settings.wizardData;
                 const hasWizardData = wizardData && Object.keys(wizardData).length > 0;
-                
+
                 if (hasWizardData) {
                     const syncStatus = shouldSynchronizePlan(state.settings.dynamicPlanData);
-                    
+
                     if (syncStatus.needed) {
                         console.log(`[App] Sync needed: ${syncStatus.reason}`);
                         if (syncStatus.reason === 'missing_today') {
-                            // Krytyczne: Brak planu na dzisiaj - blokujemy UI loaderem
                             showLoader();
                             try {
                                 await dataStore.generateDynamicPlan(wizardData);
@@ -239,14 +248,12 @@ export async function main() {
                                 hideLoader();
                             }
                         } else {
-                            // Background Sync: Dopychanie bufora w tle
                             dataStore.generateDynamicPlan(wizardData)
                                 .then(() => console.log("[App] Background Sync complete."))
                                 .catch(e => console.warn("[App] Background Sync failed:", e));
                         }
                     }
                 }
-                // --- END SYNC LOGIC ---
 
                 renderMainScreen(true);
 

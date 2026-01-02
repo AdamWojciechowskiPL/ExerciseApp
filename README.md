@@ -1,4 +1,4 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v17.1.0
+# Aplikacja Treningowa (Smart Rehab PWA) v18.0.0
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
@@ -88,6 +88,7 @@ Sesje celowane generowane natychmiastowo po stronie klienta (Time-Boxing):
 │   ├── tts.js                  # Text-to-Speech (Synteza mowy)
 │   ├── cast.js                 # Google Cast Sender SDK
 │   ├── gamification.js         # Obliczanie poziomów i statystyk
+│   ├── help.js                 # Wyświetlanie widoku pomocy
 │   └── dom.js                  # Cache referencji DOM
 │
 ├── UI (MODUŁY PREZENTACJI):

@@ -67,25 +67,15 @@ const handleTurnToRest = async (dayDateISO) => {
 
         const success = await savePlanToDB(plan);
         if (success) {
-            clearPlanFromStorage(); // Ważne: czyścimy cache dzisiejszego dnia
-
-            // Decyzja o regeneracji (po krótkiej pauzie dla lepszego UX)
+            clearPlanFromStorage();
             setTimeout(async () => {
                 if (confirm("Zmodyfikowałeś ten dzień. Czy chcesz przeliczyć pozostałe dni planu?")) {
                     showLoader();
-
-                    // PRZYGOTOWUJEMY PAYLOAD Z WYMUSZONĄ DATĄ WOLNĄ
                     const payload = JSON.parse(JSON.stringify(state.settings.wizardData || {}));
-
-                    // Inicjalizujemy tablicę, jeśli nie istnieje
                     if (!payload.forced_rest_dates) payload.forced_rest_dates = [];
-
-                    // Dodajemy datę, jeśli jeszcze jej nie ma
                     if (!payload.forced_rest_dates.includes(dayDateISO)) {
                         payload.forced_rest_dates.push(dayDateISO);
                     }
-
-                    // Wysyłamy do backendu z informacją o wymuszonym dniu wolnym
                     await dataStore.generateDynamicPlan(payload);
                 }
                 hideLoader();
@@ -103,12 +93,10 @@ const handleMoveDay = (sourceDateISO) => {
     const plan = state.settings.dynamicPlanData;
     const todayISO = getISODate(new Date());
 
-    // ZMIANA: Pozwalamy przenosić na dowolny dzień wolny, który jest DZISIAJ lub w PRZYSZŁOŚCI.
-    // Nie blokujemy przenoszenia "wstecz" względem daty źródłowej (np. z czwartku na wolną środę).
     const availableTargets = plan.days.filter(d =>
         d.type === 'rest' &&
         d.date !== sourceDateISO &&
-        d.date >= todayISO // Warunek: cel musi być w przyszłości lub dziś
+        d.date >= todayISO
     );
 
     if (availableTargets.length === 0) {
@@ -126,7 +114,6 @@ const handleMoveDay = (sourceDateISO) => {
             const sourceDayContent = newPlan.days[sourceIndex];
             const targetDayContent = newPlan.days[targetIndex];
 
-            // Kopia zawartości (bez daty i numeru dnia)
             const tempSourceContent = { ...sourceDayContent };
             delete tempSourceContent.date;
             delete tempSourceContent.dayNumber;
@@ -135,9 +122,8 @@ const handleMoveDay = (sourceDateISO) => {
             delete tempTargetContent.date;
             delete tempTargetContent.dayNumber;
 
-            // Zamiana
-            Object.assign(newPlan.days[targetIndex], tempSourceContent); // Cel staje się treningiem
-            Object.assign(newPlan.days[sourceIndex], tempTargetContent); // Źródło staje się restem
+            Object.assign(newPlan.days[targetIndex], tempSourceContent);
+            Object.assign(newPlan.days[sourceIndex], tempTargetContent);
 
             const success = await savePlanToDB(newPlan);
             if (success) {
@@ -145,12 +131,6 @@ const handleMoveDay = (sourceDateISO) => {
                 setTimeout(async () => {
                     if (confirm("Trening został przeniesiony. Czy chcesz przeliczyć pozostałe dni planu?")) {
                         showLoader();
-                        // Tutaj również możemy dodać logikę forced_rest_dates dla daty źródłowej,
-                        // jeśli chcemy, aby "dziura" po przeniesieniu była trwała przy regeneracji.
-                        // Ale w przypadku 'Move' zazwyczaj chodzi o jednorazową zamianę w obecnym oknie.
-                        // Zostawiamy standardowe generowanie - system i tak wypełni lukę,
-                        // co może być pożądane (Move = przełożenie + zwolnienie miejsca na coś nowego?).
-                        // Jeśli użytkownik chce, żeby to miejsce zostało puste, powinien użyć "Zmień na Wolne".
                         await dataStore.generateDynamicPlan(state.settings.wizardData);
                     }
                     hideLoader();
@@ -169,9 +149,6 @@ const handleResetPlan = async () => {
     if (!confirm("Czy na pewno chcesz zresetować wszystkie manualne zmiany i wygenerować plan na nowo?")) return;
     showLoader();
     try {
-        // Przy pełnym resecie czyścimy wymuszone daty wolne (opcjonalnie)
-        // Jeśli chcemy zachować ustawienia użytkownika, używamy wizardData as-is.
-        // Jeśli "Reset" ma oznaczać "Powrót do czystego harmonogramu", czyścimy forced_rest_dates.
         const cleanPayload = { ...state.settings.wizardData };
         if (cleanPayload.forced_rest_dates) {
             cleanPayload.forced_rest_dates = [];
@@ -198,14 +175,12 @@ const createGlobalMenu = () => {
     globalMenu.className = 'global-ctx-menu';
     document.body.appendChild(globalMenu);
 
-    // Global click listener to close menu
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.global-ctx-menu') && !e.target.closest('.ctx-menu-btn')) {
             closeGlobalMenu();
         }
     });
 
-    // Menu click listener
     globalMenu.addEventListener('click', (e) => {
         const actionBtn = e.target.closest('.ctx-action');
         if (actionBtn) {
@@ -231,46 +206,40 @@ const createGlobalMenu = () => {
 const openGlobalMenu = (btn, dateISO, isRest, dayNumber) => {
     const menu = createGlobalMenu();
 
-    // Generate content
     let content = '';
     if (!isRest) {
         content += `<button class="ctx-action" data-action="preview" data-day-id="${dayNumber}">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            <svg width="18" height="18"><use href="#icon-eye"/></svg>
             <span>👁️ Podgląd</span>
         </button>`;
         content += `<button class="ctx-action" data-action="rest" data-date="${dateISO}">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            <svg width="18" height="18"><use href="#icon-rest-coffee"/></svg>
             <span>Zmień na Wolne</span>
         </button>`;
         content += `<button class="ctx-action" data-action="move" data-date="${dateISO}">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+            <svg width="18" height="18"><use href="#icon-calendar-move"/></svg>
             <span>Przenieś...</span>
         </button>`;
     }
     content += `<button class="ctx-action" data-action="reset">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
+        <svg width="18" height="18"><use href="#icon-reset-ccw"/></svg>
         <span>Resetuj Plan</span>
     </button>`;
 
     menu.innerHTML = content;
 
-    // Positioning
     const rect = btn.getBoundingClientRect();
-    const menuWidth = 200; // Estimated or min-width
+    const menuWidth = 200;
 
     let left = rect.right - menuWidth;
-    // If goes off-screen left, align left
     if (left < 10) left = 10;
-
-    // Also check right edge
     if (left + menuWidth > window.innerWidth) {
         left = window.innerWidth - menuWidth - 10;
     }
 
     let top = rect.bottom + 5;
-    // Check bottom edge
     if (top + 200 > window.innerHeight) {
-        top = rect.top - 5 - menu.offsetHeight; // This might be tricky if height unknown, but usually not an issue with small menus
+        top = rect.top - 5 - menu.offsetHeight;
     }
 
     menu.style.left = `${left}px`;
@@ -285,13 +254,12 @@ const closeGlobalMenu = () => {
 // --- GŁÓWNA FUNKCJA RENDERUJĄCA ---
 
 export const renderMainScreen = async (isLoading = false) => {
-    // Podpinamy listener tylko raz do kontenera
     if (!containers.days._hasDashboardListeners) {
         containers.days.addEventListener('click', (e) => {
             const btn = e.target.closest('.ctx-menu-btn');
             if (btn) {
                 e.stopPropagation();
-                e.preventDefault(); // Prevent scrolling or other defaults
+                e.preventDefault();
 
                 const date = btn.dataset.date;
                 const isRest = btn.dataset.isRest === 'true';
@@ -359,14 +327,13 @@ export const renderMainScreen = async (isLoading = false) => {
     const todaysSessions = state.userProgress[todayISO] || [];
     const completedSession = todaysSessions.find(s => s.status === 'completed');
 
-    // Helper for generating context button HTML
     const getMenuBtn = (date, isRest, dayNum) => `
         <div class="ctx-menu-wrapper" style="position: absolute; top: 10px; right: 10px; z-index: 20;">
             <button class="ctx-menu-btn"
                 data-date="${date}"
                 data-is-rest="${isRest}"
                 data-day-id="${dayNum}">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>
+                <svg width="24" height="24"><use href="#icon-dots-vertical"/></svg>
             </button>
         </div>
     `;
@@ -384,13 +351,8 @@ export const renderMainScreen = async (isLoading = false) => {
     } else if (todayPlanEntry.type === 'rest') {
         const cardWrapper = document.createElement('div');
         cardWrapper.style.position = 'relative';
-
-        // Generate card
         cardWrapper.innerHTML = generateRestCalendarPageHTML(today);
-
-        // Inject button
         cardWrapper.insertAdjacentHTML('beforeend', getMenuBtn(todayISO, true, todayPlanEntry.dayNumber));
-
         containers.days.appendChild(cardWrapper);
         clearPlanFromStorage();
 
@@ -421,7 +383,6 @@ export const renderMainScreen = async (isLoading = false) => {
 
         containers.days.appendChild(missionWrapper);
 
-        // Logic for start button & pain options
         const cardEl = missionWrapper.querySelector('.calendar-sheet');
         const startBtn = cardEl.querySelector('#start-mission-btn');
         const painOptions = cardEl.querySelectorAll('.pain-option');
@@ -435,20 +396,25 @@ export const renderMainScreen = async (isLoading = false) => {
                 const checkPlan = assistant.adjustTrainingVolume(finalPlan, painLevel);
                 const isSOS = checkPlan?._modificationInfo?.shouldSuggestSOS;
 
-                // --- NOWE: PRZELICZANIE CZASU NA UI ---
                 const newDuration = calculateSmartDuration(checkPlan);
+                
+                // --- FIX: UPDATING TEXT WITHOUT EMOJI ---
                 const timeDisplay = document.getElementById('today-duration-display');
                 if (timeDisplay) {
-                    timeDisplay.innerHTML = `⏱ ${newDuration} min`;
+                    timeDisplay.textContent = `${newDuration} min`; // Update text only!
                 }
-                // -------------------------------------
 
                 if (isSOS) {
                     startBtn.textContent = "🏥 Aktywuj Protokół SOS";
                     startBtn.style.backgroundColor = "var(--danger-color)";
                     startBtn.dataset.mode = 'sos';
                 } else {
-                    startBtn.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="display:block;"><path d="M8 5v14l11-7z"></path></svg> Rozpocznij Trening`;
+                    // Przywracamy standardowy przycisk z ikoną SVG (innerHTML)
+                    startBtn.innerHTML = `
+                    <div class="btn-content-wrapper">
+                        <span class="btn-icon-bg"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg></span>
+                        <span>Rozpocznij Trening</span>
+                    </div>`;
                     startBtn.style.backgroundColor = "";
                     startBtn.dataset.mode = 'normal';
                 }
@@ -524,7 +490,7 @@ function renderBioHub() {
         </div>
     `).join('');
 
-    bioHubContainer.innerHTML = `<div class="section-title" style="margin-top:2.5rem; margin-bottom:0.8rem; padding-left:4px;">PROTOKOŁY CELOWANE</div><div class="bio-hub-scroll">${cardsHTML}</div>`;
+    bioHubContainer.innerHTML = `<div class="section-title bio-hub-title">PROTOKOŁY CELOWANE</div><div class="bio-hub-scroll">${cardsHTML}</div>`;
     containers.days.appendChild(bioHubContainer);
 
     bioHubContainer.querySelectorAll('.bio-card').forEach(card => {
@@ -546,35 +512,38 @@ function renderUpcomingQueue(days, todayISO) {
     const futureDays = days.filter(d => d.date > todayISO);
     if (futureDays.length === 0) return;
 
-    let upcomingHTML = `<div class="section-title" style="margin-top:1.5rem; margin-bottom:0.8rem; padding-left:4px;">NADCHODZĄCE DNI</div>`;
-    upcomingHTML += `<div class="upcoming-timeline">`;
+    let upcomingHTML = `<div class="section-title upcoming-title">NADCHODZĄCE DNI</div>`;
 
-    futureDays.slice(0, 5).forEach(dayRaw => {
+    // ZMIANA: Używamy nowej klasy "calendar-strip" zamiast "upcoming-timeline"
+    upcomingHTML += `<div class="calendar-strip">`;
+
+    // Pokazujemy max 6 kolejnych dni (żeby zmieścić się w tygodniu)
+    futureDays.slice(0, 6).forEach(dayRaw => {
         const dayData = getHydratedDay(dayRaw);
         const dateObj = new Date(dayData.date);
         const dayShort = dateObj.toLocaleDateString('pl-PL', { weekday: 'short' }).toUpperCase().replace('.', '');
         const dayNum = dateObj.getDate();
         const isRest = dayData.type === 'rest';
-        const cardClass = isRest ? 'timeline-card rest' : 'timeline-card workout';
 
-        // Use ONLY the button HTML, not the complex wrapper with dropdown
+        // Klasy pomocnicze
+        const stripDayClass = isRest ? 'strip-day rest' : 'strip-day workout';
+        const weekendClass = (dateObj.getDay() === 0 || dateObj.getDay() === 6) ? ' weekend' : '';
+
         const btnHtml = `
-            <button class="ctx-menu-btn"
+            <button class="strip-menu-btn ctx-menu-btn"
                 data-date="${dayData.date}"
                 data-is-rest="${isRest}"
-                data-day-id="${dayData.dayNumber}"
-                style="position:absolute; top:2px; right:2px; width:24px; height:24px;">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>
+                data-day-id="${dayData.dayNumber}">
+                <svg width="16" height="16" fill="currentColor" style="color: #94a3b8;"><use href="#icon-dots-vertical"/></svg>
             </button>
         `;
 
         upcomingHTML += `
-            <div class="${cardClass}" data-day-id="${dayData.dayNumber}" data-is-rest="${isRest}">
+            <div class="${stripDayClass}${weekendClass}" data-day-id="${dayData.dayNumber}" data-is-rest="${isRest}">
                 ${btnHtml}
-                <div class="tl-day-name">${dayShort}</div>
-                <div class="tl-day-number">${dayNum}</div>
-                <div class="tl-dot"></div>
-                <div style="font-size:0.6rem; opacity:0.7; margin-top:6px; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%;">${isRest ? 'Wolne' : 'Trening'}</div>
+                <span class="strip-day-name">${dayShort}</span>
+                <span class="strip-day-number">${dayNum}</span>
+                <div class="strip-status-dot"></div>
             </div>
         `;
     });
@@ -584,10 +553,10 @@ function renderUpcomingQueue(days, todayISO) {
     upcomingWrapper.innerHTML = upcomingHTML;
     containers.days.appendChild(upcomingWrapper);
 
-    upcomingWrapper.querySelectorAll('.timeline-card').forEach(card => {
+    // Listener na kafelki paska (otwiera podgląd, chyba że to menu)
+    upcomingWrapper.querySelectorAll('.strip-day').forEach(card => {
         if (card.dataset.isRest === 'true') return;
         card.addEventListener('click', (e) => {
-            // Prevent click if clicking the menu button
             if (e.target.closest('.ctx-menu-btn')) return;
             e.stopPropagation();
             renderPreTrainingScreen(parseInt(card.dataset.dayId, 10), 0, true);

@@ -16,10 +16,8 @@ const formatTime = (totalSeconds) => {
 export const updateTimerDisplay = () => {
     let timeToDisplay = state.timer.timeLeft;
 
-    // Jeśli tryb countUp jest aktywny (dla ćwiczeń na czas), obliczamy czas upływający
     if (state.timer.countUp && state.timer.initialDuration) {
         timeToDisplay = state.timer.initialDuration - state.timer.timeLeft;
-        // Zabezpieczenie przed ujemnym wynikiem przy lagach
         if (timeToDisplay < 0) timeToDisplay = 0;
     }
 
@@ -36,21 +34,13 @@ export const stopTimer = () => {
         state.timer.interval = null;
     }
     state.timer.isActive = false;
-    // POPRAWKA: Nie resetujemy countUp tutaj, aby zachować stan przy pauzie.
-    // Reset nastąpi automatycznie przy wywołaniu startTimer z nowymi parametrami.
 };
 
-/**
- * Uruchamia timer.
- */
 export const startTimer = (seconds, onEndCallback, onTickCallback = null, countUp = false) => {
     stopTimer();
 
     state.timer.timeLeft = seconds;
 
-    // Jeśli startujemy nowy timer (lub wznawiamy z nowym limitem), ustawiamy initialDuration
-    // W przypadku wznowienia (resume), initialDuration powinno być zachowane w state,
-    // ale ten warunek poniżej zabezpiecza nas, jeśli go nie ma.
     if (!state.timer.initialDuration || state.timer.initialDuration < seconds) {
         state.timer.initialDuration = seconds;
     }
@@ -60,7 +50,7 @@ export const startTimer = (seconds, onEndCallback, onTickCallback = null, countU
     state.timer.onTimerEnd = onEndCallback;
 
     if (focus.pauseResumeBtn) {
-        focus.pauseResumeBtn.innerHTML = `<img src="/icons/control-pause.svg" alt="Pauza">`;
+        focus.pauseResumeBtn.innerHTML = `<svg><use href="#icon-pause"/></svg>`;
         focus.pauseResumeBtn.classList.remove('paused-state');
     }
 
@@ -109,33 +99,26 @@ export const startStopwatch = () => {
 
     updateStopwatchDisplay();
 
-    // --- KALKULACJA CELU CZASOWEGO (Dla sygnału dźwiękowego) ---
     let targetAudioAlertTime = null;
     const currentEx = state.flatExercises[state.currentExerciseIndex];
 
     if (currentEx && currentEx.isWork) {
         const valStr = String(currentEx.reps_or_time || "").toLowerCase();
-
-        // Sprawdzamy typ celu (czas czy powtórzenia)
         const isTimeBased = valStr.includes('s') || valStr.includes('min') || valStr.includes(':');
 
         if (isTimeBased) {
-            // --- NAPRAWA: Obsługa sygnału dla ćwiczeń czasowych (np. Plank 30s) ---
             let seconds = 0;
             if (valStr.includes('min')) {
-                // np. "1 min", "1.5 min"
                 const minMatch = valStr.match(/(\d+(?:[.,]\d+)?)/);
                 if (minMatch) {
                     seconds = Math.round(parseFloat(minMatch[0].replace(',', '.')) * 60);
                 }
             } else if (valStr.includes(':')) {
-                // np. "1:30"
                 const parts = valStr.split(':');
                 if (parts.length === 2) {
                     seconds = (parseInt(parts[0], 10) * 60) + parseInt(parts[1], 10);
                 }
             } else {
-                // np. "30 s", "45s"
                 const secMatch = valStr.match(/(\d+)/);
                 if (secMatch) {
                     seconds = parseInt(secMatch[0], 10);
@@ -148,16 +131,11 @@ export const startStopwatch = () => {
             }
 
         } else {
-            // --- Logika dla powtórzeń (Adaptive Pacing) ---
-            // Regex bierze pierwszą liczbę (np. "10-12" -> 10)
             const repsMatch = valStr.match(/(\d+)/);
             const reps = repsMatch ? parseInt(repsMatch[0], 10) : 0;
 
             if (reps > 0) {
-                // Pobieramy ID z biblioteki (priorytet) lub ID instancji
                 const exId = currentEx.exerciseId || currentEx.id;
-
-                // Ustalanie tempa: Personalne -> Globalne -> Default (6s)
                 let pace = state.settings.secondsPerRep || 6;
                 let source = "Global Default";
 
@@ -176,11 +154,10 @@ export const startStopwatch = () => {
         state.stopwatch.seconds++;
         updateStopwatchDisplay();
 
-        // --- SYGNAŁ DŹWIĘKOWY PO OSIĄGNIĘCIU CELU ---
         if (targetAudioAlertTime && state.stopwatch.seconds === targetAudioAlertTime) {
             console.log(`[AudioPace] Target reached (${targetAudioAlertTime}s). Playing sound.`);
             state.completionSound();
-            if (navigator.vibrate) navigator.vibrate([200, 100, 200]); // Dłuższa wibracja dla wyróżnienia
+            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
         }
 
     }, 1000);
@@ -213,7 +190,7 @@ export const togglePauseTimer = async () => {
         }
 
         if (focus.pauseResumeBtn) {
-            focus.pauseResumeBtn.innerHTML = `<img src="/icons/control-play.svg" alt="Wznów">`;
+            focus.pauseResumeBtn.innerHTML = `<svg><use href="#icon-play"/></svg>`;
             focus.pauseResumeBtn.classList.add('paused-state');
         }
         if (focus.timerDisplay) focus.timerDisplay.style.opacity = '0.5';
@@ -228,7 +205,6 @@ export const togglePauseTimer = async () => {
         }
 
         if (state.timer.timeLeft > 0) {
-            // Tutaj countUp będzie teraz poprawne (zachowane ze stanu przed pauzą)
             startTimer(state.timer.timeLeft, state.timer.onTimerEnd, null, state.timer.countUp);
         }
         else if (currentStep && currentStep.isRest && focus.timerDisplay?.textContent?.includes("START")) {
@@ -243,7 +219,7 @@ export const togglePauseTimer = async () => {
         }
 
         if (focus.pauseResumeBtn) {
-            focus.pauseResumeBtn.innerHTML = `<img src="/icons/control-pause.svg" alt="Pauza">`;
+            focus.pauseResumeBtn.innerHTML = `<svg><use href="#icon-pause"/></svg>`;
             focus.pauseResumeBtn.classList.remove('paused-state');
         }
         if (focus.timerDisplay) focus.timerDisplay.style.opacity = '1';

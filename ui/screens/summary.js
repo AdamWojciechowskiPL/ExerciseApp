@@ -1,5 +1,4 @@
 // ExerciseApp/ui/screens/summary.js
-// Używamy ścieżek absolutnych dla spójności
 import { state } from '/state.js';
 import { screens } from '/dom.js';
 import { navigateTo, showLoader, hideLoader } from '/ui/core.js';
@@ -7,7 +6,6 @@ import dataStore from '/dataStore.js';
 import { renderEvolutionModal } from '/ui/modals.js';
 import { getIsCasting, sendShowIdle } from '/cast.js';
 import { clearSessionBackup } from '/sessionRecovery.js';
-// Importujemy funkcję czyszczenia cache planu, aby dashboard odświeżył się po regeneracji
 import { clearPlanFromStorage } from '/ui/screens/dashboard.js';
 
 let selectedFeedback = { type: null, value: 0 };
@@ -18,7 +16,6 @@ export const renderSummaryScreen = () => {
     let trainingTitle = "Trening";
     let isSafetyMode = false;
 
-    // Ustalanie tytułu i trybu
     if (state.todaysDynamicPlan && state.todaysDynamicPlan.type === 'protocol') {
         trainingTitle = state.todaysDynamicPlan.title;
         isSafetyMode = state.todaysDynamicPlan.mode === 'sos';
@@ -33,7 +30,6 @@ export const renderSummaryScreen = () => {
     selectedFeedback = { type: isSafetyMode ? 'symptom' : 'tension', value: 0 };
     const summaryScreen = screens.summary;
 
-    // Global Feedback HTML
     let globalOptionsHtml = isSafetyMode ? `
         <div class="feedback-option" data-type="symptom" data-value="1"><div class="fb-icon">🍃</div><div class="fb-text"><h4>Ulga</h4></div></div>
         <div class="feedback-option selected" data-type="symptom" data-value="0"><div class="fb-icon">⚖️</div><div class="fb-text"><h4>Stabilnie</h4></div></div>
@@ -44,7 +40,6 @@ export const renderSummaryScreen = () => {
         <div class="feedback-option" data-type="tension" data-value="-1"><div class="fb-icon">🥵</div><div class="fb-text"><h4>Za mocno</h4></div></div>
     `;
 
-    // Lista Ćwiczeń
     const processedIds = new Set();
     const uniqueExercises = (state.sessionLog || []).filter(entry => {
         if (entry.isRest || entry.status === 'skipped') return false;
@@ -69,15 +64,11 @@ export const renderSummaryScreen = () => {
             <div class="rating-card" data-id="${id}">
                 <div class="rating-name">${displayName}</div>
                 <div class="rating-actions-group">
-                    <!-- SEKCJA 1: CZĘSTOTLIWOŚĆ (Radio) -->
                     <div class="btn-group-affinity">
                         <button type="button" class="rate-btn affinity-btn ${isLike}" data-action="like" title="Róbmy to częściej">👍</button>
                         <button type="button" class="rate-btn affinity-btn ${isDislike}" data-action="dislike" title="Róbmy to rzadziej">👎</button>
                     </div>
-
                     <div class="sep"></div>
-
-                    <!-- SEKCJA 2: TRUDNOŚĆ (Action) -->
                     <div class="btn-group-difficulty">
                         <button type="button" class="rate-btn diff-btn" data-action="easy" title="Za łatwe - Awansuj mnie">💤</button>
                         <button type="button" class="rate-btn diff-btn" data-action="hard" title="Za trudne - Ratuj mnie">🔥</button>
@@ -108,14 +99,12 @@ export const renderSummaryScreen = () => {
             </div>
             <div class="form-group" style="margin-top:1.5rem;">
                 <label style="display:block; margin-bottom:5px; font-weight:700;">Kalibracja Ćwiczeń</label>
-
                 <div style="display:flex; justify-content: flex-end; padding-right: 4px; margin-bottom: 6px;">
                     <div style="display:flex; gap: 10px; font-size: 0.6rem; color: #888; font-weight: 700; text-transform: uppercase;">
                         <span style="width: 82px; text-align: center;">Częstotliwość</span>
                         <span style="width: 82px; text-align: center;">Trudność</span>
                     </div>
                 </div>
-
                 <div class="ratings-list">${exercisesListHtml}</div>
             </div>
             <div class="form-group" style="margin-top:2rem;">
@@ -125,21 +114,8 @@ export const renderSummaryScreen = () => {
             ${stravaHtml}
             <button type="submit" class="action-btn" style="margin-top:1.5rem;">Zapisz i Zakończ</button>
         </form>
-        <style>
-            .rating-card { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-            .rating-name { flex: 1; max-width: unset; padding-right: 5px; font-size: 0.9rem; font-weight: 600; line-height: 1.2; }
-            .rating-actions-group { display: flex; align-items: center; gap: 8px; justify-content: flex-end; width: auto; flex-shrink: 0; }
-            .btn-group-affinity { display: flex; gap: 4px; background: #f0fdfa; padding: 3px; border-radius: 8px; width: 82px; justify-content: center; }
-            .btn-group-difficulty { display: flex; gap: 4px; background: #fff7ed; padding: 3px; border-radius: 8px; width: 82px; justify-content: center; }
-            .rate-btn { background: transparent; border: 1px solid transparent; border-radius: 6px; width: 36px; height: 36px; font-size: 1.2rem; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; filter: grayscale(100%); opacity: 0.5; }
-            .rate-btn:hover { opacity: 1; filter: grayscale(0%); background: rgba(0,0,0,0.05); }
-            .affinity-btn.active { opacity: 1; filter: grayscale(0%); background: #fff; border-color: #2dd4bf; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-            .diff-btn.selected { opacity: 1; filter: grayscale(0%); background: #ea580c; color: white; border-color: #ea580c; cursor: default; transform: scale(0.95); }
-            .sep { width: 1px; height: 24px; background: #e5e7eb; }
-        </style>
     `;
 
-    // Listenery
     summaryScreen.querySelectorAll('.feedback-option').forEach(opt => {
         opt.addEventListener('click', () => {
             summaryScreen.querySelectorAll('.feedback-option').forEach(o => o.classList.remove('selected'));
@@ -179,7 +155,6 @@ export async function handleSummarySubmit(e) {
     if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Zapisywanie..."; }
     showLoader();
 
-    // Zbieranie ocen ćwiczeń
     const ratingsArray = [];
     const ratingCards = document.querySelectorAll('.rating-card');
     ratingCards.forEach(card => {
@@ -230,8 +205,6 @@ export async function handleSummarySubmit(e) {
         state.sessionLog = [];
         state.isPaused = false;
 
-        // --- AUTOREGULACJA RPE (Nowa Logika) ---
-        // Definiujemy krok końcowy: nawigację do dashboardu
         const finalizeProcess = async () => {
             hideLoader();
             const { renderMainScreen } = await import('/ui/screens/dashboard.js');
@@ -239,9 +212,7 @@ export async function handleSummarySubmit(e) {
             renderMainScreen();
         };
 
-        // Funkcja sprawdzająca feedback globalny i pytająca o przeliczenie
         const checkRpeAndNavigate = async () => {
-            // Sprawdzamy, czy ocena nie jest neutralna
             if (selectedFeedback.value !== 0) {
                 let msg = '';
                 if (selectedFeedback.value === -1) {
@@ -251,14 +222,11 @@ export async function handleSummarySubmit(e) {
                 }
 
                 if (msg && confirm(msg)) {
-                    showLoader(); // Upewniamy się, że loader jest widoczny
+                    showLoader();
                     try {
                         console.log("[AutoReg] Triggering plan regeneration based on RPE...");
-                        // Przekazujemy aktualne dane wizardData.
-                        // Backend sam pobierze historię sesji (w tym tę przed chwilą zapisaną)
-                        // i funkcja analyzeRpeTrend w generate-plan zrobi resztę.
                         await dataStore.generateDynamicPlan(state.settings.wizardData);
-                        clearPlanFromStorage(); // Czyścimy cache, aby dashboard pobrał nowy plan
+                        clearPlanFromStorage();
                         alert("Plan został pomyślnie zaktualizowany przez Asystenta.");
                     } catch (e) {
                         console.error("[AutoReg] Failed:", e);
@@ -269,15 +237,12 @@ export async function handleSummarySubmit(e) {
             await finalizeProcess();
         };
 
-        // Jeśli backend zwrócił adaptację (Ewolucję/Dewolucję ćwiczenia), najpierw pokaż modal, potem RPE check
         if (response && response.adaptation) {
-            hideLoader(); // Ukrywamy loader na czas modalu
+            hideLoader();
             renderEvolutionModal(response.adaptation, () => {
-                // Po zamknięciu modalu ewolucji -> sprawdź RPE
                 checkRpeAndNavigate();
             });
         } else {
-            // Brak adaptacji ćwiczeń -> sprawdź od razu RPE
             await checkRpeAndNavigate();
         }
 

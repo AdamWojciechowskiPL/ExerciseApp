@@ -17,7 +17,7 @@ export const renderHistoryScreen = async (forceRefresh = false) => {
     try {
         await dataStore.getHistoryForMonth(year, month, forceRefresh);
         const headerContainer = document.getElementById('month-year-header');
-        headerContainer.innerHTML = `<span style="vertical-align: middle;">${date.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' })}</span><button id="refresh-history-btn" style="background:none; border:none; cursor:pointer; margin-left:10px; vertical-align: middle; opacity: 0.6;" title="Odśwież"><img src="/icons/refresh-cw.svg" width="16" height="16" alt="Odśwież"></button>`;
+        headerContainer.innerHTML = `<span style="vertical-align: middle;">${date.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' })}</span><button id="refresh-history-btn" style="background:none; border:none; cursor:pointer; margin-left:10px; vertical-align: middle; opacity: 0.6;" title="Odśwież"><svg width="16" height="16"><use href="#icon-refresh-cw"/></svg></button>`;
         document.getElementById('refresh-history-btn').addEventListener('click', (e) => { e.stopPropagation(); renderHistoryScreen(true); });
         const grid = containers.calendarGrid;
         grid.innerHTML = '';
@@ -58,42 +58,6 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
         <h2 id="details-day-title">${date.toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' })}</h2>
         <div id="day-details-content">${sessionsHtml}</div>
         <button id="details-back-btn" class="action-btn">${backButtonLabel}</button>
-        
-        <style>
-            .rate-btn-hist { 
-                background: transparent; 
-                border: 1px solid #e0e0e0; 
-                border-radius: 6px; 
-                padding: 4px 8px; 
-                cursor: pointer; 
-                opacity: 0.5; 
-                filter: grayscale(100%); 
-                transition: all 0.2s; 
-                font-size: 1.1rem;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                min-width: 32px;
-            }
-            .rate-btn-hist:hover { 
-                opacity: 0.8; 
-                filter: grayscale(50%); 
-                transform: scale(1.1); 
-                background: #f9f9f9;
-            }
-            .rate-btn-hist.active { 
-                opacity: 1; 
-                filter: grayscale(0%); 
-                border-color: var(--primary-color); 
-                background: #e0f2fe; 
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }
-            .hist-rating-actions {
-                display: flex;
-                gap: 6px;
-                margin-left: auto;
-            }
-        </style>
     `;
 
     const backBtn = screens.dayDetails.querySelector('#details-back-btn');
@@ -102,9 +66,8 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
     });
 
     const contentContainer = screens.dayDetails.querySelector('#day-details-content');
-    
+
     contentContainer.addEventListener('click', async (e) => {
-        // DELETE SESSION
         const delBtn = e.target.closest('.delete-session-btn');
         if (delBtn) {
             const sessionId = delBtn.dataset.sessionId;
@@ -119,58 +82,50 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
             return;
         }
 
-        // --- RESET DIFFICULTY (NOWA POPRAWKA) ---
         const resetBtn = e.target.closest('.reset-diff-btn');
         if (resetBtn) {
             e.stopPropagation();
             if (!confirm("Czy na pewno cofnąć oznaczenie trudności? Spowoduje to przywrócenie poprzedniego wariantu ćwiczenia.")) return;
-            
+
             const id = resetBtn.dataset.id;
-            
-            // 1. Optymistyczna aktualizacja UI (DLA WSZYSTKICH WYSTĄPIEŃ TEGO ĆWICZENIA)
-            // Szukamy wszystkich przycisków resetu dla tego ID w kontenerze
             const allResetButtons = contentContainer.querySelectorAll(`.reset-diff-btn[data-id="${id}"]`);
             allResetButtons.forEach(btn => btn.style.display = 'none');
-            
-            // 2. Aktualizacja lokalnego stanu
+
             if (state.userPreferences[id]) state.userPreferences[id].difficulty = 0;
 
-            // 3. API Call
             try {
                 await dataStore.updatePreference(id, 'reset_difficulty');
                 console.log("Difficulty reset successful");
             } catch (err) {
                 console.error("Failed to reset difficulty:", err);
-                // W razie błędu przywracamy widoczność
                 allResetButtons.forEach(btn => btn.style.display = 'inline-block');
                 alert("Błąd połączenia. Spróbuj ponownie.");
             }
             return;
         }
 
-        // RATE EXERCISE (AFFINITY ONLY)
         const rateBtn = e.target.closest('.rate-btn-hist');
         if (rateBtn) {
             e.stopPropagation();
-            
+
             const id = rateBtn.dataset.id;
-            const action = rateBtn.dataset.action; // 'like' or 'dislike'
-            
+            const action = rateBtn.dataset.action;
+
             if (!state.userPreferences[id]) state.userPreferences[id] = { score: 0, difficulty: 0 };
             const currentScore = state.userPreferences[id].score;
-            
+
             let newScore = 0;
             let apiAction = 'neutral';
 
             if (action === 'like') {
-                if (currentScore >= 50) { // Próg 50 dla nowego toggle
+                if (currentScore >= 50) {
                     newScore = 0;
                     apiAction = 'neutral';
                 } else {
                     newScore = 50;
                     apiAction = 'like';
                 }
-            } 
+            }
             else if (action === 'dislike') {
                 if (currentScore <= -50) {
                     newScore = 0;
@@ -187,8 +142,6 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
             allButtonsForId.forEach(btn => {
                 const btnAction = btn.dataset.action;
                 let isActive = false;
-                // Wizualizacja: >= 10 dla Like (żeby uwzględnić stare), <= -10 dla Dislike
-                // Ale przy toggle ustawiamy 50/-50
                 if (btnAction === 'like' && newScore >= 10) isActive = true;
                 if (btnAction === 'dislike' && newScore <= -10) isActive = true;
                 btn.classList.toggle('active', isActive);

@@ -13,10 +13,8 @@ import { saveSessionBackup } from './sessionRecovery.js';
 import { getAffinityBadge } from './ui/templates.js';
 import dataStore from './dataStore.js';
 
-// --- ZMIENNE LOKALNE ---
 let backupInterval = null;
 
-// --- HELPER: SKALOWANIE CZCIONKI ---
 function fitText(element) {
     if (!element) return;
     element.style.fontSize = '';
@@ -53,7 +51,6 @@ function syncStateToChromecast() {
     sendTrainingStateUpdate(payload);
 }
 
-// --- LOGOWANIE CZASU NETTO ---
 function logCurrentStep(status) {
     const exercise = state.flatExercises[state.currentExerciseIndex];
     if (!exercise || !exercise.isWork) return;
@@ -91,7 +88,6 @@ function logCurrentStep(status) {
     }
 }
 
-// --- BACKUP STANU ---
 function triggerSessionBackup() {
     let trainingTitle = 'Trening';
     if (state.todaysDynamicPlan && state.todaysDynamicPlan.type === 'protocol') {
@@ -208,7 +204,10 @@ export async function startExercise(index, isResuming = false) {
     state.currentExerciseIndex = index;
     const exercise = state.flatExercises[index];
 
-    if (focus.ttsIcon) focus.ttsIcon.src = state.tts.isSoundOn ? '/icons/sound-on.svg' : '/icons/sound-off.svg';
+    if (focus.ttsIcon) {
+        const useEl = focus.ttsIcon.querySelector('use');
+        if(useEl) useEl.setAttribute('href', state.tts.isSoundOn ? '#icon-sound-on' : '#icon-sound-off');
+    }
 
     if (focus.prevStepBtn) {
         const isFirst = index === 0;
@@ -221,10 +220,10 @@ export async function startExercise(index, isResuming = false) {
 
     if (state.isPaused) {
         state.lastPauseStartTime = Date.now();
-        if (focus.pauseResumeBtn) { focus.pauseResumeBtn.innerHTML = `<img src="/icons/control-play.svg" alt="Wznów">`; focus.pauseResumeBtn.classList.add('paused-state'); focus.pauseResumeBtn.classList.remove('hidden'); }
+        if (focus.pauseResumeBtn) { focus.pauseResumeBtn.innerHTML = `<svg><use href="#icon-play"/></svg>`; focus.pauseResumeBtn.classList.add('paused-state'); focus.pauseResumeBtn.classList.remove('hidden'); }
         if (focus.timerDisplay) focus.timerDisplay.style.opacity = '0.5';
     } else {
-        if (focus.pauseResumeBtn) { focus.pauseResumeBtn.innerHTML = `<img src="/icons/control-pause.svg" alt="Pauza">`; focus.pauseResumeBtn.classList.remove('paused-state'); focus.pauseResumeBtn.classList.remove('hidden'); }
+        if (focus.pauseResumeBtn) { focus.pauseResumeBtn.innerHTML = `<svg><use href="#icon-pause"/></svg>`; focus.pauseResumeBtn.classList.remove('paused-state'); focus.pauseResumeBtn.classList.remove('hidden'); }
         if (focus.timerDisplay) focus.timerDisplay.style.opacity = '1';
     }
 
@@ -353,15 +352,9 @@ export async function startExercise(index, isResuming = false) {
 export function generateFlatExercises(dayData) {
     const plan = [];
 
-    // --- SMART REST LOGIC ---
-    // Pobieramy Globalny Faktor Użytkownika (domyślnie 1.0)
     const restFactor = state.settings.restTimeFactor || 1.0;
-
-    // Przerwy między ćwiczeniami (również skalowane)
     const GLOBAL_REST_EXERCISE = Math.round((state.settings.restBetweenExercises || 30) * restFactor);
     const REST_BETWEEN_SECTIONS = Math.round(60 * restFactor);
-
-    // HUMANITARNA ZMIANA STRONY (Bezpieczeństwo: min 12s, ale skaluje się w górę)
     const TRANSITION_DURATION = Math.max(12, Math.round(12 * restFactor));
 
     let unilateralGlobalIndex = 0;
@@ -381,8 +374,6 @@ export function generateFlatExercises(dayData) {
                                  String(exercise.reps_or_time).includes('/str') ||
                                  String(exercise.reps_or_time).includes('stron');
 
-            // --- SMART REST ---
-            // Funkcja z utils.js uwzględnia kategorię i userRestFactor
             const smartRestTime = calculateSmartRest(exercise, restFactor);
 
             let loopLimit = totalSetsDeclared;
@@ -478,7 +469,7 @@ export function generateFlatExercises(dayData) {
                         name: 'Odpoczynek',
                         isRest: true,
                         isWork: false,
-                        duration: smartRestTime, // Używamy wartości z utils.js
+                        duration: smartRestTime,
                         sectionName: 'Przerwa między seriami',
                         uniqueId: `rest_set_${globalStepCounter++}`
                     });

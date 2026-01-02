@@ -1,10 +1,9 @@
-// js/ui/modals.js
+// ExerciseApp/ui/modals.js
 import { state } from '../state.js';
 import dataStore from '../dataStore.js';
 import { processSVG } from '../utils.js';
 import { buildClinicalContext, checkExerciseAvailability } from '../clinicalEngine.js';
 
-// --- NOWOŚĆ: MODAL PRZENOSZENIA DNIA ---
 export function renderMoveDayModal(availableTargets, onConfirm) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -22,22 +21,12 @@ export function renderMoveDayModal(availableTargets, onConfirm) {
     overlay.innerHTML = `
         <div class="swap-modal">
             <h3>Przenieś trening</h3>
-            <p style="font-size:0.9rem; color:#666; margin-bottom:1rem;">Wybierz dzień wolny, na który chcesz przenieść ten trening:</p>
-            <div class="target-dates-list" style="display:flex; flex-direction:column; gap:8px; max-height:300px; overflow-y:auto;">
+            <p class="swap-subtitle">Wybierz dzień wolny, na który chcesz przenieść ten trening:</p>
+            <div class="modal-dates-list">
                 ${datesHtml}
             </div>
-            <button id="cancel-move" class="nav-btn" style="margin-top:1.5rem; width:100%;">Anuluj</button>
+            <button id="cancel-move" class="nav-btn modal-full-btn">Anuluj</button>
         </div>
-        <style>
-            .target-date-btn {
-                background: #f8f9fa; border: 1px solid #e2e8f0; padding: 12px; border-radius: 8px;
-                text-align: left; font-weight: 600; cursor: pointer; transition: all 0.2s;
-                color: var(--text-color);
-            }
-            .target-date-btn:hover {
-                background: #e0f2fe; border-color: var(--primary-color);
-            }
-        </style>
     `;
 
     document.body.appendChild(overlay);
@@ -105,18 +94,18 @@ export function renderSwapModal(currentExercise, onConfirm) {
     overlay.innerHTML = `
         <div class="swap-modal">
             <h3>Wymień: ${currentExercise.name || libraryExercise?.name}</h3>
-            <p style="font-size:0.85rem; color:#666;">Kategoria: ${categoryId}</p>
+            <p class="swap-subtitle">Kategoria: ${categoryId}</p>
             <div class="swap-options-list">${altsHtml}</div>
             <div class="swap-actions">
-                <div style="font-size:0.85rem; font-weight:bold;">Tryb wymiany:</div>
+                <div class="swap-section-label">Tryb wymiany:</div>
                 <div class="swap-type-toggle">
                     <button class="toggle-btn active" data-type="today">Tylko dziś</button>
                     <button class="toggle-btn" data-type="blacklist">🚫 Nie lubię</button>
                 </div>
 
-                <div style="display:flex; gap:10px; margin-top:1.5rem;">
-                    <button id="cancel-swap" class="nav-btn" style="flex:1; padding: 0.8rem; justify-content: center; height: auto;">Anuluj</button>
-                    <button id="confirm-swap" class="action-btn" style="flex:1; margin-top: 0;" disabled>Wymień</button>
+                <div class="modal-actions-row">
+                    <button id="cancel-swap" class="nav-btn" style="flex:1;">Anuluj</button>
+                    <button id="confirm-swap" class="action-btn" style="flex:1; margin-top:0;" disabled>Wymień</button>
                 </div>
             </div>
         </div>
@@ -164,8 +153,8 @@ export function renderPreviewModal(svgContent, title) {
     overlay.innerHTML = `
         <div class="swap-modal" style="align-items: center; text-align: center;">
             <h3>${title}</h3>
-            <div style="width: 100%; max-width: 300px; margin: 1rem 0;">${cleanSvg}</div>
-            <button id="close-preview" class="nav-btn" style="width: 100%">Zamknij</button>
+            <div class="preview-svg-container">${cleanSvg}</div>
+            <button id="close-preview" class="nav-btn modal-full-btn">Zamknij</button>
         </div>
     `;
     document.body.appendChild(overlay);
@@ -214,40 +203,34 @@ export function renderSessionRecoveryModal(backup, timeGapFormatted, onRestore, 
 
     overlay.innerHTML = `
         <div class="swap-modal" style="max-width: 380px;">
-            <div style="text-align: center; margin-bottom: 1.5rem;">
+            <div class="modal-center-content">
                 <span style="font-size: 3rem;">⚠️</span>
                 <h2 style="margin: 0.5rem 0;">Przerwana sesja</h2>
-                <p style="opacity: 0.7; font-size: 0.9rem;">Wykryto niezakończony trening</p>
+                <p class="modal-info-text">Wykryto niezakończony trening</p>
             </div>
 
-            <div style="background: var(--card-color); border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem;">
+            <div class="modal-card">
                 <div style="font-weight: 600; margin-bottom: 0.5rem;">${backup.trainingTitle || 'Trening'}</div>
                 <div style="font-size: 0.85rem; opacity: 0.7; margin-bottom: 0.75rem;">Przerwa: ${timeGapFormatted} temu</div>
 
-                <div style="background: var(--bg-color); border-radius: 8px; padding: 0.5rem;">
-                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.25rem;">
+                <div class="modal-progress-bar">
+                    <div class="modal-progress-row">
                         <span>Postęp</span>
                         <span>${currentStep} / ${totalSteps} (${progressPercent}%)</span>
                     </div>
-                    <div style="height: 6px; background: var(--secondary-color); border-radius: 3px; overflow: hidden;">
-                        <div style="height: 100%; width: ${progressPercent}%; background: var(--primary-color); transition: width 0.3s;"></div>
+                    <div class="modal-progress-track">
+                        <div class="modal-progress-fill" style="width: ${progressPercent}%;"></div>
                     </div>
                 </div>
             </div>
 
-            <p style="font-size: 0.85rem; opacity: 0.8; margin-bottom: 1.5rem; text-align: center;">
+            <p class="modal-note">
                 Czas przerwy zostanie dodany do całkowitego czasu pauzy.
             </p>
 
-            <div style="display: flex; gap: 12px;">
-                <button id="discard-session" class="nav-btn"
-                    style="flex: 1; padding: 12px; font-size: 1rem; display: flex; align-items: center; justify-content: center;">
-                    Porzuć
-                </button>
-                <button id="restore-session" class="action-btn"
-                    style="flex: 1; margin: 0; padding: 12px; font-size: 1rem; display: flex; align-items: center; justify-content: center;">
-                    Przywróć
-                </button>
+            <div class="modal-actions-row" style="margin-top:0;">
+                <button id="discard-session" class="nav-btn" style="flex: 1;">Porzuć</button>
+                <button id="restore-session" class="action-btn" style="flex: 1; margin: 0;">Przywróć</button>
             </div>
         </div>
     `;
@@ -302,39 +285,8 @@ export function renderTunerModal(exerciseId, onUpdate) {
                 </div>
             </div>
 
-            <button id="save-tuner" class="action-btn" style="margin-top:1.5rem;">Zapisz Kalibrację</button>
+            <button id="save-tuner" class="action-btn modal-full-btn">Zapisz Kalibrację</button>
         </div>
-
-        <style>
-            .tuner-modal { background: #1f2937; color: white; border: 1px solid #374151; }
-            .tuner-header { text-align: center; margin-bottom: 1.5rem; }
-            .tuner-header h3 { margin: 0; font-size: 1.3rem; color: #f3f4f6; border: none; }
-            .tuner-badge-preview { font-size: 0.8rem; opacity: 0.7; margin-top: 5px; text-transform: uppercase; letter-spacing: 1px; }
-
-            .tuner-section { margin-bottom: 1.5rem; }
-            .tuner-section label { display: block; font-size: 0.85rem; font-weight: 700; color: #9ca3af; margin-bottom: 10px; text-transform: uppercase; }
-
-            .slider-wrapper { position: relative; height: 10px; margin: 20px 0; }
-            .tuner-slider {
-                -webkit-appearance: none; width: 100%; height: 10px; background: transparent; position: absolute; z-index: 2; margin: 0; cursor: pointer;
-            }
-            .slider-track {
-                position: absolute; top: 0; left: 0; width: 100%; height: 10px; border-radius: 5px; z-index: 1; opacity: 0.8;
-            }
-            .tuner-slider::-webkit-slider-thumb {
-                -webkit-appearance: none; width: 24px; height: 24px; background: #fff; border-radius: 50%; box-shadow: 0 0 10px rgba(0,0,0,0.5); margin-top: -7px;
-            }
-
-            .tuner-labels { display: flex; justify-content: space-between; font-size: 0.7rem; color: #6b7280; margin-top: 5px; }
-            .tuner-val { text-align: center; font-size: 1.5rem; font-weight: 800; margin-top: 5px; color: #fff; font-variant-numeric: tabular-nums; }
-
-            .diff-toggle-group { display: flex; gap: 8px; background: #374151; padding: 4px; border-radius: 8px; }
-            .diff-btn { flex: 1; background: transparent; border: none; color: #9ca3af; padding: 10px; border-radius: 6px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-            .diff-btn.active { background: #4b5563; color: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
-            .diff-btn[data-val="-1"].active { background: #0ea5e9; }
-            .diff-btn[data-val="0"].active { background: #10b981; }
-            .diff-btn[data-val="1"].active { background: #ef4444; }
-        </style>
     `;
 
     document.body.appendChild(overlay);

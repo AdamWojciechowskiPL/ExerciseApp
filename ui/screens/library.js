@@ -53,57 +53,6 @@ export const renderLibraryScreen = async (searchTerm = '') => {
     <div class="zone-hud-container" id="zone-hud"></div>
     <div style="height: 15px;"></div>
     <div class="atlas-grid" id="atlas-grid"></div>
-    <style>
-        .atlas-card.clinically-blocked { opacity: 0.75; background-color: #fafafa; border-left: 4px solid #cbd5e1 !important; filter: grayscale(30%); position: relative; }
-        .atlas-card.clinically-blocked:hover { opacity: 1; filter: grayscale(0%); }
-        .restriction-banner { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 4px 8px; border-radius: 4px; display: inline-flex; align-items: center; gap: 5px; margin-bottom: 6px; width: 100%; }
-        .preview-btn.loading { opacity: 0.7; cursor: wait; }
-
-        /* --- STYLE KAFELKÓW (META TAGS) --- */
-        .ac-tags {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-            margin-top: 6px;
-            margin-bottom: 8px;
-        }
-        .meta-tag {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 3px 8px;
-            border-radius: 6px;
-            font-size: 0.7rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.3px;
-            line-height: 1.2;
-            white-space: nowrap;
-        }
-        
-        /* Warianty kolorystyczne */
-        .tag-level {
-            background-color: #fff7ed;
-            color: #c2410c;
-            border: 1px solid #fdba74; /* Orange */
-        }
-        .tag-category {
-            background-color: #fefce8;
-            color: #854d0e;
-            border: 1px solid #fde047; /* Yellow/Gold */
-        }
-        .tag-equipment {
-            background-color: #f8fafc;
-            color: #334155;
-            border: 1px solid #cbd5e1; /* Slate/Gray */
-        }
-        
-        /* Pace Badge (zdefiniowany inline w JS, ale tutaj bazowe style) */
-        .meta-tag[style*="background:#fefce8"] {
-            /* To dotyczy Pace Badge generowanego dynamicznie */
-            box-shadow: 0 1px 2px rgba(0,0,0,0.02);
-        }
-    </style>
 `;
     renderChips();
     renderZoneSelector();
@@ -263,7 +212,7 @@ function renderExerciseList() {
         const actionBtn = isBlacklisted ? `<button class="icon-btn restore-btn" title="Przywróć" style="color:var(--success-color)">♻️</button>` : `<button class="icon-btn block-btn" title="Zablokuj (Dodaj do czarnej listy)">🚫</button>`;
         let tunerButtonHtml = '';
         if (isAllowed || rejectionReason === 'missing_equipment') {
-            tunerButtonHtml = `<button class="tuner-btn" data-id="${ex.id}" title="Kalibracja Synaptyczna" style="background: #fff; border-radius: 50%; width: 34px; height: 34px; border: 1px solid #e2e8f0; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,95,115,0.15); margin-top: 6px; transition: transform 0.2s;"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#005f73" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg></button>`;
+            tunerButtonHtml = `<button class="tuner-btn" data-id="${ex.id}" title="Kalibracja Synaptyczna" style="background: #fff; border-radius: 50%; width: 34px; height: 34px; border: 1px solid #e2e8f0; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,95,115,0.15); margin-top: 6px; transition: transform 0.2s;"><svg width="16" height="16" style="stroke:#005f73"><use href="#icon-sliders"/></svg></button>`;
         } else {
             tunerButtonHtml = `<div style="width:34px; height:34px; opacity:0.2; display:flex; align-items:center; justify-content:center;">🔒</div>`;
         }
@@ -278,7 +227,7 @@ function renderExerciseList() {
                 ${burnBadge}
                 ${kneeBadge}
                 <span class="meta-tag tag-category">📂 ${catLabel}</span>
-                ${showEquipBadge ? `<span class="meta-tag tag-equipment">🏆 ${equipLabel}</span>` : ''}
+                ${showEquipBadge ? `<span class="meta-tag tag-equipment">🛠️ ${equipLabel}</span>` : ''}
             </div>
             <div class="ac-desc" title="Kliknij, aby rozwinąć/zwinąć">${descriptionShort}</div>
             ${footerHtml ? `<div class="ac-footer">${footerHtml}</div>` : ''}

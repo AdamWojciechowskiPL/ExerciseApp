@@ -1,4 +1,4 @@
-// js/ui/templates.js
+// ExerciseApp/ui/templates.js
 import { state } from '../state.js';
 import { extractYoutubeId, calculateSystemLoad, calculateClinicalProfile, getSessionFocus } from '../utils.js';
 
@@ -16,6 +16,27 @@ const getLevelLabel = (lvl) => {
     if (lvl == 3) return 'Lvl 3';
     if (lvl >= 4) return 'Pro';
     return `Lvl ${lvl}`;
+};
+
+// Słownik tłumaczeń sprzętu dla lepszej estetyki
+const EQUIPMENT_TRANSLATIONS = {
+    'mat': 'Mata',
+    'wall': 'Ściana',
+    'chair': 'Krzesło',
+    'pillow': 'Poduszka',
+    'towel': 'Ręcznik',
+    'dumbbells': 'Hantle',
+    'bands': 'Gumy oporowe',
+    'kettlebell': 'Kettlebell',
+    'foam roller': 'Roller',
+    'block': 'Kostka do jogi',
+    'none': 'Brak sprzętu',
+    'bodyweight': 'Masa własna'
+};
+
+const translateEquipment = (item) => {
+    const key = item.toLowerCase().trim();
+    return EQUIPMENT_TRANSLATIONS[key] || item.charAt(0).toUpperCase() + item.slice(1);
 };
 
 const formatFeedback = (session) => {
@@ -58,23 +79,6 @@ function getIsoDateKey(date) {
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
 }
-
-function getSmartAiTags(wizardData) {
-    let tags = [];
-    if (wizardData.work_type === 'sedentary') tags.push({ icon: '🪑', text: 'Anti-Office' });
-    else if (wizardData.work_type === 'standing') tags.push({ icon: '🧍', text: 'Odciążenie' });
-
-    if (wizardData.pain_locations?.includes('knee')) tags.push({ icon: '🦵', text: 'Kolana' });
-    if (wizardData.pain_locations?.includes('sciatica') || wizardData.medical_diagnosis?.includes('piriformis')) tags.unshift({ icon: '⚡', text: 'Neuro' });
-    else if (wizardData.medical_diagnosis?.includes('disc_herniation')) tags.unshift({ icon: '🛡️', text: 'Bezpieczne' });
-    else if (wizardData.pain_locations?.includes('cervical')) tags.push({ icon: '🦒', text: 'Szyja' });
-
-    if (tags.length < 2 && wizardData.primary_goal === 'pain_relief') tags.push({ icon: '💊', text: 'Redukcja bólu' });
-
-    return tags.slice(0, 3);
-}
-
-// --- EKSPORTY (TEMPLATE GENERATORS) ---
 
 export const getAffinityBadge = (exerciseId) => {
     const pref = state.userPreferences[exerciseId] || { score: 0 };
@@ -129,9 +133,9 @@ export function generateHeroDashboardHTML(stats) {
     <div class="hero-content">
         <h3 class="hero-rank-title ${loadingClass}">${stats.tierName || 'Ładowanie...'}</h3>
         <div class="hero-metrics-grid">
-            <div class="metric-item" title="Twoja aktualna seria"><img src="/icons/streak-fire.svg" class="metric-icon" alt="Streak"><div class="metric-text"><span class="metric-label">Seria</span><span class="metric-value ${loadingClass}">${stats.streak !== undefined ? stats.streak : '-'} Dni</span></div></div>
-            <div class="metric-item" title="Wskaźnik odporności"><img src="/icons/shield-check.svg" class="metric-icon" alt="Shield"><div class="metric-text"><span class="metric-label">Tarcza</span><span class="metric-value shield-score ${shieldClass} ${loadingClass}">${resilienceScore}${isLoading ? '' : '%'}</span></div></div>
-            <div class="metric-item" title="Czas treningów"><img src="/icons/clock.svg" class="metric-icon" alt="Time"><div class="metric-text"><span class="metric-label">Czas</span><span class="metric-value ${loadingClass}">${isLoading ? '--' : timeLabel}</span></div></div>
+            <div class="metric-item" title="Twoja aktualna seria"><svg class="metric-icon" width="16" height="16"><use href="#icon-streak-fire"/></svg><div class="metric-text"><span class="metric-label">Seria</span><span class="metric-value ${loadingClass}">${stats.streak !== undefined ? stats.streak : '-'} Dni</span></div></div>
+            <div class="metric-item" title="Wskaźnik odporności"><svg class="metric-icon" width="16" height="16"><use href="#icon-shield-check"/></svg><div class="metric-text"><span class="metric-label">Tarcza</span><span class="metric-value shield-score ${shieldClass} ${loadingClass}">${resilienceScore}${isLoading ? '' : '%'}</span></div></div>
+            <div class="metric-item" title="Czas treningów"><svg class="metric-icon" width="16" height="16"><use href="#icon-clock"/></svg><div class="metric-text"><span class="metric-label">Czas</span><span class="metric-value ${loadingClass}">${isLoading ? '--' : timeLabel}</span></div></div>
         </div>
     </div>
     <div class="hero-weekly-rhythm"><div class="weekly-chart-label">TWÓJ TYDZIEŃ</div><div class="weekly-chart-grid">${weeklyBarsHTML}</div></div>`;
@@ -154,7 +158,6 @@ export function generateSkeletonDashboardHTML() {
     </div>`;
 }
 
-// --- GŁÓWNA KARTKA KALENDARZA (COMPACT) ---
 export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wizardData = null) {
     const dayName = dateObj.toLocaleDateString('pl-PL', { weekday: 'long' });
     const dayNumber = dateObj.getDate();
@@ -170,9 +173,11 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
     });
     const ignoreList = ['brak', 'none', 'brak sprzętu', 'masa własna', 'bodyweight', ''];
     const filteredEquipment = [...equipmentSet].filter(item => !ignoreList.includes(item));
+    
+    // Zgodnie z życzeniem: Oryginalne nazwy, tylko kapitalizacja
     const equipmentText = filteredEquipment.length > 0
         ? filteredEquipment.map(item => item.charAt(0).toUpperCase() + item.slice(1)).join(', ')
-        : 'Brak sprzętu';
+        : 'Bodyweight';
 
     const systemLoad = calculateSystemLoad(dayData);
     const clinicalTags = calculateClinicalProfile(dayData);
@@ -186,12 +191,12 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
 
     const loadBarHTML = `
         <div class="load-metric-container">
-            <div style="display:flex; justify-content:space-between; font-size:0.65rem; color:#666; margin-bottom:3px;">
-                <span style="font-weight:700;">OBCIĄŻENIE: ${loadLabel.toUpperCase()}</span>
-                <span>${systemLoad}%</span>
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.75rem; color:#475569; margin-bottom:5px;">
+                <span style="font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">Obciążenie: <span style="color:${loadColor === '#4ade80' ? '#16a34a' : loadColor}">${loadLabel}</span></span>
+                <span style="font-weight:600; opacity:0.8;">${systemLoad}%</span>
             </div>
-            <div style="width:100%; height:5px; background:#e5e7eb; border-radius:3px; overflow:hidden;">
-                <div style="width:${systemLoad}%; height:100%; background:${loadColor}; border-radius:3px;"></div>
+            <div style="width:100%; height:6px; background:#f1f5f9; border-radius:3px; overflow:hidden;">
+                <div style="width:${systemLoad}%; height:100%; background:${loadColor}; border-radius:3px; transition: width 0.5s ease;"></div>
             </div>
         </div>
     `;
@@ -214,22 +219,32 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
         </div>
         <div class="calendar-body">
             <div class="workout-context-card">
+                
+                <!-- HEADER: Tytuł i Czas -->
                 <div class="wc-header">
                     <h3 class="wc-title">${dayData.title}</h3>
-                    <div id="today-duration-display" style="font-weight:700; color:var(--primary-color); font-size:0.85rem;">
-                        ⏱ ${estimatedMinutes} min
+                    
+                    <!-- ID 'today-duration-display' do aktualizacji czasu -->
+                    <div class="time-badge-pill">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                        <span id="today-duration-display">${estimatedMinutes} min</span>
                     </div>
                 </div>
 
-                <div style="font-size:0.75rem; color:#888; margin-bottom:2px;">Cel: <strong>${focusArea}</strong></div>
-
-                ${loadBarHTML}
-
-                <div class="wc-tags">
-                    ${clinicalTagsHTML}
-                    <span class="meta-badge tag-equipment" style="margin-left: 0;">🛠️ ${equipmentText}</span>
+                <div style="font-size:0.85rem; color:#64748b; margin-bottom:12px; font-weight:500;">
+                    Cel: <strong style="color:var(--primary-color);">${focusArea}</strong>
                 </div>
 
+                <!-- PASEK OBCIĄŻENIA -->
+                ${loadBarHTML}
+
+                <!-- TAGI SPRZĘTU I INFO -->
+                <div class="wc-tags">
+                    ${clinicalTagsHTML}
+                    <span class="meta-badge tag-equipment">🛠️ ${equipmentText}</span>
+                </div>
+
+                <!-- SEKCJA SAMOPOCZUCIA -->
                 <div class="sheet-wellness">
                     <div class="sheet-wellness-label">Jak się czujesz?</div>
                     <div class="pain-selector">
@@ -241,9 +256,12 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
                     </div>
                 </div>
 
+                <!-- PRZYCISK START -->
                 <button id="start-mission-btn" class="calendar-action-btn" data-initial-pain="3">
-                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="display:block;"><path d="M8 5v14l11-7z"></path></svg>
-                    Start
+                    <div class="btn-content-wrapper">
+                        <span class="btn-icon-bg"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg></span>
+                        <span>Rozpocznij Trening</span>
+                    </div>
                 </button>
             </div>
         </div>
@@ -278,24 +296,20 @@ export function generateRestCalendarPageHTML(dateObj) {
     </div>`;
 }
 
-// --- NOWOŚĆ: GENERATOR KARTY ZALICZONEGO TRENINGU (WOW EFFECT) ---
 export function generateCompletedMissionCardHTML(session) {
     const durationSeconds = session.netDurationSeconds || 0;
     const minutes = Math.floor(durationSeconds / 60);
     const feedbackInfo = formatFeedback(session);
 
-    // Data z sesji (aby kartka miała właściwą datę)
     const completionDate = new Date(session.completedAt || new Date());
     const dayName = completionDate.toLocaleDateString('pl-PL', { weekday: 'long' });
     const dayNumber = completionDate.getDate();
     const monthYear = completionDate.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' });
 
-    // Tytuł treningu
     const title = session.trainingTitle || "Trening";
 
     return `
     <div class="calendar-sheet completed-mode shine-effect">
-        <!-- Złoty pasek na górze -->
         <div class="calendar-top-binding success-binding"></div>
 
         <div class="calendar-date-header">
@@ -305,7 +319,6 @@ export function generateCompletedMissionCardHTML(session) {
         </div>
 
         <div class="calendar-body" style="position: relative;">
-            <!-- PIECZĄTKA 'WYKONANE' -->
             <div class="completion-stamp">WYKONANE</div>
 
             <div class="workout-context-card" style="background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%); border-color: var(--success-color);">
@@ -370,9 +383,12 @@ export function generatePreTrainingCardHTML(ex, index) {
     const ignoreList = ['brak', 'none', 'brak sprzętu', 'masa własna', 'bodyweight', ''];
     const showEquipBadge = equipLabel.length > 0 && !ignoreList.includes(equipLabel.toLowerCase().trim());
 
+    // Formatowanie oryginalnych nazw sprzętu
+    const formattedEquipLabel = equipLabel.split(',').map(item => item.trim().charAt(0).toUpperCase() + item.trim().slice(1)).join(', ');
+
     const hasAnimation = !!ex.hasAnimation;
     const affinityBadge = getAffinityBadge(exerciseId);
-    const previewBtnHTML = hasAnimation ? `<button class="preview-anim-btn nav-btn" data-exercise-id="${exerciseId}" title="Podgląd animacji" style="padding: 4px 8px; display: flex; align-items: center; gap: 5px; border-color: var(--secondary-color);"><img src="/icons/eye.svg" width="20" height="20" alt="Podgląd" style="display: block;"><span style="font-size: 0.75rem; font-weight: 600; color: var(--secondary-color);">Podgląd</span></button>` : '';
+    const previewBtnHTML = hasAnimation ? `<button class="preview-anim-btn nav-btn" data-exercise-id="${exerciseId}" title="Podgląd animacji" style="padding: 4px 8px; display: flex; align-items: center; gap: 5px; border-color: var(--secondary-color);"><svg width="20" height="20" style="color:var(--secondary-color)"><use href="#icon-eye"/></svg><span style="font-size: 0.75rem; font-weight: 600; color: var(--secondary-color);">Podgląd</span></button>` : '';
 
     let badgeHTML = '';
     if (ex.isPersonalized) badgeHTML = `<span class="meta-badge" style="background:var(--gold-color); color:#000; border:none;">✨ Personalizacja</span>`;
@@ -429,7 +445,7 @@ export function generatePreTrainingCardHTML(ex, index) {
             </div>
             <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
                 ${previewBtnHTML}
-                <button class="swap-btn" title="Wymień ćwiczenie" data-exercise-index="${index}"><img src="/icons/swap.svg" width="20" height="20" alt="Wymień"></button>
+                <button class="swap-btn" title="Wymień ćwiczenie" data-exercise-index="${index}"><svg width="20" height="20"><use href="#icon-swap"/></svg></button>
             </div>
         </div>
         <div class="training-meta">
@@ -438,7 +454,7 @@ export function generatePreTrainingCardHTML(ex, index) {
             ${kneeBadge}
             <span class="meta-badge badge-lvl-${lvl}">⚡ ${getLevelLabel(lvl)}</span>
             <span class="meta-badge badge-category">📂 ${categoryName}</span>
-            ${showEquipBadge ? `<span class="meta-badge badge-equipment">🏋️ ${equipLabel}</span>` : ''}
+            ${showEquipBadge ? `<span class="meta-badge badge-equipment">🛠️ ${formattedEquipLabel}</span>` : ''}
         </div>
         <p class="pre-training-description" style="padding-left:10px; opacity:0.8;">${ex.description || 'Brak opisu.'}</p>
         ${targetsHTML}
@@ -576,92 +592,9 @@ export function generateSessionCardHTML(session) {
                             ${dynamicBadge}
                         </div>
                     </div>
-                    <button class="delete-session-btn icon-btn" data-session-id="${session.sessionId}" title="Usuń wpis"><img src="/icons/trash.svg" width="18" height="18" alt="Usuń"></button>
+                    <button class="delete-session-btn icon-btn" data-session-id="${session.sessionId}" title="Usuń wpis"><svg width="18" height="18"><use href="#icon-trash"/></svg></button>
                 </div>
             </summary>
             <div class="details-session-card-content">${statsHtml}${session.notes ? `<div class="session-notes"><strong>Notatki:</strong> ${session.notes}</div>` : ''}<div class="history-exercise-list">${exercisesHtml}</div></div>
-        </details>
-
-        <style>
-            .history-exercise-row {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                padding: 0.8rem 1.5rem;
-                border-bottom: 1px solid var(--border-color);
-                gap: 10px;
-            }
-
-            .hex-main {
-                display: flex;
-                flex-direction: column;
-                gap: 4px;
-                flex-grow: 1;
-                min-width: 0;
-            }
-
-            .hex-name {
-                font-weight: 600;
-                font-size: 0.95rem;
-                color: var(--text-color);
-                line-height: 1.2;
-            }
-
-            .hex-details-row {
-                display: flex;
-                align-items: center;
-                flex-wrap: wrap;
-                gap: 8px;
-                font-size: 0.8rem;
-                color: var(--muted-text-color);
-            }
-
-            .time-badge {
-                color: var(--secondary-color);
-                font-weight: 600;
-                background: rgba(10, 147, 150, 0.1);
-                padding: 1px 5px;
-                border-radius: 4px;
-                font-size: 0.75rem;
-                white-space: nowrap;
-            }
-
-            .reset-diff-btn { background: none; border: none; cursor: pointer; padding: 0; display: inline-flex; }
-            .diff-badge {
-                font-size: 0.7rem;
-                padding: 2px 6px;
-                border-radius: 4px;
-                display: flex;
-                align-items: center;
-                white-space: nowrap;
-            }
-            .diff-badge.easy { color: #0369a1; background: #f0f9ff; border: 1px solid #7dd3fc; }
-            .diff-badge.hard { color: #ea580c; background: #fff7ed; border: 1px solid #fdba74; }
-
-            .hist-rating-actions {
-                display: flex;
-                gap: 6px;
-                margin-left: auto;
-                flex-shrink: 0;
-            }
-
-            .rate-btn-hist {
-                background: transparent;
-                border: 1px solid #e0e0e0;
-                border-radius: 6px;
-                padding: 4px 8px;
-                cursor: pointer;
-                opacity: 0.5;
-                filter: grayscale(100%);
-                transition: all 0.2s;
-                font-size: 1.1rem;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                min-width: 32px;
-            }
-            .rate-btn-hist:hover { opacity: 0.8; filter: grayscale(50%); transform: scale(1.1); background: #f9f9f9; }
-            .rate-btn-hist.active { opacity: 1; filter: grayscale(0%); border-color: var(--primary-color); background: #e0f2fe; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        </style>
-        `;
+        </details>`;
 }

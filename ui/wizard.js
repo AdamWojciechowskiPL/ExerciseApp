@@ -20,7 +20,7 @@ const STEPS = [
     { id: 'p9', title: 'Aktywność', render: renderP9 },
     { id: 'p10', title: 'Sprzęt', render: renderP10 },
     { id: 'p11', title: 'Doświadczenie', render: renderP11 },
-    { id: 'p12', title: 'Twój Kalendarz', render: renderP12 }, // ZMIANA NAZWY
+    { id: 'p12', title: 'Twój Kalendarz', render: renderP12 },
     { id: 'p13', title: 'Priorytety', render: renderP13 },
     { id: 'p14', title: 'Główny Cel', render: renderP14 },
     { id: 'p15', title: 'Cele Extra', render: renderP15 },
@@ -33,11 +33,9 @@ export function initWizard(forceStart = false) {
     if (state.settings.onboardingCompleted && !forceStart) return false;
     const saved = state.settings.wizardData || {};
 
-    // Inicjalizacja stanu
     wizardAnswers = {
         pain_locations: saved.pain_locations || [],
         focus_locations: saved.focus_locations || [],
-
         pain_intensity: saved.pain_intensity !== undefined ? saved.pain_intensity : 0,
         pain_character: saved.pain_character || [],
         medical_diagnosis: saved.medical_diagnosis || [],
@@ -48,10 +46,7 @@ export function initWizard(forceStart = false) {
         hobby: saved.hobby || [],
         equipment_available: saved.equipment_available || [''],
         exercise_experience: saved.exercise_experience || '',
-        
-        // NOWOŚĆ: Wzorzec dni (Domyślnie Pn, Śr, Pt)
         schedule_pattern: saved.schedule_pattern || [1, 3, 5],
-        
         target_session_duration_min: saved.target_session_duration_min || 30,
         session_component_weights: saved.session_component_weights || [],
         primary_goal: saved.primary_goal || '',
@@ -90,8 +85,6 @@ function closeWizardWithoutSaving() {
     if (bottomNav && window.innerWidth <= 768) bottomNav.style.display = 'flex';
     renderMainScreen();
 }
-
-// --- LOGIKA NAWIGACJI (POMIJANIE KROKÓW) ---
 
 function getStepsToSkip() {
     if (wizardAnswers.pain_locations.length === 0) {
@@ -142,13 +135,12 @@ async function renderStep() {
     closeBtn.id = 'wiz-close';
     closeBtn.className = 'wizard-close-btn';
     closeBtn.title = 'Zamknij';
-    closeBtn.innerHTML = '<img src="/icons/close.svg" alt="X" style="width:20px; height:20px;">';
+    closeBtn.innerHTML = '<svg width="20" height="20"><use href="#icon-close"/></svg>';
     closeBtn.onclick = () => { if (confirm("Przerwać konfigurację? Postęp zostanie utracony.")) closeWizardWithoutSaving(); };
     container.appendChild(closeBtn);
 
     const content = document.createElement('div');
-    content.className = 'wizard-content';
-    content.style.cssText = "display: flex; flex-direction: column; height: 100%; padding-top: 4rem; box-sizing: border-box; overflow: hidden;";
+    content.className = 'wizard-content wizard-content-layout';
 
     const isIntro = step.id === 'start';
     const isProcessing = step.id === 'generating';
@@ -156,7 +148,7 @@ async function renderStep() {
 
     if (!isProcessing) {
         navHTML = `
-        <div class="wizard-nav ${isIntro ? 'single-btn' : ''}" style="margin-top: 0; padding-top: 10px; flex-shrink: 0;">
+        <div class="wizard-nav wizard-nav-container ${isIntro ? 'single-btn' : ''}">
             ${!isIntro ? '<button id="wiz-prev" class="nav-btn">Wstecz</button>' : ''}
             <button id="wiz-next" class="action-btn">${step.id === 'summary' ? 'Generuj Plan' : 'Dalej'}</button>
         </div>`;
@@ -167,7 +159,7 @@ async function renderStep() {
             <div class="wizard-progress-fill" style="width: ${progressPct}%;"></div>
         </div>
         <h2 class="wizard-step-title" style="flex-shrink: 0; font-size: 1.5rem; margin-bottom: 5px;">${step.title}</h2>
-        <div id="step-body" style="flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; display: flex; flex-direction: column; padding: 5px;"></div>
+        <div id="step-body" class="wizard-body-layout"></div>
         ${navHTML}
     `;
 
@@ -207,7 +199,6 @@ function validateStep(stepId) {
         case 'p9': return wizardAnswers.hobby.length > 0;
         case 'p10': return wizardAnswers.equipment_available.length > 0;
         case 'p11': return wizardAnswers.exercise_experience !== '';
-        // Walidacja kalendarza: musi być min 1 dzień
         case 'p12': return wizardAnswers.schedule_pattern && wizardAnswers.schedule_pattern.length > 0;
         case 'p13': return wizardAnswers.session_component_weights.length > 0;
         case 'p14': return wizardAnswers.primary_goal !== '';
@@ -219,49 +210,42 @@ function validateStep(stepId) {
 
 function renderIntro(c) { c.innerHTML = `<p class="wizard-step-desc">Algorytm <strong>Virtual Physio</strong> przygotuje dla Ciebie plan.<br><br>Odpowiedz na kilka pytań, abyśmy mogli dopasować ćwiczenia do Twoich potrzeb.</p><div style="font-size:5rem; text-align:center; margin:2rem; animation: pulse-fade 2s infinite;">🧬</div>`; }
 
-// --- KROK 1: MAPA CIAŁA ---
 async function renderP1(c) {
     const initialMode = (wizardAnswers.pain_locations.length === 0 && wizardAnswers.focus_locations.length > 0) ? 'focus' : 'pain';
     const isInitialPain = initialMode === 'pain';
 
+    c.className = "p1-container wizard-body-layout";
     c.style.justifyContent = "space-between";
 
     c.innerHTML = `
-        <div style="flex: 1; min-height: 0; position: relative; display: flex; justify-content: center; align-items: center;">
-            <div id="svg-placeholder" style="height: 100%; width: 100%; display: flex; justify-content: center;">Ładowanie...</div>
+        <div class="p1-container">
+            <div id="svg-placeholder" class="p1-svg-placeholder">Ładowanie...</div>
         </div>
 
-        <div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.08); border-radius: 12px; flex-shrink: 0;">
-            <div style="display:flex; justify-content:space-between; margin-bottom:8px; padding:0 5px;">
-                <div style="display:flex; align-items:center; gap:6px; font-size:0.75rem;"><span style="width:10px; height:10px; background:var(--danger-color); border-radius:50%; display:block;"></span> Ból / Uraz</div>
-                <div style="display:flex; align-items:center; gap:6px; font-size:0.75rem;"><span style="width:10px; height:10px; background:#3b82f6; border-radius:50%; display:block;"></span> Cel / Focus</div>
+        <div class="p1-controls">
+            <div class="p1-legend">
+                <div class="p1-legend-item"><span class="p1-dot" style="background:var(--danger-color);"></span> Ból / Uraz</div>
+                <div class="p1-legend-item"><span class="p1-dot" style="background:#3b82f6;"></span> Cel / Focus</div>
             </div>
 
-            <label class="switch-container" style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+            <label class="switch-container">
                 <div style="text-align: left;">
-                    <div id="tool-label" style="font-weight: 700; font-size: 0.95rem; color: #fff;">
+                    <div id="tool-label" class="tool-label-text">
                         ${isInitialPain ? '🖊️ Zaznaczam: BÓL' : '🖊️ Zaznaczam: CEL'}
                     </div>
-                    <div style="font-size: 0.75rem; opacity: 0.7;">Przełącz, aby zmienić tryb zaznaczania</div>
+                    <div class="tool-desc-text">Przełącz, aby zmienić tryb zaznaczania</div>
                 </div>
-                <div style="position: relative; width: 54px; height: 30px;">
-                    <input type="checkbox" id="paint-tool-toggle" ${isInitialPain ? 'checked' : ''} style="opacity: 0; width: 0; height: 0;">
-                    <span class="slider-round" style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #3b82f6; transition: .4s; border-radius: 34px;"></span>
-                    <span class="slider-knob" style="position: absolute; content: ''; height: 24px; width: 24px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%;"></span>
+                <div class="switch-wrapper">
+                    <input type="checkbox" id="paint-tool-toggle" ${isInitialPain ? 'checked' : ''} class="switch-input">
+                    <span class="slider-round"></span>
+                    <span class="slider-knob"></span>
                 </div>
             </label>
         </div>
 
-        <p class="wizard-step-desc" style="font-size:0.8rem; margin: 5px 0 0 0; text-align: center; opacity: 0.6;">
+        <p class="wizard-step-hint">
             Dotknij miejsc na ciele.
         </p>
-
-        <style>
-            input:checked + .slider-round { background-color: var(--danger-color) !important; }
-            input:checked ~ .slider-knob { transform: translateX(24px); }
-            .zone.pain { fill: var(--danger-color) !important; stroke: #fff; filter: drop-shadow(0 0 5px var(--danger-color)); opacity: 0.9 !important; }
-            .zone.focus { fill: #3b82f6 !important; stroke: #fff; filter: drop-shadow(0 0 5px #3b82f6); opacity: 0.9 !important; }
-        </style>
     `;
 
     const svgContent = `
@@ -351,7 +335,22 @@ async function renderP1(c) {
     });
 }
 
-function renderP2(c) { c.innerHTML = `<p class="wizard-step-desc">Poziom bólu (0-10)</p><div style="padding:2rem 0; text-align:center;"><div id="pain-val-display" style="font-size:4rem; font-weight:800; color:var(--danger-color); text-shadow:0 0 20px rgba(231,111,81,0.4);">${wizardAnswers.pain_intensity}</div><input type="range" min="0" max="10" value="${wizardAnswers.pain_intensity}" style="width:100%; margin-top:2rem;" id="pain-slider"><div style="display:flex; justify-content:space-between; opacity:0.6; font-size:0.8rem; margin-top:10px;"><span>Brak</span><span>Ekstremalny</span></div></div>`; c.querySelector('#pain-slider').addEventListener('input', (e) => { wizardAnswers.pain_intensity = parseInt(e.target.value); c.querySelector('#pain-val-display').textContent = wizardAnswers.pain_intensity; }); }
+function renderP2(c) {
+    c.innerHTML = `
+        <p class="wizard-step-desc">Poziom bólu (0-10)</p>
+        <div class="pain-display-container">
+            <div id="pain-val-display" class="pain-value-large">${wizardAnswers.pain_intensity}</div>
+            <div class="pain-slider-wrapper">
+                <input type="range" min="0" max="10" value="${wizardAnswers.pain_intensity}" style="width:100%;" id="pain-slider">
+                <div class="pain-labels"><span>Brak</span><span>Ekstremalny</span></div>
+            </div>
+        </div>`;
+    c.querySelector('#pain-slider').addEventListener('input', (e) => {
+        wizardAnswers.pain_intensity = parseInt(e.target.value);
+        c.querySelector('#pain-val-display').textContent = wizardAnswers.pain_intensity;
+    });
+}
+
 function renderP3(c) { renderMultiSelect(c, 'Jaki to rodzaj bólu?', [{ val: 'sharp', label: '🔪 Ostry / Kłujący' }, { val: 'dull', label: '🪨 Tępy / Uciskający' }, { val: 'burning', label: '🔥 Palący' }, { val: 'stiffness', label: '🪵 Sztywność' }, { val: 'radiating', label: '⚡ Promieniujący' }, { val: 'numbness', label: '🧊 Mrowienie' }], 'pain_character'); }
 
 function renderP4(c) {
@@ -394,7 +393,22 @@ function renderP4(c) {
 
 function renderP5(c) { renderMultiSelect(c, 'Kiedy ból się NASILA?', [{ val: 'bending_forward', label: 'Pochylanie do przodu' }, { val: 'bending_backward', label: 'Odchylanie w tył' }, { val: 'twisting', label: 'Skręty tułowia' }, { val: 'sitting', label: 'Długie siedzenie' }, { val: 'standing', label: 'Długie stanie' }, { val: 'walking', label: 'Chodzenie' }, { val: 'lying_back', label: 'Leżenie na plecach' }], 'trigger_movements'); }
 function renderP6(c) { renderMultiSelect(c, 'Co przynosi ULGĘ?', [{ val: 'bending_forward', label: 'Lekki skłon / Zwinięcie' }, { val: 'bending_backward', label: 'Wyprostowanie' }, { val: 'lying_knees_bent', label: 'Leżenie z ugiętymi nogami' }, { val: 'walking', label: 'Rozchodzenie' }, { val: 'rest', label: 'Odpoczynek' }], 'relief_movements'); }
-function renderP7(c) { c.innerHTML = `<p class="wizard-step-desc">Wpływ bólu na życie (0-10)</p><div style="padding:2rem 0; text-align:center;"><div id="impact-val-display" style="font-size:4rem; font-weight:800; color:var(--primary-color);">${wizardAnswers.daily_impact}</div><input type="range" min="0" max="10" value="${wizardAnswers.daily_impact}" style="width:100%; margin-top:2rem;" id="impact-slider"></div>`; c.querySelector('#impact-slider').addEventListener('input', (e) => { wizardAnswers.daily_impact = parseInt(e.target.value); c.querySelector('#impact-val-display').textContent = wizardAnswers.daily_impact; }); }
+
+function renderP7(c) {
+    c.innerHTML = `
+        <p class="wizard-step-desc">Wpływ bólu na życie (0-10)</p>
+        <div class="pain-display-container">
+            <div id="impact-val-display" class="pain-value-large" style="color:var(--primary-color)">${wizardAnswers.daily_impact}</div>
+            <div class="pain-slider-wrapper">
+                <input type="range" min="0" max="10" value="${wizardAnswers.daily_impact}" style="width:100%;" id="impact-slider">
+            </div>
+        </div>`;
+    c.querySelector('#impact-slider').addEventListener('input', (e) => {
+        wizardAnswers.daily_impact = parseInt(e.target.value);
+        c.querySelector('#impact-val-display').textContent = wizardAnswers.daily_impact;
+    });
+}
+
 function renderP8(c) { renderSingleSelect(c, 'Twój typowy dzień?', [{ val: 'sedentary', label: '🪑 Siedzący (Biuro)' }, { val: 'standing', label: '🧍 Stojący' }, { val: 'physical', label: '💪 Fizyczny' }, { val: 'mixed', label: '🔄 Mieszany' }], 'work_type'); }
 function renderP9(c) { renderMultiSelect(c, 'Twoje aktywności?', [{ val: 'cycling', label: '🚴 Rower' }, { val: 'running', label: '🏃 Bieganie' }, { val: 'swimming', label: '🏊 Pływanie' }, { val: 'gym', label: '🏋️ Siłownia' }, { val: 'yoga', label: '🧘 Joga' }, { val: 'walking', label: '🚶 Spacery' }, { val: 'none', label: '❌ Brak' }], 'hobby'); }
 
@@ -436,7 +450,6 @@ function renderP10(c) {
 
 function renderP11(c) { renderSingleSelect(c, 'Doświadczenie w treningu?', [{ val: 'none', label: 'Początkujący (0)' }, { val: 'occasional', label: 'Okazjonalne' }, { val: 'regular', label: 'Regularne (2+/tydz)' }, { val: 'advanced', label: 'Zaawansowane' }], 'exercise_experience'); }
 
-// --- NOWY KROK 12: KALENDARZ TYGODNIOWY ---
 function renderP12(c) {
     const days = [
         { label: 'Pn', val: 1 },
@@ -449,12 +462,11 @@ function renderP12(c) {
     ];
 
     let pattern = wizardAnswers.schedule_pattern || [];
-    if (pattern.length === 0) pattern = [1, 3, 5]; // Domyślnie Pn, Śr, Pt
+    if (pattern.length === 0) pattern = [1, 3, 5];
 
     c.innerHTML = `
         <p class="wizard-step-desc">W które dni chcesz ćwiczyć?</p>
-        <div style="padding: 0 10px;">
-            
+        <div class="p12-wrapper">
             <div class="day-selector-container">
                 ${days.map(d => `
                     <div class="day-toggle ${pattern.includes(d.val) ? 'active' : ''}" data-val="${d.val}">
@@ -462,48 +474,17 @@ function renderP12(c) {
                     </div>
                 `).join('')}
             </div>
-
-            <div style="text-align: center; margin: 15px 0; font-size: 0.9rem; opacity: 0.7;">
+            <div class="wizard-step-hint">
                 Wybrano: <strong id="days-count">${pattern.length}</strong> dni w tygodniu
             </div>
-
-            <div class="form-group" style="margin-top:2.5rem;">
-                <label style="display:flex; justify-content:space-between; margin-bottom:10px;">
+            <div class="form-group p12-slider-group">
+                <label class="p12-label-row">
                     <span>Czas na sesję:</span>
-                    <span id="dur-disp" style="font-weight:bold; color:var(--gold-color); min-width: 60px; text-align: right;">${wizardAnswers.target_session_duration_min} min</span>
+                    <span id="dur-disp" class="dur-display">${wizardAnswers.target_session_duration_min} min</span>
                 </label>
                 <input type="range" min="15" max="60" step="5" value="${wizardAnswers.target_session_duration_min}" id="dur-slider" style="width: 100%;">
             </div>
         </div>
-
-        <style>
-            .day-selector-container {
-                display: flex;
-                justify-content: space-between;
-                gap: 5px;
-                margin-top: 10px;
-            }
-            .day-toggle {
-                width: 40px;
-                height: 40px;
-                border-radius: 50%;
-                background: rgba(255,255,255,0.1);
-                border: 1px solid rgba(255,255,255,0.2);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-weight: 700;
-                cursor: pointer;
-                transition: all 0.2s;
-                font-size: 0.9rem;
-            }
-            .day-toggle.active {
-                background: var(--gold-color);
-                color: #000;
-                box-shadow: 0 0 10px rgba(233, 196, 106, 0.4);
-                transform: scale(1.1);
-            }
-        </style>
     `;
 
     const toggles = c.querySelectorAll('.day-toggle');
@@ -592,15 +573,14 @@ function renderSummary(c) {
         focusSection = `<li style="color:#3b82f6">🔵 <strong>Cel:</strong> ${wizardAnswers.focus_locations.join(', ')}</li>`;
     }
 
-    // Formatowanie dni
     const dayLabels = { 1: 'Pn', 2: 'Wt', 3: 'Śr', 4: 'Cz', 5: 'Pt', 6: 'So', 0: 'Nd' };
     const pattern = wizardAnswers.schedule_pattern || [];
     const formattedDays = pattern.map(d => dayLabels[d]).join(', ');
 
     c.innerHTML = `
-    <div style="text-align:left; font-size:0.95rem; background:rgba(255,255,255,0.05); padding:1.5rem; border-radius:12px;">
-        <h3 style="margin-top:0; color:var(--gold-color);">Twój Profil</h3>
-        <ul style="list-style:none; padding:0; line-height:1.8;">
+    <div class="summary-box">
+        <h3 class="summary-title">Twój Profil</h3>
+        <ul class="summary-list">
             ${painSection}
             ${focusSection}
             <li>🛠️ <strong>Sprzęt:</strong> ${wizardAnswers.equipment_available.join(', ')}</li>
@@ -608,11 +588,27 @@ function renderSummary(c) {
             <li>📅 <strong>Dni:</strong> ${formattedDays || 'Brak'}</li>
             <li>⏱️ <strong>Czas:</strong> ${wizardAnswers.target_session_duration_min} min</li>
         </ul>
-        <p style="margin-top:1.5rem; opacity:0.8; font-size:0.85rem;">Asystent AI przeanalizuje Twój kalendarz i ułoży spersonalizowany plan.</p>
+        <p class="summary-footer">Asystent AI przeanalizuje Twój kalendarz i ułoży spersonalizowany plan.</p>
     </div>`;
 }
 
-async function renderProcessing(c) { c.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%;"><div style="width:50px; height:50px; border:4px solid var(--gold-color); border-top-color:transparent; border-radius:50%; animation:spin 1s linear infinite; margin-bottom:20px;"></div><div id="console-output" style="font-family:monospace; color:var(--accent-color); font-size:0.9rem;">Analiza danych...</div></div><style>@keyframes spin { to { transform: rotate(360deg); } }</style>`; const consoleDiv = c.querySelector('#console-output'); const logs = ["Mapowanie stref...", "Analiza sprzętu...", "Wybór ćwiczeń...", "Optymalizacja...", "Gotowe!"]; let delay = 0; logs.forEach((log, index) => { setTimeout(() => { consoleDiv.textContent = log; if (index === logs.length - 1) { setTimeout(finalizeGeneration, 500); } }, delay); delay += 800; }); }
+async function renderProcessing(c) {
+    c.innerHTML = `
+        <div class="processing-container">
+            <div class="processing-spinner"></div>
+            <div id="console-output" class="processing-log">Analiza danych...</div>
+        </div>`;
+    const consoleDiv = c.querySelector('#console-output');
+    const logs = ["Mapowanie stref...", "Analiza sprzętu...", "Wybór ćwiczeń...", "Optymalizacja...", "Gotowe!"];
+    let delay = 0;
+    logs.forEach((log, index) => {
+        setTimeout(() => {
+            consoleDiv.textContent = log;
+            if (index === logs.length - 1) { setTimeout(finalizeGeneration, 500); }
+        }, delay);
+        delay += 800;
+    });
+}
 
 async function finalizeGeneration() {
     try {

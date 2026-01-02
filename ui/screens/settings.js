@@ -5,6 +5,7 @@ import { screens } from '../../dom.js';
 import dataStore from '../../dataStore.js';
 import { initWizard } from '../wizard.js';
 import { renderMainScreen, clearPlanFromStorage } from './dashboard.js';
+import { renderHelpScreen } from './help.js'; // Dodano import
 
 export const renderSettingsScreen = () => {
     const screen = screens.settings;
@@ -16,8 +17,6 @@ export const renderSettingsScreen = () => {
     const hasDynamicData = !!state.settings.dynamicPlanData;
 
     const secondsPerRep = state.settings.secondsPerRep || 6;
-    
-    // Nowe ustawienie: Rest Time Factor (domyślnie 1.0)
     const restTimeFactor = state.settings.restTimeFactor || 1.0;
     const restTimePercent = Math.round(restTimeFactor * 100);
 
@@ -43,8 +42,16 @@ export const renderSettingsScreen = () => {
         <h2 style="margin-bottom: 1.5rem;">Ustawienia</h2>
         <form id="settings-form-rebuild">
 
+            <!-- NOWA SEKCJA: POMOC -->
+            <div class="settings-card" style="background: linear-gradient(145deg, #ffffff 0%, #f0f9ff 100%); border-color: #bae6fd;">
+                <div class="card-header-icon" style="color:#0ea5e9"><svg width="24" height="24"><use href="#icon-info"/></svg></div>
+                <h3>Potrzebujesz pomocy?</h3>
+                <p class="settings-desc">Dowiedz się jak działa Mikser, Tarcza Resilience i sterowanie treningiem.</p>
+                <button type="button" id="open-help-btn" class="nav-btn" style="width:100%; border-color:#7dd3fc; color:#0284c7;">📖 Otwórz Centrum Wiedzy</button>
+            </div>
+
             <div class="settings-card">
-                <div class="card-header-icon">📅</div>
+                <div class="card-header-icon"><svg width="24" height="24"><use href="#icon-calendar"/></svg></div>
                 <h3>Twój Harmonogram</h3>
                 <p class="settings-desc">Wybierz dni, w które chcesz ćwiczyć. Plan automatycznie dostosuje się do zmian.</p>
 
@@ -59,13 +66,13 @@ export const renderSettingsScreen = () => {
             </div>
 
             <div class="settings-card">
-                <div class="card-header-icon">⏱️</div>
+                <div class="card-header-icon"><svg width="24" height="24"><use href="#icon-clock"/></svg></div>
                 <h3>Kalibracja Czasu</h3>
                 <div class="form-group slider-group">
                     <label>Czas 1 powtórzenia: <span id="val-rep" style="font-weight:bold; color:var(--primary-color)">${secondsPerRep}s</span></label>
                     <input type="range" id="setting-rep-time" min="3" max="10" value="${secondsPerRep}">
                 </div>
-                
+
                 <div class="form-group slider-group">
                     <label>Tempo Przerw: <span id="val-rest-factor" style="font-weight:bold; color:var(--primary-color)">${restTimePercent}%</span></label>
                     <input type="range" id="setting-rest-factor" min="50" max="150" step="10" value="${restTimePercent}">
@@ -80,7 +87,7 @@ export const renderSettingsScreen = () => {
             </div>
 
             <div class="settings-card">
-                <div class="card-header-icon">🧬</div>
+                <div class="card-header-icon"><svg width="24" height="24"><use href="#icon-dna"/></svg></div>
                 <h3>Profil Medyczny</h3>
                 <p class="settings-desc">Zaktualizuj dane o bólu, sprzęcie i celach.</p>
                 <button type="button" id="restart-wizard-btn" class="action-btn" style="background: var(--gold-color); color: #000; margin-top:10px;">
@@ -89,7 +96,7 @@ export const renderSettingsScreen = () => {
             </div>
 
             <div class="settings-card">
-                <div class="card-header-icon">🔊</div>
+                <div class="card-header-icon"><svg width="24" height="24"><use href="#icon-sound-on"/></svg></div>
                 <h3>Preferencje Aplikacji</h3>
                 <div class="toggle-row">
                     <div class="toggle-label"><strong>Asystent Głosowy (TTS)</strong><p>Lektor czyta instrukcje.</p></div>
@@ -101,7 +108,7 @@ export const renderSettingsScreen = () => {
             </div>
 
             <div class="settings-card">
-                <div class="card-header-icon">🔗</div>
+                <div class="card-header-icon"><svg width="24" height="24"><use href="#icon-link"/></svg></div>
                 <h3>Integracje</h3>
                 <div class="integration-row">
                     <div style="display:flex; align-items:center; gap:10px;"><img src="/icons/strava-logo.svg" onerror="this.style.display='none'" style="height:24px;"><strong>Strava</strong></div>
@@ -122,34 +129,12 @@ export const renderSettingsScreen = () => {
             <p class="settings-desc">Usunięcie konta jest nieodwracalne.</p>
             <button id="delete-account-btn" class="nav-btn danger-btn" style="width: 100%;">Usuń konto na stałe</button>
         </div>
-
-        <style>
-            .settings-card { background: #fff; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border: 1px solid var(--border-color); position: relative; overflow: hidden; }
-            .card-header-icon { position: absolute; top: 1.5rem; right: 1.5rem; font-size: 1.8rem; opacity: 1; pointer-events: none; line-height: 1; }
-            .switch { position: relative; display: inline-block; width: 50px; height: 26px; flex-shrink: 0; }
-            .switch input { opacity: 0; width: 0; height: 0; }
-            .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
-            .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
-            input:checked + .slider { background-color: var(--secondary-color); }
-            input:checked + .slider:before { transform: translateX(24px); }
-            .toggle-row { display: flex; justify-content: space-between; align-items: center; }
-            .slider-group { margin-bottom: 1.5rem; }
-            .slider-group input[type=range] { width: 100%; margin-top: 8px; }
-            .danger-zone { border: 1px solid var(--danger-color); background: #fff5f5; }
-            .day-selector-container { display: flex; gap: 5px; margin-top: 10px; }
-            .day-toggle {
-                width: 38px; height: 38px; border-radius: 50%;
-                background: #f1f5f9; border: 1px solid #e2e8f0; color: #64748b;
-                display: flex; align-items: center; justify-content: center;
-                font-weight: 700; cursor: pointer; transition: all 0.2s; font-size: 0.85rem;
-            }
-            .day-toggle.active {
-                background: var(--primary-color); color: #fff;
-                border-color: var(--primary-color); box-shadow: 0 4px 10px rgba(0, 95, 115, 0.3);
-                transform: scale(1.1);
-            }
-        </style>
     `;
+
+    // --- OBSŁUGA NOWEGO PRZYCISKU POMOCY ---
+    screen.querySelector('#open-help-btn').addEventListener('click', () => {
+        renderHelpScreen();
+    });
 
     const form = screen.querySelector('#settings-form-rebuild');
     const repSlider = screen.querySelector('#setting-rep-time');
@@ -195,12 +180,10 @@ export const renderSettingsScreen = () => {
             state.settings.appStartDate = screen.querySelector('#setting-start-date').value;
             state.settings.ttsEnabled = screen.querySelector('#setting-tts').checked;
             state.tts.isSoundOn = state.settings.ttsEnabled;
-            
-            // Zapisujemy nowe wartości
+
             state.settings.secondsPerRep = newSecondsPerRep;
             state.settings.restTimeFactor = newRestFactor;
 
-            // Czyścimy stare (nieużywane już) klucze, aby nie myliły
             delete state.settings.restBetweenSets;
             delete state.settings.restBetweenExercises;
 
@@ -220,7 +203,7 @@ export const renderSettingsScreen = () => {
                         const payload = {
                             ...state.settings.wizardData,
                             secondsPerRep: newSecondsPerRep,
-                            restTimeFactor: newRestFactor // Wysyłamy nowy parametr
+                            restTimeFactor: newRestFactor
                         };
                         await dataStore.generateDynamicPlan(payload);
                         clearPlanFromStorage();

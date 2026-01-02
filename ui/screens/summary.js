@@ -1,11 +1,14 @@
-// js/ui/screens/summary.js
-import { state } from '../../state.js';
-import { screens } from '../../dom.js';
-import { navigateTo, showLoader, hideLoader } from '../core.js';
-import dataStore from '../../dataStore.js';
-import { renderEvolutionModal } from '../modals.js';
-import { getIsCasting, sendShowIdle } from '../../cast.js';
-import { clearSessionBackup } from '../../sessionRecovery.js';
+// ExerciseApp/ui/screens/summary.js
+// Używamy ścieżek absolutnych dla spójności
+import { state } from '/state.js';
+import { screens } from '/dom.js';
+import { navigateTo, showLoader, hideLoader } from '/ui/core.js';
+import dataStore from '/dataStore.js';
+import { renderEvolutionModal } from '/ui/modals.js';
+import { getIsCasting, sendShowIdle } from '/cast.js';
+import { clearSessionBackup } from '/sessionRecovery.js';
+// Importujemy funkcję czyszczenia cache planu, aby dashboard odświeżył się po regeneracji
+import { clearPlanFromStorage } from '/ui/screens/dashboard.js';
 
 let selectedFeedback = { type: null, value: 0 };
 
@@ -22,7 +25,6 @@ export const renderSummaryScreen = () => {
     } else {
         const activePlan = state.settings.dynamicPlanData;
         const daysList = activePlan?.days || [];
-        // Przyjmujemy, że currentTrainingDayId odpowiada numerowi dnia w planie dynamicznym
         const trainingDay = daysList.find(d => d.dayNumber === state.currentTrainingDayId);
         trainingTitle = trainingDay ? trainingDay.title : "Trening";
         isSafetyMode = (state.sessionParams.initialPainLevel || 0) > 3;
@@ -124,48 +126,20 @@ export const renderSummaryScreen = () => {
             <button type="submit" class="action-btn" style="margin-top:1.5rem;">Zapisz i Zakończ</button>
         </form>
         <style>
-            .rating-card {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                gap: 10px;
-            }
-            .rating-name {
-                flex: 1;
-                max-width: unset;
-                padding-right: 5px;
-                font-size: 0.9rem;
-                font-weight: 600;
-                line-height: 1.2;
-            }
-            .rating-actions-group {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                justify-content: flex-end;
-                width: auto;
-                flex-shrink: 0;
-            }
-
+            .rating-card { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+            .rating-name { flex: 1; max-width: unset; padding-right: 5px; font-size: 0.9rem; font-weight: 600; line-height: 1.2; }
+            .rating-actions-group { display: flex; align-items: center; gap: 8px; justify-content: flex-end; width: auto; flex-shrink: 0; }
             .btn-group-affinity { display: flex; gap: 4px; background: #f0fdfa; padding: 3px; border-radius: 8px; width: 82px; justify-content: center; }
             .btn-group-difficulty { display: flex; gap: 4px; background: #fff7ed; padding: 3px; border-radius: 8px; width: 82px; justify-content: center; }
-            .rate-btn {
-                background: transparent; border: 1px solid transparent; border-radius: 6px;
-                width: 36px; height: 36px; font-size: 1.2rem; cursor: pointer;
-                transition: all 0.2s; display: flex; align-items: center; justify-content: center;
-                filter: grayscale(100%); opacity: 0.5;
-            }
+            .rate-btn { background: transparent; border: 1px solid transparent; border-radius: 6px; width: 36px; height: 36px; font-size: 1.2rem; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; filter: grayscale(100%); opacity: 0.5; }
             .rate-btn:hover { opacity: 1; filter: grayscale(0%); background: rgba(0,0,0,0.05); }
-
             .affinity-btn.active { opacity: 1; filter: grayscale(0%); background: #fff; border-color: #2dd4bf; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
             .diff-btn.selected { opacity: 1; filter: grayscale(0%); background: #ea580c; color: white; border-color: #ea580c; cursor: default; transform: scale(0.95); }
-
             .sep { width: 1px; height: 24px; background: #e5e7eb; }
         </style>
     `;
 
-    // --- EVENT LISTENERS ---
-
+    // Listenery
     summaryScreen.querySelectorAll('.feedback-option').forEach(opt => {
         opt.addEventListener('click', () => {
             summaryScreen.querySelectorAll('.feedback-option').forEach(o => o.classList.remove('selected'));
@@ -181,9 +155,7 @@ export const renderSummaryScreen = () => {
             btn.addEventListener('click', () => {
                 const isActive = btn.classList.contains('active');
                 affinityBtns.forEach(b => b.classList.remove('active'));
-                if (!isActive) {
-                    btn.classList.add('active');
-                }
+                if (!isActive) btn.classList.add('active');
             });
         });
 
@@ -207,29 +179,21 @@ export async function handleSummarySubmit(e) {
     if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Zapisywanie..."; }
     showLoader();
 
+    // Zbieranie ocen ćwiczeń
     const ratingsArray = [];
     const ratingCards = document.querySelectorAll('.rating-card');
-
     ratingCards.forEach(card => {
         const id = card.dataset.id;
         const activeAffinity = card.querySelector('.affinity-btn.active');
-        if (activeAffinity) {
-            ratingsArray.push({ exerciseId: id, action: activeAffinity.dataset.action });
-        } else {
-            ratingsArray.push({ exerciseId: id, action: 'neutral' });
-        }
-
+        ratingsArray.push({ exerciseId: id, action: activeAffinity ? activeAffinity.dataset.action : 'neutral' });
         const activeDiff = card.querySelector('.diff-btn.selected');
-        if (activeDiff) {
-            ratingsArray.push({ exerciseId: id, action: activeDiff.dataset.action });
-        }
+        if (activeDiff) ratingsArray.push({ exerciseId: id, action: activeDiff.dataset.action });
     });
 
     const now = new Date();
     const durationSeconds = Math.round(Math.max(0, now - state.sessionStartTime - (state.totalPausedTime || 0)) / 1000);
 
     let planId = state.settings.activePlanId;
-
     if (state.todaysDynamicPlan && state.todaysDynamicPlan.type === 'protocol') {
         planId = state.todaysDynamicPlan.id;
     } else if (state.settings.dynamicPlanData?.id) {
@@ -260,21 +224,63 @@ export async function handleSummarySubmit(e) {
         if (state.todaysDynamicPlan?.type === 'protocol') state.todaysDynamicPlan = null;
 
         if (response?.newStats) state.userStats = { ...state.userStats, ...response.newStats };
-
         if (document.getElementById('strava-sync-checkbox')?.checked) dataStore.uploadToStrava(sessionPayload);
 
         state.currentTrainingDate = null;
         state.sessionLog = [];
         state.isPaused = false;
 
-        hideLoader();
-        const { renderMainScreen } = await import('./dashboard.js');
+        // --- AUTOREGULACJA RPE (Nowa Logika) ---
+        // Definiujemy krok końcowy: nawigację do dashboardu
+        const finalizeProcess = async () => {
+            hideLoader();
+            const { renderMainScreen } = await import('/ui/screens/dashboard.js');
+            navigateTo('main');
+            renderMainScreen();
+        };
 
+        // Funkcja sprawdzająca feedback globalny i pytająca o przeliczenie
+        const checkRpeAndNavigate = async () => {
+            // Sprawdzamy, czy ocena nie jest neutralna
+            if (selectedFeedback.value !== 0) {
+                let msg = '';
+                if (selectedFeedback.value === -1) {
+                    msg = "Zgłosiłeś, że trening był za ciężki/bolesny.\n\nCzy chcesz, aby Asystent przeliczył plan i zmniejszył obciążenie na kolejne dni?";
+                } else if (selectedFeedback.value === 1) {
+                    msg = "Zgłosiłeś, że trening był za lekki/nudny.\n\nCzy chcesz, aby Asystent zwiększył intensywność planu?";
+                }
+
+                if (msg && confirm(msg)) {
+                    showLoader(); // Upewniamy się, że loader jest widoczny
+                    try {
+                        console.log("[AutoReg] Triggering plan regeneration based on RPE...");
+                        // Przekazujemy aktualne dane wizardData.
+                        // Backend sam pobierze historię sesji (w tym tę przed chwilą zapisaną)
+                        // i funkcja analyzeRpeTrend w generate-plan zrobi resztę.
+                        await dataStore.generateDynamicPlan(state.settings.wizardData);
+                        clearPlanFromStorage(); // Czyścimy cache, aby dashboard pobrał nowy plan
+                        alert("Plan został pomyślnie zaktualizowany przez Asystenta.");
+                    } catch (e) {
+                        console.error("[AutoReg] Failed:", e);
+                        alert("Nie udało się przeliczyć planu automatycznie. Zmiany nie zostały wprowadzone.");
+                    }
+                }
+            }
+            await finalizeProcess();
+        };
+
+        // Jeśli backend zwrócił adaptację (Ewolucję/Dewolucję ćwiczenia), najpierw pokaż modal, potem RPE check
         if (response && response.adaptation) {
-            renderEvolutionModal(response.adaptation, () => { navigateTo('main'); renderMainScreen(); });
+            hideLoader(); // Ukrywamy loader na czas modalu
+            renderEvolutionModal(response.adaptation, () => {
+                // Po zamknięciu modalu ewolucji -> sprawdź RPE
+                checkRpeAndNavigate();
+            });
         } else {
-            navigateTo('main'); renderMainScreen();
+            // Brak adaptacji ćwiczeń -> sprawdź od razu RPE
+            await checkRpeAndNavigate();
         }
+
     } catch (error) {
         console.error(error);
         hideLoader();

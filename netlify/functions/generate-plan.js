@@ -418,10 +418,14 @@ function applyCheckExerciseAvailability(ex, ctx, userData) {
   }
 }
 
-function filterExerciseCandidates(exercises, userData, ctx, fatigueState) {
+function filterExerciseCandidates(exercises, userData, ctx, fatigueState, rpeData) {
   const userEquipment = normalizeEquipmentList(userData?.equipment_available);
   const diagnosisSet = normalizeLowerSet(userData?.medical_diagnosis);
   const restrictionsSet = normalizeLowerSet(userData?.physical_restrictions);
+
+  // RPE Autoregulation Cap (Clinical Safety Valve)
+  // Jeśli użytkownik zgłosił "Za mocno" lub "Ból", ograniczamy trudność ćwiczeń
+  const difficultyCap = rpeData && rpeData.intensityCap ? rpeData.intensityCap : 5;
 
   const filtered = [];
   for (const ex of exercises) {
@@ -433,9 +437,15 @@ function filterExerciseCandidates(exercises, userData, ctx, fatigueState) {
     if (violatesDiagnosisHardContraindications(ex, diagnosisSet)) continue;
     if (violatesSeverePainRules(ex, ctx)) continue;
 
-    // --- FATIGUE FILTER ---
+    // --- FATIGUE & RPE FILTERS ---
+    const diff = ex.difficulty_level || 1;
+
+    // Jeśli narzucono limit trudności (np. po RPE -1)
+    if (diff > difficultyCap) continue;
+
+    // Standardowy filtr zmęczenia czasowego
     if (fatigueState === 'fatigued') {
-        if ((ex.difficulty_level || 1) >= 4) continue;
+        if (diff >= 4) continue;
         if ((ex.impact_level || 'low') === 'high') continue;
     }
 
@@ -648,7 +658,7 @@ function createInitialSession(dayNumber, targetMinutes) {
 // Volume prescription & time estimation
 // ---------------------------------
 
-function loadFactorFromState(userData, ctx, fatigueState) {
+function loadFactorFromState(userData, ctx, fatigueState, rpeModifier = 1.0) {
   const exp = String(userData?.exercise_experience || 'none').toLowerCase();
   const schedule = userData?.schedule_pattern || DEFAULT_SCHEDULE_PATTERN;
   const sessionsPerWeek = schedule.length;
@@ -656,26 +666,33 @@ function loadFactorFromState(userData, ctx, fatigueState) {
   const painIntensity = clamp(toNumber(userData?.pain_intensity, 0), 0, 10);
   let base = 1.0;
 
+  // Base factor from experience
   if (exp === 'none') base = 0.70;
   else if (exp === 'occasional') base = 0.85;
   else if (exp === 'regular') base = 1.0;
   else if (exp === 'advanced') base = 1.10;
 
+  // Modifiers based on severity/pain
   const severity = clamp(toNumber(ctx?.severityScore, painIntensity), 0, 10);
   if (severity >= 7) base *= 0.55;
   else if (severity >= 4) base *= 0.80;
 
+  // Frequency adjustment
   if (sessionsPerWeek >= 5) base *= 0.90;
   if (sessionsPerWeek <= 2) base *= 1.15;
 
+  // Time-gap fatigue
   if (fatigueState === 'fatigued') base *= 0.8;
   if (fatigueState === 'fresh') base *= 1.1;
 
-  return clamp(base, 0.45, 1.25);
+  // RPE Autoregulation (The Feedback Loop)
+  base *= rpeModifier;
+
+  return clamp(base, 0.45, 1.35); // Slight increase in max cap to allow progression
 }
 
-function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatigueState, targetMin) {
-  const factor = loadFactorFromState(userData, ctx, fatigueState);
+function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatigueState, targetMin, rpeModifier = 1.0) {
+  const factor = loadFactorFromState(userData, ctx, fatigueState, rpeModifier);
   const cat = String(ex.category_id || '').toLowerCase();
 
   let sets = 1;
@@ -801,7 +818,7 @@ function estimateSessionDurationSeconds(session, userData, paceMap) {
   return total;
 }
 
-function expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, sState, pZones, paceMap, fatigueState, targetMin) {
+function expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, sState, pZones, paceMap, fatigueState, targetMin, rpeModifier) {
   const targetSec = targetMin * 60;
   let guard = 0;
 
@@ -826,7 +843,7 @@ function expandSessionToTarget(session, candidates, userData, ctx, categoryWeigh
     if (!changed) {
       const ex = pickExerciseForSection('main', candidates, userData, ctx, categoryWeights, sState, pZones, (c) => !isBreathingCategory(c.category_id));
       if (ex) {
-        const rx = prescribeForExercise(ex, 'main', userData, ctx, categoryWeights, fatigueState, targetMin);
+        const rx = prescribeForExercise(ex, 'main', userData, ctx, categoryWeights, fatigueState, targetMin, rpeModifier);
         const newEx = { ...ex, ...rx };
         session.main.push(newEx);
         changed = true;
@@ -918,7 +935,7 @@ function enforceStrictTimeLimit(session, userData, paceMap, targetMin) {
 }
 
 // ---------------------------------
-// NEW: Context Analysis
+// Context Analysis (Time & RPE)
 // ---------------------------------
 
 function analyzeInitialFatigue(userId, lastSession) {
@@ -933,11 +950,66 @@ function analyzeInitialFatigue(userId, lastSession) {
     return 'normal';
 }
 
+/**
+ * NEW: RPE-Based Autoregulation
+ * Analizuje ostatnie sesje i zwraca modyfikatory dla loadFactor i trudności.
+ */
+function analyzeRpeTrend(recentSessions) {
+    const defaultResult = { volumeModifier: 1.0, intensityCap: null, label: 'Standard' };
+    if (!recentSessions || recentSessions.length === 0) return defaultResult;
+
+    // Sortujemy od najnowszej
+    // (Baza zwraca DESC, ale dla pewności)
+    const sorted = recentSessions.sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at));
+    const lastSession = sorted[0];
+
+    // 1. Prawo Zanikania (Decay):
+    // Jeśli ostatni trening był dawno (> 5 dni), ignorujemy RPE (pełny reset).
+    const now = new Date();
+    const lastDate = new Date(lastSession.completed_at);
+    const diffDays = (now - lastDate) / (1000 * 60 * 60 * 24);
+
+    if (diffDays > 5) return { ...defaultResult, label: 'Reset (Decay)' };
+
+    const feedback = lastSession.feedback || {};
+    const val = parseInt(feedback.value, 10);
+    const type = feedback.type || 'tension';
+
+    // 2. Scenariusz: ZA MOCNO / BÓL
+    if (val === -1) {
+        if (type === 'symptom') {
+            // Ostry ból -> Drastyczna redukcja
+            return { volumeModifier: 0.70, intensityCap: 2, label: 'Protection Mode (Pain)' };
+        } else {
+            // Za ciężko (napięcie) -> Umiarkowana redukcja
+            // Sprawdzamy trend: czy to jednorazowe, czy chroniczne?
+            const prevSession = sorted[1];
+            if (prevSession && prevSession.feedback && parseInt(prevSession.feedback.value) === -1) {
+                return { volumeModifier: 0.75, intensityCap: 2, label: 'Deload (Chronic Fatigue)' };
+            }
+            return { volumeModifier: 0.85, intensityCap: 3, label: 'Recovery (Acute)' };
+        }
+    }
+
+    // 3. Scenariusz: ZA ŁATWO
+    if (val === 1) {
+        // Sprawdzamy trend
+        const prevSession = sorted[1];
+        if (prevSession && prevSession.feedback && parseInt(prevSession.feedback.value) === 1) {
+            return { volumeModifier: 1.25, intensityCap: null, label: 'Progressive Overload (Boost)' };
+        }
+        return { volumeModifier: 1.15, intensityCap: null, label: 'Progressive Overload' };
+    }
+
+    // 4. Scenariusz: IDEALNIE (0)
+    return { volumeModifier: 1.0, intensityCap: null, label: 'Maintenance' };
+}
+
 // ---------------------------------
-// NEW: Rolling Plan Builder
+// Rolling Plan Builder
 // ---------------------------------
 
-function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap, initialFatigue) {
+function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap, initialFatigue, rpeData) {
     const schedulePattern = userData?.schedule_pattern || DEFAULT_SCHEDULE_PATTERN;
     const targetMin = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90);
 
@@ -946,7 +1018,13 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
     const plan = {
         id: `rolling-${Date.now()}`,
         days: [],
-        meta: { ...userData, severityScore: ctx.severityScore, isSevere: ctx.isSevere, generatedAt: new Date().toISOString() }
+        meta: {
+            ...userData,
+            severityScore: ctx.severityScore,
+            isSevere: ctx.isSevere,
+            generatedAt: new Date().toISOString(),
+            rpeStatus: rpeData.label // Zapisujemy status dla debugowania
+        }
     };
 
     const weeklyUsage = new Map();
@@ -958,7 +1036,7 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
     for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
         const currentDate = new Date();
         currentDate.setDate(currentDate.getDate() + dayOffset);
-        const dayOfWeek = currentDate.getDay(); 
+        const dayOfWeek = currentDate.getDay();
         const dateString = currentDate.toISOString().split('T')[0];
 
         const isScheduled = schedulePattern.includes(dayOfWeek);
@@ -992,13 +1070,13 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
                 for (let i = 0; i < counts[sec]; i++) {
                     const ex = pickExerciseForSection(sec, candidates, userData, ctx, categoryWeights, sState, pZones, (c) => sec === 'main' ? !isBreathingCategory(c.category_id) : (c.metabolic_intensity || 1) < 4);
                     if (ex) {
-                        const rx = prescribeForExercise(ex, sec, userData, ctx, categoryWeights, fatigueState, targetMin);
+                        const rx = prescribeForExercise(ex, sec, userData, ctx, categoryWeights, fatigueState, targetMin, rpeData.volumeModifier);
                         session[sec].push({ ...ex, ...rx });
                     }
                 }
             });
 
-            expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, sState, pZones, paceMap, fatigueState, targetMin);
+            expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, sState, pZones, paceMap, fatigueState, targetMin, rpeData.volumeModifier);
             enforceStrictTimeLimit(session, userData, paceMap, targetMin);
 
             session.estimatedDurationMin = Math.round(estimateSessionDurationSeconds(session, userData, paceMap) / 60);
@@ -1032,13 +1110,20 @@ exports.handler = async (event) => {
 
   const client = await pool.connect();
   try {
-    const [eR, bR, pR, hR, sR, lastSessionR] = await Promise.all([
+    // 1. Zaktualizowane zapytanie do pobierania historii (ostatnie 3 sesje + feedback)
+    const [eR, bR, pR, hR, sR, recentSessionsR] = await Promise.all([
       client.query('SELECT * FROM exercises'),
       client.query('SELECT exercise_id FROM user_exercise_blacklist WHERE user_id = $1', [userId]),
       client.query('SELECT exercise_id, affinity_score FROM user_exercise_preferences WHERE user_id = $1', [userId]),
       client.query(`SELECT session_data->'sessionLog' as logs, completed_at FROM training_sessions WHERE user_id = $1 AND completed_at > NOW() - INTERVAL '30 days'`, [userId]),
       client.query('SELECT exercise_id, avg_seconds_per_rep FROM user_exercise_stats WHERE user_id = $1', [userId]),
-      client.query(`SELECT completed_at FROM training_sessions WHERE user_id = $1 ORDER BY completed_at DESC LIMIT 1`, [userId])
+      client.query(`
+        SELECT completed_at, session_data->'feedback' as feedback
+        FROM training_sessions
+        WHERE user_id = $1
+        ORDER BY completed_at DESC
+        LIMIT 3
+      `, [userId])
     ]);
 
     const exercises = eR.rows.map(normalizeExerciseRow);
@@ -1052,14 +1137,22 @@ exports.handler = async (event) => {
         paceMap[r.exercise_id] = parseFloat(r.avg_seconds_per_rep);
     });
 
-    const initialFatigue = analyzeInitialFatigue(userId, lastSessionR.rows[0]);
+    // 2. Analiza RPE i Zmęczenia
+    const recentSessions = recentSessionsR.rows;
+    const initialFatigue = analyzeInitialFatigue(userId, recentSessions[0]);
+    const rpeData = analyzeRpeTrend(recentSessions);
+
+    console.log(`[PlanGen] User: ${userId}, Fatigue: ${initialFatigue}, RPE Status: ${rpeData.label}, VolMod: ${rpeData.volumeModifier}`);
 
     const cWeights = buildDynamicCategoryWeights(exercises, userData, ctx);
-    const candidates = filterExerciseCandidates(exercises, userData, ctx, initialFatigue);
+
+    // 3. Filtracja kandydatów z uwzględnieniem RPE Intensity Cap
+    const candidates = filterExerciseCandidates(exercises, userData, ctx, initialFatigue, rpeData);
 
     if (candidates.length < 5) return { statusCode: 400, body: JSON.stringify({ error: 'NO_SAFE_EXERCISES' }) };
 
-    const plan = buildRollingPlan(candidates, cWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap, initialFatigue);
+    // 4. Budowa planu z uwzględnieniem RPE Volume Modifier
+    const plan = buildRollingPlan(candidates, cWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap, initialFatigue, rpeData);
 
     const sRes = await client.query('SELECT settings FROM user_settings WHERE user_id = $1', [userId]);
     const settings = sRes.rows[0]?.settings || {};

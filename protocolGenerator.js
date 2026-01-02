@@ -6,7 +6,6 @@ import { checkExerciseAvailability, buildClinicalContext } from './clinicalEngin
  * PROTOCOL GENERATOR v5.9 (Rest Factor Aware)
  */
 
-// ... (ZONE_MAP bez zmian) ...
 const ZONE_MAP = {
     'cervical': { type: 'zone', keys: ['cervical', 'neck', 'upper_traps'] },
     'thoracic': { type: 'zone', keys: ['thoracic', 'posture', 'shoulder_mobility'] },
@@ -36,7 +35,6 @@ const TIMING_CONFIG = {
 
 const DEFAULT_MAX_DURATION = 60;
 const DEFAULT_MAX_REPS = 15;
-// INTRA_SET_REST przeniesione do funkcji, aby było dynamiczne
 
 // ============================================================
 // GŁÓWNA FUNKCJA GENERUJĄCA
@@ -79,7 +77,7 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext,
     const realTotalDuration = flatExercises.reduce((sum, step) => {
         const sets = parseInt(step.sets) || 1;
         const duration = step.duration || 0;
-        
+
         // Obliczamy dynamiczną przerwę między seriami
         const intraSetRest = Math.round(15 * globalRestFactor);
 
@@ -95,7 +93,8 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext,
         description: generateDescription(mode, durationMin),
         type: 'protocol',
         mode: mode,
-        totalDuration: realTotalDuration,
+        totalDuration: realTotalDuration, // Rzeczywisty wyliczony czas (może się różnić od celu)
+        targetDuration: durationMin,      // ZMIANA: Przekazujemy cel, aby UI było spójne z Dashboardem
         xpReward: calculateXP(mode, durationMin),
         resilienceBonus: calculateResilienceBonus(mode),
         flatExercises: flatExercises
@@ -110,7 +109,7 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
     // Obliczamy czas cyklu z uwzględnieniem Global Rest Factor
     const scaledRest = config.rest * globalRestFactor;
     const baseCycleTime = (config.work * timeFactor) + scaledRest;
-    
+
     const maxSteps = Math.ceil(targetSeconds / baseCycleTime) + 15;
 
     let sequence = [];
@@ -125,7 +124,6 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
         let cycleDuration = baseCycleTime;
         if (mode === 'burn' && ex.recommendedInterval) {
             const rec = ex.recommendedInterval;
-            // Tutaj też skalujemy przerwę
             cycleDuration = (rec.work * timeFactor) + (rec.rest * timeFactor * globalRestFactor);
         }
         currentSeconds += cycleDuration * mult;
@@ -178,8 +176,6 @@ function getStrictUnique(pool, usedIds) {
 
 function buildSteps(exercises, config, mode, timeFactor, globalRestFactor) {
     const SECONDS_PER_REP_ESTIMATE = state.settings.secondsPerRep || 6;
-    
-    // Obliczamy dynamiczną przerwę wewnątrz serii
     const INTRA_SET_REST = Math.round(15 * globalRestFactor);
 
     const steps = [];
@@ -197,8 +193,6 @@ function buildSteps(exercises, config, mode, timeFactor, globalRestFactor) {
 
     exercises.forEach((ex, index) => {
         let baseWork = config.work * timeFactor;
-        
-        // Mnożymy czas przerwy przez globalny faktor
         let transitionRest = Math.round(config.rest * timeFactor * globalRestFactor);
 
         if (mode === 'burn' && ex.recommendedInterval) {
@@ -272,13 +266,11 @@ function buildSteps(exercises, config, mode, timeFactor, globalRestFactor) {
             duration: durationPerSet,
             tempo_or_iso: tempoDisplay,
             uniqueId: `${ex.id}_p${index}${suffix ? suffix.replace(/[\s()]/g, '') : ''}`,
-            // WSTRZYKUJEMY PRZERWĘ DO OBIEKTU ĆWICZENIA, ABY training.js WIEDZIAŁ ILE ODPOCZYWAĆ
             restBetweenSets: INTRA_SET_REST
         });
 
         if (isUnilateral) {
             steps.push(createCompactStep(' (Lewa)'));
-            // Zmiana strony też powinna być lekko skalowalna
             const transitionTime = Math.max(5, Math.round(5 * globalRestFactor));
             steps.push({ name: "Zmiana Strony", isWork: false, isRest: true, duration: transitionTime, sectionName: "Przejście", description: "Druga strona" });
             steps.push(createCompactStep(' (Prawa)'));
@@ -295,8 +287,6 @@ function buildSteps(exercises, config, mode, timeFactor, globalRestFactor) {
 
     return steps;
 }
-
-// ... (Pozostałe helpery: getCandidates, getCandidatesSafeFallback, scoreCandidates, etc. bez zmian) ...
 
 function getCandidates(mode, focusZone, ctx = {}) {
     const { ignoreEquipment, clinicalCtx } = ctx;

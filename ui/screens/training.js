@@ -44,6 +44,10 @@ export const renderProtocolStart = (protocol) => {
     if (protocol.mode === 'neuro') accentColor = '#facc15';    // Yellow
     if (protocol.mode === 'ladder') accentColor = '#fb923c';   // Orange
 
+    // ZMIANA: Wyświetlamy targetDuration (czas celu) zamiast wyliczonego totalDuration,
+    // aby zachować spójność z kafelkiem na dashboardzie.
+    const displayTime = protocol.targetDuration || Math.round(protocol.totalDuration / 60);
+
     // Generowanie HTML nagłówka
     screen.innerHTML = `
         <div style="text-align:center; padding: 1.5rem 0; background: linear-gradient(to bottom, ${accentColor} 0%, transparent 100%); margin: -1.5rem -1.5rem 1rem -1.5rem; border-radius: 0 0 20px 20px;">
@@ -74,7 +78,7 @@ export const renderProtocolStart = (protocol) => {
         <div class="pre-training-nav">
             <button id="proto-cancel-btn" class="nav-btn">Wróć</button>
             <button id="proto-start-btn" class="action-btn" style="background: ${accentColor}; border:none; color: white; font-weight: 800;">
-                Rozpocznij (<span id="total-time-display">${Math.round(protocol.totalDuration / 60)}</span> min)
+                Rozpocznij (<span id="total-time-display">${displayTime}</span> min)
             </button>
         </div>
     `;
@@ -92,10 +96,11 @@ export const renderProtocolStart = (protocol) => {
             listContainer.innerHTML += cardHTML;
         });
 
-        // Aktualizacja czasu na przycisku
-        if (totalTimeDisplay) {
-            totalTimeDisplay.textContent = Math.round(currentProtocol.totalDuration / 60);
-        }
+        // Jeśli czas nie był zmieniany (timeFactor 1.0), trzymamy się targetDuration (np. 5 min).
+        // Jeśli użytkownik ruszył suwak, pokazujemy czas przeliczony.
+        // Ale ponieważ suwak resetuje się przy starcie, początkowo używamy logicznego displayTime.
+        // Poniższa logika aktualizuje czas TYLKO jeśli suwak został ruszony (wywołanie z eventu)
+        // lub przy wymianie ćwiczenia. Przy inicjalizacji (pierwsze wywołanie) używamy wartości wpisanej w HTML.
     };
 
     // Render startowy (oryginalny protokół)
@@ -126,11 +131,17 @@ export const renderProtocolStart = (protocol) => {
             }
         });
 
-        // 3. Aktualizujemy całkowity czas w kopii
+        // 3. Aktualizujemy całkowity czas w kopii - TUTAJ już pokazujemy prawdę (obliczoną),
+        // ponieważ użytkownik intencjonalnie zmienił czas.
         previewProtocol.totalDuration = Math.round(protocol.totalDuration * timeFactor);
 
         // 4. Przerysowujemy listę z nowymi wartościami
         renderList(previewProtocol);
+
+        // 5. Aktualizujemy przycisk na dole
+        if (totalTimeDisplay) {
+            totalTimeDisplay.textContent = Math.round(previewProtocol.totalDuration / 60);
+        }
     });
 
     // --- OBSŁUGA WYMIANY ĆWICZEŃ IN-PLACE ---

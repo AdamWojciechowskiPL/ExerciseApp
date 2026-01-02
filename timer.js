@@ -36,7 +36,8 @@ export const stopTimer = () => {
         state.timer.interval = null;
     }
     state.timer.isActive = false;
-    state.timer.countUp = false;
+    // POPRAWKA: Nie resetujemy countUp tutaj, aby zachować stan przy pauzie.
+    // Reset nastąpi automatycznie przy wywołaniu startTimer z nowymi parametrami.
 };
 
 /**
@@ -47,6 +48,9 @@ export const startTimer = (seconds, onEndCallback, onTickCallback = null, countU
 
     state.timer.timeLeft = seconds;
 
+    // Jeśli startujemy nowy timer (lub wznawiamy z nowym limitem), ustawiamy initialDuration
+    // W przypadku wznowienia (resume), initialDuration powinno być zachowane w state,
+    // ale ten warunek poniżej zabezpiecza nas, jeśli go nie ma.
     if (!state.timer.initialDuration || state.timer.initialDuration < seconds) {
         state.timer.initialDuration = seconds;
     }
@@ -224,6 +228,7 @@ export const togglePauseTimer = async () => {
         }
 
         if (state.timer.timeLeft > 0) {
+            // Tutaj countUp będzie teraz poprawne (zachowane ze stanu przed pauzą)
             startTimer(state.timer.timeLeft, state.timer.onTimerEnd, null, state.timer.countUp);
         }
         else if (currentStep && currentStep.isRest && focus.timerDisplay?.textContent?.includes("START")) {

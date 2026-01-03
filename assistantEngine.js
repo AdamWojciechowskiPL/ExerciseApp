@@ -4,8 +4,7 @@ import { state } from './state.js';
 import { parseSetCount, calculateSmartDuration } from './utils.js';
 
 /**
- * MÓZG SYSTEMU (ASSISTANT ENGINE) v4.0 (Unified Time-Boxing)
- * Teraz używa wspólnej logiki obliczania czasu z utils.js, identycznej jak w backendzie.
+ * MÓZG SYSTEMU (ASSISTANT ENGINE) v4.1 (Added Boost Badge Logic)
  */
 
 export const assistant = {
@@ -17,7 +16,6 @@ export const assistant = {
         return { score: 0, status: 'Vulnerable', daysSinceLast: 0, sessionCount: 0 };
     },
 
-    // ZMIANA: Używamy nowej, dokładnej funkcji z utils.js
     estimateDuration: (dayPlan) => {
         return calculateSmartDuration(dayPlan);
     },
@@ -34,7 +32,7 @@ export const assistant = {
         let addBoostSet = false;
         let intensityScale = 1.0;
 
-        // --- 1. DEFINICJA PROGÓW (Gwarancja liniowości) ---
+        // --- 1. DEFINICJA PROGÓW ---
         if (painLevel <= 1) {
             mode = 'boost';
             addBoostSet = true;
@@ -48,19 +46,19 @@ export const assistant = {
             mode = 'eco';
             painMessage = "Tryb Oszczędny (Eco).";
             targetSetsMode = 'minus_step';
-            intensityScale = 0.8; // Redukcja powtórzeń o 20%
+            intensityScale = 0.8; 
         }
         else if (painLevel >= 6 && painLevel <= 7) {
             mode = 'care';
             painMessage = "Tryb Ostrożny (Care).";
             targetSetsMode = 'minimum';
-            intensityScale = 0.6; // Redukcja powtórzeń o 40% (Klucz do skrócenia sesji)
+            intensityScale = 0.6; 
         }
         else {
             mode = 'sos';
             painMessage = "Zalecany tryb SOS.";
             targetSetsMode = 'minimum';
-            intensityScale = 0.45; // Redukcja o ponad połowę
+            intensityScale = 0.45; 
         }
 
         ['warmup', 'main', 'cooldown'].forEach(section => {
@@ -75,7 +73,6 @@ export const assistant = {
                                      String(exercise.reps_or_time).includes('stron');
 
                 const stepSize = isUnilateral ? 2 : 1;
-                // WAŻNE: Minimum to zawsze pełny cykl (1 dla zwykłych, 2 dla jednostronnych)
                 const minSetsFloor = isUnilateral ? 2 : 1;
 
                 let modificationBadge = null;
@@ -83,17 +80,16 @@ export const assistant = {
                 // --- KROK 1: MODYFIKACJA SERII ---
                 if (addBoostSet) {
                     const limit = isUnilateral ? 6 : 4;
+                    // Boostujemy tylko część główną (main), żeby nie zamęczyć na rozgrzewce
                     if (section === 'main' && currentSets < limit) {
                         currentSets += stepSize;
                         modificationBadge = { type: 'boost', label: `🚀 BOOST: +${stepSize} serii` };
                     }
                 }
                 else if (targetSetsMode === 'minus_step') {
-                    // ECO: Zmniejszamy, ale NIE poniżej floor (żeby nie uciąć jednej nogi)
                     currentSets = Math.max(minSetsFloor, currentSets - stepSize);
                 }
                 else if (targetSetsMode === 'minimum') {
-                    // CARE/SOS: Zawsze schodzimy do minimum
                     currentSets = minSetsFloor;
                 }
 
@@ -116,7 +112,6 @@ export const assistant = {
 
                     if (numMatch) {
                         const rawNum = parseInt(numMatch[0]);
-                        // Math.ceil zamiast floor, aby nie zejść do zera
                         const newNum = Math.max(rawVal.includes('s') ? 5 : 3, Math.ceil(rawNum * intensityScale));
 
                         if (newNum < rawNum) {
@@ -125,11 +120,15 @@ export const assistant = {
                     }
                 }
 
-                // Badge
+                // --- KROK 4: LOGIKA BADGE'Y (DODANO OBSŁUGĘ BOOST DLA RESZTY) ---
                 if (!modificationBadge && mode !== 'standard') {
                     if (mode === 'eco') modificationBadge = { type: 'eco', label: `🍃 ECO` };
                     else if (mode === 'care') modificationBadge = { type: 'care', label: `🛡️ CARE` };
                     else if (mode === 'sos') modificationBadge = { type: 'sos', label: `🏥 SOS` };
+                    
+                    // NOWOŚĆ: Jeśli czujesz się świetnie, ale nie dodano serii (np. rozgrzewka),
+                    // i tak pokaż badge "PRO" / "FLOW" / "BOOST"
+                    else if (mode === 'boost') modificationBadge = { type: 'boost', label: `🔥 PRO` };
                 }
 
                 if (modificationBadge) exercise.modification = modificationBadge;

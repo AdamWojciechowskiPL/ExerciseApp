@@ -1,7 +1,7 @@
 // ExerciseApp/ui/screens/dashboard.js
 import { state } from '../../state.js';
 import { containers } from '../../dom.js';
-import { getHydratedDay, getISODate, calculateSmartDuration } from '../../utils.js';
+import { getHydratedDay, getISODate, calculateSmartDuration, calculateSystemLoad } from '../../utils.js'; // Dodany import calculateSystemLoad
 import { getIsCasting, sendUserStats } from '../../cast.js';
 import { getGamificationState } from '../../gamification.js';
 import { assistant } from '../../assistantEngine.js';
@@ -396,20 +396,46 @@ export const renderMainScreen = async (isLoading = false) => {
                 const checkPlan = assistant.adjustTrainingVolume(finalPlan, painLevel);
                 const isSOS = checkPlan?._modificationInfo?.shouldSuggestSOS;
 
+                // 1. Aktualizacja Czasu
                 const newDuration = calculateSmartDuration(checkPlan);
-                
-                // --- FIX: UPDATING TEXT WITHOUT EMOJI ---
                 const timeDisplay = document.getElementById('today-duration-display');
                 if (timeDisplay) {
-                    timeDisplay.textContent = `${newDuration} min`; // Update text only!
+                    timeDisplay.textContent = `${newDuration} min`;
                 }
 
+                // 2. NOWOŚĆ: Aktualizacja Paska Obciążenia (System Load)
+                const newLoad = calculateSystemLoad(checkPlan);
+                const loadContainer = cardEl.querySelector('.load-metric-container');
+                if (loadContainer) {
+                    let loadColor = '#4ade80';
+                    let loadLabel = 'Lekki';
+                    if (newLoad > 30) { loadColor = '#facc15'; loadLabel = 'Umiarkowany'; }
+                    if (newLoad > 60) { loadColor = '#fb923c'; loadLabel = 'Wymagający'; }
+                    if (newLoad > 85) { loadColor = '#ef4444'; loadLabel = 'Maksymalny'; }
+
+                    // Aktualizacja wizualna
+                    const loadValueSpan = loadContainer.querySelector('span[style*="font-weight:600"]');
+                    if (loadValueSpan) loadValueSpan.textContent = `${newLoad}%`;
+
+                    const loadLabelSpan = loadContainer.querySelector('span > span');
+                    if (loadLabelSpan) {
+                        loadLabelSpan.textContent = loadLabel;
+                        loadLabelSpan.style.color = (loadColor === '#4ade80' ? '#16a34a' : loadColor);
+                    }
+
+                    const barFill = loadContainer.querySelector('div[style*="width:"]');
+                    if (barFill) {
+                        barFill.style.width = `${newLoad}%`;
+                        barFill.style.background = loadColor;
+                    }
+                }
+
+                // 3. Aktualizacja Przycisku Start
                 if (isSOS) {
                     startBtn.textContent = "🏥 Aktywuj Protokół SOS";
                     startBtn.style.backgroundColor = "var(--danger-color)";
                     startBtn.dataset.mode = 'sos';
                 } else {
-                    // Przywracamy standardowy przycisk z ikoną SVG (innerHTML)
                     startBtn.innerHTML = `
                     <div class="btn-content-wrapper">
                         <span class="btn-icon-bg"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg></span>

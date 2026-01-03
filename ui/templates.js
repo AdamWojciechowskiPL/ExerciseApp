@@ -173,7 +173,7 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
     });
     const ignoreList = ['brak', 'none', 'brak sprzętu', 'masa własna', 'bodyweight', ''];
     const filteredEquipment = [...equipmentSet].filter(item => !ignoreList.includes(item));
-    
+
     // Zgodnie z życzeniem: Oryginalne nazwy, tylko kapitalizacja
     const equipmentText = filteredEquipment.length > 0
         ? filteredEquipment.map(item => item.charAt(0).toUpperCase() + item.slice(1)).join(', ')
@@ -219,11 +219,11 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
         </div>
         <div class="calendar-body">
             <div class="workout-context-card">
-                
+
                 <!-- HEADER: Tytuł i Czas -->
                 <div class="wc-header">
                     <h3 class="wc-title">${dayData.title}</h3>
-                    
+
                     <!-- ID 'today-duration-display' do aktualizacji czasu -->
                     <div class="time-badge-pill">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
@@ -411,7 +411,12 @@ export function generatePreTrainingCardHTML(ex, index) {
         let bg = '#eee';
         let color = '#333';
         let border = '#ccc';
-        if (ex.modification.type === 'boost') { bg = '#ecfdf5'; color = '#047857'; border = '#6ee7b7'; }
+        if (ex.modification.type === 'boost') { 
+            // Fioletowy/Złoty styl dla PRO/BOOST
+            bg = '#fdf4ff'; 
+            color = '#86198f'; 
+            border = '#f0abfc'; 
+        }
         else if (ex.modification.type === 'eco') { bg = '#eff6ff'; color = '#1d4ed8'; border = '#93c5fd'; }
         else if (ex.modification.type === 'care' || ex.modification.type === 'sos') { bg = '#fff7ed'; color = '#c2410c'; border = '#fdba74'; }
         modBadge = `<span class="meta-badge" style="background:${bg}; color:${color}; border:1px solid ${border}; white-space:nowrap;">${ex.modification.label}</span>`;

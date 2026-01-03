@@ -204,18 +204,22 @@ export const togglePauseTimer = async () => {
             state.lastPauseStartTime = null;
         }
 
-        if (state.timer.timeLeft > 0) {
+        // POPRAWKA: Najpierw sprawdzamy typ ćwiczenia.
+        // Jeśli to praca (isWork) -> ZAWSZE wznawiamy Stoper (nawet jeśli w timer.timeLeft coś zostało).
+        if (currentStep && currentStep.isWork) {
+            startStopwatch();
+        }
+        // Jeśli to przerwa (isRest) i mamy czas -> wznawiamy Timer.
+        else if (state.timer.timeLeft > 0) {
             startTimer(state.timer.timeLeft, state.timer.onTimerEnd, null, state.timer.countUp);
         }
+        // Specyficzny przypadek startu (opóźnione przejście)
         else if (currentStep && currentStep.isRest && focus.timerDisplay?.textContent?.includes("START")) {
             const { moveToNextExercise } = await import('./training.js');
             state.breakTimeoutId = setTimeout(() => {
                 state.breakTimeoutId = null;
                 moveToNextExercise({ skipped: false });
             }, 2000);
-        }
-        else if (currentStep && !currentStep.isRest) {
-            startStopwatch();
         }
 
         if (focus.pauseResumeBtn) {

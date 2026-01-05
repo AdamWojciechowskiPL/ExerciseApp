@@ -300,14 +300,22 @@ export async function startExercise(index, isResuming = false) {
         }
     }
     else {
+        // --- PRZERWA / REST ---
         if (animContainer) animContainer.classList.add('hidden');
         if (descContainer) descContainer.classList.remove('hidden');
         if (flipIndicator) flipIndicator.classList.add('hidden');
         if (focus.affinityBadge) focus.affinityBadge.innerHTML = '';
-        if (focus.tempo) focus.tempo.classList.add('hidden');
 
         const upcomingExercise = state.flatExercises[index + 1];
         if (!upcomingExercise) { moveToNextExercise({ skipped: false }); return; }
+
+        // --- ZMIANA: Wyświetlanie tempa również w przerwie ---
+        if (focus.tempo) {
+            // Pobieramy tempo nadchodzącego ćwiczenia
+            const nextTempo = upcomingExercise.tempo_or_iso || "Kontrolowane";
+            focus.tempo.textContent = `Tempo: ${nextTempo}`;
+            focus.tempo.classList.remove('hidden');
+        }
 
         if (upcomingExercise.hasAnimation) {
              dataStore.fetchExerciseAnimation(upcomingExercise.exerciseId || upcomingExercise.id);

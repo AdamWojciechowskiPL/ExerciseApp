@@ -1,7 +1,7 @@
 // ExerciseApp/ui/screens/dashboard.js
 import { state } from '../../state.js';
 import { containers } from '../../dom.js';
-import { getHydratedDay, getISODate, calculateSmartDuration, calculateSystemLoad } from '../../utils.js'; // Dodany import calculateSystemLoad
+import { getHydratedDay, getISODate, calculateSmartDuration, calculateSystemLoad } from '../../utils.js';
 import { getIsCasting, sendUserStats } from '../../cast.js';
 import { getGamificationState } from '../../gamification.js';
 import { assistant } from '../../assistantEngine.js';
@@ -368,8 +368,11 @@ export const renderMainScreen = async (isLoading = false) => {
         state.currentTrainingDayId = todayPlanEntry.dayNumber;
         savePlanToStorage(finalPlan, todayISO);
 
+        // --- ZMIANA: Zawsze przeliczamy czas na żywo, ignorując starą wartość z bazy ---
         let estimatedMinutes = calculateSmartDuration(finalPlan);
-        if (todayPlanEntry.estimatedDurationMin) estimatedMinutes = todayPlanEntry.estimatedDurationMin;
+        
+        // Ta linia powodowała problem - usuwamy priorytet starej wartości z bazy
+        // if (todayPlanEntry.estimatedDurationMin) estimatedMinutes = todayPlanEntry.estimatedDurationMin;
 
         const missionWrapper = document.createElement('div');
         missionWrapper.className = 'mission-card-wrapper';

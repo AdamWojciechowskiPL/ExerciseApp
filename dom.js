@@ -26,10 +26,13 @@ export const focus = {};
 
 export function initializeFocusElements() {
     // UWAGA: sectionName usunięty z HTML, więc usuwamy też stąd
-    // focus.sectionName = document.getElementById('focus-section-name'); 
-    
+    // focus.sectionName = document.getElementById('focus-section-name');
+
     // ZMIANA: Zastąpiono focus.progress nowym elementem paska
     focus.progressContainer = document.getElementById('focus-progress-bar'); // NOWY
+
+    // NOWOŚĆ: Licznik czasu całkowitego
+    focus.sessionElapsedTime = document.getElementById('focus-total-time');
 
     focus.timerDisplay = document.getElementById('focus-timer-display');
     focus.exerciseName = document.getElementById('focus-exercise-name');

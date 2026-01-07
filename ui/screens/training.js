@@ -97,7 +97,7 @@ export const renderProtocolStart = (protocol) => {
         display.textContent = `${Math.round(timeFactor * 100)}%`;
 
         const previewProtocol = JSON.parse(JSON.stringify(protocol));
-        
+
         previewProtocol.flatExercises.forEach((ex, i) => {
             const originalEx = protocol.flatExercises[i]; // Bierzemy oryginał, żeby znać typ (reps/time)
 
@@ -182,7 +182,7 @@ export const renderProtocolStart = (protocol) => {
     screen.querySelector('#proto-start-btn').addEventListener('click', () => {
         const timeFactor = parseFloat(slider.value) || 1.0;
         const scaledProtocol = JSON.parse(JSON.stringify(protocol));
-        
+
         scaledProtocol.flatExercises.forEach((ex, i) => {
             const originalEx = protocol.flatExercises[i];
 
@@ -566,11 +566,13 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
 };
 
 export const renderTrainingScreen = () => {
+    // --- NOWOŚĆ: Zaktualizowany HTML z licznikiem czasu ---
     screens.training.innerHTML = `
     <div class="focus-view">
         <div id="focus-progress-bar" class="focus-progress-container"></div>
         <div class="focus-header-minimal">
             <button id="exit-training-btn" class="close-training-btn" title="Zakończ trening"><svg width="18" height="18"><use href="#icon-close"/></svg></button>
+            <div id="focus-total-time" class="session-elapsed-time">00:00</div>
         </div>
         <div class="focus-timer-container"><p id="focus-timer-display"></p></div>
         <div class="focus-exercise-info" style="margin-bottom: 0.5rem;">

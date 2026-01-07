@@ -18,27 +18,6 @@ const getLevelLabel = (lvl) => {
     return `Lvl ${lvl}`;
 };
 
-// Słownik tłumaczeń sprzętu dla lepszej estetyki
-const EQUIPMENT_TRANSLATIONS = {
-    'mat': 'Mata',
-    'wall': 'Ściana',
-    'chair': 'Krzesło',
-    'pillow': 'Poduszka',
-    'towel': 'Ręcznik',
-    'dumbbells': 'Hantle',
-    'bands': 'Gumy oporowe',
-    'kettlebell': 'Kettlebell',
-    'foam roller': 'Roller',
-    'block': 'Kostka do jogi',
-    'none': 'Brak sprzętu',
-    'bodyweight': 'Masa własna'
-};
-
-const translateEquipment = (item) => {
-    const key = item.toLowerCase().trim();
-    return EQUIPMENT_TRANSLATIONS[key] || item.charAt(0).toUpperCase() + item.slice(1);
-};
-
 const formatFeedback = (session) => {
     if (session.feedback) {
         const { type, value } = session.feedback;
@@ -411,11 +390,11 @@ export function generatePreTrainingCardHTML(ex, index) {
         let bg = '#eee';
         let color = '#333';
         let border = '#ccc';
-        if (ex.modification.type === 'boost') { 
+        if (ex.modification.type === 'boost') {
             // Fioletowy/Złoty styl dla PRO/BOOST
-            bg = '#fdf4ff'; 
-            color = '#86198f'; 
-            border = '#f0abfc'; 
+            bg = '#fdf4ff';
+            color = '#86198f';
+            border = '#f0abfc';
         }
         else if (ex.modification.type === 'eco') { bg = '#eff6ff'; color = '#1d4ed8'; border = '#93c5fd'; }
         else if (ex.modification.type === 'care' || ex.modification.type === 'sos') { bg = '#fff7ed'; color = '#c2410c'; border = '#fdba74'; }
@@ -437,7 +416,7 @@ export function generatePreTrainingCardHTML(ex, index) {
 
     const videoId = extractYoutubeId(ex.youtube_url);
     const videoLink = videoId
-        ? `<a href="https://youtu.be/${videoId}" target="_blank" class="video-link">▶ Zobacz wideo</a>`
+        ? `<a href="https://youtu.be/${videoId}" target="_blank" class="link-btn link-youtube">📺 Wideo</a>`
         : '';
 
     return `

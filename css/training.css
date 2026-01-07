@@ -71,13 +71,34 @@
 .progress-segment.rest-pulse { animation: rest-pulse 1.5s infinite; }
 @keyframes rest-pulse { 0% { opacity: 0.3; } 50% { opacity: 0.8; box-shadow: 0 0 5px rgba(255,255,255,0.5); } 100% { opacity: 0.3; } }
 .progress-segment.paused-active { background-color: #aaa !important; animation: none; }
-.focus-header-minimal { display: flex; justify-content: flex-start; align-items: center; width: 100%; margin-bottom: 0; padding-left: 0; flex-shrink: 0; }
+
+/* ZMIANA: Flex space-between aby umieścić licznik po prawej */
+.focus-header-minimal {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    margin-bottom: 0;
+    padding-left: 0;
+    flex-shrink: 0;
+}
+
 .close-training-btn {
     background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.2); border-radius: 50%;
     width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background 0.2s;
     color: #fff;
 }
 .close-training-btn:hover { background: rgba(255,255,255,0.3); }
+
+/* NOWOŚĆ: Styl licznika całkowitego */
+.session-elapsed-time {
+    font-family: monospace;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.6;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
 .focus-timer-container { flex-grow: 0; display: flex; align-items: center; justify-content: center; min-height: auto; margin: 0; margin-bottom: -0.5vh; flex-shrink: 1; }
 #focus-timer-display {
     font-size: clamp(6rem, 28vw, 14rem); font-weight: 400; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;

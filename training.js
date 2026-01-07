@@ -14,6 +14,7 @@ import { getAffinityBadge } from './ui/templates.js';
 import dataStore from './dataStore.js';
 
 let backupInterval = null;
+let sessionClockInterval = null;
 
 function fitText(element) {
     if (!element) return;
@@ -28,6 +29,56 @@ function fitText(element) {
         }
     });
 }
+
+// --- NOWOŚĆ: LOGIKA LICZNIKA CAŁKOWITEGO CZASU SESJI ---
+function updateSessionClockDisplay() {
+    if (!focus.sessionElapsedTime) return;
+    if (!state.sessionStartTime) {
+        focus.sessionElapsedTime.textContent = "00:00";
+        return;
+    }
+
+    if (state.isPaused) return; // Nie aktualizujemy wizualnie w pauzie
+
+    const now = Date.now();
+    const durationMs = Math.max(0, now - state.sessionStartTime.getTime() - (state.totalPausedTime || 0));
+    const totalSeconds = Math.floor(durationMs / 1000);
+
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    const hours = Math.floor(minutes / 60);
+
+    let timeStr = "";
+    if (hours > 0) {
+        const m = minutes % 60;
+        timeStr = `${hours}:${m < 10 ? '0' : ''}${m}:${seconds < 10 ? '0' : ''}${seconds}`;
+    } else {
+        timeStr = `${minutes < 10 ? '0' : ''}${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+    }
+
+    focus.sessionElapsedTime.textContent = timeStr;
+}
+
+function startSessionClock() {
+    stopSessionClock();
+    updateSessionClockDisplay();
+    sessionClockInterval = setInterval(() => {
+        // Samoczyszczenie w razie nieoczekiwanego wyjścia
+        if (!screens.training.classList.contains('active')) {
+            stopSessionClock();
+            return;
+        }
+        updateSessionClockDisplay();
+    }, 1000);
+}
+
+function stopSessionClock() {
+    if (sessionClockInterval) {
+        clearInterval(sessionClockInterval);
+        sessionClockInterval = null;
+    }
+}
+// -------------------------------------------------------
 
 function syncStateToChromecast() {
     if (!getIsCasting()) return;
@@ -185,6 +236,7 @@ export function moveToNextExercise(options = { skipped: false }) {
         startExercise(state.currentExerciseIndex + 1);
     } else {
         stopBackupInterval();
+        stopSessionClock(); // STOP LICZNIKA SESJI
         state.finalCompletionSound();
         if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
         renderSummaryScreen();
@@ -533,6 +585,7 @@ export async function startModifiedTraining() {
         initializeFocusElements();
         initProgressBar();
         startBackupInterval();
+        startSessionClock(); // START LICZNIKA SESJI
         startExercise(0);
         triggerSessionBackup();
         return;
@@ -577,6 +630,7 @@ export async function startModifiedTraining() {
     initializeFocusElements();
     initProgressBar();
     startBackupInterval();
+    startSessionClock(); // START LICZNIKA SESJI
     startExercise(0);
     triggerSessionBackup();
 }
@@ -602,6 +656,7 @@ export function resumeFromBackup(backup, timeGapMs) {
     initializeFocusElements();
     initProgressBar();
     startBackupInterval();
+    startSessionClock(); // WZNOWIENIE LICZNIKA SESJI
 
     startExercise(backup.currentExerciseIndex, true);
 }

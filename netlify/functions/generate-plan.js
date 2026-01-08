@@ -2,7 +2,7 @@
 'use strict';
 
 const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
-const { buildUserContext, checkExerciseAvailability } = require('./_clinical-rule-engine.js');
+const { buildUserContext, checkExerciseAvailability, isRotationalPlane } = require('./_clinical-rule-engine.js');
 
 // DEFAULT CONSTANTS
 const DEFAULT_SECONDS_PER_REP = 6;
@@ -15,13 +15,11 @@ const MAX_SETS_MOBILITY = 3;
 const MAX_BREATHING_SEC = 240;
 const GLOBAL_MAX_REPS = 25;
 
-// RANKING ENERGETYCZNY POZYCJI (1 = Najmniej energii, 5 = Najwięcej)
 const POSITION_ENERGY_RANK = {
     'supine': 1, 'prone': 1, 'lying': 1, 'side_lying': 1,
     'sitting': 2, 'long_sitting': 2,
     'quadruped': 3, 'kneeling': 3, 'half_kneeling': 3,
-    'standing': 4, 'lunge': 4, 'squat': 4,
-    'dynamic': 5, 'jumping': 5
+    'standing': 4, 'lunge': 4
 };
 
 const HARD_EXCLUDED_KNEE_LOAD_FOR_DIAGNOSES = new Set([
@@ -69,16 +67,13 @@ function intersectionCount(aArr, bSet) {
   return c;
 }
 
-// ZMIANA: Usunięto canonicalizeEquipmentItem (mapowanie słownikowe).
-// Teraz polegamy na czystych danych z bazy. Jedynie czyścimy stringi.
 function cleanString(str) {
     return String(str || '').trim().toLowerCase();
 }
 
 function normalizeEquipmentList(raw) {
   const items = normalizeStringArray(raw).map(cleanString).filter(Boolean);
-  // Te wartości oznaczają "brak wymogu sprzętowego" w bazie
-  const ignore = new Set(['none', 'brak', '', 'brak sprzętu', 'masa własna']);
+  const ignore = new Set(['none', 'brak', '', 'brak sprzętu', 'masa własna', 'bodyweight']);
   const set = new Set();
   for (const it of items) {
     if (ignore.has(it)) continue;
@@ -92,22 +87,53 @@ function normalizeExerciseRow(row) {
     id: row.id,
     name: row.name,
     description: row.description,
-    // Sprzęt jest tylko czyszczony (lowercase), bez mapowania synonimów
     equipment: normalizeStringArray(row.equipment).map(cleanString).filter(Boolean),
     is_unilateral: !!row.is_unilateral,
-    is_foot_loading: !!row.is_foot_loading,
+    is_foot_loading: row.is_foot_loading,
     category_id: row.category_id ? String(row.category_id) : 'uncategorized',
     difficulty_level: clamp(toNumber(row.difficulty_level, 1), 1, 5),
     pain_relief_zones: normalizeStringArray(row.pain_relief_zones).map(s => s.toLowerCase()),
-    primary_plane: row.primary_plane ? String(row.primary_plane) : 'multi',
+    tolerance_tags: normalizeStringArray(row.tolerance_tags).map(s => s.toLowerCase()),
+    primary_plane: row.primary_plane ? String(row.primary_plane).toLowerCase() : null,
     position: row.position ? String(row.position).toLowerCase() : null,
-    knee_load_level: row.knee_load_level ? String(row.knee_load_level) : 'low',
-    spine_load_level: row.spine_load_level ? String(row.spine_load_level) : 'low',
-    impact_level: row.impact_level ? String(row.impact_level) : 'low',
+    knee_load_level: row.knee_load_level ? String(row.knee_load_level).toLowerCase() : null,
+    spine_load_level: row.spine_load_level ? String(row.spine_load_level).toLowerCase() : null,
+    impact_level: row.impact_level ? String(row.impact_level).toLowerCase() : null,
     metabolic_intensity: clamp(toNumber(row.metabolic_intensity, 1), 1, 5),
     max_recommended_duration: toNumber(row.max_recommended_duration, 0),
     max_recommended_reps: toNumber(row.max_recommended_reps, 0),
+    conditioning_style: row.conditioning_style ? String(row.conditioning_style).toLowerCase() : 'none',
+    recommended_interval_sec: row.recommended_interval_sec
   };
+}
+
+// P0.5 + P2.2 + P3.2: Validation with Reason Reporting
+function validateExerciseRecord(ex) {
+    if (!ex.id) return { valid: false, error: 'missing_id' };
+    if (!ex.impact_level) return { valid: false, error: 'missing_impact_level' };
+    if (!ex.position) return { valid: false, error: 'missing_position' };
+    if (ex.is_foot_loading === null || ex.is_foot_loading === undefined) return { valid: false, error: 'missing_foot_loading' };
+
+    // P2.2 Interval Validation
+    if (ex.conditioning_style === 'interval') {
+        const i = ex.recommended_interval_sec;
+        if (!i || typeof i !== 'object') return { valid: false, error: 'invalid_interval_object' };
+        if (typeof i.work !== 'number' || i.work <= 0) return { valid: false, error: 'invalid_interval_work' };
+        if (typeof i.rest !== 'number' || i.rest < 0) return { valid: false, error: 'invalid_interval_rest' };
+    }
+
+    if (ex.impact_level !== 'no_impact' && ex.is_foot_loading !== true) return { valid: false, error: 'impact_without_foot_loading' };
+    if (ex.position !== 'standing' && ex.impact_level !== 'no_impact') return { valid: false, error: 'impact_without_standing' };
+
+    if (ex.spine_load_level === 'high' && ex.position !== 'standing') return { valid: false, error: 'high_spine_without_standing' };
+    if (ex.knee_load_level === 'high') {
+        if (ex.position !== 'standing' || ex.is_foot_loading !== true) return { valid: false, error: 'high_knee_without_loading' };
+    }
+
+    if (ex.impact_level === 'high' && ex.difficulty_level < 4) return { valid: false, error: 'high_impact_low_difficulty' };
+    if (ex.difficulty_level <= 2 && !['no_impact', 'low'].includes(ex.impact_level)) return { valid: false, error: 'low_difficulty_high_impact' };
+
+    return { valid: true };
 }
 
 function isBreathingCategory(cat) { const s = String(cat || '').toLowerCase(); return s.includes('breathing') || s.includes('breath') || s.includes('relax') || s.includes('parasymp'); }
@@ -167,12 +193,16 @@ function initCategoryWeightsFromExercises(exercises) {
     const cat = ex.category_id || 'uncategorized';
     if (weights[cat] == null) weights[cat] = 1.0;
   }
-  const ensure = ['breathing', 'spine_mobility', 'thoracic_mobility', 'hip_mobility', 'hip_flexor_stretch', 'glute_activation', 'hip_extension', 'core_stability', 'core_anti_rotation', 'core_anti_extension', 'core_anti_flexion', 'core_anti_lateral_flexion', 'vmo_activation', 'knee_stability', 'unilateral_leg', 'calves', 'conditioning_low_impact', 'eccentric_hamstrings', 'nerve_flossing'];
-  for (const cat of ensure) { if (weights[cat] == null) weights[cat] = 1.0; }
   return weights;
 }
 
-function boost(weights, categoryId, delta) { const key = String(categoryId); if (weights[key] == null) weights[key] = 1.0; weights[key] += delta; }
+function boost(weights, categoryId, delta) { 
+    const key = String(categoryId); 
+    if (weights[key] != null) {
+        weights[key] += delta; 
+    }
+}
+
 function multiplyMatching(weights, predicateFn, factor) { for (const cat of Object.keys(weights)) { if (predicateFn(cat)) { weights[cat] = weights[cat] * factor; } } }
 
 function buildDynamicCategoryWeights(exercises, userData, ctx) {
@@ -257,7 +287,7 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
     boost(weights, 'core_anti_rotation', 0.3);
     multiplyMatching(weights, (cat) => String(cat).toLowerCase().includes('rotation_mobility'), 0.6);
   }
-  if (diagnosis.has('chondmalacia')) {
+  if (diagnosis.has('chondromalacia') || diagnosis.has('chondmalacia')) {
     boost(weights, 'vmo_activation', 0.8);
     boost(weights, 'knee_stability', 0.8);
     boost(weights, 'glute_activation', 0.6);
@@ -343,17 +373,15 @@ function parseNoPositionRestrictions(restrictionsSet) {
 
 function isExerciseCompatibleWithEquipment(ex, userEquipmentSet) {
   if (!ex.equipment || ex.equipment.length === 0) return true;
-  // Tylko czyszczenie, brak mapowania synonimów
   const req = ex.equipment.map(cleanString).filter(Boolean);
-  // Lista sprzętów ignorowanych (domyślnych)
-  const ignorable = new Set(['none', 'bodyweight', 'mat', 'masa własna', 'brak', 'brak sprzętu', '']);
-  
+  const ignorable = new Set(['none', 'bodyweight', 'brak', 'brak sprzętu', 'masa własna', '']);
+
   const required = req.filter(x => !ignorable.has(x));
   if (required.length === 0) return true;
   if (!userEquipmentSet || userEquipmentSet.size === 0) return false;
-  
-  for (const item of required) { 
-      if (!userEquipmentSet.has(item)) return false; 
+
+  for (const item of required) {
+      if (!userEquipmentSet.has(item)) return false;
   }
   return true;
 }
@@ -363,7 +391,10 @@ function violatesPhysicalRestrictions(ex, restrictionsSet) {
   const pos = (ex.position || '').toLowerCase();
   if (pos && disallowedPositions.has(pos)) return true;
 
-  if (restrictionsSet.has('no_kneeling') && pos === 'kneeling') return true;
+  if (restrictionsSet.has('no_kneeling')) {
+      if (pos === 'kneeling' || pos === 'quadruped' || pos === 'half_kneeling') return true;
+  }
+  
   if (restrictionsSet.has('no_prone') && pos === 'prone') return true;
   if (restrictionsSet.has('no_supine') && pos === 'supine') return true;
   if (restrictionsSet.has('no_sitting') && pos === 'sitting') return true;
@@ -372,7 +403,7 @@ function violatesPhysicalRestrictions(ex, restrictionsSet) {
   if (restrictionsSet.has('foot_injury')) {
     if (ex.is_foot_loading) return true;
     const impact = (ex.impact_level || 'low').toLowerCase();
-    if (impact === 'medium' || impact === 'high') return true;
+    if (impact === 'moderate' || impact === 'high') return true;
   }
 
   return false;
@@ -386,7 +417,7 @@ function violatesDiagnosisHardContraindications(ex, diagnosisSet) {
   const plane = String(ex.primary_plane || '').toLowerCase();
 
   if (diagnosisSet.has('disc_herniation')) {
-    const isDynamicRotation = (plane === 'transverse' || cat.includes('rotation')) && !cat.includes('anti_rotation');
+    const isDynamicRotation = (isRotationalPlane(plane) || cat.includes('rotation')) && !cat.includes('anti_rotation');
     if (isDynamicRotation) {
       const diff = ex.difficulty_level || 1;
       if (spineLoad !== 'low' || impact !== 'low' || diff >= 3) return true;
@@ -421,11 +452,13 @@ function violatesSeverePainRules(ex, ctx) {
 function applyCheckExerciseAvailability(ex, ctx, userData) {
   try {
     const res = checkExerciseAvailability(ex, ctx, { strictSeverity: true, userData });
-    if (res && typeof res.allowed === 'boolean') return res.allowed;
-    if (typeof res === 'boolean') return res;
-    return true;
+    
+    // P3.2 Logging reason in loop (returning full object now)
+    return res; 
+
   } catch (e) {
-    return true;
+    console.error(`Error in checkExerciseAvailability for ${ex.id}:`, e);
+    return { allowed: false, reason: 'rule_engine_exception' }; // P0.4 Fail-closed
   }
 }
 
@@ -439,8 +472,23 @@ function filterExerciseCandidates(exercises, userData, ctx, fatigueState, rpeDat
   const filtered = [];
   for (const ex of exercises) {
     if (!ex || !ex.id) continue;
+
+    // P0.5 Validate Record Integrity
+    const validation = validateExerciseRecord(ex);
+    if (!validation.valid) {
+        console.warn(`[Filter] Rejected invalid record: ${ex.id} (${validation.error})`);
+        continue;
+    }
+
     if (ctx.blockedIds && ctx.blockedIds.has(ex.id)) continue;
-    if (!applyCheckExerciseAvailability(ex, ctx, userData)) continue;
+
+    // P3.2 Enhanced logging via result object
+    const safetyCheck = applyCheckExerciseAvailability(ex, ctx, userData);
+    if (!safetyCheck.allowed) {
+        console.log(`[Filter] Rejected ${ex.id}: ${safetyCheck.reason}`);
+        continue;
+    }
+
     if (!isExerciseCompatibleWithEquipment(ex, userEquipment)) continue;
     if (violatesPhysicalRestrictions(ex, restrictionsSet)) continue;
     if (violatesDiagnosisHardContraindications(ex, diagnosisSet)) continue;
@@ -468,7 +516,7 @@ function derivePainZoneSet(userData) {
   const zoneSet = new Set();
   for (const z of painLocs) zoneSet.add(z);
   if (painLocs.has('lumbar') || painLocs.has('low_back')) { zoneSet.add('lumbosacral'); zoneSet.add('sciatica'); }
-  if (painLocs.has('knee') || painLocs.has('knee_anterior')) { zoneSet.add('patella'); zoneSet.add('patellofemoral'); }
+  if (painLocs.has('knee') || painLocs.has('knee_anterior')) { zoneSet.add('patella'); }
   if (painLocs.has('hip')) zoneSet.add('piriformis');
   return zoneSet;
 }
@@ -698,6 +746,21 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatig
   let sets = 1;
   let repsOrTime = '10';
 
+  // P2.1 Variant A: Interval Support
+  if (ex.conditioning_style === 'interval' && ex.recommended_interval_sec) {
+      const { work, rest } = ex.recommended_interval_sec;
+      const baseTotalSec = 480 * factor;
+      const cycle = work + rest;
+      let calculatedSets = Math.round(baseTotalSec / cycle);
+      calculatedSets = clamp(calculatedSets, 3, 20); 
+      
+      return { 
+          sets: String(calculatedSets), 
+          reps_or_time: `${work} s`, 
+          restBetweenSets: rest 
+      };
+  }
+
   if (isBreathingCategory(cat)) {
     sets = 1;
     let baseSec = 90;
@@ -748,6 +811,10 @@ function parseRepsOrTimeToSeconds(repsOrTime) {
 }
 
 function calculateBackendSmartRest(exercise, userRestFactor = 1.0) {
+    if (exercise.restBetweenSets) {
+        return Math.round(parseInt(exercise.restBetweenSets, 10) * userRestFactor);
+    }
+
     const cat = String(exercise.category_id || '').toLowerCase();
     const load = parseInt(exercise.difficulty_level || 1, 10);
     let baseRest = 30;
@@ -931,12 +998,7 @@ function enforceStrictTimeLimit(session, userData, paceMap, targetMin) {
     }
 }
 
-// ---------------------------------
-// INTENSITY WAVE SORTING
-// ---------------------------------
-
 function reorderSessionByIntensityWave(session) {
-    // 1. Warmup: Od leżenia do stania (rosnąco)
     session.warmup.sort((a, b) => {
         const rankA = getPositionRank(a);
         const rankB = getPositionRank(b);
@@ -944,7 +1006,6 @@ function reorderSessionByIntensityWave(session) {
         return (a.difficulty_level || 1) - (b.difficulty_level || 1);
     });
 
-    // 2. Main: Najtrudniejsze na początku (malejąco)
     session.main.sort((a, b) => {
         const diffA = a.difficulty_level || 1;
         const diffB = b.difficulty_level || 1;
@@ -955,7 +1016,6 @@ function reorderSessionByIntensityWave(session) {
         return metB - metA;
     });
 
-    // 3. Cooldown: Od stania do leżenia (malejąco po pozycji)
     session.cooldown.sort((a, b) => {
         const rankA = getPositionRank(a);
         const rankB = getPositionRank(b);
@@ -963,10 +1023,6 @@ function reorderSessionByIntensityWave(session) {
         return 0;
     });
 }
-
-// ---------------------------------
-// Context Analysis (Time & RPE)
-// ---------------------------------
 
 function analyzeInitialFatigue(userId, lastSession) {
     if (!lastSession) return 'fresh';
@@ -1019,10 +1075,6 @@ function analyzeRpeTrend(recentSessions) {
 
     return { volumeModifier: 1.0, intensityCap: null, label: 'Maintenance' };
 }
-
-// ---------------------------------
-// Rolling Plan Builder
-// ---------------------------------
 
 function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap, initialFatigue, rpeData) {
     const schedulePattern = userData?.schedule_pattern || DEFAULT_SCHEDULE_PATTERN;
@@ -1093,8 +1145,6 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
 
             expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, sState, pZones, paceMap, fatigueState, targetMin, rpeData.volumeModifier);
             enforceStrictTimeLimit(session, userData, paceMap, targetMin);
-
-            // FINALNE SORTOWANIE (INTENSITY WAVE)
             reorderSessionByIntensityWave(session);
 
             session.estimatedDurationMin = Math.round(estimateSessionDurationSeconds(session, userData, paceMap) / 60);
@@ -1179,3 +1229,8 @@ exports.handler = async (event) => {
     return { statusCode: 500 };
   } finally { client.release(); }
 };
+
+// P3.1 Exports for testing
+module.exports.validateExerciseRecord = validateExerciseRecord;
+module.exports.prescribeForExercise = prescribeForExercise;
+module.exports.normalizeExerciseRow = normalizeExerciseRow;

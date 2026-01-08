@@ -2,7 +2,7 @@
 // Frontendowa wersja silnika reguł (Ported from _clinical-rule-engine.js)
 
 export const KNOWN_POSITIONS = [
-    'standing', 'sitting', 'kneeling', 'quadruped', 'supine', 'prone', 'side_lying'
+    'standing', 'sitting', 'kneeling', 'half_kneeling', 'quadruped', 'supine', 'prone', 'side_lying'
 ];
 
 const DIFFICULTY_MAP = {
@@ -10,6 +10,11 @@ const DIFFICULTY_MAP = {
 };
 
 // --- HELPERY KONTEKSTU ---
+
+export const isRotationalPlane = (p) => {
+    const plane = String(p || '').toLowerCase();
+    return plane === 'rotation' || plane === 'transverse';
+};
 
 export function detectTolerancePattern(triggers, reliefs) {
     if (!Array.isArray(triggers)) triggers = [];
@@ -48,7 +53,6 @@ export function buildClinicalContext(wizardData) {
     if (painLocs.length > 0) {
         painLocs.forEach(loc => painFilters.add(loc));
         if (painLocs.includes('si_joint') || painLocs.includes('hip')) painFilters.add('lumbar_general');
-        // Jeśli ból rzutowany (sciatica) lub kolano, też dodajemy
         if (painLocs.includes('sciatica')) painFilters.add('sciatica');
         if (painLocs.includes('knee')) painFilters.add('knee');
     } else {
@@ -56,7 +60,12 @@ export function buildClinicalContext(wizardData) {
         painFilters.add('thoracic');
     }
 
-    const userEquipment = (wizardData.equipment_available || []).map(e => e.toLowerCase());
+    // P1.1: Normalizacja sprzętu usera (Set dla szybkiego lookupu)
+    // Trim + Lowercase. Żadnych synonimów "w locie".
+    const userEquipment = new Set(
+        (wizardData.equipment_available || []).map(e => String(e).trim().toLowerCase()).filter(Boolean)
+    );
+
     const physicalRestrictions = wizardData.physical_restrictions || [];
     const medicalDiagnosis = wizardData.medical_diagnosis || [];
 
@@ -74,50 +83,57 @@ export function buildClinicalContext(wizardData) {
 
 // --- LOGIKA WALIDACJI (Core Rules) ---
 
-export function checkEquipment(ex, userEquipment) {
-    if (!userEquipment) return true; 
+export function checkEquipment(ex, userEquipmentSet) {
+    // Jeśli userEquipment nie jest podany (lub null), zakładamy brak sprzętu (lub ignorujemy check w zależności od kontekstu)
+    // Tutaj zakładamy, że jeśli null, to pomijamy walidację (chyba że wywołujący wymusi).
+    // Ale w kontekście P1.1: strict matching.
+    if (!userEquipmentSet) return true;
 
+    // Normalizacja wymagań ćwiczenia
     let requirements = [];
     if (Array.isArray(ex.equipment)) {
-        requirements = ex.equipment;
+        requirements = ex.equipment.map(e => String(e).trim().toLowerCase());
     } else if (typeof ex.equipment === 'string') {
-        requirements = ex.equipment.split(',').map(e => e.trim());
+        requirements = ex.equipment.split(',').map(e => String(e).trim().toLowerCase());
     } else {
-        return true; 
+        // Brak pola equipment = brak wymagań
+        return true;
     }
 
+    // Filtrowanie pustych
+    requirements = requirements.filter(Boolean);
     if (requirements.length === 0) return true;
 
-    const isNone = requirements.some(req => {
-        const r = req.toLowerCase();
-        return r.includes('brak') || r.includes('none') || r.includes('masa') || r === '';
-    });
+    // P1.1: Lista ignorowanych (ujednolicona z backendem)
+    // 'mat' usunięte z ignorowanych (jest to realny sprzęt)
+    const ignorable = ['brak', 'none', 'brak sprzętu', 'masa własna', 'bodyweight', ''];
+    
+    // Sprawdzamy czy wymóg nie jest trywialny
+    const isNone = requirements.some(req => ignorable.includes(req));
     if (isNone) return true;
 
-    return requirements.every(req => {
-        const reqLower = req.toLowerCase();
-        return userEquipment.some(owned => owned.includes(reqLower) || reqLower.includes(owned));
-    });
+    // Strict check: User MUSI posiadać każdy wymagany element
+    // P1.1: Zastąpienie `includes` (substring) przez `Set.has` (exact match)
+    return requirements.every(req => userEquipmentSet.has(req));
 }
 
 export function violatesRestrictions(ex, ctx) {
     const restrictions = ctx.physicalRestrictions;
     const diagnosis = ctx.medicalDiagnosis || [];
-    
-    const plane = ex.primaryPlane || 'multi';
-    const pos = ex.position || null;
-    const cat = ex.categoryId || '';
-    const impact = ex.impactLevel || 'low';
-    const kneeLoad = ex.kneeLoadLevel || 'low';
 
-    // 1. Klękanie
+    const plane = String(ex.primaryPlane || 'multi').toLowerCase();
+    const pos = String(ex.position || '').toLowerCase();
+    const impact = String(ex.impactLevel || 'low').toLowerCase();
+    const kneeLoad = String(ex.kneeLoadLevel || 'low').toLowerCase();
+
+    // 1. Klękanie - P1.2 (dodano half_kneeling)
     if (restrictions.includes('no_kneeling')) {
-        if (pos === 'kneeling' || pos === 'quadruped') return true;
+        if (pos === 'kneeling' || pos === 'quadruped' || pos === 'half_kneeling') return true;
     }
 
-    // 2. Skręty
+    // 2. Skręty - P0.2
     if (restrictions.includes('no_twisting')) {
-        if (plane === 'rotation') return true;
+        if (isRotationalPlane(plane)) return true;
     }
 
     // 3. Siedzenie na podłodze
@@ -125,53 +141,41 @@ export function violatesRestrictions(ex, ctx) {
         if (pos === 'sitting') return true;
     }
 
-    // 4. Uderzenia / Skoki (High Impact)
+    // 4. Uderzenia / Skoki (High Impact) - P0.1, P0.6
     if (restrictions.includes('no_high_impact')) {
         if (impact === 'high') return true;
-        const highImpactCats = ['plyometrics', 'cardio'];
-        if (!ex.impactLevel && highImpactCats.includes(cat)) return true;
     }
 
-    // 5. Uraz stopy (Non-weight bearing)
+    // 5. Uraz stopy (Non-weight bearing) - P0.1, P0.6
     if (restrictions.includes('foot_injury')) {
         if (ex.isFootLoading === true) return true;
-        const blockedPositions = ['standing', 'kneeling', 'quadruped', 'lunge'];
+        if (impact === 'moderate' || impact === 'high') return true;
+        
+        const blockedPositions = ['standing', 'lunge', 'squat', 'half_kneeling']; // P1.2 updated
         if (blockedPositions.includes(pos)) return true;
-        const blockedCategories = ['squats', 'lunges', 'calves', 'plyometrics', 'cardio'];
-        if (blockedCategories.includes(cat)) return true;
     }
 
-    // 6. NOWE: Ochrona Kolan (Knee Protection Logic)
-    // Jeśli user ma ostry ból kolana lub specyficzną diagnozę, blokujemy duże obciążenia
+    // 6. Ochrona Kolan (Knee Protection Logic)
     const hasKneeIssue = ctx.painFilters.has('knee') || ctx.painFilters.has('knee_anterior');
     const isChondromalacia = diagnosis.includes('chondromalacia') || diagnosis.includes('runners_knee');
-    
-    // Jeśli stan ostry (Severity >= 6.5) i ból kolana -> blokujemy High Load
-    if (hasKneeIssue && ctx.isSevere && kneeLoad === 'high') {
-        return true;
-    }
 
-    // Jeśli specyficzna diagnoza (nawet nie w stanie ostrym) -> blokujemy High Load (np. głęboki przysiad)
-    if (isChondromalacia && kneeLoad === 'high') {
-        return true;
-    }
-
-    // Jeśli użytkownik ma wyraźny zakaz głębokich przysiadów w restrykcjach
-    if (restrictions.includes('no_deep_squat') && kneeLoad === 'high') {
-        return true;
-    }
+    if (hasKneeIssue && ctx.isSevere && kneeLoad === 'high') return true;
+    if (isChondromalacia && kneeLoad === 'high') return true;
+    if (restrictions.includes('no_deep_squat') && kneeLoad === 'high') return true;
 
     return false;
 }
 
 export function passesTolerancePattern(ex, tolerancePattern) {
-    const plane = ex.primaryPlane || 'multi';
-    const zones = Array.isArray(ex.painReliefZones) ? ex.painReliefZones : [];
+    const plane = String(ex.primaryPlane || 'multi').toLowerCase();
+    
+    // P0.3 Tolerance Tags Logic
+    const tags = Array.isArray(ex.toleranceTags) ? ex.toleranceTags : (ex.tolerance_tags || []);
 
     if (tolerancePattern === 'flexion_intolerant') {
-        if (plane === 'flexion' && !zones.includes('lumbar_flexion_intolerant')) return false;
+        if (plane === 'flexion' && !tags.includes('ok_for_flexion_intolerant')) return false;
     } else if (tolerancePattern === 'extension_intolerant') {
-        if (plane === 'extension' && !zones.includes('lumbar_extension_intolerant')) return false;
+        if (plane === 'extension' && !tags.includes('ok_for_extension_intolerant')) return false;
     }
     return true;
 }
@@ -179,31 +183,22 @@ export function passesTolerancePattern(ex, tolerancePattern) {
 export function checkExerciseAvailability(ex, ctx, options = {}) {
     const { ignoreDifficulty = false, ignoreEquipment = false, strictSeverity = true } = options;
 
-    // 1. Blacklist
     if (ctx.blockedIds && ctx.blockedIds.has(ex.id)) return { allowed: false, reason: 'blacklisted' };
 
-    // 2. Sprzęt
+    // P1.1 Equipment Check (ctx.userEquipment is now a Set)
     if (!ignoreEquipment && !checkEquipment(ex, ctx.userEquipment)) return { allowed: false, reason: 'missing_equipment' };
 
-    // 3. Trudność
     const exLevel = ex.difficultyLevel || 1;
     if (!ignoreDifficulty && ctx.difficultyCap && exLevel > ctx.difficultyCap) return { allowed: false, reason: 'too_hard_calculated' };
 
-    // 4. Restrykcje (w tym Kolana)
     if (violatesRestrictions(ex, ctx)) return { allowed: false, reason: 'physical_restriction' };
-
-    // 5. Wzorce
     if (!passesTolerancePattern(ex, ctx.tolerancePattern)) return { allowed: false, reason: 'biomechanics_mismatch' };
 
-    // 6. Severity (Tryb ostry)
     if (strictSeverity && ctx.isSevere) {
-        // Spine Load Check
-        const spineLoad = ex.spineLoadLevel || 'low';
+        const spineLoad = String(ex.spineLoadLevel || 'low').toLowerCase();
         if (spineLoad === 'high') return { allowed: false, reason: 'severity_filter' };
 
-        // Knee Load Check (w trybie ostrym zawsze unikamy high load na kolana, jeśli ból dotyczy kolana)
-        // Logika ta jest już częściowo w violatesRestrictions, ale tutaj jako double-check
-        const kneeLoad = ex.kneeLoadLevel || 'low';
+        const kneeLoad = String(ex.kneeLoadLevel || 'low').toLowerCase();
         if ((ctx.painFilters.has('knee') || ctx.painFilters.has('knee_anterior')) && kneeLoad === 'high') {
             return { allowed: false, reason: 'severity_filter' };
         }

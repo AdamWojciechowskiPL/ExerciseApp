@@ -15,6 +15,15 @@ const MAX_SETS_MOBILITY = 3;
 const MAX_BREATHING_SEC = 240;
 const GLOBAL_MAX_REPS = 25;
 
+// RANKING ENERGETYCZNY POZYCJI (1 = Najmniej energii, 5 = Najwięcej)
+const POSITION_ENERGY_RANK = {
+    'supine': 1, 'prone': 1, 'lying': 1, 'side_lying': 1,
+    'sitting': 2, 'long_sitting': 2,
+    'quadruped': 3, 'kneeling': 3, 'half_kneeling': 3,
+    'standing': 4, 'lunge': 4, 'squat': 4,
+    'dynamic': 5, 'jumping': 5
+};
+
 const HARD_EXCLUDED_KNEE_LOAD_FOR_DIAGNOSES = new Set([
   'chondromalacia', 'meniscus_tear', 'acl_rehab', 'mcl_rehab', 'lcl_rehab',
 ]);
@@ -60,26 +69,16 @@ function intersectionCount(aArr, bSet) {
   return c;
 }
 
-function canonicalizeEquipmentItem(item) {
-  const s = String(item || '').trim().toLowerCase();
-  if (!s) return '';
-  const map = [
-    ['mini band', 'band'], ['power band', 'band'], ['resistance band', 'band'],
-    ['gum', 'band'], ['guma', 'band'], ['taśma', 'band'], ['tasma', 'band'],
-    ['dumbbells', 'dumbbell'], ['hantle', 'dumbbell'], ['kettlebells', 'kettlebell'],
-    ['mata', 'mat'], ['maty', 'mat'], ['exercise mat', 'mat'],
-    ['bodyweight', 'bodyweight'], ['masa własna', 'bodyweight'], ['masa wlasna', 'bodyweight'],
-    ['none', 'none'], ['brak', 'none'], ['brak sprzętu', 'none'], ['brak sprzetu', 'none'],
-  ];
-  for (const [from, to] of map) {
-    if (s === from) return to;
-  }
-  return s;
+// ZMIANA: Usunięto canonicalizeEquipmentItem (mapowanie słownikowe).
+// Teraz polegamy na czystych danych z bazy. Jedynie czyścimy stringi.
+function cleanString(str) {
+    return String(str || '').trim().toLowerCase();
 }
 
 function normalizeEquipmentList(raw) {
-  const items = normalizeStringArray(raw).map(canonicalizeEquipmentItem).filter(Boolean);
-  const ignore = new Set(['none', 'brak', '']);
+  const items = normalizeStringArray(raw).map(cleanString).filter(Boolean);
+  // Te wartości oznaczają "brak wymogu sprzętowego" w bazie
+  const ignore = new Set(['none', 'brak', '', 'brak sprzętu', 'masa własna']);
   const set = new Set();
   for (const it of items) {
     if (ignore.has(it)) continue;
@@ -93,14 +92,15 @@ function normalizeExerciseRow(row) {
     id: row.id,
     name: row.name,
     description: row.description,
-    equipment: normalizeStringArray(row.equipment).map(canonicalizeEquipmentItem).filter(Boolean),
+    // Sprzęt jest tylko czyszczony (lowercase), bez mapowania synonimów
+    equipment: normalizeStringArray(row.equipment).map(cleanString).filter(Boolean),
     is_unilateral: !!row.is_unilateral,
     is_foot_loading: !!row.is_foot_loading,
     category_id: row.category_id ? String(row.category_id) : 'uncategorized',
     difficulty_level: clamp(toNumber(row.difficulty_level, 1), 1, 5),
     pain_relief_zones: normalizeStringArray(row.pain_relief_zones).map(s => s.toLowerCase()),
     primary_plane: row.primary_plane ? String(row.primary_plane) : 'multi',
-    position: row.position ? String(row.position) : null,
+    position: row.position ? String(row.position).toLowerCase() : null,
     knee_load_level: row.knee_load_level ? String(row.knee_load_level) : 'low',
     spine_load_level: row.spine_load_level ? String(row.spine_load_level) : 'low',
     impact_level: row.impact_level ? String(row.impact_level) : 'low',
@@ -133,6 +133,11 @@ function weightedPick(items, weightFn) {
     if (r <= acc) return items[i];
   }
   return items[items.length - 1];
+}
+
+function getPositionRank(ex) {
+    const pos = ex.position || 'standing';
+    return POSITION_ENERGY_RANK[pos] || 3;
 }
 
 // ---------------------------------
@@ -338,12 +343,18 @@ function parseNoPositionRestrictions(restrictionsSet) {
 
 function isExerciseCompatibleWithEquipment(ex, userEquipmentSet) {
   if (!ex.equipment || ex.equipment.length === 0) return true;
-  const req = ex.equipment.map(canonicalizeEquipmentItem).filter(Boolean).map(s => s.toLowerCase());
-  const ignorable = new Set(['none', 'bodyweight', 'mat']);
+  // Tylko czyszczenie, brak mapowania synonimów
+  const req = ex.equipment.map(cleanString).filter(Boolean);
+  // Lista sprzętów ignorowanych (domyślnych)
+  const ignorable = new Set(['none', 'bodyweight', 'mat', 'masa własna', 'brak', 'brak sprzętu', '']);
+  
   const required = req.filter(x => !ignorable.has(x));
   if (required.length === 0) return true;
   if (!userEquipmentSet || userEquipmentSet.size === 0) return false;
-  for (const item of required) { if (!userEquipmentSet.has(item)) return false; }
+  
+  for (const item of required) { 
+      if (!userEquipmentSet.has(item)) return false; 
+  }
   return true;
 }
 
@@ -423,8 +434,6 @@ function filterExerciseCandidates(exercises, userData, ctx, fatigueState, rpeDat
   const diagnosisSet = normalizeLowerSet(userData?.medical_diagnosis);
   const restrictionsSet = normalizeLowerSet(userData?.physical_restrictions);
 
-  // RPE Autoregulation Cap (Clinical Safety Valve)
-  // Jeśli użytkownik zgłosił "Za mocno" lub "Ból", ograniczamy trudność ćwiczeń
   const difficultyCap = rpeData && rpeData.intensityCap ? rpeData.intensityCap : 5;
 
   const filtered = [];
@@ -437,13 +446,9 @@ function filterExerciseCandidates(exercises, userData, ctx, fatigueState, rpeDat
     if (violatesDiagnosisHardContraindications(ex, diagnosisSet)) continue;
     if (violatesSeverePainRules(ex, ctx)) continue;
 
-    // --- FATIGUE & RPE FILTERS ---
     const diff = ex.difficulty_level || 1;
-
-    // Jeśli narzucono limit trudności (np. po RPE -1)
     if (diff > difficultyCap) continue;
 
-    // Standardowy filtr zmęczenia czasowego
     if (fatigueState === 'fatigued') {
         if (diff >= 4) continue;
         if ((ex.impact_level || 'low') === 'high') continue;
@@ -666,29 +671,24 @@ function loadFactorFromState(userData, ctx, fatigueState, rpeModifier = 1.0) {
   const painIntensity = clamp(toNumber(userData?.pain_intensity, 0), 0, 10);
   let base = 1.0;
 
-  // Base factor from experience
   if (exp === 'none') base = 0.70;
   else if (exp === 'occasional') base = 0.85;
   else if (exp === 'regular') base = 1.0;
   else if (exp === 'advanced') base = 1.10;
 
-  // Modifiers based on severity/pain
   const severity = clamp(toNumber(ctx?.severityScore, painIntensity), 0, 10);
   if (severity >= 7) base *= 0.55;
   else if (severity >= 4) base *= 0.80;
 
-  // Frequency adjustment
   if (sessionsPerWeek >= 5) base *= 0.90;
   if (sessionsPerWeek <= 2) base *= 1.15;
 
-  // Time-gap fatigue
   if (fatigueState === 'fatigued') base *= 0.8;
   if (fatigueState === 'fresh') base *= 1.1;
 
-  // RPE Autoregulation (The Feedback Loop)
   base *= rpeModifier;
 
-  return clamp(base, 0.45, 1.35); // Slight increase in max cap to allow progression
+  return clamp(base, 0.45, 1.35);
 }
 
 function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatigueState, targetMin, rpeModifier = 1.0) {
@@ -747,7 +747,6 @@ function parseRepsOrTimeToSeconds(repsOrTime) {
   return parseInt(t, 10) || 10;
 }
 
-// --- NEW: BACKEND SMART REST CALCULATOR ---
 function calculateBackendSmartRest(exercise, userRestFactor = 1.0) {
     const cat = String(exercise.category_id || '').toLowerCase();
     const load = parseInt(exercise.difficulty_level || 1, 10);
@@ -770,7 +769,7 @@ function calculateBackendSmartRest(exercise, userRestFactor = 1.0) {
 
 function estimateExerciseDurationSeconds(exEntry, userData, paceMap) {
   const globalSpr = clamp(toNumber(userData?.secondsPerRep, DEFAULT_SECONDS_PER_REP), 2, 12);
-  const restFactor = toNumber(userData?.restTimeFactor, 1.0); // Nowy parametr z settings
+  const restFactor = toNumber(userData?.restTimeFactor, 1.0);
 
   let tempoToUse = globalSpr;
   if (paceMap && paceMap[exEntry.id]) {
@@ -793,12 +792,10 @@ function estimateExerciseDurationSeconds(exEntry, userData, paceMap) {
   let totalSeconds = (sets * workTimePerSet);
 
   if (sets > 1) {
-      // Używamy Smart Rest Calculator dla backendu
       const smartRest = calculateBackendSmartRest(exEntry, restFactor);
       totalSeconds += (sets - 1) * smartRest;
   }
 
-  // Skalowany czas zmiany strony
   const transitionTime = Math.max(12, Math.round(12 * restFactor));
   const transition = sets * (isUnilateral ? transitionTime : 5);
 
@@ -807,7 +804,7 @@ function estimateExerciseDurationSeconds(exEntry, userData, paceMap) {
 
 function estimateSessionDurationSeconds(session, userData, paceMap) {
   const restFactor = toNumber(userData?.restTimeFactor, 1.0);
-  const rbe = Math.round(30 * restFactor); // Skalujemy też przerwę między ćwiczeniami
+  const rbe = Math.round(30 * restFactor);
 
   const all = [...session.warmup, ...session.main, ...session.cooldown];
   let total = 0;
@@ -935,6 +932,39 @@ function enforceStrictTimeLimit(session, userData, paceMap, targetMin) {
 }
 
 // ---------------------------------
+// INTENSITY WAVE SORTING
+// ---------------------------------
+
+function reorderSessionByIntensityWave(session) {
+    // 1. Warmup: Od leżenia do stania (rosnąco)
+    session.warmup.sort((a, b) => {
+        const rankA = getPositionRank(a);
+        const rankB = getPositionRank(b);
+        if (rankA !== rankB) return rankA - rankB;
+        return (a.difficulty_level || 1) - (b.difficulty_level || 1);
+    });
+
+    // 2. Main: Najtrudniejsze na początku (malejąco)
+    session.main.sort((a, b) => {
+        const diffA = a.difficulty_level || 1;
+        const diffB = b.difficulty_level || 1;
+        const metA = a.metabolic_intensity || 1;
+        const metB = b.metabolic_intensity || 1;
+
+        if (diffA !== diffB) return diffB - diffA;
+        return metB - metA;
+    });
+
+    // 3. Cooldown: Od stania do leżenia (malejąco po pozycji)
+    session.cooldown.sort((a, b) => {
+        const rankA = getPositionRank(a);
+        const rankB = getPositionRank(b);
+        if (rankA !== rankB) return rankB - rankA;
+        return 0;
+    });
+}
+
+// ---------------------------------
 // Context Analysis (Time & RPE)
 // ---------------------------------
 
@@ -950,21 +980,13 @@ function analyzeInitialFatigue(userId, lastSession) {
     return 'normal';
 }
 
-/**
- * NEW: RPE-Based Autoregulation
- * Analizuje ostatnie sesje i zwraca modyfikatory dla loadFactor i trudności.
- */
 function analyzeRpeTrend(recentSessions) {
     const defaultResult = { volumeModifier: 1.0, intensityCap: null, label: 'Standard' };
     if (!recentSessions || recentSessions.length === 0) return defaultResult;
 
-    // Sortujemy od najnowszej
-    // (Baza zwraca DESC, ale dla pewności)
     const sorted = recentSessions.sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at));
     const lastSession = sorted[0];
 
-    // 1. Prawo Zanikania (Decay):
-    // Jeśli ostatni trening był dawno (> 5 dni), ignorujemy RPE (pełny reset).
     const now = new Date();
     const lastDate = new Date(lastSession.completed_at);
     const diffDays = (now - lastDate) / (1000 * 60 * 60 * 24);
@@ -975,14 +997,10 @@ function analyzeRpeTrend(recentSessions) {
     const val = parseInt(feedback.value, 10);
     const type = feedback.type || 'tension';
 
-    // 2. Scenariusz: ZA MOCNO / BÓL
     if (val === -1) {
         if (type === 'symptom') {
-            // Ostry ból -> Drastyczna redukcja
             return { volumeModifier: 0.70, intensityCap: 2, label: 'Protection Mode (Pain)' };
         } else {
-            // Za ciężko (napięcie) -> Umiarkowana redukcja
-            // Sprawdzamy trend: czy to jednorazowe, czy chroniczne?
             const prevSession = sorted[1];
             if (prevSession && prevSession.feedback && parseInt(prevSession.feedback.value) === -1) {
                 return { volumeModifier: 0.75, intensityCap: 2, label: 'Deload (Chronic Fatigue)' };
@@ -991,9 +1009,7 @@ function analyzeRpeTrend(recentSessions) {
         }
     }
 
-    // 3. Scenariusz: ZA ŁATWO
     if (val === 1) {
-        // Sprawdzamy trend
         const prevSession = sorted[1];
         if (prevSession && prevSession.feedback && parseInt(prevSession.feedback.value) === 1) {
             return { volumeModifier: 1.25, intensityCap: null, label: 'Progressive Overload (Boost)' };
@@ -1001,7 +1017,6 @@ function analyzeRpeTrend(recentSessions) {
         return { volumeModifier: 1.15, intensityCap: null, label: 'Progressive Overload' };
     }
 
-    // 4. Scenariusz: IDEALNIE (0)
     return { volumeModifier: 1.0, intensityCap: null, label: 'Maintenance' };
 }
 
@@ -1023,7 +1038,7 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
             severityScore: ctx.severityScore,
             isSevere: ctx.isSevere,
             generatedAt: new Date().toISOString(),
-            rpeStatus: rpeData.label // Zapisujemy status dla debugowania
+            rpeStatus: rpeData.label
         }
     };
 
@@ -1079,6 +1094,9 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
             expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, sState, pZones, paceMap, fatigueState, targetMin, rpeData.volumeModifier);
             enforceStrictTimeLimit(session, userData, paceMap, targetMin);
 
+            // FINALNE SORTOWANIE (INTENSITY WAVE)
+            reorderSessionByIntensityWave(session);
+
             session.estimatedDurationMin = Math.round(estimateSessionDurationSeconds(session, userData, paceMap) / 60);
             plan.days.push(session);
 
@@ -1110,7 +1128,6 @@ exports.handler = async (event) => {
 
   const client = await pool.connect();
   try {
-    // 1. Zaktualizowane zapytanie do pobierania historii (ostatnie 3 sesje + feedback)
     const [eR, bR, pR, hR, sR, recentSessionsR] = await Promise.all([
       client.query('SELECT * FROM exercises'),
       client.query('SELECT exercise_id FROM user_exercise_blacklist WHERE user_id = $1', [userId]),
@@ -1137,7 +1154,6 @@ exports.handler = async (event) => {
         paceMap[r.exercise_id] = parseFloat(r.avg_seconds_per_rep);
     });
 
-    // 2. Analiza RPE i Zmęczenia
     const recentSessions = recentSessionsR.rows;
     const initialFatigue = analyzeInitialFatigue(userId, recentSessions[0]);
     const rpeData = analyzeRpeTrend(recentSessions);
@@ -1146,12 +1162,10 @@ exports.handler = async (event) => {
 
     const cWeights = buildDynamicCategoryWeights(exercises, userData, ctx);
 
-    // 3. Filtracja kandydatów z uwzględnieniem RPE Intensity Cap
     const candidates = filterExerciseCandidates(exercises, userData, ctx, initialFatigue, rpeData);
 
     if (candidates.length < 5) return { statusCode: 400, body: JSON.stringify({ error: 'NO_SAFE_EXERCISES' }) };
 
-    // 4. Budowa planu z uwzględnieniem RPE Volume Modifier
     const plan = buildRollingPlan(candidates, cWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap, initialFatigue, rpeData);
 
     const sRes = await client.query('SELECT settings FROM user_settings WHERE user_id = $1', [userId]);

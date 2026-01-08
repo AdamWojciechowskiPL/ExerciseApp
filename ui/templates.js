@@ -153,7 +153,6 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
     const ignoreList = ['brak', 'none', 'brak sprzętu', 'masa własna', 'bodyweight', ''];
     const filteredEquipment = [...equipmentSet].filter(item => !ignoreList.includes(item));
 
-    // Zgodnie z życzeniem: Oryginalne nazwy, tylko kapitalizacja
     const equipmentText = filteredEquipment.length > 0
         ? filteredEquipment.map(item => item.charAt(0).toUpperCase() + item.slice(1)).join(', ')
         : 'Bodyweight';
@@ -199,11 +198,8 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
         <div class="calendar-body">
             <div class="workout-context-card">
 
-                <!-- HEADER: Tytuł i Czas -->
                 <div class="wc-header">
                     <h3 class="wc-title">${dayData.title}</h3>
-
-                    <!-- ID 'today-duration-display' do aktualizacji czasu -->
                     <div class="time-badge-pill">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
                         <span id="today-duration-display">${estimatedMinutes} min</span>
@@ -214,16 +210,13 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
                     Cel: <strong style="color:var(--primary-color);">${focusArea}</strong>
                 </div>
 
-                <!-- PASEK OBCIĄŻENIA -->
                 ${loadBarHTML}
 
-                <!-- TAGI SPRZĘTU I INFO -->
                 <div class="wc-tags">
                     ${clinicalTagsHTML}
                     <span class="meta-badge tag-equipment">🛠️ ${equipmentText}</span>
                 </div>
 
-                <!-- SEKCJA SAMOPOCZUCIA -->
                 <div class="sheet-wellness">
                     <div class="sheet-wellness-label">Jak się czujesz?</div>
                     <div class="pain-selector">
@@ -235,7 +228,6 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
                     </div>
                 </div>
 
-                <!-- PRZYCISK START -->
                 <button id="start-mission-btn" class="calendar-action-btn" data-initial-pain="3">
                     <div class="btn-content-wrapper">
                         <span class="btn-icon-bg"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg></span>
@@ -361,8 +353,6 @@ export function generatePreTrainingCardHTML(ex, index) {
 
     const ignoreList = ['brak', 'none', 'brak sprzętu', 'masa własna', 'bodyweight', ''];
     const showEquipBadge = equipLabel.length > 0 && !ignoreList.includes(equipLabel.toLowerCase().trim());
-
-    // Formatowanie oryginalnych nazw sprzętu
     const formattedEquipLabel = equipLabel.split(',').map(item => item.trim().charAt(0).toUpperCase() + item.trim().slice(1)).join(', ');
 
     const hasAnimation = !!ex.hasAnimation;
@@ -391,10 +381,7 @@ export function generatePreTrainingCardHTML(ex, index) {
         let color = '#333';
         let border = '#ccc';
         if (ex.modification.type === 'boost') {
-            // Fioletowy/Złoty styl dla PRO/BOOST
-            bg = '#fdf4ff';
-            color = '#86198f';
-            border = '#f0abfc';
+            bg = '#fdf4ff'; color = '#86198f'; border = '#f0abfc';
         }
         else if (ex.modification.type === 'eco') { bg = '#eff6ff'; color = '#1d4ed8'; border = '#93c5fd'; }
         else if (ex.modification.type === 'care' || ex.modification.type === 'sos') { bg = '#fff7ed'; color = '#c2410c'; border = '#fdba74'; }
@@ -415,8 +402,13 @@ export function generatePreTrainingCardHTML(ex, index) {
     `;
 
     const videoId = extractYoutubeId(ex.youtube_url);
+    
+    // MODYFIKACJA: Ikona wideo wewnątrz dedykowanego kontenera (60px)
     const videoLink = videoId
-        ? `<a href="https://youtu.be/${videoId}" target="_blank" class="link-btn link-youtube">📺 Wideo</a>`
+        ? `<a href="https://youtu.be/${videoId}" target="_blank" class="link-youtube"
+             style="text-decoration:none; font-size:2.2rem; display:flex; align-items:center; justify-content:center; line-height:1; width:100%; height:100%;"
+             aria-label="Wideo"
+             title="Obejrzyj instrukcję wideo na YouTube">📺</a>`
         : '';
 
     return `
@@ -442,9 +434,17 @@ export function generatePreTrainingCardHTML(ex, index) {
         </div>
         <p class="pre-training-description" style="padding-left:10px; opacity:0.8;">${ex.description || 'Brak opisu.'}</p>
         ${targetsHTML}
-        <div class="training-footer">
-            <div>${videoLink}</div>
-            ${ex.tempo_or_iso ? `<span class="tempo-badge">Tempo: ${ex.tempo_or_iso}</span>` : ''}
+        
+        <!-- ZMODYFIKOWANA STOPKA: Align Items Center -->
+        <div class="training-footer" style="display:flex; align-items:center;">
+            <!-- Dedykowana kolumna dla ikony wideo (60px) -->
+            <div style="flex: 0 0 60px; display:flex; align-items:center; justify-content:center; margin-right:10px;">
+                ${videoLink}
+            </div>
+            <!-- Tekst (Tempo) -->
+            <div style="flex:1;">
+                ${ex.tempo_or_iso ? `<span class="tempo-badge" style="display:block; width:100%;">Tempo: ${ex.tempo_or_iso}</span>` : ''}
+            </div>
         </div>
     </div>`;
 }

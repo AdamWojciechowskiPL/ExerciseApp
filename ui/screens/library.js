@@ -1,4 +1,4 @@
-// js/ui/screens/library.js
+// ExerciseApp/ui/screens/library.js
 import { state } from '../../state.js';
 import { containers } from '../../dom.js';
 import { navigateTo, showLoader, hideLoader } from '../core.js';
@@ -7,304 +7,389 @@ import { renderTunerModal, renderPreviewModal } from '../modals.js';
 import dataStore from '../../dataStore.js';
 import { extractYoutubeId } from '../../utils.js';
 
-let atlasState = {
-    search: '',
-    activeFilter: 'all',
-    collapsedMap: false
-};
-
-const ZONE_MAPPING = {
-    'cervical': { label: 'Szyja', icon: '🧣', cats: ['neck', 'cervical'] },
-    'thoracic': { label: 'Górne Plecy', icon: '🔙', cats: ['thoracic', 'posture'] },
-    'lumbar_general': { label: 'Lędźwia / Core', icon: '🧱', cats: ['core_anti_extension', 'core_anti_flexion', 'core_anti_rotation', 'lumbar'] },
-    'hip_mobility': { label: 'Biodra', icon: '⚙️', cats: ['hip_mobility', 'glute_activation', 'piriformis'] },
-    'knee': { label: 'Kolana', icon: '🦵', cats: ['knee_stability', 'vmo_activation', 'terminal_knee_extension', 'eccentric_control'] },
-    'sciatica': { label: 'Nogi / Nerw', icon: '⚡', cats: ['nerve_flossing', 'sciatica', 'legs'] },
-    'metabolic': { label: 'Spalanie', icon: '🔥', cats: [] }
+// --- SŁOWNIKI ---
+const LABELS = {
+    positions: { 'supine': 'Leżenie na plecach', 'prone': 'Leżenie na brzuchu', 'side_lying': 'Leżenie bokiem', 'quadruped': 'Klęk podparty', 'kneeling': 'Klęk obunóż', 'half_kneeling': 'Klęk jednonóż', 'sitting': 'Siedząc', 'standing': 'Stojąc' },
+    planes: { 'sagittal': 'Strzałkowa', 'frontal': 'Czołowa', 'transverse': 'Poprzeczna', 'multi': 'Wielopłaszcz.', 'flexion': 'Zgięcie', 'extension': 'Wyprost', 'rotation': 'Rotacja' }
 };
 
 const REJECTION_CONFIG = {
-    'missing_equipment': { label: 'Brak sprzętu', icon: '🛠️', color: '#64748b', bg: '#f1f5f9' },
-    'physical_restriction': { label: 'Przeciwwskazanie', icon: '🦴', color: '#b91c1c', bg: '#fef2f2' },
-    'biomechanics_mismatch': { label: 'Niezalecane (Wzorzec)', icon: '📐', color: '#c2410c', bg: '#fff7ed' },
-    'severity_filter': { label: 'Za intensywne', icon: '🩹', color: '#b45309', bg: '#fffbeb' },
-    'blacklisted': { label: 'Twoja Czarna Lista', icon: '🚫', color: '#374151', bg: '#e5e7eb' },
-    'too_hard_calculated': { label: 'Za trudne (Lvl)', icon: '🔥', color: '#be123c', bg: '#fff1f2' }
+    'missing_equipment': { label: 'BRAK SPRZĘTU', icon: '🛠️', cssClass: 'reject-equip' },
+    'physical_restriction': { label: 'PRZECIWWSKAZANIE', icon: '🦴', cssClass: 'reject-med' },
+    'biomechanics_mismatch': { label: 'NIEWSKAZANE (BÓL)', icon: '⚠️', cssClass: 'reject-med' },
+    'severity_filter': { label: 'ZA INTENSYWNE', icon: '🩹', cssClass: 'reject-med' },
+    'blacklisted': { label: 'TWOJA CZARNA LISTA', icon: '🚫', cssClass: 'reject-user' },
+    'too_hard_calculated': { label: 'ZA TRUDNE (LVL)', icon: '🔥', cssClass: 'reject-med' }
+};
+
+const CAT_ICONS = {
+    'core': '🧱', 'glute': '🍑', 'hip': '⚙️', 'spine': '🐍', 'thoracic': '🔙',
+    'nerve': '⚡', 'knee': '🦵', 'calves': '👠', 'breathing': '🌬️', 'conditioning': '❤️'
+};
+const getCatIcon = (id) => CAT_ICONS[Object.keys(CAT_ICONS).find(k => (id||'').includes(k))] || '🏋️';
+
+// --- DEFINICJE FILTRÓW ---
+const SPECIAL_FILTERS = [
+    { id: 'all', label: 'Wszystkie', check: () => true },
+    { id: 'favorites', label: '⭐ Ulubione', check: (ex) => (state.userPreferences[ex.id]?.score || 0) > 0 },
+    { id: 'safe', label: '✅ Bezpieczne', check: (ex) => ex.isAllowed !== false && !(state.blacklist || []).includes(ex.id) },
+    { id: 'spine_relief', label: '🦴 Kręgosłup', check: (ex) => ex.painReliefZones?.some(z => ['lumbar_general', 'thoracic', 'cervical'].includes(z)) },
+    { id: 'knee_relief', label: '🦵 Kolana', check: (ex) => ex.painReliefZones?.some(z => ['knee', 'patella'].includes(z)) },
+    { id: 'mobility', label: '🧘 Mobilność', check: (ex) => (ex.categoryId || '').includes('mobility') || (ex.categoryId || '').includes('stretch') },
+    { id: 'strength', label: '💪 Siła', check: (ex) => (ex.categoryId || '').includes('strength') || (ex.categoryId || '').includes('activation') },
+    { id: 'home_friendly', label: '🏠 Bez sprzętu', check: (ex) => !ex.equipment || ex.equipment.length === 0 || ex.equipment.some(e => ['brak', 'none', 'mata', 'bodyweight'].includes(e.toLowerCase())) },
+    { id: 'standing', label: '🧍 Stojąc', check: (ex) => ex.position === 'standing' },
+    { id: 'floor', label: '🧘 Na macie', check: (ex) => ['supine', 'prone', 'side_lying', 'quadruped'].includes(ex.position) }
+];
+
+// --- STAN ---
+let atlasState = {
+    search: '',
+    activeFilter: 'all',
+    sortBy: 'name_asc',
+    expandedRows: new Set()
 };
 
 export const renderLibraryScreen = async (searchTerm = '') => {
+    navigateTo('library');
     const container = containers.exerciseLibrary;
     if (!container) return;
-    navigateTo('library');
+
+    // Upewniamy się, że preferencje są pobrane
     if (!state.userPreferences || Object.keys(state.userPreferences).length === 0) {
         try { await dataStore.fetchUserPreferences(); } catch (e) { }
     }
-    if (searchTerm) {
-        atlasState.search = searchTerm;
-        atlasState.activeFilter = 'all';
-    }
-    container.innerHTML = `
-    <div class="atlas-header">
-        <div class="search-bar-wrapper">
-            <input type="text" class="atlas-search-input" placeholder="Znajdź ćwiczenie..." value="${atlasState.search}">
-        </div>
-        <div class="chips-scroller" id="atlas-chips"></div>
-    </div>
-    <div class="zone-hud-container" id="zone-hud"></div>
-    <div style="height: 15px;"></div>
-    <div class="atlas-grid" id="atlas-grid"></div>
-`;
-    renderChips();
-    renderZoneSelector();
-    renderExerciseList();
-    const searchInput = container.querySelector('.atlas-search-input');
-    searchInput.addEventListener('input', (e) => {
-        atlasState.search = e.target.value;
-        renderExerciseList();
+
+    if (searchTerm) atlasState.search = searchTerm;
+
+    // 1. Oblicz liczniki (POPRAWKA: Mapujemy entries, aby obiekty miały ID, naprawia to licznik ulubionych)
+    const allExercises = Object.entries(state.exerciseLibrary).map(([id, data]) => ({ id, ...data }));
+    
+    const filterCounts = {};
+    SPECIAL_FILTERS.forEach(f => {
+        filterCounts[f.id] = allExercises.filter(ex => f.check(ex)).length;
     });
+
+    const filtersHTML = SPECIAL_FILTERS.map(f =>
+        `<button class="filter-chip ${atlasState.activeFilter === f.id ? 'active' : ''}" data-filter="${f.id}">
+            ${f.label} <span class="filter-count">(${filterCounts[f.id]})</span>
+        </button>`
+    ).join('');
+
+    container.innerHTML = `
+        <div class="atlas-wrapper">
+            <div class="atlas-sticky-header">
+                <div class="search-sort-row">
+                    <div class="search-wrapper">
+                        <input type="text" id="atlas-search" class="atlas-search-input" placeholder="Szukaj ćwiczenia..." value="${atlasState.search}">
+                        ${atlasState.search ? '<button id="clear-search-btn">✕</button>' : ''}
+                    </div>
+                    <div class="sort-wrapper">
+                        <select id="atlas-sort-select" class="atlas-sort-select">
+                            <option value="name_asc" ${atlasState.sortBy === 'name_asc' ? 'selected' : ''}>A-Z</option>
+                            <option value="name_desc" ${atlasState.sortBy === 'name_desc' ? 'selected' : ''}>Z-A</option>
+                            <option value="favorites" ${atlasState.sortBy === 'favorites' ? 'selected' : ''}>Ulubione</option>
+                            <option value="difficulty_asc" ${atlasState.sortBy === 'difficulty_asc' ? 'selected' : ''}>Najłatwiejsze</option>
+                            <option value="difficulty_desc" ${atlasState.sortBy === 'difficulty_desc' ? 'selected' : ''}>Najtrudniejsze</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="filters-row">${filtersHTML}</div>
+
+                <div id="results-count-bar" class="results-bar"></div>
+            </div>
+
+            <div id="atlas-list" class="atlas-list-container"></div>
+        </div>
+    `;
+
+    renderList();
+    attachEvents(container);
 };
 
-function renderChips() {
-    const container = document.getElementById('atlas-chips');
-    if (!container) return;
-    const counts = { all: 0, safe: 0, blacklist: 0 };
-    const allExercises = Object.entries(state.exerciseLibrary).map(([id, data]) => ({ id, ...data }));
-    const blacklist = state.blacklist || [];
-    allExercises.forEach(ex => {
-        if (blacklist.includes(ex.id)) counts.blacklist++;
-        else {
-            counts.all++;
-            if (ex.isAllowed !== false) counts.safe++;
-        }
-    });
-    const filters = [
-        { id: 'all', label: `Wszystkie (${counts.all})` },
-        { id: 'safe', label: `✅ Tylko Bezpieczne (${counts.safe})` },
-        { id: 'blacklist', label: `🚫 Blokowane (${counts.blacklist})` }
-    ];
-    container.innerHTML = filters.map(f => `
-    <button class="chip ${atlasState.activeFilter === f.id ? 'active' : ''}" data-id="${f.id}" data-tier="${f.id === 'blacklist' ? 'C' : ''}">
-        ${f.label}
-    </button>`).join('');
-    container.querySelectorAll('.chip').forEach(btn => {
-        btn.addEventListener('click', () => {
-            atlasState.activeFilter = btn.dataset.id;
-            if (atlasState.search && btn.dataset.id !== 'all') {
-                atlasState.search = '';
-                document.querySelector('.atlas-search-input').value = '';
-            }
-            renderChips();
-            renderZoneSelector();
-            renderExerciseList();
-        });
-    });
-}
-
-function renderZoneSelector() {
-    const container = document.getElementById('zone-hud');
-    if (!container) return;
-    const stats = calculateZoneStats();
-    const tilesHTML = Object.entries(ZONE_MAPPING).map(([zoneId, config]) => {
-        const data = stats[zoneId] || { count: 0 };
-        const isActive = atlasState.activeFilter === zoneId;
-        return `
-        <div class="zone-tile ${isActive ? 'active' : ''}" data-zone="${zoneId}">
-            <div class="zt-header"><span>${config.label}</span><span>${config.icon}</span></div>
-            <div class="zt-count">${data.count} ćwiczeń</div>
-        </div>`;
-    }).join('');
-    container.innerHTML = tilesHTML;
-    container.querySelectorAll('.zone-tile').forEach(tile => {
-        tile.addEventListener('click', () => {
-            const zoneId = tile.dataset.zone;
-            if (atlasState.activeFilter === zoneId) atlasState.activeFilter = 'all';
-            else atlasState.activeFilter = zoneId;
-            renderChips();
-            renderZoneSelector();
-            renderExerciseList();
-        });
-    });
-}
-
-function renderExerciseList() {
-    const grid = document.getElementById('atlas-grid');
-    if (!grid) return;
+function getFilteredExercises() {
     let items = Object.entries(state.exerciseLibrary).map(([id, data]) => ({ id, ...data }));
-    const blacklist = state.blacklist || [];
-    if (atlasState.activeFilter === 'blacklist') items = items.filter(ex => blacklist.includes(ex.id));
-    else if (atlasState.activeFilter === 'safe') items = items.filter(ex => ex.isAllowed !== false && !blacklist.includes(ex.id));
-    else {
-        if (!atlasState.search) items = items.filter(ex => !blacklist.includes(ex.id));
-        if (ZONE_MAPPING[atlasState.activeFilter]) {
-            const zData = ZONE_MAPPING[atlasState.activeFilter];
-            if (atlasState.activeFilter === 'metabolic') {
-                items = items.filter(ex => ex.goalTags && (ex.goalTags.includes('fat_loss') || ex.goalTags.includes('conditioning')));
-            } else {
-                items = items.filter(ex => zData.cats.includes(ex.categoryId) || (ex.painReliefZones && ex.painReliefZones.includes(atlasState.activeFilter)));
-            }
-        }
-    }
+
     if (atlasState.search) {
         const term = atlasState.search.toLowerCase();
-        items = items.filter(ex => ex.name.toLowerCase().includes(term));
+        items = items.filter(ex => {
+            const matchesName = ex.name.toLowerCase().includes(term);
+            const matchesCat = (ex.categoryId || '').toLowerCase().includes(term);
+            const matchesPos = (LABELS.positions[ex.position] || '').toLowerCase().includes(term);
+            const matchesEquip = (ex.equipment || []).join(' ').toLowerCase().includes(term);
+            return matchesName || matchesCat || matchesPos || matchesEquip;
+        });
     }
+
+    const activeFilterDef = SPECIAL_FILTERS.find(f => f.id === atlasState.activeFilter);
+    if (activeFilterDef && activeFilterDef.check) {
+        items = items.filter(activeFilterDef.check);
+    }
+
+    const blacklist = state.blacklist || [];
+
     items.sort((a, b) => {
-        const allowedA = a.isAllowed !== false;
-        const allowedB = b.isAllowed !== false;
-        if (allowedA && !allowedB) return -1;
-        if (!allowedA && allowedB) return 1;
-        const sA = state.userPreferences[a.id]?.score || 0;
-        const sB = state.userPreferences[b.id]?.score || 0;
-        if (sB !== sA) return sB - sA;
-        return a.name.localeCompare(b.name, 'pl');
+        const isBlockedA = blacklist.includes(a.id) || a.isAllowed === false;
+        const isBlockedB = blacklist.includes(b.id) || b.isAllowed === false;
+
+        if (isBlockedA && !isBlockedB) return 1;
+        if (!isBlockedA && isBlockedB) return -1;
+
+        if (atlasState.sortBy === 'favorites') {
+            const sA = state.userPreferences[a.id]?.score || 0;
+            const sB = state.userPreferences[b.id]?.score || 0;
+            if (sB !== sA) return sB - sA;
+        }
+        else if (atlasState.sortBy === 'difficulty_asc') {
+            const diffA = a.difficultyLevel || 1;
+            const diffB = b.difficultyLevel || 1;
+            if (diffA !== diffB) return diffA - diffB;
+        }
+        else if (atlasState.sortBy === 'difficulty_desc') {
+            const diffA = a.difficultyLevel || 1;
+            const diffB = b.difficultyLevel || 1;
+            if (diffA !== diffB) return diffB - diffA;
+        }
+        else if (atlasState.sortBy === 'name_desc') {
+            return b.name.localeCompare(a.name);
+        }
+
+        return a.name.localeCompare(b.name);
     });
-    if (items.length === 0) {
-        grid.innerHTML = `<div style="text-align:center; padding:3rem 1rem; opacity:0.6; width:100%;"><p>Brak ćwiczeń spełniających kryteria.</p>${atlasState.activeFilter === 'blacklist' ? '<p style="font-size:0.8rem">Twoja czarna lista jest pusta.</p>' : ''}</div>`;
+
+    return items;
+}
+
+function renderList() {
+    const listContainer = document.getElementById('atlas-list');
+    const countBar = document.getElementById('results-count-bar');
+    if (!listContainer) return;
+
+    const exercises = getFilteredExercises();
+
+    if (countBar) {
+        countBar.innerHTML = `<span>Znaleziono: <strong>${exercises.length}</strong></span>`;
+    }
+
+    if (exercises.length === 0) {
+        listContainer.innerHTML = `<div class="empty-list-msg">Brak wyników.</div>`;
         return;
     }
-    grid.innerHTML = items.map(ex => {
-        const pref = state.userPreferences[ex.id] || { score: 0, difficulty: 0 };
-        const tier = getTier(pref);
-        const affinityBadge = getAffinityBadge(ex.id);
-        const isBlacklisted = blacklist.includes(ex.id);
-        const descriptionShort = ex.description ? ex.description : 'Brak opisu.';
-        const isAllowed = ex.isAllowed !== false;
-        const rejectionReason = ex.rejectionReason;
-        let restrictionBanner = '';
-        let cardClass = '';
-        if (!isAllowed) {
-            cardClass = 'clinically-blocked';
-            const reasonConfig = REJECTION_CONFIG[rejectionReason] || { label: 'Niedostępne', icon: '🔒', color: '#666', bg: '#eee' };
-            restrictionBanner = `<div class="restriction-banner" style="color: ${reasonConfig.color}; background: ${reasonConfig.bg}; border: 1px solid ${reasonConfig.color}20;"><span>${reasonConfig.icon}</span> ${reasonConfig.label}</div>`;
-        }
-        const lvlLabel = getLevelLabel(ex.difficultyLevel);
-        const catLabel = formatCategory(ex.categoryId).toUpperCase();
-        let equipLabel = Array.isArray(ex.equipment) ? ex.equipment.join(', ').toUpperCase() : (ex.equipment || 'BRAK SPRZĘTU').toUpperCase();
-        const hiddenEquipValues = ['BRAK', 'NONE', 'BRAK SPRZĘTU', 'MASA WŁASNA', 'BODYWEIGHT', ''];
-        const showEquipBadge = !hiddenEquipValues.includes(equipLabel.trim());
 
-        let burnBadge = '';
-        if (ex.metabolicIntensity && ex.metabolicIntensity >= 3) {
-            burnBadge = `<span class="meta-tag" style="background:#fff1f2; color:#be123c; border:1px solid #fda4af;">🔥 MET: ${ex.metabolicIntensity}/5</span>`;
-        }
+    listContainer.innerHTML = exercises.map(ex => createRowHTML(ex)).join('');
+}
 
-        let kneeBadge = '';
-        if (ex.kneeLoadLevel && ex.kneeLoadLevel !== 'low') {
-            const kColor = ex.kneeLoadLevel === 'high' ? '#b91c1c' : '#b45309';
-            const kBg = ex.kneeLoadLevel === 'high' ? '#fef2f2' : '#fffbeb';
-            const kBorder = ex.kneeLoadLevel === 'high' ? '#fca5a5' : '#fcd34d';
-            kneeBadge = `<span class="meta-tag" style="background:${kBg}; color:${kColor}; border:1px solid ${kBorder};">🦵 ${ex.kneeLoadLevel === 'high' ? 'HIGH' : 'MED'} LOAD</span>`;
-        }
+function formatZoneLabel(key) {
+    if (!key) return '';
+    return key.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase());
+}
 
-        const userPace = state.exercisePace && state.exercisePace[ex.id];
-        let paceBadge = '';
-        if (userPace) {
-            paceBadge = `<span class="meta-tag" style="background:#fefce8; color:#854d0e; border:1px solid #fde047;" title="Twój średni czas na powtórzenie">⏱ ${userPace}s</span>`;
-        }
+function createRowHTML(ex) {
+    const isExpanded = atlasState.expandedRows.has(ex.id);
+    const pref = state.userPreferences[ex.id] || { score: 0, difficulty: 0 };
+    const isBlacklisted = (state.blacklist || []).includes(ex.id);
+    const notAllowed = ex.isAllowed === false;
 
-        let footerHtml = '';
-        const videoId = extractYoutubeId(ex.youtube_url);
-        if (videoId) {
-            footerHtml += `<a href="https://youtu.be/${videoId}" target="_blank" class="link-btn link-youtube">📺 Wideo</a>`;
-        }
+    const spineLoad = (ex.spineLoadLevel || 'low').toLowerCase();
+    const kneeLoad = (ex.kneeLoadLevel || 'low').toLowerCase();
+    const impact = (ex.impactLevel || 'low').toLowerCase();
+    const position = ex.position ? (LABELS.positions[ex.position] || ex.position) : '-';
+    const plane = ex.primaryPlane ? (LABELS.planes[ex.primaryPlane] || ex.primaryPlane) : '-';
+    const lvlBars = Array(Math.min(5, ex.difficultyLevel || 1)).fill('<span class="lvl-dot"></span>').join('');
 
-        if (ex.hasAnimation) footerHtml += `<button class="link-btn preview-btn" data-id="${ex.id}">👁️ Podgląd</button>`;
-        const actionBtn = isBlacklisted ? `<button class="icon-btn restore-btn" title="Przywróć" style="color:var(--success-color)">♻️</button>` : `<button class="icon-btn block-btn" title="Zablokuj (Dodaj do czarnej listy)">🚫</button>`;
-        let tunerButtonHtml = '';
-        if (isAllowed || rejectionReason === 'missing_equipment') {
-            tunerButtonHtml = `<button class="tuner-btn" data-id="${ex.id}" title="Kalibracja Synaptyczna" style="background: #fff; border-radius: 50%; width: 34px; height: 34px; border: 1px solid #e2e8f0; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,95,115,0.15); margin-top: 6px; transition: transform 0.2s;"><svg width="16" height="16" style="stroke:#005f73"><use href="#icon-sliders"/></svg></button>`;
-        } else {
-            tunerButtonHtml = `<div style="width:34px; height:34px; opacity:0.2; display:flex; align-items:center; justify-content:center;">🔒</div>`;
-        }
-        return `
-    <div class="atlas-card ${cardClass}" data-id="${ex.id}" data-tier="${tier}">
-        <div class="ac-main">
-            ${restrictionBanner}
-            <div class="ac-title">${ex.name} ${affinityBadge ? '<span style="margin-left:5px">' + affinityBadge + '</span>' : ''}</div>
-            <div class="ac-tags">
-                <span class="meta-tag tag-level">⚡ ${lvlLabel}</span>
-                ${paceBadge}
-                ${burnBadge}
-                ${kneeBadge}
-                <span class="meta-tag tag-category">📂 ${catLabel}</span>
-                ${showEquipBadge ? `<span class="meta-tag tag-equipment">🛠️ ${equipLabel}</span>` : ''}
-            </div>
-            <div class="ac-desc" title="Kliknij, aby rozwinąć/zwinąć">${descriptionShort}</div>
-            ${footerHtml ? `<div class="ac-footer">${footerHtml}</div>` : ''}
-        </div>
-        <div class="ac-actions">
-            <div class="ac-score">${pref.score > 0 ? '+' + pref.score : pref.score}</div>
-            ${tunerButtonHtml}
-            ${actionBtn}
-        </div>
-    </div>`;
+    // Tagi Tolerancji
+    const toleranceTags = (ex.toleranceTags || []).map(t => {
+        if(t.includes('flexion')) return `<span class="tag tag-tolerance">✅ Zgięcie OK</span>`;
+        if(t.includes('extension')) return `<span class="tag tag-tolerance">✅ Wyprost OK</span>`;
+        return '';
     }).join('');
 
-    grid.querySelectorAll('.atlas-card').forEach(card => {
-        const exId = card.dataset.id;
-        const descEl = card.querySelector('.ac-desc');
-        if (descEl) { descEl.addEventListener('click', (e) => { e.stopPropagation(); descEl.classList.toggle('expanded'); }); }
-        const tunerBtn = card.querySelector('.tuner-btn');
-        if (tunerBtn) { tunerBtn.addEventListener('click', (e) => { e.stopPropagation(); renderTunerModal(exId, () => { renderExerciseList(); renderZoneSelector(); }); }); }
+    // Tagi Pomocowe
+    const painReliefBadges = (ex.painReliefZones || []).map(z =>
+        `<span class="tag tag-relief">${formatZoneLabel(z)}</span>`
+    ).join('');
 
-        const previewBtn = card.querySelector('.preview-btn');
-        if (previewBtn) {
-            previewBtn.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                previewBtn.classList.add('loading');
-                previewBtn.textContent = '⏳ Ładowanie...';
+    // Tagi Sprzętu
+    const ignoreEquip = ['brak', 'none', 'brak sprzętu', 'masa własna', 'bodyweight', ''];
+    const equipTags = (ex.equipment || [])
+        .filter(e => !ignoreEquip.includes(e.toLowerCase()))
+        .map(e => `<span class="tag tag-equip">🛠️ ${e}</span>`)
+        .join('');
 
-                try {
-                    const svg = await dataStore.fetchExerciseAnimation(exId);
-                    if (svg) {
-                        renderPreviewModal(svg, state.exerciseLibrary[exId].name);
-                    } else {
-                        alert('Brak podglądu');
-                    }
-                } catch (err) {
-                    console.error(err);
-                    alert('Błąd pobierania animacji');
-                } finally {
-                    previewBtn.classList.remove('loading');
-                    previewBtn.textContent = '👁️ Podgląd';
-                }
-            });
-        }
+    const videoId = extractYoutubeId(ex.youtube_url);
+    const videoBtn = videoId ? `<button data-action="video" data-url="https://youtu.be/${videoId}" class="mini-action-btn btn-video">🎬 Wideo</button>` : '';
+    const previewBtn = ex.hasAnimation ? `<button data-action="preview" data-id="${ex.id}" class="mini-action-btn btn-preview">👁️ Podgląd</button>` : '';
 
-        const ytLink = card.querySelector('.link-youtube');
-        if (ytLink) { ytLink.addEventListener('click', (e) => e.stopPropagation()); }
-        const blockBtn = card.querySelector('.block-btn');
-        if (blockBtn) { blockBtn.addEventListener('click', async (e) => { e.stopPropagation(); if (confirm(`Czy na pewno chcesz dodać "${state.exerciseLibrary[exId].name}" do czarnej listy?`)) { showLoader(); await dataStore.addToBlacklist(exId, null); hideLoader(); renderExerciseList(); } }); }
-        const restoreBtn = card.querySelector('.restore-btn');
-        if (restoreBtn) { restoreBtn.addEventListener('click', async (e) => { e.stopPropagation(); if (confirm(`Przywrócić "${state.exerciseLibrary[exId].name}" do aktywnych ćwiczeń?`)) { showLoader(); await dataStore.removeFromBlacklist(exId); hideLoader(); renderExerciseList(); } }); }
-    });
+    const getLoadClass = (val) => val === 'high' ? 'load-high' : (val === 'medium' || val === 'moderate' ? 'load-med' : 'load-low');
+
+    let rowClass = 'ex-row';
+    let rejectionHtml = '';
+
+    if (isBlacklisted) {
+        rowClass += ' blocked';
+        const reason = REJECTION_CONFIG['blacklisted'];
+        rejectionHtml = `<div class="rejection-badge ${reason.cssClass}">${reason.icon} ${reason.label}</div>`;
+    }
+    else if (notAllowed) {
+        rowClass += ' restricted';
+        const reasonKey = ex.rejectionReason || 'physical_restriction';
+        const reason = REJECTION_CONFIG[reasonKey] || REJECTION_CONFIG['physical_restriction'];
+        rejectionHtml = `<div class="rejection-badge ${reason.cssClass}">${reason.icon} ${reason.label}</div>`;
+    }
+
+    return `
+    <div class="${rowClass}" data-id="${ex.id}">
+        <!-- HEADER -->
+        <div class="ex-row-header">
+            <div class="ex-col-icon">${getCatIcon(ex.categoryId || '')}</div>
+
+            <div class="ex-col-main">
+                ${rejectionHtml}
+                <div class="ex-name-row">
+                    <span class="ex-name">${ex.name}</span>
+                    ${pref.score !== 0 ? `<span class="score-badge ${pref.score > 0 ? 'pos' : 'neg'}">${pref.score > 0 ? '+' : ''}${pref.score}</span>` : ''}
+                </div>
+                <div class="ex-sub-row">
+                    <span class="ex-cat">${formatZoneLabel(ex.categoryId)}</span>
+                    <div class="ex-lvl">${lvlBars}</div>
+                </div>
+            </div>
+
+            <div class="ex-col-clinical">
+                <div class="load-indicator ${getLoadClass(spineLoad)}" title="Obciążenie Kręgosłupa">
+                    <span class="li-label">Spine</span>
+                    <div class="li-dots"><span></span><span></span><span></span></div>
+                </div>
+                <div class="load-indicator ${getLoadClass(kneeLoad)}" title="Obciążenie Kolan">
+                    <span class="li-label">Knee</span>
+                    <div class="li-dots"><span></span><span></span><span></span></div>
+                </div>
+                <div class="load-indicator ${getLoadClass(impact)}" title="Impact">
+                    <span class="li-label">Impact</span>
+                    <div class="li-dots"><span></span><span></span><span></span></div>
+                </div>
+            </div>
+
+            <div class="ex-col-toggle"><span class="arrow ${isExpanded ? 'open' : ''}">▼</span></div>
+        </div>
+
+        <!-- DETAILS -->
+        ${isExpanded ? `
+        <div class="ex-row-details">
+            <div class="details-grid">
+                <div class="detail-block">
+                    <span class="detail-label">Pozycja</span>
+                    <div class="detail-val">${position}</div>
+                </div>
+                <div class="detail-block">
+                    <span class="detail-label">Płaszczyzna</span>
+                    <div class="detail-val">${plane}</div>
+                </div>
+                <div class="detail-block">
+                    <span class="detail-label">Tempo</span>
+                    <div class="detail-val tempo-text">${ex.defaultTempo || 'Standard'}</div>
+                </div>
+            </div>
+
+            <!-- TAGI: WYDZIELONE LINIE -->
+            ${equipTags ? `<div class="meta-line"><span class="meta-label">Wymagany Sprzęt:</span> <div style="display:flex; flex-wrap:wrap; gap:4px;">${equipTags}</div></div>` : ''}
+            ${painReliefBadges ? `<div class="meta-line"><span class="meta-label">Pomaga na:</span> <div style="display:flex; flex-wrap:wrap; gap:4px;">${painReliefBadges}</div></div>` : ''}
+
+            <div class="tags-row">
+                ${toleranceTags}
+                ${ex.metabolicIntensity >= 4 ? '<span class="tag tag-burn">🔥 High Burn</span>' : ''}
+                ${ex.isUnilateral ? '<span class="tag tag-uni">🔄 Jednostronne</span>' : ''}
+            </div>
+
+            <p class="ex-desc">${ex.description || 'Brak opisu.'}</p>
+
+            <div class="ex-actions-footer">
+                <div class="left-actions">
+                    ${previewBtn}
+                    ${videoBtn}
+                </div>
+                <div class="right-actions">
+                    <button data-action="tune" data-id="${ex.id}" class="mini-action-btn btn-tune">🎛️ Kalibruj</button>
+                </div>
+            </div>
+        </div>` : ''}
+    </div>`;
 }
 
-function calculateZoneStats() {
-    const stats = {};
-    const exercises = Object.values(state.exerciseLibrary);
-    exercises.forEach(ex => {
-        if (ex.isAllowed === false) return;
-        let zone = 'other';
-        for (const [zId, zData] of Object.entries(ZONE_MAPPING)) {
-            if (zId === 'metabolic') {
-                if (ex.goalTags && (ex.goalTags.includes('fat_loss') || ex.goalTags.includes('conditioning'))) {
-                    zone = zId;
-                    break;
-                }
-            } else {
-                if (zData.cats.includes(ex.categoryId) || (ex.painReliefZones && ex.painReliefZones.includes(zId))) {
-                    zone = zId;
-                    break;
-                }
+function attachEvents(container) {
+    const searchInput = container.querySelector('#atlas-search');
+    const clearBtn = container.querySelector('#clear-search-btn');
+    const filters = container.querySelectorAll('.filter-chip');
+    const sortSelect = container.querySelector('#atlas-sort-select');
+    const listContainer = container.querySelector('#atlas-list');
+
+    // --- EVENT DELEGATION (Nowy, stabilny system obsługi zdarzeń) ---
+    if (listContainer) {
+        listContainer.addEventListener('click', async (e) => {
+            // 1. Obsługa Header (Rozwijanie)
+            const header = e.target.closest('.ex-row-header');
+            if (header) {
+                const row = header.closest('.ex-row');
+                const id = row.dataset.id;
+                if (atlasState.expandedRows.has(id)) atlasState.expandedRows.delete(id);
+                else atlasState.expandedRows.add(id);
+                renderList();
+                return;
             }
-        }
-        if (!stats[zone]) stats[zone] = { count: 0 };
-        stats[zone].count++;
-    });
-    return stats;
-}
 
-function getTier(pref) { if (pref.difficulty === 1) return 'C'; if (pref.score >= 20) return 'S'; if (pref.score >= 10) return 'A'; if (pref.score <= -10) return 'C'; return 'B'; }
-function formatCategory(cat) { return cat ? cat.replace(/_/g, ' ') : 'Inne'; }
-function getLevelLabel(lvl) { if (!lvl) return 'Baza'; switch (parseInt(lvl)) { case 1: return 'Lvl 1 (Rehab/Start)'; case 2: return 'Lvl 2 (Beginner)'; case 3: return 'Lvl 3 (Intermediate)'; case 4: return 'Lvl 4 (Advanced)'; case 5: return 'Lvl 5 (Elite)'; default: return `Lvl ${lvl}`; } }
+            // 2. Obsługa Przycisków Akcji
+            const btn = e.target.closest('button, a');
+            if (!btn) return;
+
+            e.stopPropagation(); // Zatrzymujemy, żeby nie zwinęło wiersza (gdyby kliknięto w coś innego)
+
+            const action = btn.dataset.action;
+            const id = btn.dataset.id || btn.closest('.ex-row')?.dataset.id;
+
+            if (action === 'tune') {
+                // FIX: Używamy delegacji + poprawionego modals.js, więc to jest bezpieczne
+                renderTunerModal(id, () => renderList());
+            } 
+            else if (action === 'preview') {
+                showLoader();
+                try {
+                    const svg = await dataStore.fetchExerciseAnimation(id);
+                    if (svg) renderPreviewModal(svg, state.exerciseLibrary[id].name);
+                } finally { hideLoader(); }
+            }
+            else if (action === 'video') {
+                window.open(btn.dataset.url, '_blank');
+            }
+        });
+    }
+
+    searchInput.addEventListener('input', (e) => {
+        atlasState.search = e.target.value;
+        if(clearBtn) clearBtn.style.display = atlasState.search ? 'block' : 'none';
+        renderList();
+    });
+
+    if(clearBtn) clearBtn.addEventListener('click', () => {
+        atlasState.search = '';
+        searchInput.value = '';
+        clearBtn.style.display = 'none';
+        renderList();
+    });
+
+    if (sortSelect) {
+        sortSelect.addEventListener('change', (e) => {
+            atlasState.sortBy = e.target.value;
+            renderList();
+        });
+    }
+
+    filters.forEach(btn => {
+        btn.addEventListener('click', () => {
+            atlasState.activeFilter = btn.dataset.filter;
+            filters.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            renderList();
+        });
+    });
+}

@@ -242,6 +242,8 @@ export function renderSessionRecoveryModal(backup, timeGapFormatted, onRestore, 
 }
 
 export function renderTunerModal(exerciseId, onUpdate) {
+    console.log(`[ModalDebug] 🟢 START renderTunerModal: ${exerciseId}`);
+
     const exercise = state.exerciseLibrary[exerciseId];
     if (!exercise) return;
 
@@ -291,6 +293,30 @@ export function renderTunerModal(exerciseId, onUpdate) {
 
     document.body.appendChild(overlay);
 
+    // === FIX STABILNOŚCI ===
+    // 1. Śledzenie mousedown: Zapobiega zamknięciu, gdy ktoś wciśnie klawisz na przycisku otwierającym,
+    //    przesunie mysz i puści ją na overlayu.
+    let isMouseDownOnOverlay = false;
+
+    overlay.addEventListener('mousedown', (e) => {
+        if (e.target === overlay) {
+            isMouseDownOnOverlay = true;
+        } else {
+            isMouseDownOnOverlay = false;
+        }
+    });
+
+    // 2. Opóźnione dodanie listenera kliknięcia
+    // Całkowicie ignoruje jakiekolwiek zdarzenia z "przeszłości" (propagacja).
+    setTimeout(() => {
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay && isMouseDownOnOverlay) {
+                console.log('[ModalDebug] Closing modal (Valid background click)');
+                overlay.remove();
+            }
+        });
+    }, 200);
+
     const slider = overlay.querySelector('#tuner-slider');
     const valDisplay = overlay.querySelector('#tuner-score-val');
     const tierDisplay = overlay.querySelector('#tuner-tier-name');
@@ -321,10 +347,6 @@ export function renderTunerModal(exerciseId, onUpdate) {
             btn.classList.add('active');
             currentDiff = parseInt(btn.dataset.val);
         });
-    });
-
-    overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) overlay.remove();
     });
 
     overlay.querySelector('#save-tuner').addEventListener('click', async () => {

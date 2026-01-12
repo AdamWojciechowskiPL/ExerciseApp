@@ -196,10 +196,10 @@ function initCategoryWeightsFromExercises(exercises) {
   return weights;
 }
 
-function boost(weights, categoryId, delta) { 
-    const key = String(categoryId); 
+function boost(weights, categoryId, delta) {
+    const key = String(categoryId);
     if (weights[key] != null) {
-        weights[key] += delta; 
+        weights[key] += delta;
     }
 }
 
@@ -394,7 +394,7 @@ function violatesPhysicalRestrictions(ex, restrictionsSet) {
   if (restrictionsSet.has('no_kneeling')) {
       if (pos === 'kneeling' || pos === 'quadruped' || pos === 'half_kneeling') return true;
   }
-  
+
   if (restrictionsSet.has('no_prone') && pos === 'prone') return true;
   if (restrictionsSet.has('no_supine') && pos === 'supine') return true;
   if (restrictionsSet.has('no_sitting') && pos === 'sitting') return true;
@@ -452,9 +452,9 @@ function violatesSeverePainRules(ex, ctx) {
 function applyCheckExerciseAvailability(ex, ctx, userData) {
   try {
     const res = checkExerciseAvailability(ex, ctx, { strictSeverity: true, userData });
-    
+
     // P3.2 Logging reason in loop (returning full object now)
-    return res; 
+    return res;
 
   } catch (e) {
     console.error(`Error in checkExerciseAvailability for ${ex.id}:`, e);
@@ -752,12 +752,12 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatig
       const baseTotalSec = 480 * factor;
       const cycle = work + rest;
       let calculatedSets = Math.round(baseTotalSec / cycle);
-      calculatedSets = clamp(calculatedSets, 3, 20); 
-      
-      return { 
-          sets: String(calculatedSets), 
-          reps_or_time: `${work} s`, 
-          restBetweenSets: rest 
+      calculatedSets = clamp(calculatedSets, 3, 20);
+
+      return {
+          sets: String(calculatedSets),
+          reps_or_time: `${work} s`,
+          restBetweenSets: rest
       };
   }
 
@@ -1002,7 +1002,9 @@ function reorderSessionByIntensityWave(session) {
     session.warmup.sort((a, b) => {
         const rankA = getPositionRank(a);
         const rankB = getPositionRank(b);
+        // 1. Priorytet: Pozycja (Niska -> Wysoka, aby wstać z podłogi)
         if (rankA !== rankB) return rankA - rankB;
+        // 2. Priorytet: Trudność (Rosnąco - od łatwych do trudnych)
         return (a.difficulty_level || 1) - (b.difficulty_level || 1);
     });
 
@@ -1019,8 +1021,10 @@ function reorderSessionByIntensityWave(session) {
     session.cooldown.sort((a, b) => {
         const rankA = getPositionRank(a);
         const rankB = getPositionRank(b);
+        // 1. Priorytet: Pozycja (Wysoka -> Niska, schodzimy do parteru)
         if (rankA !== rankB) return rankB - rankA;
-        return 0;
+        // 2. Priorytet: Trudność (Malejąco - od trudniejszych do łatwiejszych)
+        return (b.difficulty_level || 1) - (a.difficulty_level || 1);
     });
 }
 

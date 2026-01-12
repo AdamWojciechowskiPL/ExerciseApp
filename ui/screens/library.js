@@ -64,7 +64,7 @@ export const renderLibraryScreen = async (searchTerm = '') => {
 
     // 1. Oblicz liczniki (POPRAWKA: Mapujemy entries, aby obiekty miały ID, naprawia to licznik ulubionych)
     const allExercises = Object.entries(state.exerciseLibrary).map(([id, data]) => ({ id, ...data }));
-    
+
     const filterCounts = {};
     SPECIAL_FILTERS.forEach(f => {
         filterCounts[f.id] = allExercises.filter(ex => f.check(ex)).length;
@@ -198,6 +198,19 @@ function createRowHTML(ex) {
     const plane = ex.primaryPlane ? (LABELS.planes[ex.primaryPlane] || ex.primaryPlane) : '-';
     const lvlBars = Array(Math.min(5, ex.difficultyLevel || 1)).fill('<span class="lvl-dot"></span>').join('');
 
+    // --- NOWA IKONA POZYCJI ---
+    const posRaw = ex.position || 'standing';
+    const posIconId = `icon-pos-${posRaw.replace('_', '-')}`; // Zamiana np. side_lying na side-lying
+    const posLabel = LABELS.positions[posRaw] || posRaw;
+
+    const positionIconHtml = `
+        <div class="load-indicator" title="Pozycja: ${posLabel}" style="width:auto; margin-right:8px; opacity:0.8;">
+            <svg width="24" height="24" style="color:var(--primary-color);">
+                <use href="#${posIconId}"/>
+            </svg>
+        </div>
+    `;
+
     // Tagi Tolerancji
     const toleranceTags = (ex.toleranceTags || []).map(t => {
         if(t.includes('flexion')) return `<span class="tag tag-tolerance">✅ Zgięcie OK</span>`;
@@ -257,6 +270,9 @@ function createRowHTML(ex) {
             </div>
 
             <div class="ex-col-clinical">
+                <!-- NOWA IKONA POZYCJI -->
+                ${positionIconHtml}
+
                 <div class="load-indicator ${getLoadClass(spineLoad)}" title="Obciążenie Kręgosłupa">
                     <span class="li-label">Spine</span>
                     <div class="li-dots"><span></span><span></span><span></span></div>
@@ -350,7 +366,7 @@ function attachEvents(container) {
             if (action === 'tune') {
                 // FIX: Używamy delegacji + poprawionego modals.js, więc to jest bezpieczne
                 renderTunerModal(id, () => renderList());
-            } 
+            }
             else if (action === 'preview') {
                 showLoader();
                 try {

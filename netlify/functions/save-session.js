@@ -3,28 +3,54 @@
 const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
 const { calculateStreak, calculateResilience, calculateAndUpsertPace } = require('./_stats-helper.js');
 
+// --- SMART REHAB MODEL CONFIG ---
+const SCORE_LIKE_INCREMENT = 15;
+const SCORE_DISLIKE_DECREMENT = 30;
+const SCORE_MAX = 100;
+const SCORE_MIN = -100;
+
 /**
- * Aktualizuje preferencje (Affinity) w trybie SET (Idempotentnym).
+ * Aktualizuje preferencje (Affinity) w trybie PRZYROSTOWYM (Model Akumulacji).
  */
 async function updatePreferences(client, userId, ratings) {
     if (!ratings || !Array.isArray(ratings) || ratings.length === 0) return;
 
     for (const rating of ratings) {
-        let targetScore = null;
-        if (rating.action === 'like') targetScore = 50;
-        else if (rating.action === 'dislike') targetScore = -50;
-        else if (rating.action === 'neutral') targetScore = 0;
+        let sql = '';
+        let params = [];
 
-        if (targetScore === null) continue;
+        // Logika przyrostowa (Smart Rehab)
+        // Zamiast ustawiać na 50, dodajemy 15 lub odejmujemy 30.
+        // GREATEST/LEAST pilnują zakresu -100 do +100.
 
-        const query = `
-            INSERT INTO user_exercise_preferences (user_id, exercise_id, affinity_score, difficulty_rating, updated_at)
-            VALUES ($1, $2, $3, 0, CURRENT_TIMESTAMP)
-            ON CONFLICT (user_id, exercise_id) DO UPDATE SET
-                affinity_score = $3,
-                updated_at = CURRENT_TIMESTAMP
-        `;
-        await client.query(query, [userId, rating.exerciseId, targetScore]);
+        if (rating.action === 'like') {
+            sql = `
+                INSERT INTO user_exercise_preferences (user_id, exercise_id, affinity_score, difficulty_rating, updated_at)
+                VALUES ($1, $2, $3, 0, CURRENT_TIMESTAMP)
+                ON CONFLICT (user_id, exercise_id) DO UPDATE SET
+                    affinity_score = LEAST($4, user_exercise_preferences.affinity_score + $3),
+                    updated_at = CURRENT_TIMESTAMP
+            `;
+            params = [userId, rating.exerciseId, SCORE_LIKE_INCREMENT, SCORE_MAX];
+        }
+        else if (rating.action === 'dislike') {
+            sql = `
+                INSERT INTO user_exercise_preferences (user_id, exercise_id, affinity_score, difficulty_rating, updated_at)
+                VALUES ($1, $2, -$3, 0, CURRENT_TIMESTAMP)
+                ON CONFLICT (user_id, exercise_id) DO UPDATE SET
+                    affinity_score = GREATEST($4, user_exercise_preferences.affinity_score - $3),
+                    updated_at = CURRENT_TIMESTAMP
+            `;
+            params = [userId, rating.exerciseId, SCORE_DISLIKE_DECREMENT, SCORE_MIN];
+        }
+        else if (rating.action === 'neutral') {
+            // Neutral nie zmienia wyniku w modelu akumulacji
+            continue;
+        }
+
+        if (sql) {
+            await client.query(sql, params);
+        }
     }
 }
 
@@ -63,6 +89,7 @@ async function analyzeAndAdjustPlan(client, userId, sessionLog, feedback, rating
                     updated_at = CURRENT_TIMESTAMP
             `, [userId, currentId, reason]);
 
+            // Reset affinity to 0 to be safe
             await client.query(`
                 UPDATE user_exercise_preferences SET affinity_score = 0 WHERE user_id = $1 AND exercise_id = $2
             `, [userId, currentId]);
@@ -90,6 +117,7 @@ async function analyzeAndAdjustPlan(client, userId, sessionLog, feedback, rating
                 DO UPDATE SET replacement_exercise_id = EXCLUDED.replacement_exercise_id, adjustment_type = 'devolution', reason = EXCLUDED.reason, updated_at = CURRENT_TIMESTAMP
             `, [userId, currentId, parentEx.id, reason]);
 
+            // Reset affinity
             await client.query(`
                 INSERT INTO user_exercise_preferences (user_id, exercise_id, affinity_score, updated_at)
                 VALUES ($1, $3, 0, CURRENT_TIMESTAMP)
@@ -177,16 +205,12 @@ exports.handler = async (event) => {
 
             await client.query('COMMIT');
 
-            // --- Faza Analityczna (Post-Commit) ---
-            // Wykonujemy w tym samym bloku try-catch (choć po commit), ale nie blokujemy odpowiedzi błędem.
-            // Wybieramy unikalne ID ćwiczeń z logu, które były wykonane na powtórzenia
             try {
                 if (session_data.sessionLog && Array.isArray(session_data.sessionLog)) {
                     const exerciseIds = new Set();
                     session_data.sessionLog.forEach(log => {
                         if (log.status === 'completed' && log.duration > 0) {
                             const valStr = String(log.reps_or_time || "").toLowerCase();
-                            // Interesują nas tylko powtórzenia (bez 's' ani 'min')
                             if (!valStr.includes('s') && !valStr.includes('min') && !valStr.includes(':')) {
                                 exerciseIds.add(log.exerciseId || log.id);
                             }
@@ -199,7 +223,6 @@ exports.handler = async (event) => {
                     }
                 }
             } catch (statsError) {
-                // Nie chcemy, aby błąd statystyk zepsuł odpowiedź sukcesu (bo sesja już zapisana)
                 console.error('[Stats] Error calculating pace:', statsError);
             }
 

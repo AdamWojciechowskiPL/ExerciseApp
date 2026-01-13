@@ -1,5 +1,6 @@
 // netlify/functions/get-or-create-user-data.js
 const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
+const { applyEntropy } = require('./_stats-helper.js');
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'GET') return { statusCode: 405, body: 'Method Not Allowed' };
@@ -15,16 +16,19 @@ exports.handler = async (event) => {
 
       const settingsCheck = await client.query('SELECT 1 FROM user_settings WHERE user_id = $1', [userId]);
       if (settingsCheck.rowCount === 0) {
-        // Usunięto domyślny activePlanId (static)
-        const defaultSettings = { 
-            appStartDate: new Date().toISOString().split('T')[0], 
-            planMode: 'dynamic' 
+        const defaultSettings = {
+            appStartDate: new Date().toISOString().split('T')[0],
+            planMode: 'dynamic'
         };
         await client.query('INSERT INTO user_settings (user_id, settings) VALUES ($1, $2)', [userId, JSON.stringify(defaultSettings)]);
       }
       await client.query('COMMIT');
 
-      // 2. RÓWNOLEGŁE POBIERANIE DANYCH
+      // 2. APLIKACJA ENTROPII (SMART REHAB)
+      // "Studzenie" emocji przed pobraniem danych
+      await applyEntropy(client, userId);
+
+      // 3. RÓWNOLEGŁE POBIERANIE DANYCH
       const [
         settingsResult,
         integrationResult,
@@ -64,10 +68,11 @@ exports.handler = async (event) => {
           completedAt: row.completed_at
       }));
 
+      // Zaokrąglanie wyników Affinity do liczb całkowitych (po kalkulacjach zmiennoprzecinkowych)
       const preferencesMap = {};
       preferencesResult.rows.forEach(row => {
           preferencesMap[row.exercise_id] = {
-              score: row.affinity_score,
+              score: Math.round(row.affinity_score || 0),
               difficulty: row.difficulty_rating
           };
       });

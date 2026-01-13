@@ -50,12 +50,19 @@
 .history-exercise-row:nth-child(even) { background-color: #f9f9f9; }
 .history-exercise-row:last-child { border-bottom: none; }
 .hex-main { display: flex; flex-direction: column; gap: 4px; flex-grow: 1; min-width: 0; }
+
+/* NOWY HEADER W HISTORII */
+.hex-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .hex-name { font-weight: 600; font-size: 0.95rem; color: var(--text-color); line-height: 1.2; }
+.hex-score-badge { font-size: 0.75rem; font-weight: 700; }
+
 .hex-details-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 0.8rem; color: var(--muted-text-color); }
 .status-badge { font-size: 0.7rem; font-weight: 700; padding: 4px 8px; border-radius: 6px; letter-spacing: 0.5px; }
 .status-badge.completed { color: var(--success-color); background-color: rgba(42, 157, 143, 0.1); }
 .status-badge.skipped { color: var(--danger-color); background-color: rgba(231, 111, 81, 0.1); }
 .time-badge { color: var(--secondary-color); font-weight: 600; background: rgba(10, 147, 150, 0.1); padding: 1px 5px; border-radius: 4px; font-size: 0.75rem; white-space: nowrap; }
+
+.hist-action-icon { font-size: 1rem; margin-left: 2px; }
 
 /* Przyciski oceny w historii */
 .hist-rating-actions { display: flex; gap: 6px; margin-left: auto; flex-shrink: 0; }

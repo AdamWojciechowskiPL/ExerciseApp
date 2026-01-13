@@ -99,14 +99,10 @@ function getMedian(values) {
 
 /**
  * Analizuje historię usera i aktualizuje (lub usuwa) średnie tempo dla podanych ćwiczeń.
- * @param {object} client - Klient bazy danych
- * @param {string} userId
- * @param {string[]} exerciseIdsToUpdate - Lista ID ćwiczeń do przeliczenia
  */
 async function calculateAndUpsertPace(client, userId, exerciseIdsToUpdate) {
     if (!exerciseIdsToUpdate || exerciseIdsToUpdate.length === 0) return;
 
-    // 1. Pobierz historię (ostatnie 50 sesji powinno wystarczyć, żeby znaleźć 10 próbek)
     const query = `
         SELECT session_data
         FROM training_sessions
@@ -116,17 +112,13 @@ async function calculateAndUpsertPace(client, userId, exerciseIdsToUpdate) {
     `;
     const result = await client.query(query, [userId]);
 
-    const samplesMap = {}; // { "pushUps": [3.5, 4.0, ...], ... }
-
-    // Inicjalizacja mapy dla szukanych ćwiczeń (abyśmy wiedzieli, co sprawdzić, nawet jeśli query nic nie zwróci)
+    const samplesMap = {};
     exerciseIdsToUpdate.forEach(id => samplesMap[id] = []);
 
-    // 2. Ekstrakcja danych
     for (const row of result.rows) {
         const session = row.session_data;
         if (!session || !session.sessionLog || !Array.isArray(session.sessionLog)) continue;
 
-        // Filtrujemy tylko ćwiczenia, które nas interesują
         const relevantLogs = session.sessionLog.filter(entry =>
             exerciseIdsToUpdate.includes(entry.exerciseId || entry.id) &&
             entry.status === 'completed' &&
@@ -134,7 +126,6 @@ async function calculateAndUpsertPace(client, userId, exerciseIdsToUpdate) {
         );
 
         for (const log of relevantLogs) {
-            // Ignorujemy ćwiczenia na czas
             const valStr = String(log.reps_or_time || "").toLowerCase();
             if (valStr.includes('s') || valStr.includes('min') || valStr.includes(':')) continue;
 
@@ -142,24 +133,18 @@ async function calculateAndUpsertPace(client, userId, exerciseIdsToUpdate) {
             if (reps <= 0) continue;
 
             const pace = log.duration / reps;
-
-            // Odrzucamy błędy pomiarowe (Data Hygiene)
             if (pace < 1.0 || pace > 15.0) continue;
 
-            // Dodajemy do próbek
             const id = log.exerciseId || log.id;
-            if (samplesMap[id].length < 10) { // Bierzemy max 10 najnowszych
+            if (samplesMap[id].length < 10) {
                 samplesMap[id].push(pace);
             }
         }
     }
 
-    // 3. Obliczenia i Zapis (UPSERT) LUB Usuwanie (DELETE)
     for (const exId of exerciseIdsToUpdate) {
         const samples = samplesMap[exId];
-
         if (samples && samples.length > 0) {
-            // SCENARIUSZ A: Mamy dane -> Aktualizujemy (Upsert)
             const medianPace = getMedian(samples);
             const finalPace = Math.round(medianPace * 100) / 100;
 
@@ -173,18 +158,48 @@ async function calculateAndUpsertPace(client, userId, exerciseIdsToUpdate) {
                     last_calculated_at = CURRENT_TIMESTAMP
             `;
             await client.query(upsertQuery, [userId, exId, finalPace, samples.length]);
-            console.log(`[PaceStats] Updated ${exId}: ${finalPace}s/rep (n=${samples.length})`);
-
         } else {
-            // SCENARIUSZ B: Brak danych (np. usunięto jedyną sesję z tym ćwiczeniem) -> Usuwamy rekord
-            const deleteQuery = `
-                DELETE FROM user_exercise_stats
-                WHERE user_id = $1 AND exercise_id = $2
-            `;
+            const deleteQuery = `DELETE FROM user_exercise_stats WHERE user_id = $1 AND exercise_id = $2`;
             await client.query(deleteQuery, [userId, exId]);
-            console.log(`[PaceStats] No history left for ${exId}. Stat deleted.`);
         }
     }
 }
 
-module.exports = { calculateStreak, calculateResilience, calculateAndUpsertPace };
+/**
+ * --- MODEL ENTROPII (SMART REHAB) ---
+ * Aplikuje wygaszanie punktów affinity w czasie.
+ * - Pozytywne (>0): Spadają o 2 pkt dziennie w stronę 0.
+ * - Negatywne (<0): Rosną o 0.5 pkt dziennie w stronę 0 (regeneracja zaufania).
+ */
+async function applyEntropy(client, userId) {
+    try {
+        console.log(`[Entropy] Applying Time Decay for user ${userId}...`);
+
+        // SQL wylicza różnicę w dniach i aplikuje odpowiedni wzór.
+        // Jeśli affinity_score = 0, nic nie zmienia.
+        // Aktualizuje 'updated_at' na TERAZ, aby "zresetować zegar" entropii.
+
+        const query = `
+            UPDATE user_exercise_preferences
+            SET
+                affinity_score = CASE
+                    WHEN affinity_score > 0 THEN GREATEST(0, affinity_score - (EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - updated_at)) / 86400 * 2.0))
+                    WHEN affinity_score < 0 THEN LEAST(0, affinity_score + (EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - updated_at)) / 86400 * 0.5))
+                    ELSE affinity_score
+                END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = $1
+              AND affinity_score != 0
+              AND updated_at < (CURRENT_TIMESTAMP - INTERVAL '12 hours') -- Optymalizacja: nie odpalaj częściej niż co 12h
+        `;
+
+        const res = await client.query(query, [userId]);
+        if (res.rowCount > 0) {
+            console.log(`[Entropy] Decayed scores for ${res.rowCount} exercises.`);
+        }
+    } catch (e) {
+        console.error("[Entropy] Failed to apply decay:", e);
+    }
+}
+
+module.exports = { calculateStreak, calculateResilience, calculateAndUpsertPace, applyEntropy };

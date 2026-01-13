@@ -4,6 +4,12 @@ import { state } from './state.js';
 import { getToken, getUserPayload } from './auth.js';
 import { getISODate } from './utils.js';
 
+// --- KONFIGURACJA PUNKTACJI (musi być spójna z Backendem) ---
+const SCORE_LIKE = 15;
+const SCORE_DISLIKE = -30;
+const SCORE_MAX = 100;
+const SCORE_MIN = -100;
+
 const callAPI = async (endpoint, { body, method = 'GET', params } = {}) => {
     const token = await getToken();
     let headers = { 'Content-Type': 'application/json' };
@@ -84,16 +90,11 @@ const dataStore = {
 
             if (!state.userProgress) state.userProgress = {};
 
-            // 1. SETTINGS & PACING
             if (data.settings) {
                 state.settings = { ...state.settings, ...data.settings };
-                
-                // --- MIGRACJA/BEZPIECZNIK ---
-                // Jeśli użytkownik ma stare ustawienia w bazie, ustawiamy domyślny restTimeFactor
                 if (typeof state.settings.restTimeFactor !== 'number') {
                     state.settings.restTimeFactor = 1.0;
                 }
-                
                 state.tts.isSoundOn = state.settings.ttsEnabled ?? true;
                 state.settings.planMode = 'dynamic';
             }
@@ -117,7 +118,6 @@ const dataStore = {
                 state.blacklist = [];
             }
 
-            // 4. RECENT SESSIONS (Hydration)
             const cachedStats = localStorage.getItem('cachedUserStats');
             if (cachedStats) {
                 try { state.userStats = JSON.parse(cachedStats); } catch (e) { state.userStats = { totalSessions: 0, streak: 0, resilience: null }; }
@@ -137,8 +137,6 @@ const dataStore = {
     },
 
     generateDynamicPlan: async (q) => {
-        // Dodajemy aktualne ustawienia globalne do payloadu generatora, 
-        // aby backend wiedział jaki jest restTimeFactor
         const payload = {
             ...q,
             secondsPerRep: state.settings.secondsPerRep || 6,
@@ -150,9 +148,7 @@ const dataStore = {
             state.settings.dynamicPlanData = result.plan;
             state.settings.planMode = 'dynamic';
             state.settings.onboardingCompleted = true;
-
             state.settings.wizardData = { ...state.settings.wizardData, ...q };
-
             return result;
         } else throw new Error("Pusta odpowiedź z generatora.");
     },
@@ -217,19 +213,32 @@ const dataStore = {
         state.isHistoryLoaded = true;
     },
 
+    // --- ZMODYFIKOWANA LOGIKA ZAPISU SESJI (Smart Rehab) ---
     saveSession: async (sessionData) => {
         const result = await callAPI('save-session', { method: 'POST', body: sessionData });
         state.loadedMonths.clear();
         state.masteryStats = null;
+
         if (sessionData.exerciseRatings && sessionData.exerciseRatings.length > 0) {
             sessionData.exerciseRatings.forEach(rating => {
                 const id = rating.exerciseId;
                 if (!state.userPreferences[id]) state.userPreferences[id] = { score: 0, difficulty: 0 };
 
-                if (rating.action === 'like') state.userPreferences[id].score = 50;
-                else if (rating.action === 'dislike') state.userPreferences[id].score = -50;
-                else if (rating.action === 'neutral') state.userPreferences[id].score = 0;
+                // LOGIKA PRZYROSTOWA (zamiast sztywnego ustawiania na 50)
+                let current = state.userPreferences[id].score || 0;
 
+                if (rating.action === 'like') {
+                    current += SCORE_LIKE;
+                }
+                else if (rating.action === 'dislike') {
+                    current += SCORE_DISLIKE; // SCORE_DISLIKE jest ujemne (-30)
+                }
+                // 'neutral' nie zmienia wyniku w modelu akumulacji
+
+                // Clamping -100 do +100
+                state.userPreferences[id].score = Math.max(SCORE_MIN, Math.min(SCORE_MAX, current));
+
+                // Difficulty flagi są ustawiane oddzielnie, tu tylko wynik
                 if (rating.action === 'hard') state.userPreferences[id].difficulty = 1;
                 else if (rating.action === 'easy') state.userPreferences[id].difficulty = -1;
             });
@@ -247,19 +256,29 @@ const dataStore = {
     uploadToStrava: async (pl) => { await callAPI('strava-upload-activity', { method: 'POST', body: pl }); },
     migrateData: async (pd) => { await callAPI('migrate-data', { method: 'POST', body: Object.values(pd).flat() }); },
 
+    // --- ZMODYFIKOWANA LOGIKA UPDATE (Smart Rehab) ---
     updatePreference: async (exerciseId, action, value = null) => {
         if (!state.userPreferences[exerciseId]) state.userPreferences[exerciseId] = { score: 0, difficulty: 0 };
 
         if (action === 'set') {
+            // Bezpośrednie ustawienie (np. z Tunera)
             state.userPreferences[exerciseId].score = value;
         } else if (action === 'set_difficulty') {
             state.userPreferences[exerciseId].difficulty = value;
         } else if (action === 'reset_difficulty') {
             state.userPreferences[exerciseId].difficulty = 0;
         } else {
-            if (action === 'like') state.userPreferences[exerciseId].score = 50;
-            else if (action === 'dislike') state.userPreferences[exerciseId].score = -50;
-            else if (action === 'neutral') state.userPreferences[exerciseId].score = 0;
+            // Logika przyrostowa (np. z historii)
+            let current = state.userPreferences[exerciseId].score || 0;
+
+            if (action === 'like') {
+                current += SCORE_LIKE;
+            } else if (action === 'dislike') {
+                current += SCORE_DISLIKE;
+            }
+            // 'neutral' nic nie robi
+
+            state.userPreferences[exerciseId].score = Math.max(SCORE_MIN, Math.min(SCORE_MAX, current));
 
             if (action === 'hard') state.userPreferences[exerciseId].difficulty = 1;
             else if (action === 'easy') state.userPreferences[exerciseId].difficulty = -1;
@@ -268,6 +287,7 @@ const dataStore = {
         try {
             const res = await callAPI('update-preference', { method: 'POST', body: { exerciseId, action, value } });
             if (res) {
+                // Backend zwraca ostateczną wartość z bazy, więc aktualizujemy stan lokalny, by był idealnie zsynchronizowany
                 if (res.newScore !== undefined) state.userPreferences[exerciseId].score = res.newScore;
                 if (res.newDifficulty !== undefined) state.userPreferences[exerciseId].difficulty = res.newDifficulty;
             }

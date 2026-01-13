@@ -1,4 +1,4 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v19.2.0
+# Aplikacja Treningowa (Smart Rehab PWA) v20.0.0
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
@@ -16,6 +16,12 @@ Rewolucja w planowaniu treningów. Zamiast statycznego "Planu A" na 4 tygodnie, 
 System uczy się tempa użytkownika, aby estymacje czasu trwania sesji były idealnie dopasowane.
 *   **Analiza Historii:** Backend wylicza medianę czasu wykonania jednego powtórzenia dla każdego ćwiczenia.
 *   **Manualna Rekalibracja:** Funkcja przeliczania statystyk na żądanie analizuje całą historię treningową.
+
+### ⏱️ Centralized Pacing Engine
+Architektura **Explicit Base Rest**. Logika doboru przerw regeneracyjnych (regeneracja ATP, układ nerwowy, metabolizm) została przeniesiona w 100% na Backend.
+*   **Fizjologiczna Baza:** Backend przypisuje każdemu ćwiczeniu idealny czas przerwy (np. 60s dla Siły, 35s dla Neurodynamiki) w momencie generowania planu.
+*   **User Scaling:** Frontend nie "zgaduje" kategorii ćwiczenia. Jedynie skaluje otrzymaną wartość bazową przez suwak preferencji użytkownika (np. x0.8 dla "Szybki trening").
+*   **Spójność:** Gwarantuje, że czas estymowany na Dashboardzie jest matematycznie identyczny z czasem wykonywania treningu.
 
 ### 🛡️ Session Recovery (Crash Protection)
 *   **Stan sesji:** Pozycja w treningu, czasy serii, timer i logi są zapisywane lokalnie co 2 sekundy.
@@ -52,9 +58,22 @@ Sesje celowane generowane natychmiastowo po stronie klienta (Time-Boxing):
 *   🔥 **Metabolic Burn:** Intensywne spalanie Low-Impact.
 *   🧗 **Ladder:** Budowanie progresji technicznej.
 
+### 4. Pacing Engine (`_pacing-engine.js`)
+Centralny moduł "medyczny" odpowiedzialny za parametry czasowe.
+*   Przyjmuje definicję ćwiczenia (kategoria, trudność, typ).
+*   Zwraca obiekt `calculated_timing` zawierający:
+    *   `baseRestSeconds`: Bazowy czas przerwy fizjologicznej.
+    *   `baseTransitionSeconds`: Czas na zmianę pozycji (uwzględnia unilateralność).
+---
 
+## 🧪 Testy (Jakość Kodu)
+Projekt posiada zestaw testów regresyjnych w katalogu `/tests`:
+*   **Safety Tests:** Weryfikacja czy Clinical Engine poprawnie blokuje ćwiczenia niebezpieczne (np. rotacja przy przepuklinie).
+*   **Data Integrity:** Sprawdzenie czy generator planów poprawnie wstrzykuje obiekt `calculated_timing`.
+*   **Calc Logic:** Testy jednostkowe przeliczania przerw na frontendzie.
 
 ---
+
 ## 📂 Pełna Struktura Plików
 
 ```text

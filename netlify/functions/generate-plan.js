@@ -3,6 +3,7 @@
 
 const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
 const { buildUserContext, checkExerciseAvailability, isRotationalPlane } = require('./_clinical-rule-engine.js');
+const { calculateTiming } = require('./_pacing-engine.js'); // IMPORT NOWEGO SILNIKA
 
 // DEFAULT CONSTANTS
 const DEFAULT_SECONDS_PER_REP = 6;
@@ -83,7 +84,7 @@ function normalizeEquipmentList(raw) {
 }
 
 function normalizeExerciseRow(row) {
-  return {
+  const ex = {
     id: row.id,
     name: row.name,
     description: row.description,
@@ -105,16 +106,20 @@ function normalizeExerciseRow(row) {
     conditioning_style: row.conditioning_style ? String(row.conditioning_style).toLowerCase() : 'none',
     recommended_interval_sec: row.recommended_interval_sec
   };
+
+  // --- ZMIANA ARCHITEKTONICZNA (Task B2) ---
+  // Wstępne obliczenie timingu już na etapie normalizacji
+  ex.calculated_timing = calculateTiming(ex);
+
+  return ex;
 }
 
-// P0.5 + P2.2 + P3.2: Validation with Reason Reporting
 function validateExerciseRecord(ex) {
     if (!ex.id) return { valid: false, error: 'missing_id' };
     if (!ex.impact_level) return { valid: false, error: 'missing_impact_level' };
     if (!ex.position) return { valid: false, error: 'missing_position' };
     if (ex.is_foot_loading === null || ex.is_foot_loading === undefined) return { valid: false, error: 'missing_foot_loading' };
 
-    // P2.2 Interval Validation
     if (ex.conditioning_style === 'interval') {
         const i = ex.recommended_interval_sec;
         if (!i || typeof i !== 'object') return { valid: false, error: 'invalid_interval_object' };
@@ -165,10 +170,6 @@ function getPositionRank(ex) {
     const pos = ex.position || 'standing';
     return POSITION_ENERGY_RANK[pos] || 3;
 }
-
-// ---------------------------------
-// Clinical context & weighting
-// ---------------------------------
 
 function safeBuildUserContext(userData) {
   let ctx = {};
@@ -356,10 +357,6 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
   return weights;
 }
 
-// ---------------------------------
-// Safety filtering
-// ---------------------------------
-
 function parseNoPositionRestrictions(restrictionsSet) {
   const disallowed = new Set();
   for (const r of restrictionsSet) {
@@ -452,13 +449,10 @@ function violatesSeverePainRules(ex, ctx) {
 function applyCheckExerciseAvailability(ex, ctx, userData) {
   try {
     const res = checkExerciseAvailability(ex, ctx, { strictSeverity: true, userData });
-
-    // P3.2 Logging reason in loop (returning full object now)
     return res;
-
   } catch (e) {
     console.error(`Error in checkExerciseAvailability for ${ex.id}:`, e);
-    return { allowed: false, reason: 'rule_engine_exception' }; // P0.4 Fail-closed
+    return { allowed: false, reason: 'rule_engine_exception' };
   }
 }
 
@@ -473,7 +467,6 @@ function filterExerciseCandidates(exercises, userData, ctx, fatigueState, rpeDat
   for (const ex of exercises) {
     if (!ex || !ex.id) continue;
 
-    // P0.5 Validate Record Integrity
     const validation = validateExerciseRecord(ex);
     if (!validation.valid) {
         console.warn(`[Filter] Rejected invalid record: ${ex.id} (${validation.error})`);
@@ -482,7 +475,6 @@ function filterExerciseCandidates(exercises, userData, ctx, fatigueState, rpeDat
 
     if (ctx.blockedIds && ctx.blockedIds.has(ex.id)) continue;
 
-    // P3.2 Enhanced logging via result object
     const safetyCheck = applyCheckExerciseAvailability(ex, ctx, userData);
     if (!safetyCheck.allowed) {
         console.log(`[Filter] Rejected ${ex.id}: ${safetyCheck.reason}`);
@@ -506,10 +498,6 @@ function filterExerciseCandidates(exercises, userData, ctx, fatigueState, rpeDat
   }
   return filtered;
 }
-
-// ---------------------------------
-// Scoring & selection
-// ---------------------------------
 
 function derivePainZoneSet(userData) {
   const painLocs = normalizeLowerSet(userData?.pain_locations);
@@ -611,14 +599,24 @@ function varietyPenalty(ex, state, section) {
   return p;
 }
 
+// --- ZMODYFIKOWANA FUNKCJA AFFINITY ---
+// Przekształca score (-100 do +100) na mnożnik (0.0 do 2.0)
+// Wzór: M = 1.0 + (S / 100.0)
 function calculateAffinityMultiplier(exId, preferencesMap) {
     if (!preferencesMap || !preferencesMap[exId]) return 1.0;
-    const score = preferencesMap[exId].score || 0;
-    if (score >= 50) return 1.5;
-    if (score >= 10) return 1.2;
-    if (score <= -50) return 0.2;
-    if (score <= -10) return 0.7;
-    return 1.0;
+    let score = preferencesMap[exId].score || 0;
+
+    // Zabezpieczenie zakresu
+    score = Math.max(-100, Math.min(100, score));
+
+    // Liniowa interpolacja
+    // -100 => 0.0
+    // 0 => 1.0
+    // +100 => 2.0
+    let multiplier = 1.0 + (score / 100.0);
+
+    // Zabezpieczenie przed ujemnym mnożnikiem
+    return Math.max(0, parseFloat(multiplier.toFixed(3)));
 }
 
 function calculateFreshnessMultiplier(exId, historyMap) {
@@ -679,10 +677,6 @@ function pickExerciseForSection(section, candidates, userData, ctx, categoryWeig
   return JSON.parse(JSON.stringify(picked));
 }
 
-// ---------------------------------
-// Session structure
-// ---------------------------------
-
 function deriveSessionCounts(userData, ctx, targetMin) {
   const componentWeights = normalizeLowerSet(userData?.session_component_weights);
 
@@ -706,10 +700,6 @@ function deriveSessionCounts(userData, ctx, targetMin) {
 function createInitialSession(dayNumber, targetMinutes) {
   return { dayNumber, title: `Sesja ${dayNumber}`, warmup: [], main: [], cooldown: [], targetMinutes };
 }
-
-// ---------------------------------
-// Volume prescription & time estimation
-// ---------------------------------
 
 function loadFactorFromState(userData, ctx, fatigueState, rpeModifier = 1.0) {
   const exp = String(userData?.exercise_experience || 'none').toLowerCase();
@@ -746,7 +736,6 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatig
   let sets = 1;
   let repsOrTime = '10';
 
-  // P2.1 Variant A: Interval Support
   if (ex.conditioning_style === 'interval' && ex.recommended_interval_sec) {
       const { work, rest } = ex.recommended_interval_sec;
       const baseTotalSec = 480 * factor;
@@ -810,30 +799,8 @@ function parseRepsOrTimeToSeconds(repsOrTime) {
   return parseInt(t, 10) || 10;
 }
 
-function calculateBackendSmartRest(exercise, userRestFactor = 1.0) {
-    if (exercise.restBetweenSets) {
-        return Math.round(parseInt(exercise.restBetweenSets, 10) * userRestFactor);
-    }
-
-    const cat = String(exercise.category_id || '').toLowerCase();
-    const load = parseInt(exercise.difficulty_level || 1, 10);
-    let baseRest = 30;
-
-    if (cat.includes('nerve') || cat.includes('flossing') || cat.includes('neuro')) {
-        baseRest = 35;
-    } else if (cat.includes('mobility') || cat.includes('stretch') || cat.includes('flow')) {
-        baseRest = 20;
-    } else if (cat.includes('conditioning') || cat.includes('cardio') || cat.includes('burn')) {
-        baseRest = 20;
-    } else if (load >= 4 || cat.includes('strength') || cat.includes('squat') || cat.includes('deadlift')) {
-        baseRest = 60;
-    } else if (cat.includes('core_stability') || cat.includes('anti_')) {
-        baseRest = 45;
-    }
-
-    return Math.max(10, Math.round(baseRest * userRestFactor));
-}
-
+// --- ZMIANA ARCHITEKTONICZNA (Task B2) ---
+// Używamy danych z _pacing-engine.js zamiast liczyć "w locie"
 function estimateExerciseDurationSeconds(exEntry, userData, paceMap) {
   const globalSpr = clamp(toNumber(userData?.secondsPerRep, DEFAULT_SECONDS_PER_REP), 2, 12);
   const restFactor = toNumber(userData?.restTimeFactor, 1.0);
@@ -859,14 +826,28 @@ function estimateExerciseDurationSeconds(exEntry, userData, paceMap) {
   let totalSeconds = (sets * workTimePerSet);
 
   if (sets > 1) {
-      const smartRest = calculateBackendSmartRest(exEntry, restFactor);
+      // Używamy pre-kalkulowanej wartości z obiektu (jeśli dostępna)
+      // Fallback do starej logiki w razie problemów (bezpiecznik)
+      let baseRest = 30;
+      if (exEntry.calculated_timing && exEntry.calculated_timing.rest_sec) {
+          baseRest = exEntry.calculated_timing.rest_sec;
+      }
+      const smartRest = Math.round(baseRest * restFactor);
       totalSeconds += (sets - 1) * smartRest;
   }
 
-  const transitionTime = Math.max(12, Math.round(12 * restFactor));
-  const transition = sets * (isUnilateral ? transitionTime : 5);
+  // Używamy pre-kalkulowanej wartości transition (jeśli dostępna)
+  let transitionTime = Math.max(12, Math.round(12 * restFactor));
+  if (exEntry.calculated_timing && exEntry.calculated_timing.transition_sec) {
+      // Backend zwraca bazę (np. 12 lub 5), frontend/tu mnożymy przez factor
+      transitionTime = Math.max(5, Math.round(exEntry.calculated_timing.transition_sec * restFactor));
+  } else if (!isUnilateral) {
+      transitionTime = 5;
+  }
 
-  return totalSeconds + transition;
+  const transitionTotal = sets * transitionTime;
+
+  return totalSeconds + transitionTotal;
 }
 
 function estimateSessionDurationSeconds(session, userData, paceMap) {
@@ -1002,9 +983,7 @@ function reorderSessionByIntensityWave(session) {
     session.warmup.sort((a, b) => {
         const rankA = getPositionRank(a);
         const rankB = getPositionRank(b);
-        // 1. Priorytet: Pozycja (Niska -> Wysoka, aby wstać z podłogi)
         if (rankA !== rankB) return rankA - rankB;
-        // 2. Priorytet: Trudność (Rosnąco - od łatwych do trudnych)
         return (a.difficulty_level || 1) - (b.difficulty_level || 1);
     });
 
@@ -1021,9 +1000,7 @@ function reorderSessionByIntensityWave(session) {
     session.cooldown.sort((a, b) => {
         const rankA = getPositionRank(a);
         const rankB = getPositionRank(b);
-        // 1. Priorytet: Pozycja (Wysoka -> Niska, schodzimy do parteru)
         if (rankA !== rankB) return rankB - rankA;
-        // 2. Priorytet: Trudność (Malejąco - od trudniejszych do łatwiejszych)
         return (b.difficulty_level || 1) - (a.difficulty_level || 1);
     });
 }
@@ -1142,7 +1119,8 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
                     const ex = pickExerciseForSection(sec, candidates, userData, ctx, categoryWeights, sState, pZones, (c) => sec === 'main' ? !isBreathingCategory(c.category_id) : (c.metabolic_intensity || 1) < 4);
                     if (ex) {
                         const rx = prescribeForExercise(ex, sec, userData, ctx, categoryWeights, fatigueState, targetMin, rpeData.volumeModifier);
-                        session[sec].push({ ...ex, ...rx });
+                        const newEx = { ...ex, ...rx };
+                        session[sec].push(newEx);
                     }
                 }
             });

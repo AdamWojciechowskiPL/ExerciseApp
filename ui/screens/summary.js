@@ -10,6 +10,13 @@ import { clearPlanFromStorage } from '/ui/screens/dashboard.js';
 
 let selectedFeedback = { type: null, value: 0 };
 
+// Tymczasowy stan zmian punktów dla tej sesji
+// Struktura: { "exerciseId": delta } np. { "ex1": 15, "ex2": -30 }
+let sessionAffinityDeltas = {};
+
+const SCORE_LIKE = 15;
+const SCORE_DISLIKE = -30;
+
 export const renderSummaryScreen = () => {
     if (getIsCasting()) sendShowIdle();
 
@@ -28,6 +35,8 @@ export const renderSummaryScreen = () => {
     }
 
     selectedFeedback = { type: isSafetyMode ? 'symptom' : 'tension', value: 0 };
+    sessionAffinityDeltas = {}; // Resetujemy zmiany sesyjne
+
     const summaryScreen = screens.summary;
 
     let globalOptionsHtml = isSafetyMode ? `
@@ -54,19 +63,29 @@ export const renderSummaryScreen = () => {
         exercisesListHtml = uniqueExercises.map(ex => {
             const id = ex.exerciseId || ex.id;
             const pref = state.userPreferences[id] || { score: 0 };
+            const baseScore = pref.score || 0;
 
             let displayName = ex.name.replace(/\s*\((Lewa|Prawa)\)/gi, '').trim();
 
-            const isLike = pref.score >= 50 ? 'active' : '';
-            const isDislike = pref.score <= -50 ? 'active' : '';
+            // Stylizacja wyniku
+            let scoreColor = '#666';
+            let scorePrefix = '';
+            if (baseScore >= 75) { scoreColor = 'var(--gold-color)'; scorePrefix = '👑 '; }
+            else if (baseScore > 0) { scoreColor = 'var(--success-color)'; scorePrefix = '+'; }
+            else if (baseScore < 0) { scoreColor = 'var(--danger-color)'; }
 
             return `
-            <div class="rating-card" data-id="${id}">
-                <div class="rating-name">${displayName}</div>
+            <div class="rating-card" data-id="${id}" data-base-score="${baseScore}">
+                <div class="rating-info" style="flex:1;">
+                    <div class="rating-name">${displayName}</div>
+                    <div class="rating-score-display" style="font-size:0.75rem; font-weight:700; color:${scoreColor}; transition:color 0.2s;">
+                        Wynik: <span class="current-score-val">${scorePrefix}${baseScore}</span>
+                    </div>
+                </div>
                 <div class="rating-actions-group">
                     <div class="btn-group-affinity">
-                        <button type="button" class="rate-btn affinity-btn ${isLike}" data-action="like" title="Róbmy to częściej">👍</button>
-                        <button type="button" class="rate-btn affinity-btn ${isDislike}" data-action="dislike" title="Róbmy to rzadziej">👎</button>
+                        <button type="button" class="rate-btn affinity-btn" data-action="like" title="Super (+15)">👍</button>
+                        <button type="button" class="rate-btn affinity-btn" data-action="dislike" title="Słabo (-30)">👎</button>
                     </div>
                     <div class="sep"></div>
                     <div class="btn-group-difficulty">
@@ -98,13 +117,7 @@ export const renderSummaryScreen = () => {
                 <div class="feedback-container compact">${globalOptionsHtml}</div>
             </div>
             <div class="form-group" style="margin-top:1.5rem;">
-                <label style="display:block; margin-bottom:5px; font-weight:700;">Kalibracja Ćwiczeń</label>
-                <div style="display:flex; justify-content: flex-end; padding-right: 4px; margin-bottom: 6px;">
-                    <div style="display:flex; gap: 10px; font-size: 0.6rem; color: #888; font-weight: 700; text-transform: uppercase;">
-                        <span style="width: 82px; text-align: center;">Częstotliwość</span>
-                        <span style="width: 82px; text-align: center;">Trudność</span>
-                    </div>
-                </div>
+                <label style="display:block; margin-bottom:5px; font-weight:700;">Twoja Opinia</label>
                 <div class="ratings-list">${exercisesListHtml}</div>
             </div>
             <div class="form-group" style="margin-top:2rem;">
@@ -116,6 +129,7 @@ export const renderSummaryScreen = () => {
         </form>
     `;
 
+    // Listenery
     summaryScreen.querySelectorAll('.feedback-option').forEach(opt => {
         opt.addEventListener('click', () => {
             summaryScreen.querySelectorAll('.feedback-option').forEach(o => o.classList.remove('selected'));
@@ -125,22 +139,54 @@ export const renderSummaryScreen = () => {
         });
     });
 
+    // NOWA LOGIKA KCIUKÓW (INTERAKTYWNA)
     summaryScreen.querySelectorAll('.rating-card').forEach(card => {
+        const id = card.dataset.id;
+        const baseScore = parseInt(card.dataset.baseScore, 10);
+        const scoreDisplay = card.querySelector('.current-score-val');
+        const scoreContainer = card.querySelector('.rating-score-display');
+
+        const updateVisuals = () => {
+            const delta = sessionAffinityDeltas[id] || 0;
+            const newScore = Math.max(-100, Math.min(100, baseScore + delta));
+
+            let color = '#666';
+            let prefix = '';
+            if (newScore >= 75) { color = 'var(--gold-color)'; prefix = '👑 '; }
+            else if (newScore > 0) { color = 'var(--success-color)'; prefix = '+'; }
+            else if (newScore < 0) { color = 'var(--danger-color)'; }
+
+            scoreDisplay.textContent = `${prefix}${newScore}`;
+            scoreContainer.style.color = color;
+
+            // Highlight buttons
+            card.querySelectorAll('.affinity-btn').forEach(btn => btn.classList.remove('active'));
+            if (delta === SCORE_LIKE) card.querySelector('[data-action="like"]').classList.add('active');
+            if (delta === SCORE_DISLIKE) card.querySelector('[data-action="dislike"]').classList.add('active');
+        };
+
         const affinityBtns = card.querySelectorAll('.affinity-btn');
         affinityBtns.forEach(btn => {
             btn.addEventListener('click', () => {
-                const isActive = btn.classList.contains('active');
-                affinityBtns.forEach(b => b.classList.remove('active'));
-                if (!isActive) btn.classList.add('active');
+                const action = btn.dataset.action;
+                const currentDelta = sessionAffinityDeltas[id] || 0;
+
+                // Toggle logic
+                if (action === 'like') {
+                    sessionAffinityDeltas[id] = (currentDelta === SCORE_LIKE) ? 0 : SCORE_LIKE;
+                } else if (action === 'dislike') {
+                    sessionAffinityDeltas[id] = (currentDelta === SCORE_DISLIKE) ? 0 : SCORE_DISLIKE;
+                }
+                updateVisuals();
             });
         });
 
+        // Difficulty buttons (bez zmian logicznych, tylko styl)
         const diffBtns = card.querySelectorAll('.diff-btn');
         diffBtns.forEach(btn => {
             btn.addEventListener('click', () => {
                 diffBtns.forEach(b => b.classList.remove('selected'));
                 btn.classList.add('selected');
-                btn.title = "Zgłoszono zmianę";
             });
         });
     });
@@ -157,12 +203,22 @@ export async function handleSummarySubmit(e) {
 
     const ratingsArray = [];
     const ratingCards = document.querySelectorAll('.rating-card');
+
     ratingCards.forEach(card => {
         const id = card.dataset.id;
-        const activeAffinity = card.querySelector('.affinity-btn.active');
-        ratingsArray.push({ exerciseId: id, action: activeAffinity ? activeAffinity.dataset.action : 'neutral' });
+
+        // 1. Sprawdź Affinity (z obiektu delta)
+        const delta = sessionAffinityDeltas[id];
+        if (delta) {
+            const action = delta === SCORE_LIKE ? 'like' : 'dislike';
+            ratingsArray.push({ exerciseId: id, action: action });
+        }
+
+        // 2. Sprawdź Difficulty (z DOM)
         const activeDiff = card.querySelector('.diff-btn.selected');
-        if (activeDiff) ratingsArray.push({ exerciseId: id, action: activeDiff.dataset.action });
+        if (activeDiff) {
+            ratingsArray.push({ exerciseId: id, action: activeDiff.dataset.action });
+        }
     });
 
     const now = new Date();
@@ -204,6 +260,15 @@ export async function handleSummarySubmit(e) {
         state.currentTrainingDate = null;
         state.sessionLog = [];
         state.isPaused = false;
+
+        // Aktualizuj lokalny stan preferencji (optimistic update)
+        Object.entries(sessionAffinityDeltas).forEach(([id, delta]) => {
+            if (state.userPreferences[id]) {
+                let s = state.userPreferences[id].score || 0;
+                s = Math.max(-100, Math.min(100, s + delta));
+                state.userPreferences[id].score = s;
+            }
+        });
 
         const finalizeProcess = async () => {
             hideLoader();

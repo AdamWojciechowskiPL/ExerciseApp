@@ -192,7 +192,8 @@ const createGlobalMenu = () => {
             closeGlobalMenu();
 
             if (action === 'preview') {
-                renderPreTrainingScreen(parseInt(dayId, 10), 0, true);
+                // ZMIANA: initialPainLevel ustawiony na 3 (Dobrze)
+                renderPreTrainingScreen(parseInt(dayId, 10), 3, true);
             }
             if (action === 'rest') handleTurnToRest(date);
             if (action === 'move') handleMoveDay(date);
@@ -370,9 +371,6 @@ export const renderMainScreen = async (isLoading = false) => {
 
         // --- ZMIANA: Zawsze przeliczamy czas na żywo, ignorując starą wartość z bazy ---
         let estimatedMinutes = calculateSmartDuration(finalPlan);
-        
-        // Ta linia powodowała problem - usuwamy priorytet starej wartości z bazy
-        // if (todayPlanEntry.estimatedDurationMin) estimatedMinutes = todayPlanEntry.estimatedDurationMin;
 
         const missionWrapper = document.createElement('div');
         missionWrapper.className = 'mission-card-wrapper';
@@ -543,10 +541,8 @@ function renderUpcomingQueue(days, todayISO) {
 
     let upcomingHTML = `<div class="section-title upcoming-title">NADCHODZĄCE DNI</div>`;
 
-    // ZMIANA: Używamy nowej klasy "calendar-strip" zamiast "upcoming-timeline"
     upcomingHTML += `<div class="calendar-strip">`;
 
-    // Pokazujemy max 6 kolejnych dni (żeby zmieścić się w tygodniu)
     futureDays.slice(0, 6).forEach(dayRaw => {
         const dayData = getHydratedDay(dayRaw);
         const dateObj = new Date(dayData.date);
@@ -554,7 +550,6 @@ function renderUpcomingQueue(days, todayISO) {
         const dayNum = dateObj.getDate();
         const isRest = dayData.type === 'rest';
 
-        // Klasy pomocnicze
         const stripDayClass = isRest ? 'strip-day rest' : 'strip-day workout';
         const weekendClass = (dateObj.getDay() === 0 || dateObj.getDay() === 6) ? ' weekend' : '';
 
@@ -582,13 +577,13 @@ function renderUpcomingQueue(days, todayISO) {
     upcomingWrapper.innerHTML = upcomingHTML;
     containers.days.appendChild(upcomingWrapper);
 
-    // Listener na kafelki paska (otwiera podgląd, chyba że to menu)
     upcomingWrapper.querySelectorAll('.strip-day').forEach(card => {
         if (card.dataset.isRest === 'true') return;
         card.addEventListener('click', (e) => {
             if (e.target.closest('.ctx-menu-btn')) return;
             e.stopPropagation();
-            renderPreTrainingScreen(parseInt(card.dataset.dayId, 10), 0, true);
+            // ZMIANA: initialPainLevel ustawiony na 3 (Dobrze), aby było spójne z głównym ekranem
+            renderPreTrainingScreen(parseInt(card.dataset.dayId, 10), 3, true);
         });
     });
 }

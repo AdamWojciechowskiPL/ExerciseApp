@@ -1,6 +1,7 @@
 const { Pool } = require('@neondatabase/serverless');
 const { getUserIdFromEvent } = require('./_auth-helper.js');
 const { buildUserContext, checkExerciseAvailability } = require('./_clinical-rule-engine.js');
+const { calculateTiming } = require('./_pacing-engine.js'); // IMPORT NOWEGO SILNIKA (Task B3)
 
 const normalizeEquipment = (rawEquipment) => {
     if (!rawEquipment) return [];
@@ -118,6 +119,10 @@ exports.handler = async (event) => {
           rejectionReason = check.reason;
       }
 
+      // --- ZMIANA: Dodanie calculated_timing do Atlasu ---
+      // To pozwoli frontendowi "znać" bazowy czas nawet przy manualnym swapie.
+      const timing = calculateTiming(exForCheck);
+
       acc[ex.id] = {
         name: ex.name,
         description: ex.description,
@@ -147,17 +152,19 @@ exports.handler = async (event) => {
         recommendedInterval: ex.recommended_interval_sec || null,
 
         isAllowed: isAllowed,
-        rejectionReason: rejectionReason
+        rejectionReason: rejectionReason,
+
+        // DODANO:
+        baseRestSeconds: timing.rest_sec,
+        baseTransitionSeconds: timing.transition_sec
       };
       return acc;
     }, {});
 
-    // Usunięto kod pobierający plany statyczne z tabeli training_plans
-
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ exercises, training_plans: {} }), // Zwracamy pusty obiekt planów
+      body: JSON.stringify({ exercises, training_plans: {} }),
     };
 
   } catch (error) {

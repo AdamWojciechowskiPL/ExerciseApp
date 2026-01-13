@@ -110,47 +110,39 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
 
             const id = rateBtn.dataset.id;
             const action = rateBtn.dataset.action;
+            const SCORE_LIKE = 15;
+            const SCORE_DISLIKE = -30;
 
-            if (!state.userPreferences[id]) state.userPreferences[id] = { score: 0, difficulty: 0 };
-            const currentScore = state.userPreferences[id].score;
+            // Efekt wizualny kliknięcia
+            rateBtn.classList.add('active');
+            setTimeout(() => rateBtn.classList.remove('active'), 300);
 
-            let newScore = 0;
-            let apiAction = 'neutral';
+            // Optimistic update of the badge
+            const row = rateBtn.closest('.history-exercise-row');
+            if (row) {
+                const badge = row.querySelector(`#score-${id}`);
+                if (badge) {
+                    let currentScore = parseInt(badge.textContent.replace(/[^\d-]/g, ''), 10) || 0;
+                    if (action === 'like') currentScore = Math.min(100, currentScore + SCORE_LIKE);
+                    else currentScore = Math.max(-100, currentScore + SCORE_DISLIKE);
 
-            if (action === 'like') {
-                if (currentScore >= 50) {
-                    newScore = 0;
-                    apiAction = 'neutral';
-                } else {
-                    newScore = 50;
-                    apiAction = 'like';
+                    let scoreColor = '#999';
+                    let scorePrefix = '';
+                    if (currentScore >= 75) { scoreColor = 'var(--gold-color)'; scorePrefix = '👑 '; }
+                    else if (currentScore > 0) { scoreColor = 'var(--success-color)'; scorePrefix = '+'; }
+                    else if (currentScore < 0) { scoreColor = 'var(--danger-color)'; }
+
+                    badge.style.color = scoreColor;
+                    badge.textContent = `${scorePrefix}${currentScore}`;
                 }
             }
-            else if (action === 'dislike') {
-                if (currentScore <= -50) {
-                    newScore = 0;
-                    apiAction = 'neutral';
-                } else {
-                    newScore = -50;
-                    apiAction = 'dislike';
-                }
-            }
-
-            state.userPreferences[id].score = newScore;
-
-            const allButtonsForId = contentContainer.querySelectorAll(`.rate-btn-hist[data-id="${id}"]`);
-            allButtonsForId.forEach(btn => {
-                const btnAction = btn.dataset.action;
-                let isActive = false;
-                if (btnAction === 'like' && newScore >= 10) isActive = true;
-                if (btnAction === 'dislike' && newScore <= -10) isActive = true;
-                btn.classList.toggle('active', isActive);
-            });
 
             try {
-                await dataStore.updatePreference(id, apiAction);
+                // Wywołanie endpointu z nową logiką (+15/-30)
+                await dataStore.updatePreference(id, action);
             } catch (err) {
                 console.error("Błąd aktualizacji preferencji:", err);
+                alert("Błąd zapisu.");
             }
         }
     });

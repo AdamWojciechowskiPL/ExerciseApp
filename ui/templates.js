@@ -63,11 +63,15 @@ export const getAffinityBadge = (exerciseId) => {
     const pref = state.userPreferences[exerciseId] || { score: 0 };
     const score = pref.score || 0;
     let badge = null;
-    if (score >= 10) {
-        badge = { icon: '⭐', label: 'Często', color: '#047857', bg: '#ecfdf5', border: '#6ee7b7' };
-    } else if (score <= -10) {
-        badge = { icon: '📉', label: 'Rzadko', color: '#b91c1c', bg: '#fef2f2', border: '#fca5a5' };
+
+    if (score >= 75) {
+        badge = { icon: '👑', label: 'Hit', color: '#b45309', bg: '#fffbeb', border: '#fcd34d' };
+    } else if (score >= 20) {
+        badge = { icon: '⭐', label: 'Ulubione', color: '#047857', bg: '#ecfdf5', border: '#6ee7b7' };
+    } else if (score <= -50) {
+        badge = { icon: '📉', label: 'Unikam', color: '#b91c1c', bg: '#fef2f2', border: '#fca5a5' };
     }
+
     if (!badge) return '';
     return `
         <span class="affinity-badge" style="
@@ -402,7 +406,7 @@ export function generatePreTrainingCardHTML(ex, index) {
     `;
 
     const videoId = extractYoutubeId(ex.youtube_url);
-    
+
     // MODYFIKACJA: Ikona wideo wewnątrz dedykowanego kontenera (60px)
     const videoLink = videoId
         ? `<a href="https://youtu.be/${videoId}" target="_blank" class="link-youtube"
@@ -434,7 +438,7 @@ export function generatePreTrainingCardHTML(ex, index) {
         </div>
         <p class="pre-training-description" style="padding-left:10px; opacity:0.8;">${ex.description || 'Brak opisu.'}</p>
         ${targetsHTML}
-        
+
         <!-- ZMODYFIKOWANA STOPKA: Align Items Center -->
         <div class="training-footer" style="display:flex; align-items:center;">
             <!-- Dedykowana kolumna dla ikony wideo (60px) -->
@@ -504,15 +508,37 @@ export function generateSessionCardHTML(session) {
         statsHtml = `<div class="session-stats-grid"><div class="stat-item"><span class="stat-label">Zakończono</span><span class="stat-value">${completedTimeStr}</span></div></div>`;
     }
 
+    // --- PRZYGOTOWANIE MAPY OCEN Z SESJI ---
+    const sessionRatings = {};
+    if (session.exerciseRatings && Array.isArray(session.exerciseRatings)) {
+        session.exerciseRatings.forEach(r => {
+            sessionRatings[r.exerciseId] = r.action; // 'like' | 'dislike' | 'neutral'
+        });
+    }
+
     const exercisesHtml = session.sessionLog && session.sessionLog.length > 0
         ? session.sessionLog.map(item => {
             const isSkipped = item.status === 'skipped';
             const rowStyle = isSkipped ? 'opacity: 0.6; background-color: rgba(0,0,0,0.02);' : '';
             const id = item.exerciseId || item.id;
+
+            // 1. Aktualny stan globalny
             const pref = state.userPreferences[id] || { score: 0, difficulty: 0 };
-            const isLike = pref.score >= 10;
-            const isDislike = pref.score <= -10;
+            const currentScore = pref.score || 0;
             const diff = pref.difficulty || 0;
+
+            // 2. Stan historyczny z tej sesji
+            const sessionAction = sessionRatings[id];
+            let historyIcon = '';
+            if (sessionAction === 'like') historyIcon = '<span class="hist-action-icon like" title="W tej sesji: Like">👍</span>';
+            else if (sessionAction === 'dislike') historyIcon = '<span class="hist-action-icon dislike" title="W tej sesji: Dislike">👎</span>';
+
+            // Kolorowanie aktualnego wyniku
+            let scoreColor = '#999';
+            let scorePrefix = '';
+            if (currentScore >= 75) { scoreColor = 'var(--gold-color)'; scorePrefix = '👑'; }
+            else if (currentScore > 0) { scoreColor = 'var(--success-color)'; scorePrefix = '+'; }
+            else if (currentScore < 0) { scoreColor = 'var(--danger-color)'; }
 
             let diffBadge = '';
             if (diff == 1) {
@@ -532,12 +558,13 @@ export function generateSessionCardHTML(session) {
                 </button>`;
             }
 
+            // Przyciski akcji (Działają na stan OBECNY)
             let ratingButtons = '';
             if (id && !isSkipped) {
                 ratingButtons = `
                     <div class="hist-rating-actions">
-                        <button class="rate-btn-hist ${isLike ? 'active' : ''}" data-id="${id}" data-action="like" title="Częściej">👍</button>
-                        <button class="rate-btn-hist ${isDislike ? 'active' : ''}" data-id="${id}" data-action="dislike" title="Rzadziej">👎</button>
+                        <button class="rate-btn-hist" data-id="${id}" data-action="like" title="Zmień teraz: Super (+15)">👍</button>
+                        <button class="rate-btn-hist" data-id="${id}" data-action="dislike" title="Zmień teraz: Słabo (-30)">👎</button>
                     </div>
                 `;
             }
@@ -553,10 +580,14 @@ export function generateSessionCardHTML(session) {
             return `
             <div class="history-exercise-row ${isSkipped ? 'skipped' : 'completed'}" style="${rowStyle}">
                 <div class="hex-main">
-                    <span class="hex-name">${item.name}</span>
+                    <div class="hex-header">
+                        <span class="hex-name">${item.name}</span>
+                        <span class="hex-score-badge" style="color:${scoreColor}" id="score-${id}">${scorePrefix}${currentScore}</span>
+                    </div>
                     <div class="hex-details-row">
                         <span class="target-val">${item.reps_or_time}</span>
                         ${actualTimeBadge}
+                        ${historyIcon}
                         ${diffBadge}
                     </div>
                 </div>

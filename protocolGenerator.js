@@ -2,6 +2,25 @@
 import { state } from './state.js';
 import { checkExerciseAvailability, buildClinicalContext } from './clinicalEngine.js';
 
+// --- Task F2: Symulacja Pacing Engine dla protokołów klienckich ---
+const calculateLocalTiming = (ex, mode) => {
+    let baseRest = 30;
+    const cat = (ex.categoryId || '').toLowerCase();
+    const load = parseInt(ex.difficultyLevel || 1, 10);
+
+    // Nadpisania specyficzne dla trybów
+    if (mode === 'sos' || mode === 'calm') baseRest = 20; // Wolniejsze tempo, ale nie siłowe
+    else if (mode === 'booster' || mode === 'burn') baseRest = 15; // Krótkie przerwy
+    else if (cat.includes('neuro')) baseRest = 35;
+    else if (load >= 4) baseRest = 60;
+    else if (cat.includes('mobility')) baseRest = 20;
+
+    return {
+        rest_sec: baseRest,
+        transition_sec: (ex.isUnilateral || String(ex.reps_or_time).includes('/str')) ? 12 : 5
+    };
+};
+
 /**
  * PROTOCOL GENERATOR v5.9 (Rest Factor Aware)
  */
@@ -36,50 +55,45 @@ const TIMING_CONFIG = {
 const DEFAULT_MAX_DURATION = 60;
 const DEFAULT_MAX_REPS = 15;
 
-// ============================================================
-// GŁÓWNA FUNKCJA GENERUJĄCA
-// ============================================================
-
 export function generateBioProtocol({ mode, focusZone, durationMin, userContext, timeFactor = 1.0 }) {
     console.log(`🧪 [ProtocolGenerator] Generowanie v5.9: ${mode} / ${focusZone}`);
 
     const targetSeconds = durationMin * 60;
     const config = TIMING_CONFIG[mode] || TIMING_CONFIG['reset'];
-
-    // Pobieramy globalny faktor przerw (bezpiecznik: 1.0)
     const globalRestFactor = state.settings.restTimeFactor || 1.0;
 
     const clinicalCtx = buildClinicalContext(userContext);
     clinicalCtx.blockedIds = new Set(state.blacklist || []);
 
-    // 1. Dobór kandydatów
     let candidates = getCandidates(mode, focusZone, { ignoreEquipment: false, clinicalCtx });
 
     if (candidates.length === 0) candidates = getCandidates(mode, focusZone, { ignoreEquipment: true, clinicalCtx });
     if (candidates.length === 0) candidates = getCandidatesSafeFallback(mode, clinicalCtx);
     if (candidates.length === 0) throw new Error("Brak bezpiecznych ćwiczeń.");
 
+    // Wzbogacamy kandydatów o lokalny timing
+    candidates.forEach(c => {
+        c.calculated_timing = calculateLocalTiming(c, mode);
+    });
+
     scoreCandidates(candidates, mode, userContext);
 
-    // 2. Selekcja sekwencji
     const { sequence, generatedSeconds } = selectExercisesByMode(candidates, mode, targetSeconds, config, timeFactor, globalRestFactor);
 
-    // 3. Time Stretch
     let finalTimeFactor = timeFactor;
     if (generatedSeconds > 0 && generatedSeconds < targetSeconds) {
         const stretchRatio = targetSeconds / generatedSeconds;
         finalTimeFactor = timeFactor * Math.min(stretchRatio, 3.0);
     }
 
-    // 4. Budowa finalnego planu
     const flatExercises = buildSteps(sequence, config, mode, finalTimeFactor, globalRestFactor);
 
     const realTotalDuration = flatExercises.reduce((sum, step) => {
         const sets = parseInt(step.sets) || 1;
         const duration = step.duration || 0;
-
-        // Obliczamy dynamiczną przerwę między seriami
-        const intraSetRest = Math.round(15 * globalRestFactor);
+        // W protokołach przerwa jest już często wliczona w krok jako 'restBetweenSets' w logice buildera,
+        // ale dla spójności używamy logiki utils.
+        const intraSetRest = Math.round((step.restBetweenSets || 15) * globalRestFactor);
 
         if (step.isWork) {
             return sum + (duration * sets) + ((sets - 1) * intraSetRest);
@@ -93,20 +107,15 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext,
         description: generateDescription(mode, durationMin),
         type: 'protocol',
         mode: mode,
-        totalDuration: realTotalDuration, // Rzeczywisty wyliczony czas (może się różnić od celu)
-        targetDuration: durationMin,      // ZMIANA: Przekazujemy cel, aby UI było spójne z Dashboardem
+        totalDuration: realTotalDuration,
+        targetDuration: durationMin,
         xpReward: calculateXP(mode, durationMin),
         resilienceBonus: calculateResilienceBonus(mode),
         flatExercises: flatExercises
     };
 }
 
-// ============================================================
-// LOGIKA SELEKCJI
-// ============================================================
-
 function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFactor, globalRestFactor) {
-    // Obliczamy czas cyklu z uwzględnieniem Global Rest Factor
     const scaledRest = config.rest * globalRestFactor;
     const baseCycleTime = (config.work * timeFactor) + scaledRest;
 
@@ -169,10 +178,6 @@ function getStrictUnique(pool, usedIds) {
     }
     return null;
 }
-
-// ============================================================
-// BUDOWANIE KROKÓW
-// ============================================================
 
 function buildSteps(exercises, config, mode, timeFactor, globalRestFactor) {
     const SECONDS_PER_REP_ESTIMATE = state.settings.secondsPerRep || 6;
@@ -266,7 +271,9 @@ function buildSteps(exercises, config, mode, timeFactor, globalRestFactor) {
             duration: durationPerSet,
             tempo_or_iso: tempoDisplay,
             uniqueId: `${ex.id}_p${index}${suffix ? suffix.replace(/[\s()]/g, '') : ''}`,
-            restBetweenSets: INTRA_SET_REST
+            restBetweenSets: INTRA_SET_REST,
+            // Task F2: Przenosimy calculated_timing
+            calculated_timing: ex.calculated_timing
         });
 
         if (isUnilateral) {

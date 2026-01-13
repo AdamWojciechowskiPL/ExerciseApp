@@ -120,6 +120,23 @@ export const getHydratedDay = (dayData) => {
                 };
                 if (!mergedExercise.tempo_or_iso) mergedExercise.tempo_or_iso = libraryDetails.defaultTempo || "Kontrolowane";
                 if (mergedExercise.is_unilateral === undefined) mergedExercise.is_unilateral = libraryDetails.isUnilateral || false;
+
+                // --- TASK M1: HYDRATION (LEGACY SUPPORT) ---
+                // Upewnij się, że obiekt ma `calculated_timing` lub `baseRestSeconds`.
+                // Jeśli backend w planie nie zapisał (stary plan), weź z biblioteki.
+                if (!mergedExercise.calculated_timing) {
+                    // Sprawdzamy czy biblioteka ma dane (z Tasku B3)
+                    if (libraryDetails.baseRestSeconds) {
+                        mergedExercise.calculated_timing = {
+                            rest_sec: libraryDetails.baseRestSeconds,
+                            transition_sec: libraryDetails.baseTransitionSeconds || 5
+                        };
+                    } else {
+                        // Ostateczny fallback
+                        mergedExercise.calculated_timing = { rest_sec: 30, transition_sec: 5 };
+                    }
+                }
+
                 return mergedExercise;
             });
         }
@@ -148,34 +165,26 @@ const parseRepsOrTime = (val) => {
 };
 
 /**
- * CENTRALNA LOGIKA PRZERW (Frontend Version)
- * Odpowiada logice w generate-plan.js (Backend)
+ * CENTRALNA LOGIKA PRZERW (Explicit Base Rest Architecture - Task F1)
+ * Zamiast zgadywać kategorię, używamy wartości z backendu.
  */
 export const calculateSmartRest = (exercise, userRestFactor = 1.0) => {
-    // 1. Jeśli zdefiniowano ręcznie w obiekcie (np. z protokołu), ma priorytet i skalujemy go
+    // 1. Priorytet: Jawne nadpisanie (np. z protokołu Tabata)
     if (exercise.restBetweenSets) {
         return Math.round(parseInt(exercise.restBetweenSets, 10) * userRestFactor);
     }
 
-    const cat = (exercise.categoryId || '').toLowerCase();
-    const load = parseInt(exercise.difficultyLevel || 1, 10);
-    let baseRest = 30; // Domyślna
+    // 2. Pobranie bazy z obiektu (z backendu)
+    let baseRest = 30; // Fallback
 
-    // 2. Medyczne standardy (Base Values)
-    if (cat.includes('nerve') || cat.includes('flossing') || cat.includes('neuro')) {
-        baseRest = 35; // Neurodynamika: Umiarkowana
-    } else if (cat.includes('mobility') || cat.includes('stretch') || cat.includes('flow')) {
-        baseRest = 20; // Mobilność: Krótka (utrzymanie ciepła)
-    } else if (cat.includes('conditioning') || cat.includes('cardio') || cat.includes('burn')) {
-        baseRest = 20; // Kondycja: Krótka (tętno)
-    } else if (load >= 4 || cat.includes('strength') || cat.includes('squat') || cat.includes('deadlift')) {
-        baseRest = 60; // Siła/Ciężkie: Długa (ATP)
-    } else if (cat.includes('core_stability') || cat.includes('anti_')) {
-        baseRest = 45; // Stabilizacja: Średnia+ (Jakość)
+    if (exercise.calculated_timing && exercise.calculated_timing.rest_sec) {
+        baseRest = exercise.calculated_timing.rest_sec;
+    } else if (exercise.baseRestSeconds) {
+        // Fallback dla obiektów z Atlasu
+        baseRest = exercise.baseRestSeconds;
     }
 
     // 3. Aplikacja Globalnego Faktora Użytkownika
-    // (np. 1.5 dla "Leniwie", 0.5 dla "Szybko")
     return Math.max(10, Math.round(baseRest * userRestFactor));
 };
 
@@ -183,7 +192,6 @@ export const calculateSmartDuration = (dayPlan) => {
     if (!dayPlan) return 0;
 
     const globalSpr = state.settings.secondsPerRep || 6;
-    // Pobieramy globalny faktor przerw (domyślnie 1.0 = 100%)
     const restFactor = state.settings.restTimeFactor || 1.0;
 
     const allExercises = [
@@ -225,8 +233,12 @@ export const calculateSmartDuration = (dayPlan) => {
             exDuration += (sets - 1) * restTime;
         }
 
-        // Czas zmiany strony (Humanitarna zmiana: min 12s, ale skalowalna w górę)
-        const transitionTime = Math.max(12, Math.round(12 * restFactor));
+        // Czas zmiany strony / przejścia (Task F1: używamy danych z backendu jeśli są)
+        let transitionTime = Math.max(12, Math.round(12 * restFactor));
+        if (ex.calculated_timing && ex.calculated_timing.transition_sec) {
+             transitionTime = Math.max(5, Math.round(ex.calculated_timing.transition_sec * restFactor));
+        }
+
         const transitionsTotal = sets * (isUnilateral ? transitionTime : 5);
         exDuration += transitionsTotal;
 

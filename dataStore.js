@@ -1,10 +1,7 @@
-// dataStore.js
-
 import { state } from './state.js';
 import { getToken, getUserPayload } from './auth.js';
 import { getISODate } from './utils.js';
 
-// --- KONFIGURACJA PUNKTACJI (musi być spójna z Backendem) ---
 const SCORE_LIKE = 15;
 const SCORE_DISLIKE = -30;
 const SCORE_MAX = 100;
@@ -118,6 +115,13 @@ const dataStore = {
                 state.blacklist = [];
             }
 
+            // --- ZMIANA: Ładowanie overrides do stanu ---
+            if (data.overrides) {
+                state.overrides = data.overrides;
+            } else {
+                state.overrides = {};
+            }
+
             const cachedStats = localStorage.getItem('cachedUserStats');
             if (cachedStats) {
                 try { state.userStats = JSON.parse(cachedStats); } catch (e) { state.userStats = { totalSessions: 0, streak: 0, resilience: null }; }
@@ -213,36 +217,10 @@ const dataStore = {
         state.isHistoryLoaded = true;
     },
 
-    // --- ZMODYFIKOWANA LOGIKA ZAPISU SESJI (Smart Rehab) ---
     saveSession: async (sessionData) => {
         const result = await callAPI('save-session', { method: 'POST', body: sessionData });
         state.loadedMonths.clear();
         state.masteryStats = null;
-
-        if (sessionData.exerciseRatings && sessionData.exerciseRatings.length > 0) {
-            sessionData.exerciseRatings.forEach(rating => {
-                const id = rating.exerciseId;
-                if (!state.userPreferences[id]) state.userPreferences[id] = { score: 0, difficulty: 0 };
-
-                // LOGIKA PRZYROSTOWA (zamiast sztywnego ustawiania na 50)
-                let current = state.userPreferences[id].score || 0;
-
-                if (rating.action === 'like') {
-                    current += SCORE_LIKE;
-                }
-                else if (rating.action === 'dislike') {
-                    current += SCORE_DISLIKE; // SCORE_DISLIKE jest ujemne (-30)
-                }
-                // 'neutral' nie zmienia wyniku w modelu akumulacji
-
-                // Clamping -100 do +100
-                state.userPreferences[id].score = Math.max(SCORE_MIN, Math.min(SCORE_MAX, current));
-
-                // Difficulty flagi są ustawiane oddzielnie, tu tylko wynik
-                if (rating.action === 'hard') state.userPreferences[id].difficulty = 1;
-                else if (rating.action === 'easy') state.userPreferences[id].difficulty = -1;
-            });
-        }
         return result;
     },
 
@@ -256,38 +234,34 @@ const dataStore = {
     uploadToStrava: async (pl) => { await callAPI('strava-upload-activity', { method: 'POST', body: pl }); },
     migrateData: async (pd) => { await callAPI('migrate-data', { method: 'POST', body: Object.values(pd).flat() }); },
 
-    // --- ZMODYFIKOWANA LOGIKA UPDATE (Smart Rehab) ---
     updatePreference: async (exerciseId, action, value = null) => {
         if (!state.userPreferences[exerciseId]) state.userPreferences[exerciseId] = { score: 0, difficulty: 0 };
 
         if (action === 'set') {
-            // Bezpośrednie ustawienie (np. z Tunera)
             state.userPreferences[exerciseId].score = value;
         } else if (action === 'set_difficulty') {
             state.userPreferences[exerciseId].difficulty = value;
         } else if (action === 'reset_difficulty') {
             state.userPreferences[exerciseId].difficulty = 0;
         } else {
-            // Logika przyrostowa (np. z historii)
             let current = state.userPreferences[exerciseId].score || 0;
-
             if (action === 'like') {
                 current += SCORE_LIKE;
             } else if (action === 'dislike') {
                 current += SCORE_DISLIKE;
             }
-            // 'neutral' nic nie robi
-
             state.userPreferences[exerciseId].score = Math.max(SCORE_MIN, Math.min(SCORE_MAX, current));
 
             if (action === 'hard') state.userPreferences[exerciseId].difficulty = 1;
             else if (action === 'easy') state.userPreferences[exerciseId].difficulty = -1;
         }
 
+        // --- ZMIANA: Aktualizacja czasu modyfikacji dla UI (Optimistic) ---
+        state.userPreferences[exerciseId].updatedAt = new Date().toISOString();
+
         try {
             const res = await callAPI('update-preference', { method: 'POST', body: { exerciseId, action, value } });
             if (res) {
-                // Backend zwraca ostateczną wartość z bazy, więc aktualizujemy stan lokalny, by był idealnie zsynchronizowany
                 if (res.newScore !== undefined) state.userPreferences[exerciseId].score = res.newScore;
                 if (res.newDifficulty !== undefined) state.userPreferences[exerciseId].difficulty = res.newDifficulty;
             }

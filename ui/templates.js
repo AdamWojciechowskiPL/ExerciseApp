@@ -157,7 +157,7 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
         ? filteredEquipment.map(item => item.charAt(0).toUpperCase() + item.slice(1)).join(', ')
         : 'Bodyweight';
 
-    const systemLoad = calculateSystemLoad(dayData);
+    const systemLoad = calculateSystemLoad(dayData, false); // false = Plan Mode
     const clinicalTags = calculateClinicalProfile(dayData);
     const focusArea = getSessionFocus(dayData);
 
@@ -296,18 +296,10 @@ export function generateSessionCardHTML(session) {
     // Feedback Info
     const fb = formatFeedback(session);
 
-    // Odtwarzanie System Load (Symulacja na podstawie logu)
+    // Odtwarzanie System Load (Teraz używamy uniwersalnej funkcji)
     let sessionLoad = 0;
-    // Spróbujmy odtworzyć strukturę dayPlan z logu, aby użyć calculateSystemLoad
     if (session.sessionLog) {
-        const mockPlan = { main: [], warmup: [], cooldown: [] };
-        // Wrzucamy wszystko do main dla uproszczenia kalkulacji
-        mockPlan.main = session.sessionLog.filter(l => l.status === 'completed').map(l => ({
-            reps_or_time: l.reps_or_time,
-            sets: "1", // Log ma wpisy per seria, więc 1
-            difficultyLevel: 2 // Default, bo nie mamy pełnych danych w logu
-        }));
-        sessionLoad = calculateSystemLoad(mockPlan); // To da przybliżenie
+        sessionLoad = calculateSystemLoad(session.sessionLog, true); // true = fromHistory
     }
     if (sessionLoad === 0) sessionLoad = 50; // Fallback wizualny
 

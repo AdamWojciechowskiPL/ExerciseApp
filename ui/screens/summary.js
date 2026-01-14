@@ -1,12 +1,12 @@
 // ExerciseApp/ui/screens/summary.js
-import { state } from '/state.js';
-import { screens } from '/dom.js';
-import { navigateTo, showLoader, hideLoader } from '/ui/core.js';
-import dataStore from '/dataStore.js';
-import { renderEvolutionModal } from '/ui/modals.js';
-import { getIsCasting, sendShowIdle } from '/cast.js';
-import { clearSessionBackup } from '/sessionRecovery.js';
-import { clearPlanFromStorage } from '/ui/screens/dashboard.js';
+import { state } from '../../state.js';
+import { screens } from '../../dom.js';
+import { navigateTo, showLoader, hideLoader } from '../core.js';
+import dataStore from '../../dataStore.js';
+import { renderEvolutionModal } from '../modals.js';
+import { getIsCasting, sendShowIdle } from '../../cast.js';
+import { clearSessionBackup } from '../../sessionRecovery.js';
+import { clearPlanFromStorage } from './dashboard.js';
 
 let selectedFeedback = { type: null, value: 0 };
 
@@ -140,7 +140,10 @@ export const renderSummaryScreen = () => {
     });
 
     // NOWA LOGIKA KCIUKÓW (INTERAKTYWNA)
-    summaryScreen.querySelectorAll('.rating-card').forEach(card => {
+    // Pobieramy formularz i szukamy kart tylko w nim (na wypadek, gdybyśmy mieli stare karty w pamięci)
+    const formContainer = summaryScreen.querySelector('#summary-form');
+    
+    formContainer.querySelectorAll('.rating-card').forEach(card => {
         const id = card.dataset.id;
         const baseScore = parseInt(card.dataset.baseScore, 10);
         const scoreDisplay = card.querySelector('.current-score-val');
@@ -191,18 +194,28 @@ export const renderSummaryScreen = () => {
         });
     });
 
-    summaryScreen.querySelector('#summary-form').addEventListener('submit', handleSummarySubmit);
+    // Usuwamy stare listenery i dodajemy nowy
+    formContainer.removeEventListener('submit', handleSummarySubmit);
+    formContainer.addEventListener('submit', handleSummarySubmit);
+    
     navigateTo('summary');
 };
 
 export async function handleSummarySubmit(e) {
     e.preventDefault();
     const submitBtn = e.target.querySelector('button[type="submit"]');
-    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Zapisywanie..."; }
+    if (submitBtn.disabled) return; // Zapobieganie podwójnemu kliknięciu
+    
+    submitBtn.disabled = true; 
+    submitBtn.textContent = "Zapisywanie...";
     showLoader();
 
     const ratingsArray = [];
-    const ratingCards = document.querySelectorAll('.rating-card');
+    
+    // POPRAWKA KRYTYCZNA: Używamy e.target (formularz) do szukania kart.
+    // document.querySelectorAll znalazłby również karty z historii/szczegółów dnia,
+    // jeśli były wcześniej renderowane (SPA trzyma je w DOM w sekcjach ukrytych).
+    const ratingCards = e.target.querySelectorAll('.rating-card');
 
     ratingCards.forEach(card => {
         const id = card.dataset.id;
@@ -316,5 +329,6 @@ export async function handleSummarySubmit(e) {
         hideLoader();
         alert("Błąd zapisu.");
         submitBtn.disabled = false;
+        submitBtn.textContent = "Zapisz i Zakończ";
     }
 }

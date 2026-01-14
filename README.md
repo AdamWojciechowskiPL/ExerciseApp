@@ -1,4 +1,4 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v20.1.0
+# Aplikacja Treningowa (Smart Rehab PWA) v21.0.0
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
@@ -46,11 +46,30 @@ Generator oparty na pętli kalendarzowej, a nie sekwencyjnej.
 *   **Global Freshness:** Algorytm pamięta użycie mięśni w obrębie całego generowanego okna, aby uniknąć katowania tej samej partii dzień po dniu.
 
 ### 2. Workout Mixer Lite
-Obsługa modyfikacji "w locie":
-*   **Smart Swap:** Wymiana ćwiczenia na bezpieczną alternatywę z tej samej kategorii biomechanicznej.
+Obsługa modyfikacji "w locie" (podczas trwania treningu):
+*   **Smart Swap:** Wymiana ćwiczenia na bezpieczną alternatywę z tej samej kategorii biomechanicznej (np. z powodu braku sprzętu).
 *   **Tuner Synaptyczny:** Użytkownik może ocenić ćwiczenie jako "Za łatwe" (Ewolucja -> trudniejszy wariant) lub "Za trudne" (Dewolucja -> łatwiejszy wariant).
 
-### 3. Bio-Protocol Hub (Front-end)
+### 3. Smart Progression Engine (Fluid Logic)
+Nowatorski model **Progresji Probabilistycznej**, który działa podczas **generowania nowego planu**. Zastępuje sztywne podmienianie ćwiczeń logiką opartą na wagach.
+
+*   **Zasada Bezpieczeństwa (Fail-Safe):** Nawet jeśli użytkownik odblokował trudniejsze ćwiczenie (Ewolucja), system najpierw sprawdza, czy posiada on wymagany sprzęt i czy stan kliniczny na to pozwala. Jeśli nie – override jest ignorowany.
+*   **Cykl Adaptacyjny:** To, co wczoraj było wyzwaniem ("Main"), jutro staje się rozgrzewką ("Warmup").
+
+**Matryca Wag Losowania (Generator):**
+| Typ Ćwiczenia | Sekcja Main | Sekcja Warmup | Sekcja Cooldown | Logika |
+| :--- | :--- | :--- | :--- | :--- |
+| **Cel Ewolucji (Trudne)** | **x3.0** (Priorytet) | x0.5 (Unikaj) | x0.1 (Zabronione) | Nauka nowego ruchu. |
+| **Źródło Ewolucji (Łatwe)** | x0.2 (Nuda) | **x1.5** (Idealne) | **x2.0** (Idealne) | Degradacja do roli rozgrzewki. |
+
+### 4. Real-Time Feedback Loop (Injection & Ejection)
+Mechanizm natychmiastowej adaptacji **bieżącego planu** (JSON) w momencie zapisu sesji. Sprawia, że opinia użytkownika działa "od razu", a nie dopiero w przyszłym tygodniu.
+
+*   **Injection (Like 👍):** Jeśli użytkownik polubi ćwiczenie, system skanuje resztę tygodnia. Jeśli znajdzie "nudne" ćwiczenie z tej samej kategorii, podmienia je na to polubione. *Cel: Budowanie nawyku i satysfakcji.*
+*   **Ejection (Dislike 👎):** Jeśli użytkownik da "Dislike", system natychmiast usuwa to ćwiczenie z przyszłych dni bieżącego planu i zastępuje je bezpieczną alternatywą. *Cel: Zapobieganie demotywacji (Adherence Protection).*
+*   **Entropy Grace Period:** Punkty "Affinity" są chronione przed wygaszaniem (Time Decay) przez 7 dni od ostatniej interakcji.
+
+### 5. Bio-Protocol Hub (Front-end)
 Sesje celowane generowane natychmiastowo po stronie klienta (Time-Boxing):
 *   🚑 **SOS:** Ratunek przeciwbólowy.
 *   ⚡ **Neuro:** Ślizgi nerwowe.
@@ -58,12 +77,12 @@ Sesje celowane generowane natychmiastowo po stronie klienta (Time-Boxing):
 *   🔥 **Metabolic Burn:** Intensywne spalanie Low-Impact.
 *   🧗 **Ladder:** Budowanie progresji technicznej.
 
-### 4. Pacing Engine (`_pacing-engine.js`)
+### 6. Pacing Engine (`_pacing-engine.js`)
 Centralny moduł "medyczny" odpowiedzialny za parametry czasowe.
 *   Przyjmuje definicję ćwiczenia (kategoria, trudność, typ).
 *   Zwraca obiekt `calculated_timing` zawierający:
-    *   `baseRestSeconds`: Bazowy czas przerwy fizjologicznej.
-    *   `baseTransitionSeconds`: Czas na zmianę pozycji (uwzględnia unilateralność).
+    *   `baseRestSeconds`: Bazowy czas przerwy fizjologicznej (np. 35s dla Neuro, 60s dla Siły).
+    *   `baseTransitionSeconds`: Czas na zmianę pozycji.
 ---
 
 ## 🧪 Testy (Jakość Kodu)
@@ -131,7 +150,7 @@ Projekt posiada zestaw testów regresyjnych w katalogu `/tests`:
 │   │   ├── _clinical-rule-engine.js # Backendowy walidator medyczny
 │   │   ├── _crypto-helper.js        # Szyfrowanie tokenów (AES-256-GCM)
 │   │   ├── _stats-helper.js         # Logika statystyk (Streak, Resilience, Pacing)
-│   │   ├── generate-plan.js         # Generator planów dynamicznych (Rolling Window)
+│   │   ├── generate-plan.js         # Generator planów dynamicznych (Rolling Window + Fluid Progression)
 │   │   ├── get-app-content.js       # Pobieranie bazy wiedzy i personalizacji
 │   │   ├── get-or-create-user-data.js # Bootstrap usera (Parallel Fetch)
 │   │   ├── get-user-preferences.js  # Pobieranie affinity score
@@ -288,9 +307,9 @@ Nowy algorytm doboru ćwiczeń (`workoutMixer.js`) łączy twarde dane kliniczne
 
 ### Wzór Rankingu Kandydata
 ```javascript
-FinalScore = (FreshnessScore * 1.0) 
-           + (AffinityScore * 1.5) 
-           + RandomFactor 
+FinalScore = (FreshnessScore * 1.0)
+           + (AffinityScore * 1.5)
+           + RandomFactor
            - DifficultyPenalty
 ```
 

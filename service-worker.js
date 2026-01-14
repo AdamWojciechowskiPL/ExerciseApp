@@ -2,7 +2,7 @@
 
 // ⚠️ WAŻNE: Zmieniaj ten numer wersji przy KAŻDYM wdrożeniu (deployu) na produkcję!
 // To sygnał dla przeglądarki, że są nowe pliki.
-const STATIC_CACHE_NAME = 'static-assets-v20.1.0'; // Bump version to force update
+const STATIC_CACHE_NAME = 'static-assets-v21.0.0'; // Bump version to force update
 const DYNAMIC_CACHE_NAME = 'dynamic-content-v1';
 
 const APP_SHELL_ASSETS = [

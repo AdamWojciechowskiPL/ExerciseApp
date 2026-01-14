@@ -1,56 +1,35 @@
 // ExerciseApp/state.js
 
 export const state = {
-    // --- FLAGA GLOBALNEJ INICJALIZACJI ---
     isAppInitialized: false,
-
     userProgress: {},
-
-    // Struktura: { "deadBug": { score: 20, difficulty: 0 }, ... }
-    userPreferences: {},
-
-    // Statystyki tempa użytkownika { "pushUps": 4.5, ... }
+    userPreferences: {}, // { score, difficulty, updatedAt }
     exercisePace: {},
-
     masteryStats: null,
-
-    // CACHE ANIMACJI
     animationCache: new Map(),
+
+    // NOWOŚĆ: Przechowywanie mapy nadpisań (Ewolucji/Dewolucji)
+    overrides: {}, 
 
     settings: {
         appStartDate: null,
-        // ID aktywnego planu dynamicznego
         activePlanId: null,
-        // Tryb planu - TERAZ TYLKO DYNAMICZNY
         planMode: 'dynamic',
-        // Przechowywanie wygenerowanego planu dynamicznego (tygodniówka)
         dynamicPlanData: null,
-
         onboardingCompleted: false,
         painZones: [],
         equipment: [],
         schedule: {},
         ttsEnabled: true,
-
-        // --- PARAMETRY CZASOWE ---
         secondsPerRep: 6,
-        
-        // NOWOŚĆ: Globalny Mnożnik Przerw (1.0 = 100% = Standard Medyczny)
-        // Zastępuje sztywne restBetweenSets i restBetweenExercises
-        restTimeFactor: 1.0, 
-
-        wizardData: {} // Pełne dane z ankiety
+        restTimeFactor: 1.0,
+        wizardData: {}
     },
 
     exerciseLibrary: {},
-
     blacklist: [],
-
     isHistoryLoaded: false,
-
-    stravaIntegration: {
-        isConnected: false
-    },
+    stravaIntegration: { isConnected: false },
 
     currentTrainingDate: null,
     loadedMonths: new Set(),
@@ -62,7 +41,6 @@ export const state = {
     totalPausedTime: 0,
     lastPauseStartTime: null,
     breakTimeoutId: null,
-
     todaysDynamicPlan: null,
 
     timer: {

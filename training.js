@@ -118,10 +118,13 @@ function logCurrentStep(status) {
 
     const entryUniqueId = exercise.uniqueId || `${exercise.id}_${Date.now()}`;
 
+    // --- ZMIANA: Zapisujemy difficultyLevel do logu dla precyzyjnych statystyk ---
     const newLogEntry = {
         uniqueId: entryUniqueId,
         name: exercise.name,
         exerciseId: exercise.id || exercise.exerciseId,
+        categoryId: exercise.categoryId, // Dodatkowe dane
+        difficultyLevel: parseInt(exercise.difficultyLevel || 1, 10), // KLUCZOWE DLA STATYSTYK
         currentSet: exercise.currentSet,
         totalSets: exercise.totalSets,
         reps_or_time: exercise.reps_or_time,

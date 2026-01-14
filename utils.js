@@ -253,31 +253,79 @@ export const calculateSmartDuration = (dayPlan) => {
     return Math.round(totalSeconds / 60);
 };
 
-export const calculateSystemLoad = (dayPlan) => {
-    if (!dayPlan) return 0;
+export const calculateSystemLoad = (inputData, fromHistory = false) => {
+    if (!inputData) return 0;
+
+    let exercises = [];
+
+    // Case A: Plan (Dashboard) - Struktura z sekcjami
+    if (!fromHistory && (inputData.warmup || inputData.main || inputData.cooldown)) {
+        exercises = [
+            ...(inputData.warmup || []),
+            ...(inputData.main || []),
+            ...(inputData.cooldown || [])
+        ];
+    }
+    // Case B: Lista (Historia/Log) - Płaska tablica
+    else if (Array.isArray(inputData)) {
+        exercises = inputData.filter(ex => {
+            // W historii bierzemy tylko zakończone i nie będące przerwami
+            if (fromHistory) return ex.status === 'completed' && !ex.isRest;
+            return true;
+        });
+    }
+
+    if (exercises.length === 0) return 0;
+
+    const globalSpr = state.settings.secondsPerRep || 6;
     let totalWorkSeconds = 0;
     let weightedDifficultySum = 0;
-    const allExercises = [...(dayPlan.warmup || []), ...(dayPlan.main || []), ...(dayPlan.cooldown || [])];
-    const globalSpr = state.settings.secondsPerRep || 6;
 
-    allExercises.forEach(ex => {
+    exercises.forEach(ex => {
+        // --- DIFFICULTY LEVEL ---
+        // Plan: z bazy. Historia: zapisane w logu (lub fallback 1)
         const difficulty = parseInt(ex.difficultyLevel || 1, 10);
-        const sets = parseSetCount(ex.sets);
-        const isUnilateral = ex.isUnilateral || ex.is_unilateral || String(ex.reps_or_time).includes('/str');
-        const multiplier = isUnilateral ? 2 : 1;
+
+        // --- UNILATERAL LOGIC ---
+        // Plan: Agregowany ("3 serie po 10 powtórzeń na stronę") -> Mnożymy x2
+        // Historia: Rozwinięty ("Seria 1 Lewa", "Seria 1 Prawa") -> Nie mnożymy, bo są osobne wpisy
+        let multiplier = 1;
+        if (!fromHistory) {
+            const isUnilateral = ex.isUnilateral || ex.is_unilateral || String(ex.reps_or_time).includes('/str');
+            if (isUnilateral) multiplier = 2;
+        }
+
+        // --- SETS COUNT ---
+        // Plan: "3" lub "1-3" -> parsujemy
+        // Historia: Każdy wpis w logu to jedna wykonana "seria" (lub krok) -> zawsze 1
+        let sets = 1;
+        if (!fromHistory) {
+            sets = parseSetCount(ex.sets);
+        }
+
+        // --- WORK TIME CALCULATION ---
         let singleSetWorkTime = 0;
         const valStr = String(ex.reps_or_time).toLowerCase();
-        if (valStr.includes('s') || valStr.includes('min')) singleSetWorkTime = parseRepsOrTime(ex.reps_or_time);
-        else singleSetWorkTime = parseRepsOrTime(ex.reps_or_time) * globalSpr;
+
+        if (valStr.includes('s') || valStr.includes('min')) {
+            singleSetWorkTime = parseRepsOrTime(ex.reps_or_time);
+        } else {
+            singleSetWorkTime = parseRepsOrTime(ex.reps_or_time) * globalSpr;
+        }
+
         const totalExWorkTime = singleSetWorkTime * sets * multiplier;
+
         totalWorkSeconds += totalExWorkTime;
         weightedDifficultySum += (difficulty * totalExWorkTime);
     });
 
     if (totalWorkSeconds === 0) return 0;
+
     const avgDifficulty = weightedDifficultySum / totalWorkSeconds;
+    // 7200 = Arbitralny punkt odniesienia (np. 60 min ciągłej pracy o trudności 2)
     const maxScoreRef = 7200;
     const rawScore = (avgDifficulty * totalWorkSeconds);
+
     let score = Math.round((rawScore / maxScoreRef) * 100);
     return Math.min(100, Math.max(1, score));
 };

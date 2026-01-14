@@ -3,7 +3,7 @@
 
 const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
 const { buildUserContext, checkExerciseAvailability, isRotationalPlane } = require('./_clinical-rule-engine.js');
-const { calculateTiming } = require('./_pacing-engine.js'); // IMPORT NOWEGO SILNIKA
+const { calculateTiming } = require('./_pacing-engine.js');
 
 // DEFAULT CONSTANTS
 const DEFAULT_SECONDS_PER_REP = 6;
@@ -107,10 +107,7 @@ function normalizeExerciseRow(row) {
     recommended_interval_sec: row.recommended_interval_sec
   };
 
-  // --- ZMIANA ARCHITEKTONICZNA (Task B2) ---
-  // Wstępne obliczenie timingu już na etapie normalizacji
   ex.calculated_timing = calculateTiming(ex);
-
   return ex;
 }
 
@@ -218,7 +215,7 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
   const workType = String(userData?.work_type || '').toLowerCase();
   const hobby = String(userData?.hobby || '').toLowerCase();
   const primaryGoal = String(userData?.primary_goal || '').toLowerCase();
-  const secondaryGoals = normalizeStringArray(userData?.secondary_goals).map(s => String(s).toLowerCase());
+  // const secondaryGoals = normalizeStringArray(userData?.secondary_goals).map(s => String(s).toLowerCase());
 
   if (painLocs.has('knee') || painLocs.has('knee_anterior')) {
     boost(weights, 'vmo_activation', 2.0);
@@ -477,7 +474,7 @@ function filterExerciseCandidates(exercises, userData, ctx, fatigueState, rpeDat
 
     const safetyCheck = applyCheckExerciseAvailability(ex, ctx, userData);
     if (!safetyCheck.allowed) {
-        console.log(`[Filter] Rejected ${ex.id}: ${safetyCheck.reason}`);
+        // console.log(`[Filter] Rejected ${ex.id}: ${safetyCheck.reason}`); // Spammy logs
         continue;
     }
 
@@ -599,23 +596,11 @@ function varietyPenalty(ex, state, section) {
   return p;
 }
 
-// --- ZMODYFIKOWANA FUNKCJA AFFINITY ---
-// Przekształca score (-100 do +100) na mnożnik (0.0 do 2.0)
-// Wzór: M = 1.0 + (S / 100.0)
 function calculateAffinityMultiplier(exId, preferencesMap) {
     if (!preferencesMap || !preferencesMap[exId]) return 1.0;
     let score = preferencesMap[exId].score || 0;
-
-    // Zabezpieczenie zakresu
     score = Math.max(-100, Math.min(100, score));
-
-    // Liniowa interpolacja
-    // -100 => 0.0
-    // 0 => 1.0
-    // +100 => 2.0
     let multiplier = 1.0 + (score / 100.0);
-
-    // Zabezpieczenie przed ujemnym mnożnikiem
     return Math.max(0, parseFloat(multiplier.toFixed(3)));
 }
 
@@ -628,6 +613,26 @@ function calculateFreshnessMultiplier(exId, historyMap) {
     if (diffDays <= 5) return 0.5;
     if (diffDays >= 14) return 1.2;
     return 1.0;
+}
+
+// --- NOWA FUNKCJA: MNOŻNIK PROGRESJI ---
+function calculateProgressionMultiplier(exId, section, progressionMap) {
+    let multiplier = 1.0;
+
+    // 1. CZY TO ĆWICZENIE B (TARGET)? "Nowe i trudne"
+    if (progressionMap.targets.has(exId)) {
+        if (section === 'main') multiplier *= 3.0; // Priorytet nauki
+        else if (section === 'warmup') multiplier *= 0.5; // Za trudne na start
+    }
+
+    // 2. CZY TO ĆWICZENIE A (SOURCE)? "Stare i łatwe"
+    if (progressionMap.sources.has(exId)) {
+        if (section === 'main') multiplier *= 0.2; // Unikamy nudy w głównej
+        else if (section === 'warmup') multiplier *= 1.5; // Świetne na rozgrzewkę
+        else if (section === 'cooldown') multiplier *= 2.0; // Świetne na dobicie/technikę
+    }
+
+    return multiplier;
 }
 
 function scoreExercise(ex, section, userData, ctx, categoryWeights, state, painZoneSet) {
@@ -651,6 +656,11 @@ function scoreExercise(ex, section, userData, ctx, categoryWeights, state, painZ
 
   if (state.preferencesMap) score *= calculateAffinityMultiplier(ex.id, state.preferencesMap);
   if (state.historyMap) score *= calculateFreshnessMultiplier(ex.id, state.historyMap);
+
+  // APLIKACJA WAG PROGRESJI
+  if (state.progressionMap) {
+      score *= calculateProgressionMultiplier(ex.id, section, state.progressionMap);
+  }
 
   return Math.max(0, score);
 }
@@ -799,8 +809,6 @@ function parseRepsOrTimeToSeconds(repsOrTime) {
   return parseInt(t, 10) || 10;
 }
 
-// --- ZMIANA ARCHITEKTONICZNA (Task B2) ---
-// Używamy danych z _pacing-engine.js zamiast liczyć "w locie"
 function estimateExerciseDurationSeconds(exEntry, userData, paceMap) {
   const globalSpr = clamp(toNumber(userData?.secondsPerRep, DEFAULT_SECONDS_PER_REP), 2, 12);
   const restFactor = toNumber(userData?.restTimeFactor, 1.0);
@@ -826,8 +834,6 @@ function estimateExerciseDurationSeconds(exEntry, userData, paceMap) {
   let totalSeconds = (sets * workTimePerSet);
 
   if (sets > 1) {
-      // Używamy pre-kalkulowanej wartości z obiektu (jeśli dostępna)
-      // Fallback do starej logiki w razie problemów (bezpiecznik)
       let baseRest = 30;
       if (exEntry.calculated_timing && exEntry.calculated_timing.rest_sec) {
           baseRest = exEntry.calculated_timing.rest_sec;
@@ -836,10 +842,8 @@ function estimateExerciseDurationSeconds(exEntry, userData, paceMap) {
       totalSeconds += (sets - 1) * smartRest;
   }
 
-  // Używamy pre-kalkulowanej wartości transition (jeśli dostępna)
   let transitionTime = Math.max(12, Math.round(12 * restFactor));
   if (exEntry.calculated_timing && exEntry.calculated_timing.transition_sec) {
-      // Backend zwraca bazę (np. 12 lub 5), frontend/tu mnożymy przez factor
       transitionTime = Math.max(5, Math.round(exEntry.calculated_timing.transition_sec * restFactor));
   } else if (!isUnilateral) {
       transitionTime = 5;
@@ -1057,7 +1061,7 @@ function analyzeRpeTrend(recentSessions) {
     return { volumeModifier: 1.0, intensityCap: null, label: 'Maintenance' };
 }
 
-function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap, initialFatigue, rpeData) {
+function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap, initialFatigue, rpeData, progressionMap) {
     const schedulePattern = userData?.schedule_pattern || DEFAULT_SCHEDULE_PATTERN;
     const targetMin = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90);
 
@@ -1102,7 +1106,8 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
                 sessionCategoryUsage: new Map(),
                 sessionPlaneUsage: new Map(),
                 historyMap: historyMap || {},
-                preferencesMap: preferencesMap || {}
+                preferencesMap: preferencesMap || {},
+                progressionMap: progressionMap || { sources: new Map(), targets: new Set() }
             };
 
             const counts = deriveSessionCounts(userData, ctx, targetMin);
@@ -1160,7 +1165,7 @@ exports.handler = async (event) => {
 
   const client = await pool.connect();
   try {
-    const [eR, bR, pR, hR, sR, recentSessionsR] = await Promise.all([
+    const [eR, bR, pR, hR, sR, recentSessionsR, oR] = await Promise.all([
       client.query('SELECT * FROM exercises'),
       client.query('SELECT exercise_id FROM user_exercise_blacklist WHERE user_id = $1', [userId]),
       client.query('SELECT exercise_id, affinity_score FROM user_exercise_preferences WHERE user_id = $1', [userId]),
@@ -1172,7 +1177,8 @@ exports.handler = async (event) => {
         WHERE user_id = $1
         ORDER BY completed_at DESC
         LIMIT 3
-      `, [userId])
+      `, [userId]),
+      client.query('SELECT original_exercise_id, replacement_exercise_id, adjustment_type FROM user_plan_overrides WHERE user_id = $1', [userId])
     ]);
 
     const exercises = eR.rows.map(normalizeExerciseRow);
@@ -1180,6 +1186,15 @@ exports.handler = async (event) => {
     bR.rows.forEach(r => ctx.blockedIds.add(r.exercise_id));
     const preferencesMap = {}; pR.rows.forEach(r => preferencesMap[r.exercise_id] = { score: r.affinity_score });
     const historyMap = {}; hR.rows.forEach(r => { (r.logs || []).forEach(l => { const id = l.exerciseId || l.id; if (id && (!historyMap[id] || new Date(r.completed_at) > historyMap[id])) historyMap[id] = new Date(r.completed_at); }); });
+
+    // --- BUDOWANIE MAPY PROGRESJI ---
+    const progressionMap = { sources: new Map(), targets: new Set() };
+    oR.rows.forEach(r => {
+        if (r.adjustment_type === 'evolution') {
+            progressionMap.sources.set(r.original_exercise_id, r.replacement_exercise_id);
+            progressionMap.targets.add(r.replacement_exercise_id);
+        }
+    });
 
     const paceMap = {};
     sR.rows.forEach(r => {
@@ -1198,7 +1213,7 @@ exports.handler = async (event) => {
 
     if (candidates.length < 5) return { statusCode: 400, body: JSON.stringify({ error: 'NO_SAFE_EXERCISES' }) };
 
-    const plan = buildRollingPlan(candidates, cWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap, initialFatigue, rpeData);
+    const plan = buildRollingPlan(candidates, cWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap, initialFatigue, rpeData, progressionMap);
 
     const sRes = await client.query('SELECT settings FROM user_settings WHERE user_id = $1', [userId]);
     const settings = sRes.rows[0]?.settings || {};
@@ -1212,7 +1227,6 @@ exports.handler = async (event) => {
   } finally { client.release(); }
 };
 
-// P3.1 Exports for testing
 module.exports.validateExerciseRecord = validateExerciseRecord;
 module.exports.prescribeForExercise = prescribeForExercise;
 module.exports.normalizeExerciseRow = normalizeExerciseRow;

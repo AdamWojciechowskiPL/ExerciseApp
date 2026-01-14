@@ -9,17 +9,17 @@ exports.handler = async (event) => {
     const client = await pool.connect();
 
     try {
+      // ZMIANA: Pobieramy updated_at
       const result = await client.query(
-        'SELECT exercise_id, affinity_score, difficulty_rating FROM user_exercise_preferences WHERE user_id = $1',
+        'SELECT exercise_id, affinity_score, difficulty_rating, updated_at FROM user_exercise_preferences WHERE user_id = $1',
         [userId]
       );
 
-      // Przekształcamy tablicę w mapę dla szybkiego dostępu na frontendzie:
-      // { "deadBug": { score: 20, difficulty: 0 }, ... }
       const preferencesMap = result.rows.reduce((acc, row) => {
         acc[row.exercise_id] = {
           score: row.affinity_score,
-          difficulty: row.difficulty_rating
+          difficulty: row.difficulty_rating,
+          updatedAt: row.updated_at // Dodano timestamp
         };
         return acc;
       }, {});

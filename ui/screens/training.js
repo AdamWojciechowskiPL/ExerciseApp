@@ -551,10 +551,17 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
     startBtn.addEventListener('click', () => {
         if (!isCurrentDynamicDay && useDynamicPlan) {
             if (confirm("To jest trening z przyszłości. Czy chcesz ustawić go jako dzisiejszy plan i rozpocząć?")) {
+                // FIX: Tutaj też upewniamy się, że zapisujemy ZMODYFIKOWANY plan
                 state.todaysDynamicPlan = currentAdjustedPlan;
                 savePlanToStorage(currentAdjustedPlan);
             } else return;
         }
+
+        // === FIX START ===
+        // Aktualizujemy globalny plan dzisiejszy o wersję przetworzoną przez Asystenta (zmienione serie/powtórzenia)
+        // Dzięki temu startModifiedTraining() pobierze już poprawione wartości.
+        state.todaysDynamicPlan = currentAdjustedPlan;
+        // === FIX END ===
 
         state.sessionParams.initialPainLevel = currentPainLevel;
         state.sessionParams.timeFactor = 1.0;

@@ -19,20 +19,67 @@
         display: flex; flex-wrap: nowrap; align-items: center; gap: 10px;
         padding: 10px 12px; min-height: auto; border-radius: 12px;
         background: linear-gradient(160deg, #0f1c2e 0%, var(--primary-color) 90%);
+        overflow: hidden; /* Zabezpieczenie kontenera */
     }
-    .hero-avatar-wrapper { width: 50px; height: 50px; margin: 0; }
+    .hero-avatar-wrapper { width: 50px; height: 50px; margin: 0; flex-shrink: 0; }
     .level-badge { font-size: 0.6rem; padding: 1px 4px; bottom: -3px; }
-    .hero-content { flex: 1; min-width: 0; padding: 0 4px; }
-    .hero-rank-title { font-size: 0.9rem; margin-bottom: 2px; }
-    .hero-metrics-grid { display: flex; gap: 6px; margin-top: 0; flex-wrap: nowrap; }
-    .metric-item { padding: 3px 6px; min-height: auto; gap: 4px; background: rgba(0,0,0,0.2); }
+    
+    .hero-content { 
+        flex: 1; 
+        min-width: 0; /* Kluczowe: pozwala flex-child kurczyć się poniżej zawartości */
+        padding: 0 2px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        overflow: hidden;
+    }
+    
+    .hero-rank-title { font-size: 0.9rem; margin-bottom: 2px; white-space: nowrap; }
+    
+    /* --- FIX: PRZEWIJANIE METRYK --- */
+    .hero-metrics-grid { 
+        display: flex; 
+        gap: 5px; /* Mniejszy odstęp */
+        margin-top: 0; 
+        flex-wrap: nowrap;
+        
+        /* Włączamy przewijanie poziome */
+        overflow-x: auto; 
+        padding-right: 15px; /* Margines na końcu przewijania */
+        
+        /* Ukrywamy scrollbar */
+        scrollbar-width: none; /* Firefox */
+        -ms-overflow-style: none; /* IE/Edge */
+        
+        /* Płynność na iOS */
+        -webkit-overflow-scrolling: touch; 
+        
+        /* Efekt zanikania po prawej stronie sugerujący przewijanie */
+        mask-image: linear-gradient(to right, black 85%, transparent 100%);
+        -webkit-mask-image: linear-gradient(to right, black 85%, transparent 100%);
+    }
+    
+    /* Ukrywanie scrollbara dla Webkit (Chrome/Safari) */
+    .hero-metrics-grid::-webkit-scrollbar {
+        display: none;
+    }
+
+    .metric-item { 
+        padding: 3px 6px; 
+        min-height: auto; 
+        gap: 4px; 
+        background: rgba(0,0,0,0.2); 
+        flex-shrink: 0; /* ZABRANIA ZGNIATANIA KAFELKÓW */
+    }
+    
     .metric-icon { width: 14px !important; height: 14px !important; }
     .metric-value { font-size: 0.75rem; font-weight: 600; }
     .metric-text { line-height: 1; }
     .metric-label { display: none; }
+    
     .hero-weekly-rhythm {
         display: flex; min-width: auto; padding-left: 8px; border-left: 1px solid rgba(255,255,255,0.1);
-        transform: scale(0.9); transform-origin: right center;
+        transform: scale(0.9); transform-origin: right center; flex-shrink: 0;
     }
     .weekly-chart-label { display: none; }
     .weekly-chart-grid { gap: 3px; }

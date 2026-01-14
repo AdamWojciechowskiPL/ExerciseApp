@@ -112,6 +112,19 @@ export function generateHeroDashboardHTML(stats) {
     const totalMin = stats.totalMinutes || 0;
     if (totalMin > 60) { const h = Math.floor(totalMin / 60); const m = totalMin % 60; timeLabel = `${h}h ${m}m`; } else { timeLabel = `${totalMin}m`; }
 
+    // --- NOWOŚĆ: Logika Zmęczenia (Fatigue) ---
+    const fatigueScore = stats.fatigueScore || 0;
+    let fatigueLabel = 'Świeży';
+    let fatigueClass = 'fresh'; // green
+
+    if (fatigueScore >= 80) {
+        fatigueLabel = 'Wysokie';
+        fatigueClass = 'critical'; // red
+    } else if (fatigueScore >= 40) {
+        fatigueLabel = 'Średnie';
+        fatigueClass = 'moderate'; // yellow/orange
+    }
+
     return `
     <div class="hero-avatar-wrapper"><div class="progress-ring" style="--progress-deg: ${progressDegrees}deg;"></div><img src="${stats.iconPath || '/icons/badge-level-1.svg'}" class="hero-avatar" alt="Ranga"><div class="level-badge">LVL ${stats.level || 1}</div></div>
     <div class="hero-content">
@@ -120,6 +133,8 @@ export function generateHeroDashboardHTML(stats) {
             <div class="metric-item" title="Twoja aktualna seria"><svg class="metric-icon" width="16" height="16"><use href="#icon-streak-fire"/></svg><div class="metric-text"><span class="metric-label">Seria</span><span class="metric-value ${loadingClass}">${stats.streak !== undefined ? stats.streak : '-'} Dni</span></div></div>
             <div class="metric-item" title="Wskaźnik odporności"><svg class="metric-icon" width="16" height="16"><use href="#icon-shield-check"/></svg><div class="metric-text"><span class="metric-label">Tarcza</span><span class="metric-value shield-score ${shieldClass} ${loadingClass}">${resilienceScore}${isLoading ? '' : '%'}</span></div></div>
             <div class="metric-item" title="Czas treningów"><svg class="metric-icon" width="16" height="16"><use href="#icon-clock"/></svg><div class="metric-text"><span class="metric-label">Czas</span><span class="metric-value ${loadingClass}">${isLoading ? '--' : timeLabel}</span></div></div>
+            <!-- NOWY KAFELEK ZMĘCZENIA -->
+            <div class="metric-item" title="Poziom zmęczenia (Acute Fatigue)"><svg class="metric-icon" width="16" height="16"><use href="#icon-battery"/></svg><div class="metric-text"><span class="metric-label">Zmęczenie</span><span class="metric-value fatigue-score ${fatigueClass} ${loadingClass}">${fatigueLabel}</span></div></div>
         </div>
     </div>
     <div class="hero-weekly-rhythm"><div class="weekly-chart-label">TWÓJ TYDZIEŃ</div><div class="weekly-chart-grid">${weeklyBarsHTML}</div></div>`;
@@ -433,7 +448,7 @@ export function generateSessionCardHTML(session) {
                     <!-- Load -->
                     <div style="background:rgba(255,255,255,0.6); padding:8px 4px; border-radius:8px; text-align:center; border:1px solid rgba(0,0,0,0.05);">
                         <div style="width:100%; height:6px; background:#e5e7eb; border-radius:3px; margin: 8px 0;">
-                            <div style="width:${sessionLoad}%; height:100%; background:${loadColor}; border-radius:3px;"></div>
+                            <div style="width:${sessionLoad}%; height:100%; background:${loadColor}; border-radius:3px;</div>
                         </div>
                         <div style="font-weight:800; font-size:0.9rem; color:#333;">${sessionLoad}%</div>
                         <div style="font-size:0.6rem; text-transform:uppercase; color:#888;">Obciążenie</div>

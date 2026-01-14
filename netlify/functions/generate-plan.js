@@ -1,9 +1,10 @@
-// netlify/functions/generate-plan.js
+// ExerciseApp/netlify/functions/generate-plan.js
 'use strict';
 
 const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
 const { buildUserContext, checkExerciseAvailability, isRotationalPlane } = require('./_clinical-rule-engine.js');
 const { calculateTiming } = require('./_pacing-engine.js');
+const { calculateAcuteFatigue } = require('./_fatigue-calculator.js'); // Import nowego kalkulatora
 
 // DEFAULT CONSTANTS
 const DEFAULT_SECONDS_PER_REP = 6;
@@ -15,6 +16,9 @@ const MAX_SETS_MAIN = 5;
 const MAX_SETS_MOBILITY = 3;
 const MAX_BREATHING_SEC = 240;
 const GLOBAL_MAX_REPS = 25;
+
+// Naprawa błędu: Definicja stałej w tym pliku
+const MAX_BUCKET_CAPACITY = 120;
 
 const POSITION_ENERGY_RANK = {
     'supine': 1, 'prone': 1, 'lying': 1, 'side_lying': 1,
@@ -124,16 +128,19 @@ function validateExerciseRecord(ex) {
         if (typeof i.rest !== 'number' || i.rest < 0) return { valid: false, error: 'invalid_interval_rest' };
     }
 
-    if (ex.impact_level !== 'no_impact' && ex.is_foot_loading !== true) return { valid: false, error: 'impact_without_foot_loading' };
-    if (ex.position !== 'standing' && ex.impact_level !== 'no_impact') return { valid: false, error: 'impact_without_standing' };
+    // USUNIĘTO REGUŁY IMPACTU ZGODNIE Z ŻYCZENIEM
+    // if (ex.impact_level !== 'no_impact' && ex.is_foot_loading !== true) return { valid: false, error: 'impact_without_foot_loading' };
+    // if (ex.position !== 'standing' && ex.impact_level !== 'no_impact') return { valid: false, error: 'impact_without_standing' };
 
-    if (ex.spine_load_level === 'high' && ex.position !== 'standing') return { valid: false, error: 'high_spine_without_standing' };
-    if (ex.knee_load_level === 'high') {
-        if (ex.position !== 'standing' || ex.is_foot_loading !== true) return { valid: false, error: 'high_knee_without_loading' };
-    }
+    // USUNIĘTO REGUŁY BIOMECHANICZNE (SPINE/KNEE vs POSITION) ZGODNIE Z ŻYCZENIEM
+    // if (ex.spine_load_level === 'high' && ex.position !== 'standing') return { valid: false, error: 'high_spine_without_standing' };
+    // if (ex.knee_load_level === 'high') {
+    //     if (ex.position !== 'standing' || ex.is_foot_loading !== true) return { valid: false, error: 'high_knee_without_loading' };
+    // }
 
-    if (ex.impact_level === 'high' && ex.difficulty_level < 4) return { valid: false, error: 'high_impact_low_difficulty' };
-    if (ex.difficulty_level <= 2 && !['no_impact', 'low'].includes(ex.impact_level)) return { valid: false, error: 'low_difficulty_high_impact' };
+    // USUNIĘTO REGUŁY TRUDNOŚCI ZGODNIE Z ŻYCZENIEM
+    // if (ex.impact_level === 'high' && ex.difficulty_level < 4) return { valid: false, error: 'high_impact_low_difficulty' };
+    // if (ex.difficulty_level <= 2 && !['no_impact', 'low'].includes(ex.impact_level)) return { valid: false, error: 'low_difficulty_high_impact' };
 
     return { valid: true };
 }
@@ -215,7 +222,6 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
   const workType = String(userData?.work_type || '').toLowerCase();
   const hobby = String(userData?.hobby || '').toLowerCase();
   const primaryGoal = String(userData?.primary_goal || '').toLowerCase();
-  // const secondaryGoals = normalizeStringArray(userData?.secondary_goals).map(s => String(s).toLowerCase());
 
   if (painLocs.has('knee') || painLocs.has('knee_anterior')) {
     boost(weights, 'vmo_activation', 2.0);
@@ -458,8 +464,6 @@ function filterExerciseCandidates(exercises, userData, ctx, fatigueState, rpeDat
   const diagnosisSet = normalizeLowerSet(userData?.medical_diagnosis);
   const restrictionsSet = normalizeLowerSet(userData?.physical_restrictions);
 
-  const difficultyCap = rpeData && rpeData.intensityCap ? rpeData.intensityCap : 5;
-
   const filtered = [];
   for (const ex of exercises) {
     if (!ex || !ex.id) continue;
@@ -474,7 +478,6 @@ function filterExerciseCandidates(exercises, userData, ctx, fatigueState, rpeDat
 
     const safetyCheck = applyCheckExerciseAvailability(ex, ctx, userData);
     if (!safetyCheck.allowed) {
-        // console.log(`[Filter] Rejected ${ex.id}: ${safetyCheck.reason}`); // Spammy logs
         continue;
     }
 
@@ -482,14 +485,6 @@ function filterExerciseCandidates(exercises, userData, ctx, fatigueState, rpeDat
     if (violatesPhysicalRestrictions(ex, restrictionsSet)) continue;
     if (violatesDiagnosisHardContraindications(ex, diagnosisSet)) continue;
     if (violatesSeverePainRules(ex, ctx)) continue;
-
-    const diff = ex.difficulty_level || 1;
-    if (diff > difficultyCap) continue;
-
-    if (fatigueState === 'fatigued') {
-        if (diff >= 4) continue;
-        if ((ex.impact_level || 'low') === 'high') continue;
-    }
 
     filtered.push(ex);
   }
@@ -591,7 +586,8 @@ function varietyPenalty(ex, state, section) {
 
   const plane = (ex.primary_plane || 'multi').toLowerCase();
   const sessionPlane = state.sessionPlaneUsage.get(plane) || 0;
-  p *= 1.0 / (1.0 + sessionPlane * 0.35);
+  // FIX 3: Stronger Plane Penalty
+  p *= 1.0 / (1.0 + sessionPlane * 0.85);
 
   return p;
 }
@@ -615,23 +611,17 @@ function calculateFreshnessMultiplier(exId, historyMap) {
     return 1.0;
 }
 
-// --- NOWA FUNKCJA: MNOŻNIK PROGRESJI ---
 function calculateProgressionMultiplier(exId, section, progressionMap) {
     let multiplier = 1.0;
-
-    // 1. CZY TO ĆWICZENIE B (TARGET)? "Nowe i trudne"
     if (progressionMap.targets.has(exId)) {
-        if (section === 'main') multiplier *= 3.0; // Priorytet nauki
-        else if (section === 'warmup') multiplier *= 0.5; // Za trudne na start
+        if (section === 'main') multiplier *= 3.0;
+        else if (section === 'warmup') multiplier *= 0.5;
     }
-
-    // 2. CZY TO ĆWICZENIE A (SOURCE)? "Stare i łatwe"
     if (progressionMap.sources.has(exId)) {
-        if (section === 'main') multiplier *= 0.2; // Unikamy nudy w głównej
-        else if (section === 'warmup') multiplier *= 1.5; // Świetne na rozgrzewkę
-        else if (section === 'cooldown') multiplier *= 2.0; // Świetne na dobicie/technikę
+        if (section === 'main') multiplier *= 0.2;
+        else if (section === 'warmup') multiplier *= 1.5;
+        else if (section === 'cooldown') multiplier *= 2.0;
     }
-
     return multiplier;
 }
 
@@ -657,7 +647,6 @@ function scoreExercise(ex, section, userData, ctx, categoryWeights, state, painZ
   if (state.preferencesMap) score *= calculateAffinityMultiplier(ex.id, state.preferencesMap);
   if (state.historyMap) score *= calculateFreshnessMultiplier(ex.id, state.historyMap);
 
-  // APLIKACJA WAG PROGRESJI
   if (state.progressionMap) {
       score *= calculateProgressionMultiplier(ex.id, section, state.progressionMap);
   }
@@ -1009,18 +998,6 @@ function reorderSessionByIntensityWave(session) {
     });
 }
 
-function analyzeInitialFatigue(userId, lastSession) {
-    if (!lastSession) return 'fresh';
-
-    const now = new Date();
-    const lastDate = new Date(lastSession.completed_at);
-    const diffHours = (now - lastDate) / (1000 * 60 * 60);
-
-    if (diffHours < 20) return 'fatigued';
-    if (diffHours > 72) return 'fresh';
-    return 'normal';
-}
-
 function analyzeRpeTrend(recentSessions) {
     const defaultResult = { volumeModifier: 1.0, intensityCap: null, label: 'Standard' };
     if (!recentSessions || recentSessions.length === 0) return defaultResult;
@@ -1061,10 +1038,11 @@ function analyzeRpeTrend(recentSessions) {
     return { volumeModifier: 1.0, intensityCap: null, label: 'Maintenance' };
 }
 
-function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap, initialFatigue, rpeData, progressionMap) {
+// --- FATIGUE BUCKET LOGIC (Server-Side Calculation Integrated) ---
+
+function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap, initialFatigueScore, rpeData, progressionMap) {
     const schedulePattern = userData?.schedule_pattern || DEFAULT_SCHEDULE_PATTERN;
     const targetMin = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90);
-
     const forcedRestDates = new Set(normalizeStringArray(userData?.forced_rest_dates));
 
     const plan = {
@@ -1075,15 +1053,16 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
             severityScore: ctx.severityScore,
             isSevere: ctx.isSevere,
             generatedAt: new Date().toISOString(),
-            rpeStatus: rpeData.label
+            rpeStatus: rpeData.label,
+            startingFatigue: initialFatigueScore // Logujemy startowy poziom wiadra (0-120)
         }
     };
 
+    let fatigueScore = initialFatigueScore;
+    let consecutiveTrainings = 0;
+
     const weeklyUsage = new Map();
     const weeklyCategoryUsage = new Map();
-
-    let fatigueState = initialFatigue;
-    let consecutiveTrainings = 0;
 
     for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
         const currentDate = new Date();
@@ -1096,52 +1075,114 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
 
         const forceRest = consecutiveTrainings >= 14;
 
+        // --- ZMIANA: Decay symulowany każdego dnia ---
+        if (dayOffset > 0) {
+             fatigueScore = Math.round(fatigueScore * 0.6);
+        }
+
         if (isScheduled && !forceRest && !isForcedRest) {
             consecutiveTrainings++;
 
-            const sState = {
-                usedIds: new Set(),
-                weeklyUsage,
-                weeklyCategoryUsage,
-                sessionCategoryUsage: new Map(),
-                sessionPlaneUsage: new Map(),
-                historyMap: historyMap || {},
-                preferencesMap: preferencesMap || {},
-                progressionMap: progressionMap || { sources: new Map(), targets: new Set() }
-            };
+            // --- INTENSITY DECISION LOGIC (BUCKET) ---
+            let dailyIntensityMode = 'high';
+            let costOfSession = 0;
 
-            const counts = deriveSessionCounts(userData, ctx, targetMin);
-            const dayTitle = `Trening ${currentDate.toLocaleDateString('pl-PL', {weekday: 'long'})}`;
+            if (fatigueScore >= 80) {
+                dailyIntensityMode = 'recovery';
+                costOfSession = 10;
+            } else if (fatigueScore >= 40) {
+                dailyIntensityMode = 'moderate';
+                costOfSession = 25;
+            } else {
+                dailyIntensityMode = 'high';
+                costOfSession = 40;
+            }
+
+            let dailyVolMod = rpeData.volumeModifier;
+            if (dailyIntensityMode === 'recovery') dailyVolMod *= 0.7;
+            if (dailyIntensityMode === 'moderate') dailyVolMod *= 0.9;
+
             const session = createInitialSession(dayOffset + 1, targetMin);
-            session.title = dayTitle;
+            session.title = `Trening ${currentDate.toLocaleDateString('pl-PL', {weekday: 'long'})}`;
+
+            if (dailyIntensityMode === 'recovery') session.title += " (Active Recovery)";
+            else if (dailyIntensityMode === 'moderate') session.title += " (Umiarkowany)";
+
             session.date = dateString;
             session.type = 'workout';
 
             const pZones = derivePainZoneSet(userData);
 
+            const modeFilter = (ex) => {
+                const diff = ex.difficulty_level || 1;
+                const impact = (ex.impact_level || 'low').toLowerCase();
+                const intensity = ex.metabolic_intensity || 1;
+
+                if (dailyIntensityMode === 'recovery') {
+                    if (diff > 2) return false;
+                    if (impact === 'high' || impact === 'moderate') return false;
+                    if (intensity >= 3) return false;
+                    return true;
+                }
+
+                if (dailyIntensityMode === 'moderate') {
+                    if (diff > 4) return false;
+                    if (impact === 'high') return false;
+                    return true;
+                }
+                return true;
+            };
+
+            const sState = { usedIds: new Set(), weeklyUsage, weeklyCategoryUsage, sessionCategoryUsage: new Map(), sessionPlaneUsage: new Map(), historyMap: historyMap || {}, preferencesMap: preferencesMap || {}, progressionMap: progressionMap || { sources: new Map(), targets: new Set() } };
+
             ['warmup', 'main', 'cooldown'].forEach(sec => {
+                const sectionFilter = (ex) => {
+                    if (sec === 'main') return modeFilter(ex) && !isBreathingCategory(ex.category_id);
+                    if (dailyIntensityMode === 'recovery') return modeFilter(ex);
+                    return true;
+                };
+
+                const counts = deriveSessionCounts(userData, ctx, targetMin);
+                if (dailyIntensityMode === 'recovery') counts.main = Math.max(1, counts.main - 1);
+
                 for (let i = 0; i < counts[sec]; i++) {
-                    const ex = pickExerciseForSection(sec, candidates, userData, ctx, categoryWeights, sState, pZones, (c) => sec === 'main' ? !isBreathingCategory(c.category_id) : (c.metabolic_intensity || 1) < 4);
+                    const ex = pickExerciseForSection(sec, candidates, userData, ctx, categoryWeights, sState, pZones, sectionFilter);
                     if (ex) {
-                        const rx = prescribeForExercise(ex, sec, userData, ctx, categoryWeights, fatigueState, targetMin, rpeData.volumeModifier);
-                        const newEx = { ...ex, ...rx };
-                        session[sec].push(newEx);
+                        const rx = prescribeForExercise(ex, sec, userData, ctx, categoryWeights, 'fresh', targetMin, dailyVolMod);
+                        session[sec].push({ ...ex, ...rx });
+                    }
+                }
+
+                // FIX 2: Gwarancja Mobilności w Rozgrzewce
+                if (sec === 'warmup') {
+                    const hasMobility = session.warmup.some(ex => isMobilityCategory(ex.category_id));
+                    if (!hasMobility) {
+                        const mobEx = pickExerciseForSection(sec, candidates, userData, ctx, categoryWeights, sState, pZones, (c) => isMobilityCategory(c.category_id));
+                        if (mobEx) {
+                            const rx = prescribeForExercise(mobEx, sec, userData, ctx, categoryWeights, 'fresh', targetMin, dailyVolMod);
+                            if (session.warmup.length > 0) session.warmup.pop();
+                            session.warmup.push({ ...mobEx, ...rx });
+                        }
                     }
                 }
             });
 
-            expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, sState, pZones, paceMap, fatigueState, targetMin, rpeData.volumeModifier);
+            expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, sState, pZones, paceMap, 'fresh', targetMin, dailyVolMod);
             enforceStrictTimeLimit(session, userData, paceMap, targetMin);
             reorderSessionByIntensityWave(session);
 
             session.estimatedDurationMin = Math.round(estimateSessionDurationSeconds(session, userData, paceMap) / 60);
             plan.days.push(session);
 
-            fatigueState = 'fatigued';
+            // Update Bucket
+            fatigueScore += costOfSession;
+            fatigueScore = Math.min(MAX_BUCKET_CAPACITY, Math.max(0, fatigueScore));
 
         } else {
             consecutiveTrainings = 0;
-            fatigueState = 'fresh';
+            // Dzień wolny = duża regeneracja
+            fatigueScore -= 50;
+            fatigueScore = Math.max(0, fatigueScore);
 
             plan.days.push({
                 dayNumber: dayOffset + 1,
@@ -1165,7 +1206,8 @@ exports.handler = async (event) => {
 
   const client = await pool.connect();
   try {
-    const [eR, bR, pR, hR, sR, recentSessionsR, oR] = await Promise.all([
+    // 1. Pobieramy dane równolegle - w tym NOWĄ kalkulację zmęczenia
+    const [eR, bR, pR, hR, sR, recentSessionsR, oR, calculatedFatigue] = await Promise.all([
       client.query('SELECT * FROM exercises'),
       client.query('SELECT exercise_id FROM user_exercise_blacklist WHERE user_id = $1', [userId]),
       client.query('SELECT exercise_id, affinity_score FROM user_exercise_preferences WHERE user_id = $1', [userId]),
@@ -1178,7 +1220,8 @@ exports.handler = async (event) => {
         ORDER BY completed_at DESC
         LIMIT 3
       `, [userId]),
-      client.query('SELECT original_exercise_id, replacement_exercise_id, adjustment_type FROM user_plan_overrides WHERE user_id = $1', [userId])
+      client.query('SELECT original_exercise_id, replacement_exercise_id, adjustment_type FROM user_plan_overrides WHERE user_id = $1', [userId]),
+      calculateAcuteFatigue(client, userId) // <--- Wywołanie kalkulatora
     ]);
 
     const exercises = eR.rows.map(normalizeExerciseRow);
@@ -1186,34 +1229,25 @@ exports.handler = async (event) => {
     bR.rows.forEach(r => ctx.blockedIds.add(r.exercise_id));
     const preferencesMap = {}; pR.rows.forEach(r => preferencesMap[r.exercise_id] = { score: r.affinity_score });
     const historyMap = {}; hR.rows.forEach(r => { (r.logs || []).forEach(l => { const id = l.exerciseId || l.id; if (id && (!historyMap[id] || new Date(r.completed_at) > historyMap[id])) historyMap[id] = new Date(r.completed_at); }); });
-
-    // --- BUDOWANIE MAPY PROGRESJI ---
     const progressionMap = { sources: new Map(), targets: new Set() };
-    oR.rows.forEach(r => {
-        if (r.adjustment_type === 'evolution') {
-            progressionMap.sources.set(r.original_exercise_id, r.replacement_exercise_id);
-            progressionMap.targets.add(r.replacement_exercise_id);
-        }
-    });
-
-    const paceMap = {};
-    sR.rows.forEach(r => {
-        paceMap[r.exercise_id] = parseFloat(r.avg_seconds_per_rep);
-    });
+    oR.rows.forEach(r => { if (r.adjustment_type === 'evolution') { progressionMap.sources.set(r.original_exercise_id, r.replacement_exercise_id); progressionMap.targets.add(r.replacement_exercise_id); } });
+    const paceMap = {}; sR.rows.forEach(r => { paceMap[r.exercise_id] = parseFloat(r.avg_seconds_per_rep); });
 
     const recentSessions = recentSessionsR.rows;
-    const initialFatigue = analyzeInitialFatigue(userId, recentSessions[0]);
     const rpeData = analyzeRpeTrend(recentSessions);
 
-    console.log(`[PlanGen] User: ${userId}, Fatigue: ${initialFatigue}, RPE Status: ${rpeData.label}, VolMod: ${rpeData.volumeModifier}`);
+    console.log(`[PlanGen] User: ${userId}, StartFatigue: ${calculatedFatigue} (Calculated), RPE: ${rpeData.label}`);
 
     const cWeights = buildDynamicCategoryWeights(exercises, userData, ctx);
 
-    const candidates = filterExerciseCandidates(exercises, userData, ctx, initialFatigue, rpeData);
+    // Filtracja: Używamy stanu "fatigued" tylko jeśli bucket jest przepełniony
+    const fatigueStateForFilter = calculatedFatigue >= 80 ? 'fatigued' : 'fresh';
+    const candidates = filterExerciseCandidates(exercises, userData, ctx, fatigueStateForFilter, rpeData);
 
     if (candidates.length < 5) return { statusCode: 400, body: JSON.stringify({ error: 'NO_SAFE_EXERCISES' }) };
 
-    const plan = buildRollingPlan(candidates, cWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap, initialFatigue, rpeData, progressionMap);
+    // Przekazujemy calculatedFatigue do buildera
+    const plan = buildRollingPlan(candidates, cWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap, calculatedFatigue, rpeData, progressionMap);
 
     const sRes = await client.query('SELECT settings FROM user_settings WHERE user_id = $1', [userId]);
     const settings = sRes.rows[0]?.settings || {};

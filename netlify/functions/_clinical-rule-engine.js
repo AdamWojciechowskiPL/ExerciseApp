@@ -55,7 +55,6 @@ function buildUserContext(userData) {
         painFilters.add('thoracic');
     }
 
-    // P1.1: Strict normalization to Set (lowercase, trim)
     const userEquipment = new Set(
         (userData.equipment_available || []).map(e => String(e).trim().toLowerCase()).filter(Boolean)
     );
@@ -77,21 +76,25 @@ function buildUserContext(userData) {
 }
 
 function checkEquipment(ex, userEquipmentSet) {
-    if (!userEquipmentSet) return true; // Fail open if no context (safety handled elsewhere)
+    if (!userEquipmentSet) return true;
 
     const exEquipRaw = Array.isArray(ex.equipment) ? ex.equipment : (ex.equipment ? ex.equipment.split(',') : []);
     const requirements = exEquipRaw.map(e => String(e).trim().toLowerCase()).filter(Boolean);
 
     if (requirements.length === 0) return true;
 
-    // P1.1 Unified Ignorable List ('mat' removed)
-    const ignorable = ['brak', 'none', 'brak sprzętu', 'masa własna', 'bodyweight', ''];
-    
-    const isNone = requirements.some(req => ignorable.includes(req));
-    if (isNone) return true;
+    const ignorable = new Set(['none', 'brak', '', 'brak sprzętu', 'masa własna', 'bodyweight']);
 
-    // P1.1 Exact Match (Set.has)
-    return requirements.every(req => userEquipmentSet.has(req));
+    // FIX: Zmieniono 'req' na 'requirements'
+    const required = requirements.filter(x => !ignorable.has(x));
+    
+    if (required.length === 0) return true;
+    if (!userEquipmentSet || userEquipmentSet.size === 0) return false;
+
+    for (const item of required) {
+        if (!userEquipmentSet.has(item)) return false;
+    }
+    return true;
 }
 
 function violatesRestrictions(ex, ctx) {
@@ -100,7 +103,7 @@ function violatesRestrictions(ex, ctx) {
 
     const plane = String(ex.primary_plane || 'multi').toLowerCase();
     const pos = String(ex.position || '').toLowerCase();
-    
+
     const impact = String(ex.impact_level || 'low').toLowerCase();
     const kneeLoad = String(ex.knee_load_level || 'low').toLowerCase();
 
@@ -150,11 +153,11 @@ function passesTolerancePattern(ex, tolerancePattern) {
 
     if (tolerancePattern === 'flexion_intolerant') {
         if (plane === 'flexion' && !tags.includes('ok_for_flexion_intolerant')) return false;
-    } 
+    }
     else if (tolerancePattern === 'extension_intolerant') {
         if (plane === 'extension' && !tags.includes('ok_for_extension_intolerant')) return false;
     }
-    
+
     return true;
 }
 

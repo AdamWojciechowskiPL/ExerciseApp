@@ -52,48 +52,7 @@
     align-items: center; /* Wyrównanie w pionie */
 }
 
-.metric-item {
-    background: rgba(0, 0, 0, 0.3);
-    padding: 0 10px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    flex-grow: 0;
-    min-width: max-content;
-    height: 38px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    overflow: visible !important;
-    position: relative;
-
-    /* ZMIANA: Dodałem niewielki górny margines, aby odsunąć elementy od góry */
-    padding-top: 2px;
-}
-
 /* Ustawienia ogólne ikon */
-.metric-item {
-    background: rgba(0, 0, 0, 0.3);
-    padding: 0 10px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    gap: 8px; /* Zmniejszony odstęp, żeby tekst się nie rozciągał */
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    flex-grow: 0;
-    min-width: max-content;
-    height: 38px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-
-    /* ZAPEWNIENIE WIDOCZNOŚCI CIENI */
-    overflow: visible !important;
-    position: relative;
-    z-index: 1;
-}
-
-/* Ustawienia ogólne ikon */
-/* ExerciseApp/css/dashboard.css */
-
 .metric-item {
     background: rgba(0, 0, 0, 0.3);
     padding: 0 10px;
@@ -153,6 +112,18 @@
     stroke: #4cc9f0;
     filter: drop-shadow(0 0 3px rgba(76, 201, 240, 0.5));
 }
+
+/* 4. NOWOŚĆ: Zmęczenie (Bateria) */
+.metric-item:nth-of-type(4) .metric-icon {
+    color: #a3e635; /* Jasna zieleń domyślnie */
+    stroke: #a3e635;
+    filter: drop-shadow(0 0 3px rgba(163, 230, 53, 0.5));
+}
+
+/* Style statusu zmęczenia */
+.fatigue-score.fresh { color: #a3e635; }
+.fatigue-score.moderate { color: #facc15; animation: pulse-text 3s infinite; }
+.fatigue-score.critical { color: #f87171; animation: pulse-text 1.5s infinite; }
 
 /* Tekst - dostosowanie do mniejszej ikony */
 .metric-text {
@@ -230,26 +201,26 @@
 /* --- ZMODYFIKOWANA KARTA KONTEKSTOWA --- */
 .workout-context-card {
     background: #ffffff; /* Czysta biel */
-    border-radius: var(--radius-lg); 
-    padding: 1.2rem; 
+    border-radius: var(--radius-lg);
+    padding: 1.2rem;
     border: 1px solid rgba(0,0,0,0.05);
     box-shadow: 0 4px 20px rgba(0,0,0,0.03); /* Delikatniejszy cień */
 }
 
 /* Header: Tytuł + Czas */
-.wc-header { 
-    display: flex; 
-    justify-content: space-between; 
-    align-items: center; 
-    margin-bottom: 4px; 
+.wc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
 }
-.wc-title { 
-    font-size: 1.25rem; 
-    font-weight: 800; 
-    color: var(--primary-color); 
-    margin: 0; 
-    line-height: 1.2; 
-    margin-bottom: 2px; 
+.wc-title {
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: var(--primary-color);
+    margin: 0;
+    line-height: 1.2;
+    margin-bottom: 2px;
     letter-spacing: -0.5px;
 }
 
@@ -268,22 +239,22 @@
     white-space: nowrap;
 }
 
-.load-metric-container { 
-    margin-top: 15px !important; 
-    margin-bottom: 15px !important; 
+.load-metric-container {
+    margin-top: 15px !important;
+    margin-bottom: 15px !important;
 }
 
 /* Ulepszone Tagi */
-.wc-tags { 
-    display: flex; 
-    flex-wrap: wrap; 
-    gap: 6px; 
-    margin-top: 10px !important; 
-    margin-bottom: 1.2rem; 
+.wc-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px !important;
+    margin-bottom: 1.2rem;
 }
-.meta-badge { 
-    font-size: 0.7rem; 
-    padding: 4px 10px; 
+.meta-badge {
+    font-size: 0.7rem;
+    padding: 4px 10px;
     border-radius: 8px; /* Bardziej zaokrąglone */
     font-weight: 600;
     letter-spacing: 0.3px;
@@ -300,27 +271,27 @@
 .wc-footer { display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; color: var(--muted-text-color); margin-bottom: 1rem; }
 
 /* Sekcja Samopoczucia */
-.sheet-wellness { 
-    margin-top: 1rem !important; 
-    margin-bottom: 1.5rem; 
+.sheet-wellness {
+    margin-top: 1rem !important;
+    margin-bottom: 1.5rem;
     background: #f8f9fa; /* Tło sekcji */
     padding: 10px;
     border-radius: 12px;
 }
-.sheet-wellness-label { 
-    font-size: 0.75rem; 
-    font-weight: 700; 
-    color: var(--muted-text-color); 
-    margin-bottom: 8px; 
-    text-align: left; 
+.sheet-wellness-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--muted-text-color);
+    margin-bottom: 8px;
+    text-align: left;
     text-transform: uppercase;
     padding-left: 2px;
 }
 .pain-selector { display: flex; justify-content: space-between; gap: 6px; margin-bottom: 0; }
 .pain-option {
-    background: #fff; 
-    border: 1px solid rgba(0,0,0,0.05); 
-    border-radius: 8px; 
+    background: #fff;
+    border: 1px solid rgba(0,0,0,0.05);
+    border-radius: 8px;
     padding: 8px 4px;
     flex: 1; text-align: center; cursor: pointer; transition: all 0.2s; font-size: 1.2rem; display: flex;
     flex-direction: column; align-items: center; gap: 4px;
@@ -328,11 +299,11 @@
 }
 .pain-option span { font-size: 0.55rem; font-weight: 600; color: var(--muted-text-color); }
 .pain-option:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
-.pain-option.selected { 
-    background: #fff; 
-    border-color: var(--primary-color); 
-    box-shadow: 0 4px 12px rgba(0, 95, 115, 0.15); 
-    transform: scale(1.05); 
+.pain-option.selected {
+    background: #fff;
+    border-color: var(--primary-color);
+    box-shadow: 0 4px 12px rgba(0, 95, 115, 0.15);
+    transform: scale(1.05);
     z-index: 2;
 }
 /* Kolory opcji */
@@ -345,10 +316,10 @@
 /* Przycisk Start (Premium Look) */
 .calendar-action-btn {
     width: 100%; padding: 1rem; border-radius: 14px; font-size: 1.1rem; font-weight: 800;
-    text-transform: uppercase; letter-spacing: 1px; 
+    text-transform: uppercase; letter-spacing: 1px;
     background: linear-gradient(135deg, var(--primary-color) 0%, #0e7490 100%);
-    color: #fff; border: none; box-shadow: 0 8px 20px rgba(0, 95, 115, 0.25); 
-    cursor: pointer; transition: transform 0.1s, box-shadow 0.2s; 
+    color: #fff; border: none; box-shadow: 0 8px 20px rgba(0, 95, 115, 0.25);
+    cursor: pointer; transition: transform 0.1s, box-shadow 0.2s;
     display: flex; align-items: center; justify-content: center;
     gap: 8px; margin-top: 0;
     position: relative; overflow: hidden;

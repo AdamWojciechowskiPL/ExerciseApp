@@ -44,7 +44,8 @@ export function initWizard(forceStart = false) {
         daily_impact: saved.daily_impact !== undefined ? saved.daily_impact : 0,
         work_type: saved.work_type || '',
         hobby: saved.hobby || [],
-        equipment_available: saved.equipment_available || [''],
+        // FIX 7: Czysta inicjalizacja pustą tablicą zamiast ['']
+        equipment_available: saved.equipment_available || [],
         exercise_experience: saved.exercise_experience || '',
         schedule_pattern: saved.schedule_pattern || [1, 3, 5],
         target_session_duration_min: saved.target_session_duration_min || 30,

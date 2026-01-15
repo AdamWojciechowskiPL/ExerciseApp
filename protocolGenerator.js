@@ -1,6 +1,6 @@
-// protocolGenerator.js
 import { state } from './state.js';
 import { checkExerciseAvailability, buildClinicalContext } from './clinicalEngine.js';
+import { getISODate } from './utils.js';
 
 // --- Task F2: Symulacja Pacing Engine dla protokołów klienckich ---
 const calculateLocalTiming = (ex, mode) => {
@@ -22,7 +22,7 @@ const calculateLocalTiming = (ex, mode) => {
 };
 
 /**
- * PROTOCOL GENERATOR v5.9 (Rest Factor Aware)
+ * PROTOCOL GENERATOR v6.1 (Refactored: Backend-Driven Fatigue Integration)
  */
 
 const ZONE_MAP = {
@@ -56,29 +56,57 @@ const DEFAULT_MAX_DURATION = 60;
 const DEFAULT_MAX_REPS = 15;
 
 export function generateBioProtocol({ mode, focusZone, durationMin, userContext, timeFactor = 1.0 }) {
-    console.log(`🧪 [ProtocolGenerator] Generowanie v5.9: ${mode} / ${focusZone}`);
+    console.log(`🧪 [ProtocolGenerator] Generowanie v6.1: ${mode} / ${focusZone}`);
+
+    // --- CNS SAFETY NET LOGIC (INTEGRATED WITH BACKEND METRICS) ---
+    let actualMode = mode;
+    let safetyMessage = null;
+
+    // Pobieramy Fatigue Score obliczony przez Backend (Model Banistera)
+    // 0-40: Fresh, 40-80: Moderate, >80: Critical
+    const fatigueScore = state.userStats?.fatigueScore || 0;
+    const highLoadModes = ['burn', 'booster', 'ladder'];
+
+    if (highLoadModes.includes(mode)) {
+        if (fatigueScore >= 80) {
+            // CRITICAL: Bezwzględne wymuszenie regeneracji
+            console.warn(`[ProtocolGenerator] 🛡️ CRITICAL FATIGUE (${fatigueScore}). Forcing CALM.`);
+            actualMode = 'calm';
+            focusZone = 'sleep'; // Bezpieczny fallback
+            safetyMessage = `🚨 ALARM PRZETRENOWANIA (Score: ${fatigueScore})\nTwój układ nerwowy jest przeciążony. Wymuszono tryb regeneracji (Calm), aby zapobiec kontuzji.`;
+        }
+        else if (fatigueScore >= 50) {
+            // HIGH RISK: Ostrzeżenie, ale pozwalamy (chyba że user zdecyduje inaczej)
+            safetyMessage = `⚠️ OSTRZEŻENIE (HIGH RISK)\nTwoje skumulowane zmęczenie wynosi ${fatigueScore}/120. Zalecamy zmianę na tryb "Flow" lub "Reset", jeśli nie czujesz się w pełni sił.`;
+        }
+        else if (fatigueScore >= 35) {
+            // MODERATE: Info
+            safetyMessage = `ℹ️ INFO: Narastające zmęczenie (${fatigueScore}). Pamiętaj o technice i nie forsuj tempa ponad siły.`;
+        }
+    }
+    // --- SAFETY INTERVENTION END ---
 
     const targetSeconds = durationMin * 60;
-    const config = TIMING_CONFIG[mode] || TIMING_CONFIG['reset'];
+    const config = TIMING_CONFIG[actualMode] || TIMING_CONFIG['reset'];
     const globalRestFactor = state.settings.restTimeFactor || 1.0;
 
     const clinicalCtx = buildClinicalContext(userContext);
     clinicalCtx.blockedIds = new Set(state.blacklist || []);
 
-    let candidates = getCandidates(mode, focusZone, { ignoreEquipment: false, clinicalCtx });
+    let candidates = getCandidates(actualMode, focusZone, { ignoreEquipment: false, clinicalCtx });
 
-    if (candidates.length === 0) candidates = getCandidates(mode, focusZone, { ignoreEquipment: true, clinicalCtx });
-    if (candidates.length === 0) candidates = getCandidatesSafeFallback(mode, clinicalCtx);
+    if (candidates.length === 0) candidates = getCandidates(actualMode, focusZone, { ignoreEquipment: true, clinicalCtx });
+    if (candidates.length === 0) candidates = getCandidatesSafeFallback(actualMode, clinicalCtx);
     if (candidates.length === 0) throw new Error("Brak bezpiecznych ćwiczeń.");
 
     // Wzbogacamy kandydatów o lokalny timing
     candidates.forEach(c => {
-        c.calculated_timing = calculateLocalTiming(c, mode);
+        c.calculated_timing = calculateLocalTiming(c, actualMode);
     });
 
-    scoreCandidates(candidates, mode, userContext);
+    scoreCandidates(candidates, actualMode, userContext);
 
-    const { sequence, generatedSeconds } = selectExercisesByMode(candidates, mode, targetSeconds, config, timeFactor, globalRestFactor);
+    const { sequence, generatedSeconds } = selectExercisesByMode(candidates, actualMode, targetSeconds, config, timeFactor, globalRestFactor);
 
     let finalTimeFactor = timeFactor;
     if (generatedSeconds > 0 && generatedSeconds < targetSeconds) {
@@ -86,13 +114,11 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext,
         finalTimeFactor = timeFactor * Math.min(stretchRatio, 3.0);
     }
 
-    const flatExercises = buildSteps(sequence, config, mode, finalTimeFactor, globalRestFactor);
+    const flatExercises = buildSteps(sequence, config, actualMode, finalTimeFactor, globalRestFactor);
 
     const realTotalDuration = flatExercises.reduce((sum, step) => {
         const sets = parseInt(step.sets) || 1;
         const duration = step.duration || 0;
-        // W protokołach przerwa jest już często wliczona w krok jako 'restBetweenSets' w logice buildera,
-        // ale dla spójności używamy logiki utils.
         const intraSetRest = Math.round((step.restBetweenSets || 15) * globalRestFactor);
 
         if (step.isWork) {
@@ -101,16 +127,21 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext,
         return sum + duration;
     }, 0);
 
+    let finalDescription = generateDescription(actualMode, durationMin);
+    if (safetyMessage) {
+        finalDescription = `${safetyMessage}\n\n${finalDescription}`;
+    }
+
     return {
-        id: `proto_${mode}_${focusZone}_${Date.now()}`,
-        title: generateTitle(mode, focusZone),
-        description: generateDescription(mode, durationMin),
+        id: `proto_${actualMode}_${focusZone}_${Date.now()}`,
+        title: generateTitle(actualMode, focusZone) + (actualMode !== mode ? " (Safety Override)" : ""),
+        description: finalDescription,
         type: 'protocol',
-        mode: mode,
+        mode: actualMode,
         totalDuration: realTotalDuration,
         targetDuration: durationMin,
-        xpReward: calculateXP(mode, durationMin),
-        resilienceBonus: calculateResilienceBonus(mode),
+        xpReward: calculateXP(actualMode, durationMin),
+        resilienceBonus: calculateResilienceBonus(actualMode),
         flatExercises: flatExercises
     };
 }
@@ -272,7 +303,6 @@ function buildSteps(exercises, config, mode, timeFactor, globalRestFactor) {
             tempo_or_iso: tempoDisplay,
             uniqueId: `${ex.id}_p${index}${suffix ? suffix.replace(/[\s()]/g, '') : ''}`,
             restBetweenSets: INTRA_SET_REST,
-            // Task F2: Przenosimy calculated_timing
             calculated_timing: ex.calculated_timing
         });
 

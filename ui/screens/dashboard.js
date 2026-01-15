@@ -192,7 +192,6 @@ const createGlobalMenu = () => {
             closeGlobalMenu();
 
             if (action === 'preview') {
-                // ZMIANA: initialPainLevel ustawiony na 3 (Dobrze)
                 renderPreTrainingScreen(parseInt(dayId, 10), 3, true);
             }
             if (action === 'rest') handleTurnToRest(date);
@@ -204,7 +203,7 @@ const createGlobalMenu = () => {
     return globalMenu;
 };
 
-const openGlobalMenu = (btn, dateISO, isRest, dayNumber) => {
+const openGlobalMenu = (targetElement, dateISO, isRest, dayNumber) => {
     const menu = createGlobalMenu();
 
     let content = '';
@@ -229,10 +228,15 @@ const openGlobalMenu = (btn, dateISO, isRest, dayNumber) => {
 
     menu.innerHTML = content;
 
-    const rect = btn.getBoundingClientRect();
+    const rect = targetElement.getBoundingClientRect();
     const menuWidth = 200;
 
-    let left = rect.right - menuWidth;
+    let left = rect.right - menuWidth; // Domyślnie do lewej od elementu
+    // Jeśli element jest szeroki (np. strip-day), centrujemy lub dajemy pod palcem
+    if (rect.width > 100) {
+        left = rect.left + (rect.width / 2) - (menuWidth / 2);
+    }
+
     if (left < 10) left = 10;
     if (left + menuWidth > window.innerWidth) {
         left = window.innerWidth - menuWidth - 10;
@@ -252,9 +256,53 @@ const closeGlobalMenu = () => {
     if (globalMenu) globalMenu.classList.remove('active');
 };
 
+// --- ISSUE #14: LONG PRESS LOGIC ---
+function attachLongPressHandlers(element, dataCallback) {
+    let timer = null;
+    let startY = 0;
+    const LONG_PRESS_DURATION = 600; // ms
+
+    element.addEventListener('touchstart', (e) => {
+        startY = e.touches[0].clientY;
+        timer = setTimeout(() => {
+            if (navigator.vibrate) navigator.vibrate(50);
+            
+            // Oznaczamy element, że został na nim wywołany long press
+            // Pozwoli to zablokować zwykły click
+            element.dataset.longPressTriggered = "true";
+            
+            const data = dataCallback();
+            openGlobalMenu(element, data.date, data.isRest, data.dayId);
+        }, LONG_PRESS_DURATION);
+    }, { passive: true });
+
+    element.addEventListener('touchmove', (e) => {
+        const moveY = e.touches[0].clientY;
+        if (Math.abs(moveY - startY) > 10) {
+            clearTimeout(timer); // Anuluj jeśli scrolluje
+        }
+    }, { passive: true });
+
+    element.addEventListener('touchend', () => {
+        clearTimeout(timer);
+        // Czyścimy flagę z małym opóźnieniem, żeby event click zdążył ją sprawdzić
+        setTimeout(() => {
+            delete element.dataset.longPressTriggered;
+        }, 100);
+    });
+    
+    // Blokada menu kontekstowego przeglądarki
+    element.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+    });
+}
+
 // --- GŁÓWNA FUNKCJA RENDERUJĄCA ---
 
 export const renderMainScreen = async (isLoading = false) => {
+    // Listener delegowany dla PRZYCISKÓW menu (trzy kropki) - obsługa Desktop/Click
     if (!containers.days._hasDashboardListeners) {
         containers.days.addEventListener('click', (e) => {
             const btn = e.target.closest('.ctx-menu-btn');
@@ -358,8 +406,21 @@ export const renderMainScreen = async (isLoading = false) => {
         clearPlanFromStorage();
 
         cardWrapper.querySelector('#force-workout-btn').addEventListener('click', () => {
-            const bioHub = document.querySelector('.bio-hub-container');
-            if (bioHub) bioHub.scrollIntoView({ behavior: 'smooth' });
+            try {
+                const recoveryProtocol = generateBioProtocol({
+                    mode: 'reset', 
+                    focusZone: 'full_body',
+                    durationMin: 15,
+                    userContext: state.settings.wizardData || {}
+                });
+                recoveryProtocol.title = "Dodatkowa Regeneracja";
+                recoveryProtocol.description = "Lekka sesja mobilności wygenerowana na żądanie.";
+                renderProtocolStart(recoveryProtocol);
+            } catch (err) {
+                console.error("Błąd generowania recovery:", err);
+                const bioHub = document.querySelector('.bio-hub-container');
+                if (bioHub) bioHub.scrollIntoView({ behavior: 'smooth' });
+            }
         });
 
     } else {
@@ -369,7 +430,6 @@ export const renderMainScreen = async (isLoading = false) => {
         state.currentTrainingDayId = todayPlanEntry.dayNumber;
         savePlanToStorage(finalPlan, todayISO);
 
-        // --- ZMIANA: Zawsze przeliczamy czas na żywo, ignorując starą wartość z bazy ---
         let estimatedMinutes = calculateSmartDuration(finalPlan);
 
         const missionWrapper = document.createElement('div');
@@ -397,14 +457,10 @@ export const renderMainScreen = async (isLoading = false) => {
                 const checkPlan = assistant.adjustTrainingVolume(finalPlan, painLevel);
                 const isSOS = checkPlan?._modificationInfo?.shouldSuggestSOS;
 
-                // 1. Aktualizacja Czasu
                 const newDuration = calculateSmartDuration(checkPlan);
                 const timeDisplay = document.getElementById('today-duration-display');
-                if (timeDisplay) {
-                    timeDisplay.textContent = `${newDuration} min`;
-                }
+                if (timeDisplay) timeDisplay.textContent = `${newDuration} min`;
 
-                // 2. NOWOŚĆ: Aktualizacja Paska Obciążenia (System Load)
                 const newLoad = calculateSystemLoad(checkPlan);
                 const loadContainer = cardEl.querySelector('.load-metric-container');
                 if (loadContainer) {
@@ -414,7 +470,6 @@ export const renderMainScreen = async (isLoading = false) => {
                     if (newLoad > 60) { loadColor = '#fb923c'; loadLabel = 'Wymagający'; }
                     if (newLoad > 85) { loadColor = '#ef4444'; loadLabel = 'Maksymalny'; }
 
-                    // Aktualizacja wizualna
                     const loadValueSpan = loadContainer.querySelector('span[style*="font-weight:600"]');
                     if (loadValueSpan) loadValueSpan.textContent = `${newLoad}%`;
 
@@ -431,17 +486,12 @@ export const renderMainScreen = async (isLoading = false) => {
                     }
                 }
 
-                // 3. Aktualizacja Przycisku Start
                 if (isSOS) {
                     startBtn.textContent = "🏥 Aktywuj Protokół SOS";
                     startBtn.style.backgroundColor = "var(--danger-color)";
                     startBtn.dataset.mode = 'sos';
                 } else {
-                    startBtn.innerHTML = `
-                    <div class="btn-content-wrapper">
-                        <span class="btn-icon-bg"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg></span>
-                        <span>Rozpocznij Trening</span>
-                    </div>`;
+                    startBtn.innerHTML = `<div class="btn-content-wrapper"><span class="btn-icon-bg"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg></span><span>Rozpocznij Trening</span></div>`;
                     startBtn.style.backgroundColor = "";
                     startBtn.dataset.mode = 'normal';
                 }
@@ -577,12 +627,22 @@ function renderUpcomingQueue(days, todayISO) {
     upcomingWrapper.innerHTML = upcomingHTML;
     containers.days.appendChild(upcomingWrapper);
 
+    // --- ISSUE #14: LONG PRESS IMPLEMENTATION ---
     upcomingWrapper.querySelectorAll('.strip-day').forEach(card => {
+        // Dodajemy obsługę Long Press
+        attachLongPressHandlers(card, () => ({
+            date: card.querySelector('.ctx-menu-btn').dataset.date,
+            isRest: card.querySelector('.ctx-menu-btn').dataset.isRest === 'true',
+            dayId: card.dataset.dayId
+        }));
+
         if (card.dataset.isRest === 'true') return;
+        
         card.addEventListener('click', (e) => {
+            // Blokada jeśli wyzwolono Long Press
+            if (card.dataset.longPressTriggered === "true") return;
             if (e.target.closest('.ctx-menu-btn')) return;
             e.stopPropagation();
-            // ZMIANA: initialPainLevel ustawiony na 3 (Dobrze), aby było spójne z głównym ekranem
             renderPreTrainingScreen(parseInt(card.dataset.dayId, 10), 3, true);
         });
     });

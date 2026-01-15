@@ -80,29 +80,6 @@ export const getActiveTrainingPlan = () => {
     return state.settings.dynamicPlanData;
 };
 
-export const isTodayRestDay = () => {
-    const todayISO = getISODate(new Date());
-    const plan = getActiveTrainingPlan();
-    if (plan && plan.days) {
-        const todayEntry = plan.days.find(d => d.date === todayISO);
-        if (todayEntry) return todayEntry.type === 'rest';
-    }
-    const todayIndex = new Date().getDay();
-    const scheduleIndex = todayIndex === 0 ? 6 : todayIndex - 1;
-    if (!state.settings.schedule || !state.settings.schedule[scheduleIndex]) return false;
-    return !state.settings.schedule[scheduleIndex].active;
-};
-
-export const getAvailableMinutesForToday = () => {
-    const todayIndex = new Date().getDay();
-    const scheduleIndex = todayIndex === 0 ? 6 : todayIndex - 1;
-    if (!state.settings.schedule || !state.settings.schedule[scheduleIndex]) return 60;
-    return state.settings.schedule[scheduleIndex].minutes || 45;
-};
-
-export const getNextLogicalDay = () => null;
-export const getTrainingDayForDate = (date) => null;
-
 export const getHydratedDay = (dayData) => {
     if (!dayData) return null;
     const hydratedDay = JSON.parse(JSON.stringify(dayData));
@@ -148,11 +125,6 @@ export const parseSetCount = (setsString) => {
     if (!setsString) return 1;
     const parts = String(setsString).split('-');
     return parseInt(parts[parts.length - 1].trim(), 10) || 1;
-};
-
-export const getExerciseDuration = (exercise) => {
-    if (exercise.isRest) return exercise.duration;
-    return null;
 };
 
 // --- CALCULATE SMART DURATION & LOAD METRICS ---
@@ -405,15 +377,4 @@ export const formatForTTS = (text) => {
         }
     }
     return formattedText;
-};
-
-export const getLocalISOString = (date) => {
-    const pad = (num) => String(num).padStart(2, '0');
-    const year = date.getFullYear();
-    const month = pad(date.getMonth() + 1);
-    const day = pad(date.getDate());
-    const hours = pad(date.getHours());
-    const minutes = pad(date.getMinutes());
-    const seconds = pad(date.getSeconds());
-    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
 };

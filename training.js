@@ -5,7 +5,7 @@ import { state } from './state.js';
 import { focus, screens, initializeFocusElements } from './dom.js';
 import { speak } from './tts.js';
 import { startTimer, stopTimer, startStopwatch, stopStopwatch, updateTimerDisplay, updateStopwatchDisplay } from './timer.js';
-import { getExerciseDuration, parseSetCount, formatForTTS, getHydratedDay, processSVG, calculateSmartRest } from './utils.js';
+import { parseSetCount, formatForTTS, getHydratedDay, processSVG, calculateSmartRest } from './utils.js';
 import { navigateTo } from './ui.js';
 import { renderSummaryScreen } from './ui/screens/summary.js';
 import { getIsCasting, sendTrainingStateUpdate } from './cast.js';

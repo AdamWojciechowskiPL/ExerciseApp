@@ -1,10 +1,8 @@
 import { state } from './state.js';
-import { parseSetCount } from './utils.js';
 import { buildClinicalContext, checkExerciseAvailability } from './clinicalEngine.js';
 
-// workoutMixer.js v3.0 (Lite)
-// Moduł uproszczony - usunięto automatyczne miksowanie.
-// Pozostawiono tylko helpery do ręcznych modyfikacji.
+// workoutMixer.js v3.1 (Cleaned)
+// Moduł helperów do ręcznych modyfikacji treningu (Swap).
 
 export const workoutMixer = {
 
@@ -25,43 +23,10 @@ export const workoutMixer = {
     getExerciseTempo: (exerciseId) => {
         const ex = state.exerciseLibrary[exerciseId];
         return ex ? (ex.defaultTempo || "Kontrolowane") : "Kontrolowane";
-    },
-
-    applyMicroDosing: (exercise) => {
-        const originalSets = parseSetCount(exercise.sets);
-        let newSets = originalSets + 2;
-        if (newSets > 6) newSets = 6;
-        let newVal = 0;
-        let isTime = false;
-        const rawText = String(exercise.reps_or_time).toLowerCase();
-        if (rawText.includes('s') || rawText.includes('min')) {
-            isTime = true;
-            const num = parseInt(rawText) || 30;
-            newVal = Math.round(num * 0.4);
-            if (newVal < 5) newVal = 5;
-        } else {
-            const num = parseInt(rawText) || 10;
-            newVal = Math.round(num * 0.35);
-            if (newVal < 2) newVal = 2;
-        }
-        const libEx = state.exerciseLibrary[exercise.id || exercise.exerciseId];
-        if (libEx) {
-            if (isTime && libEx.maxDuration) {
-                newVal = Math.min(newVal, Math.round(libEx.maxDuration * 0.5));
-            } else if (!isTime && libEx.maxReps) {
-                newVal = Math.min(newVal, Math.round(libEx.maxReps * 0.5));
-            }
-        }
-        exercise.sets = newSets.toString();
-        if (isTime) exercise.reps_or_time = `${newVal} s`;
-        else exercise.reps_or_time = exercise.reps_or_time.includes('/str') ? `${newVal}/str.` : `${newVal}`;
-        exercise._isMicroDose = true;
-        exercise.description = (exercise.description || "") + "\n\n💡 TRENER: Zastosowano mikro-serie dla poprawy techniki.";
-        return exercise;
     }
 };
 
-// --- HELPERY WEWNĘTRZNE (Pozostawione dla obsługi manualnego swapowania) ---
+// --- HELPERY WEWNĘTRZNE ---
 
 function findBestVariant(originalEx, criteria, usedIds, forceShuffle = false, mustSwap = false, clinicalCtx = null) {
     if (!criteria.categoryId) return null;
@@ -72,7 +37,7 @@ function findBestVariant(originalEx, criteria, usedIds, forceShuffle = false, mu
             // Przy ręcznym swapie pozwalamy na +/- 1 poziom trudności
             const lvl = ex.difficultyLevel || 1;
             if (Math.abs(lvl - criteria.targetLevel) > 1) return false;
-            
+
             if (usedIds.has(ex.id)) return false;
 
             const result = checkExerciseAvailability(ex, clinicalCtx, { ignoreDifficulty: true, ignoreEquipment: false });
@@ -81,7 +46,7 @@ function findBestVariant(originalEx, criteria, usedIds, forceShuffle = false, mu
 
     if (candidates.length === 0) return null;
 
-    // Proste sortowanie po preferencjach (bez zaawansowanej logiki świeżości, bo to ręczny wybór)
+    // Proste sortowanie po preferencjach
     candidates.sort((a, b) => {
         const prefA = (state.userPreferences[a.id]?.score || 0);
         const prefB = (state.userPreferences[b.id]?.score || 0);
@@ -150,7 +115,9 @@ function mergeExerciseData(original, variant) {
         if (merged.reps_or_time.includes("s")) merged.reps_or_time = merged.reps_or_time.replace("s", "s/str.");
         else merged.reps_or_time = `${merged.reps_or_time}/str.`;
 
-        if (parseSetCount(original.sets) === 1) merged.sets = "1";
+        // Reset serii do 1 jeśli w oryginale była tylko 1, a nowe jest na stronę (unikamy 1 seria Lewa, brak Prawej)
+        // W training.js i tak jest pętla, ale to dla czystości danych
+        if (original.sets === "1") merged.sets = "1"; 
     }
     return merged;
 }

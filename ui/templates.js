@@ -1,4 +1,3 @@
-// ExerciseApp/ui/templates.js
 import { state } from '../state.js';
 import { extractYoutubeId, calculateSystemLoad, calculateClinicalProfile, getSessionFocus } from '../utils.js';
 
@@ -182,16 +181,41 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
     if (systemLoad > 60) { loadColor = '#fb923c'; loadLabel = 'Wymagający'; }
     if (systemLoad > 85) { loadColor = '#ef4444'; loadLabel = 'Maksymalny'; }
 
-    const loadBarHTML = `
-        <div class="load-metric-container">
-            <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.75rem; color:#475569; margin-bottom:5px;">
-                <span style="font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">Obciążenie: <span style="color:${loadColor === '#4ade80' ? '#16a34a' : loadColor}">${loadLabel}</span></span>
-                <span style="font-weight:600; opacity:0.8;">${systemLoad}%</span>
-            </div>
-            <div style="width:100%; height:6px; background:#f1f5f9; border-radius:3px; overflow:hidden;">
-                <div style="width:${systemLoad}%; height:100%; background:${loadColor}; border-radius:3px; transition: width 0.5s ease;"></div>
-            </div>
-        </div>
+    // --- FIX: SZTYWNE KONTENERY DLA WYRÓWNANIA (GRID/FLEX) ---
+    const gridItemStyle = `
+        background: rgba(255,255,255,0.6);
+        padding: 8px 4px;
+        border-radius: 8px;
+        text-align: center;
+        border: 1px solid rgba(0,0,0,0.05);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 80px;
+    `;
+
+    const topSlotStyle = `
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+    `;
+
+    const middleSlotStyle = `
+        flex-grow: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 2px;
+    `;
+
+    const bottomSlotStyle = `
+        font-size: 0.6rem;
+        text-transform: uppercase;
+        color: #888;
+        margin-top: auto;
     `;
 
     const clinicalTagsHTML = clinicalTags.map(tag =>
@@ -225,7 +249,47 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
                     Cel: <strong style="color:var(--primary-color);">${focusArea}</strong>
                 </div>
 
-                ${loadBarHTML}
+                <!-- Grid Statystyk z wyrównaniem -->
+                <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px; margin-top:15px; margin-bottom:15px;">
+                    <!-- Czas -->
+                    <div style="${gridItemStyle}">
+                        <div style="${topSlotStyle}">
+                            <div style="font-size:1.4rem;">⏱️</div>
+                        </div>
+                        <div style="${middleSlotStyle}">
+                            <div style="font-weight:800; font-size:0.9rem; color:#333;" id="today-time-val">${estimatedMinutes} min</div>
+                        </div>
+                        <div style="${bottomSlotStyle}">Przewidywany</div>
+                    </div>
+
+                    <!-- Asystent (Placeholder na Pain Level) -->
+                    <div style="${gridItemStyle}">
+                        <div style="${topSlotStyle}">
+                            <div style="font-size:1.4rem;">🛡️</div>
+                        </div>
+                        <div style="${middleSlotStyle}">
+                            <div style="font-weight:800; font-size:0.9rem; color:#333;">Asystent</div>
+                        </div>
+                        <div style="${bottomSlotStyle}">Tryb</div>
+                    </div>
+
+                    <!-- Load -->
+                    <div style="${gridItemStyle} class="load-metric-container">
+                        <div style="${topSlotStyle}">
+                             <div style="width:100%; height:6px; background:#e5e7eb; border-radius:3px; overflow:hidden;">
+                                <div style="width:${systemLoad}%; height:100%; background:${loadColor}; border-radius:3px;"></div>
+                            </div>
+                        </div>
+                        <div style="${middleSlotStyle}">
+                            <div style="font-weight:800; font-size:0.9rem; color:#333; line-height: 1.2;">
+                                <span style="font-weight:600;">${systemLoad}%</span>
+                            </div>
+                        </div>
+                        <div style="${bottomSlotStyle}">
+                            <span>${loadLabel}</span>
+                        </div>
+                    </div>
+                </div>
 
                 <div class="wc-tags">
                     ${clinicalTagsHTML}
@@ -413,6 +477,43 @@ export function generateSessionCardHTML(session) {
         </div>
     ` : '';
 
+    // --- FIX: SZTYWNE KONTENERY DLA WYRÓWNANIA (GRID/FLEX) ---
+    const gridItemStyle = `
+        background: rgba(255,255,255,0.6);
+        padding: 8px 4px;
+        border-radius: 8px;
+        text-align: center;
+        border: 1px solid rgba(0,0,0,0.05);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 80px;
+    `;
+
+    const topSlotStyle = `
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+    `;
+
+    const middleSlotStyle = `
+        flex-grow: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 2px;
+    `;
+
+    const bottomSlotStyle = `
+        font-size: 0.6rem;
+        text-transform: uppercase;
+        color: #888;
+        margin-top: auto;
+    `;
+
     return `
     <div class="calendar-sheet completed-mode" style="border:none; box-shadow: 0 4px 20px rgba(0,0,0,0.08); margin-bottom: 2rem;">
         <!-- Header Karty -->
@@ -431,27 +532,41 @@ export function generateSessionCardHTML(session) {
                     ${statusBadge}
                 </div>
 
-                <!-- Grid Statystyk -->
+                <!-- Grid Statystyk z wyrównaniem -->
                 <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px; margin-top:15px;">
                     <!-- Czas -->
-                    <div style="background:rgba(255,255,255,0.6); padding:8px 4px; border-radius:8px; text-align:center; border:1px solid rgba(0,0,0,0.05);">
-                        <div style="font-size:1.2rem;">⏱️</div>
-                        <div style="font-weight:800; font-size:0.9rem; color:#333;">${mins} min</div>
-                        <div style="font-size:0.6rem; text-transform:uppercase; color:#888;">Czas Netto</div>
-                    </div>
-                    <!-- Feedback -->
-                    <div style="background:${fb.bg}; padding:8px 4px; border-radius:8px; text-align:center; border:1px solid rgba(0,0,0,0.05);">
-                        <div style="font-size:1.2rem;">${fb.icon}</div>
-                        <div style="font-weight:800; font-size:0.9rem; color:#333;">${fb.label}</div>
-                        <div style="font-size:0.6rem; text-transform:uppercase; color:#888;">Odbiór</div>
-                    </div>
-                    <!-- Load -->
-                    <div style="background:rgba(255,255,255,0.6); padding:8px 4px; border-radius:8px; text-align:center; border:1px solid rgba(0,0,0,0.05);">
-                        <div style="width:100%; height:6px; background:#e5e7eb; border-radius:3px; margin: 8px 0;">
-                            <div style="width:${sessionLoad}%; height:100%; background:${loadColor}; border-radius:3px;</div>
+                    <div style="${gridItemStyle}">
+                        <div style="${topSlotStyle}">
+                            <div style="font-size:1.4rem;">⏱️</div>
                         </div>
-                        <div style="font-weight:800; font-size:0.9rem; color:#333;">${sessionLoad}%</div>
-                        <div style="font-size:0.6rem; text-transform:uppercase; color:#888;">Obciążenie</div>
+                        <div style="${middleSlotStyle}">
+                            <div style="font-weight:800; font-size:0.9rem; color:#333;">${mins} min</div>
+                        </div>
+                        <div style="${bottomSlotStyle}">Czas Netto</div>
+                    </div>
+
+                    <!-- Feedback -->
+                    <div style="${gridItemStyle} background:${fb.bg};">
+                        <div style="${topSlotStyle}">
+                            <div style="font-size:1.4rem;">${fb.icon}</div>
+                        </div>
+                        <div style="${middleSlotStyle}">
+                            <div style="font-weight:800; font-size:0.9rem; color:#333;">${fb.label}</div>
+                        </div>
+                        <div style="${bottomSlotStyle}">Odbiór</div>
+                    </div>
+
+                    <!-- Load -->
+                    <div style="${gridItemStyle}">
+                        <div style="${topSlotStyle}">
+                             <div style="width:100%; height:6px; background:#e5e7eb; border-radius:3px; overflow:hidden;">
+                                <div style="width:${sessionLoad}%; height:100%; background:${loadColor}; border-radius:3px;"></div>
+                            </div>
+                        </div>
+                        <div style="${middleSlotStyle}">
+                            <div style="font-weight:800; font-size:0.9rem; color:#333; line-height: 1.2;">${sessionLoad}%</div>
+                        </div>
+                        <div style="${bottomSlotStyle}">Obciążenie</div>
                     </div>
                 </div>
 
@@ -580,26 +695,6 @@ export function generatePreTrainingCardHTML(ex, index) {
             <!-- Tekst (Tempo) -->
             <div style="flex:1;">
                 ${ex.tempo_or_iso ? `<span class="tempo-badge" style="display:block; width:100%;">Tempo: ${ex.tempo_or_iso}</span>` : ''}
-            </div>
-        </div>
-    </div>`;
-}
-
-export function generatePlanFinishedCardHTML(sessionsCount) {
-    return `
-    <div class="mission-card ai-mode" style="background: linear-gradient(135deg, #0f1c2e 0%, var(--primary-color) 100%); color: #fff; border: none; box-shadow: 0 10px 30px rgba(0,95,115,0.4);">
-        <div class="completed-header" style="color: #fff;">
-            <div class="completed-icon" style="background: var(--gold-color); box-shadow: 0 0 20px rgba(233,196,106,0.6);">
-                <span style="font-size: 1.8rem;">🏆</span>
-            </div>
-            <h3 class="completed-title" style="color: #fff;">Plan Ukończony!</h3>
-            <p class="completed-subtitle" style="color: rgba(255,255,255,0.8);">Zrealizowałeś wszystkie ${sessionsCount} sesji.</p>
-        </div>
-        <div style="margin-top: 1.5rem; text-align: center;">
-            <p style="font-size: 0.9rem; opacity: 0.9; margin-bottom: 1.5rem;">Twój cykl dobiegł końca. Czas na nowe wyzwania!</p>
-            <div style="display:flex; flex-direction: column; gap: 10px;">
-                <button id="quick-regen-btn" class="action-btn" style="background: var(--gold-color); color: #000; font-weight: 800; border: none;">⚡ Wygeneruj kolejny cykl</button>
-                <button id="edit-settings-btn" class="nav-btn" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: #fff;">📝 Zmień cele (Kreator)</button>
             </div>
         </div>
     </div>`;

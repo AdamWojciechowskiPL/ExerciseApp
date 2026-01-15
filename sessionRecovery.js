@@ -72,14 +72,6 @@ export function getSessionBackup() {
 }
 
 /**
- * Sprawdza czy istnieje backup sesji.
- * @returns {boolean}
- */
-export function hasSessionBackup() {
-    return getSessionBackup() !== null;
-}
-
-/**
  * Usuwa backup sesji z localStorage.
  * Wywoływane po zapisaniu lub anulowaniu treningu.
  */

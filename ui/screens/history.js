@@ -1,7 +1,7 @@
 // js/ui/screens/history.js
 import { state } from '../../state.js';
 import { containers, screens } from '../../dom.js';
-import { getISODate, getTrainingDayForDate } from '../../utils.js';
+import { getISODate } from '../../utils.js';
 import { showLoader, hideLoader, navigateTo } from '../core.js';
 import { generateSessionCardHTML } from '../templates.js';
 import dataStore from '../../dataStore.js';

@@ -115,7 +115,6 @@ const dataStore = {
                 state.blacklist = [];
             }
 
-            // --- ZMIANA: Ładowanie overrides do stanu ---
             if (data.overrides) {
                 state.overrides = data.overrides;
             } else {
@@ -166,15 +165,6 @@ const dataStore = {
         } catch (error) { return null; }
     },
 
-    fetchMasteryStats: async (force = false) => {
-        if (!force && state.masteryStats && state.masteryStats.length > 0) return state.masteryStats;
-        try {
-            const stats = await callAPI('get-exercise-mastery');
-            state.masteryStats = stats || [];
-            return stats;
-        } catch (error) { return []; }
-    },
-
     fetchUserPreferences: async () => {
         try {
             const preferences = await callAPI('get-user-preferences');
@@ -185,7 +175,7 @@ const dataStore = {
 
     saveSettings: async () => { await callAPI('save-settings', { method: 'PUT', body: state.settings }); },
     deleteAccount: async () => { await callAPI('delete-user-data', { method: 'DELETE' }); },
-    fetchBlacklist: async () => { const ids = await callAPI('manage-blacklist'); state.blacklist = ids || []; },
+    
     addToBlacklist: async (eid, rid) => { await callAPI('manage-blacklist', { method: 'POST', body: { exerciseId: eid, replacementId: rid } }); if (!state.blacklist.includes(eid)) state.blacklist.push(eid); },
     removeFromBlacklist: async (eid) => { await callAPI('manage-blacklist', { method: 'DELETE', body: { exerciseId: eid } }); state.blacklist = state.blacklist.filter(id => id !== eid); },
 
@@ -220,7 +210,7 @@ const dataStore = {
     saveSession: async (sessionData) => {
         const result = await callAPI('save-session', { method: 'POST', body: sessionData });
         state.loadedMonths.clear();
-        state.masteryStats = null;
+        // Removed masteryStats invalidation as functionality is removed
         return result;
     },
 
@@ -256,7 +246,6 @@ const dataStore = {
             else if (action === 'easy') state.userPreferences[exerciseId].difficulty = -1;
         }
 
-        // --- ZMIANA: Aktualizacja czasu modyfikacji dla UI (Optimistic) ---
         state.userPreferences[exerciseId].updatedAt = new Date().toISOString();
 
         try {

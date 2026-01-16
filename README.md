@@ -1,10 +1,33 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v22.1.0
+# Aplikacja Treningowa (Smart Rehab PWA) v23.0.0
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
 ---
 
 ## 🚀 Kluczowe Funkcjonalności
+
+### 🌊 Phase Manager (Silnik Periodyzacji)
+System nie generuje już "przypadkowych" treningów. Każdy użytkownik znajduje się w konkretnej **Fazie Treningowej**, która determinuje dobór ćwiczeń, objętość i tempo.
+
+*   **Blueprints (Szablony):** Sekwencje faz dopasowane do celu (np. *Siła*: Control → Capacity → Strength → Deload).
+*   **Progress Clock:** Licznik sesji steruje przejściem do kolejnej fazy.
+    *   *Target Reached:* Użytkownik wykonał założoną liczbę sesji → Level Up.
+    *   *Time Cap (Soft Progression):* Użytkownik trenował zbyt rzadko → Wymuszona zmiana bodźca (anty-stagnacja).
+*   **Safety Override:** Automatyczne wykrywanie stanów zagrożenia.
+    *   **Rehab Mode:** Wymuszany przy wysokim bólu. Skupia się na izometrii i mobilności.
+    *   **Deload Mode:** Wymuszany przy wysokim skumulowanym zmęczeniu (Acute Fatigue > 80).
+
+### ⚙️ Explicit Pacing & Metadata
+Zastąpiono algorytmiczne "zgadywanie" tempa twardymi danymi z bazy.
+*   Każde ćwiczenie posiada w bazie dedykowane kolumny tempa dla różnych faz (np. `tempo_strength`, `tempo_control`).
+*   **Efekt:** To samo ćwiczenie (np. Przysiad) w fazie *Control* jest wykonywane w tempie **3-1-3** (nauka), a w fazie *Strength* w tempie **Dynamicznym**.
+
+### 🛡️ Generator & Validator (Safety Net)
+Proces generowania planu został wzbogacony o **Phase Context Pipeline**:
+1.  **Context Build:** Generator pobiera stan fazy i override'y z bazy.
+2.  **Scoring (G2):** Ćwiczenia są punktowane pod kątem pasowania do fazy (np. w fazie *Metabolic* promowane są ćwiczenia o wysokiej intensywności).
+3.  **Prescription (G3):** Narzucanie liczby serii i powtórzeń przez fazę (np. *Strength* wymusza 3-6 powt., *Deload* ucina objętość o 40%).
+4.  **Validation (G4):** Ostatnia linia obrony. Jeśli generator wylosuje zbyt trudne ćwiczenie dla fazy *Rehab*, walidator automatycznie je "osłabi" lub odrzuci.
 
 ### 📅 Adaptive Calendar Engine (ACE)
 Rewolucja w planowaniu treningów. Zamiast statycznego "Planu A" na 4 tygodnie, system działa w modelu **Rolling Window (Kroczące Okno)**:
@@ -37,7 +60,16 @@ Zaawansowany silnik reguł współdzielony między Frontend i Backend:
 
 ## 🧠 Moduły Logiczne (Backend)
 
-### 1. Virtual Physio (Rolling Planner)
+### 1. Phase Manager Core (`_phase-manager.js`)
+Mózg operacji. Zarządza stanem (JSON), decyduje o aktywnej fazie (czy Override?), obsługuje detraining (powrót po przerwie >21 dni) i resetuje cykl przy zmianie celu głównego.
+
+### 2. Phase Catalog (`phase-catalog.js`)
+Statyczna konfiguracja reguł biznesowych:
+*   Definicje faz (Control, Mobility, Capacity, Strength, Metabolic).
+*   Mapowanie Cel -> Sekwencja Faz.
+*   Zasady doboru `target_sessions` w zależności od poziomu zaawansowania (Beginner vs Advanced).
+
+### 3. Virtual Physio (Rolling Planner)
 Generator oparty na pętli kalendarzowej, a nie sekwencyjnej.
 *   **Schedule Pattern:** Użytkownik wybiera konkretne dni tygodnia (np. Pn, Śr, Pt). System generuje treningi tylko w te dni, a w pozostałe wstawia regenerację.
 *   **Frequency Scaling:** Algorytm analizuje gęstość treningów.
@@ -45,12 +77,12 @@ Generator oparty na pętli kalendarzowej, a nie sekwencyjnej.
     *   *Niska częstotliwość (1-2 dni):* Cięższe sesje, maksymalizacja bodźca ("Weekend Warrior").
 *   **Global Freshness:** Algorytm pamięta użycie mięśni w obrębie całego generowanego okna, aby uniknąć katowania tej samej partii dzień po dniu.
 
-### 2. Workout Mixer Lite
+### 4. Workout Mixer Lite
 Obsługa modyfikacji "w locie" (podczas trwania treningu):
 *   **Smart Swap:** Wymiana ćwiczenia na bezpieczną alternatywę z tej samej kategorii biomechanicznej (np. z powodu braku sprzętu).
 *   **Tuner Synaptyczny:** Użytkownik może ocenić ćwiczenie jako "Za łatwe" (Ewolucja -> trudniejszy wariant) lub "Za trudne" (Dewolucja -> łatwiejszy wariant).
 
-### 3. Smart Progression Engine (Fluid Logic)
+### 5. Smart Progression Engine (Fluid Logic)
 Nowatorski model **Progresji Probabilistycznej**, który działa podczas **generowania nowego planu**. Zastępuje sztywne podmienianie ćwiczeń logiką opartą na wagach.
 
 *   **Zasada Bezpieczeństwa (Fail-Safe):** Nawet jeśli użytkownik odblokował trudniejsze ćwiczenie (Ewolucja), system najpierw sprawdza, czy posiada on wymagany sprzęt i czy stan kliniczny na to pozwala. Jeśli nie – override jest ignorowany.
@@ -62,14 +94,14 @@ Nowatorski model **Progresji Probabilistycznej**, który działa podczas **gener
 | **Cel Ewolucji (Trudne)** | **x3.0** (Priorytet) | x0.5 (Unikaj) | x0.1 (Zabronione) | Nauka nowego ruchu. |
 | **Źródło Ewolucji (Łatwe)** | x0.2 (Nuda) | **x1.5** (Idealne) | **x2.0** (Idealne) | Degradacja do roli rozgrzewki. |
 
-### 4. Real-Time Feedback Loop (Injection & Ejection)
+### 6. Real-Time Feedback Loop (Injection & Ejection)
 Mechanizm natychmiastowej adaptacji **bieżącego planu** (JSON) w momencie zapisu sesji. Sprawia, że opinia użytkownika działa "od razu", a nie dopiero w przyszłym tygodniu.
 
 *   **Injection (Like 👍):** Jeśli użytkownik polubi ćwiczenie, system skanuje resztę tygodnia. Jeśli znajdzie "nudne" ćwiczenie z tej samej kategorii, podmienia je na to polubione. *Cel: Budowanie nawyku i satysfakcji.*
 *   **Ejection (Dislike 👎):** Jeśli użytkownik da "Dislike", system natychmiast usuwa to ćwiczenie z przyszłych dni bieżącego planu i zastępuje je bezpieczną alternatywą. *Cel: Zapobieganie demotywacji (Adherence Protection).*
 *   **Entropy Grace Period:** Punkty "Affinity" są chronione przed wygaszaniem (Time Decay) przez 7 dni od ostatniej interakcji.
 
-### 5. Bio-Protocol Hub (Front-end)
+### 7. Bio-Protocol Hub (Front-end)
 Sesje celowane generowane natychmiastowo po stronie klienta (Time-Boxing):
 *   🚑 **SOS:** Ratunek przeciwbólowy.
 *   ⚡ **Neuro:** Ślizgi nerwowe.
@@ -77,7 +109,7 @@ Sesje celowane generowane natychmiastowo po stronie klienta (Time-Boxing):
 *   🔥 **Metabolic Burn:** Intensywne spalanie Low-Impact.
 *   🧗 **Ladder:** Budowanie progresji technicznej.
 
-### 6. Pacing Engine (`_pacing-engine.js`)
+### 8. Pacing Engine (`_pacing-engine.js`)
 Centralny moduł "medyczny" odpowiedzialny za parametry czasowe.
 *   Przyjmuje definicję ćwiczenia (kategoria, trudność, typ).
 *   Zwraca obiekt `calculated_timing` zawierający:
@@ -151,6 +183,8 @@ Projekt posiada zestaw testów regresyjnych w katalogu `/tests`:
 │   │   ├── _crypto-helper.js        # Szyfrowanie tokenów (AES-256-GCM)
 │   │   ├── _stats-helper.js         # Logika statystyk (Streak, Resilience, Pacing)
 │   │   ├── generate-plan.js         # Generator planów dynamicznych (Rolling Window + Fluid Progression)
+│   │   ├── _phase-manager.js        # Zarządzanie stanem faz i licznikami
+│   │   ├── phase-catalog.js         # Konfiguracja blueprintów i reguł
 │   │   ├── get-app-content.js       # Pobieranie bazy wiedzy i personalizacji
 │   │   ├── get-or-create-user-data.js # Bootstrap usera (Parallel Fetch)
 │   │   ├── get-user-preferences.js  # Pobieranie affinity score
@@ -205,6 +239,12 @@ Katalog ćwiczeń (Baza Wiedzy).
 *   `pain_relief_zones` (TEXT[]): Tagi medyczne.
 *   `animation_svg` (TEXT): Kod SVG animacji.
 *   `default_tempo` (VARCHAR): Np. "2-0-2".
+*   `tempo_control` (VARCHAR): Np. "2-0-2".
+*   `tempo_mobility` (VARCHAR): Np. "2-0-2".
+*   `tempo_capacity` (VARCHAR): Np. "2-0-2".
+*   `tempo_strength` (VARCHAR): Np. "2-0-2".
+*   `tempo_metabolic` (VARCHAR): Np. "2-0-2".
+*   `tempo_rehab` (VARCHAR): Np. "2-0-2".
 *   `is_unilateral` (BOOLEAN): Czy wykonywane na stronę.
 *   `max_recommended_reps` (INT).
 *   `max_recommended_duration` (INT).
@@ -226,6 +266,26 @@ Przechowuje konfigurację oraz **wygenerowany plan dynamiczny**.
             { "date": "2025-05-28", "type": "rest", "title": "Regeneracja", ... }
         ]
         }
+        ```
+    ** `phase_manager`:
+        ```json
+            {
+            "phase_manager": {
+                "version": 1,
+                "template_id": "strength",
+                "current_phase_stats": {
+                "phase_id": "capacity",
+                "sessions_completed": 4,
+                "target_sessions": 12
+                },
+                "override": {
+                "mode": "deload",
+                "reason": "high_fatigue"
+                },
+                "history": { ... }
+            }
+            }
+        ```
 *   `updated_at` (TIMESTAMP).
 
 ### 4. `training_sessions`

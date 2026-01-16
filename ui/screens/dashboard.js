@@ -231,8 +231,7 @@ const openGlobalMenu = (targetElement, dateISO, isRest, dayNumber) => {
     const rect = targetElement.getBoundingClientRect();
     const menuWidth = 200;
 
-    let left = rect.right - menuWidth; // Domyślnie do lewej od elementu
-    // Jeśli element jest szeroki (np. strip-day), centrujemy lub dajemy pod palcem
+    let left = rect.right - menuWidth;
     if (rect.width > 100) {
         left = rect.left + (rect.width / 2) - (menuWidth / 2);
     }
@@ -256,21 +255,16 @@ const closeGlobalMenu = () => {
     if (globalMenu) globalMenu.classList.remove('active');
 };
 
-// --- ISSUE #14: LONG PRESS LOGIC ---
 function attachLongPressHandlers(element, dataCallback) {
     let timer = null;
     let startY = 0;
-    const LONG_PRESS_DURATION = 600; // ms
+    const LONG_PRESS_DURATION = 600;
 
     element.addEventListener('touchstart', (e) => {
         startY = e.touches[0].clientY;
         timer = setTimeout(() => {
             if (navigator.vibrate) navigator.vibrate(50);
-            
-            // Oznaczamy element, że został na nim wywołany long press
-            // Pozwoli to zablokować zwykły click
             element.dataset.longPressTriggered = "true";
-            
             const data = dataCallback();
             openGlobalMenu(element, data.date, data.isRest, data.dayId);
         }, LONG_PRESS_DURATION);
@@ -279,19 +273,17 @@ function attachLongPressHandlers(element, dataCallback) {
     element.addEventListener('touchmove', (e) => {
         const moveY = e.touches[0].clientY;
         if (Math.abs(moveY - startY) > 10) {
-            clearTimeout(timer); // Anuluj jeśli scrolluje
+            clearTimeout(timer);
         }
     }, { passive: true });
 
     element.addEventListener('touchend', () => {
         clearTimeout(timer);
-        // Czyścimy flagę z małym opóźnieniem, żeby event click zdążył ją sprawdzić
         setTimeout(() => {
             delete element.dataset.longPressTriggered;
         }, 100);
     });
-    
-    // Blokada menu kontekstowego przeglądarki
+
     element.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -302,18 +294,15 @@ function attachLongPressHandlers(element, dataCallback) {
 // --- GŁÓWNA FUNKCJA RENDERUJĄCA ---
 
 export const renderMainScreen = async (isLoading = false) => {
-    // Listener delegowany dla PRZYCISKÓW menu (trzy kropki) - obsługa Desktop/Click
     if (!containers.days._hasDashboardListeners) {
         containers.days.addEventListener('click', (e) => {
             const btn = e.target.closest('.ctx-menu-btn');
             if (btn) {
                 e.stopPropagation();
                 e.preventDefault();
-
                 const date = btn.dataset.date;
                 const isRest = btn.dataset.isRest === 'true';
                 const dayId = btn.dataset.dayId;
-
                 openGlobalMenu(btn, date, isRest, dayId);
             }
         });
@@ -408,7 +397,7 @@ export const renderMainScreen = async (isLoading = false) => {
         cardWrapper.querySelector('#force-workout-btn').addEventListener('click', () => {
             try {
                 const recoveryProtocol = generateBioProtocol({
-                    mode: 'reset', 
+                    mode: 'reset',
                     focusZone: 'full_body',
                     durationMin: 15,
                     userContext: state.settings.wizardData || {}
@@ -429,6 +418,9 @@ export const renderMainScreen = async (isLoading = false) => {
         state.todaysDynamicPlan = finalPlan;
         state.currentTrainingDayId = todayPlanEntry.dayNumber;
         savePlanToStorage(finalPlan, todayISO);
+
+        // Usuwamy pre-kalkulowany czas z obiektu, aby wymusić świeże obliczenia już na starcie
+        if (finalPlan.estimatedDurationMin) delete finalPlan.estimatedDurationMin;
 
         let estimatedMinutes = calculateSmartDuration(finalPlan);
 
@@ -454,32 +446,40 @@ export const renderMainScreen = async (isLoading = false) => {
                 opt.classList.add('selected');
                 const painLevel = parseInt(opt.dataset.level, 10);
 
+                // 1. Przeliczenie planu przez Asystenta
                 const checkPlan = assistant.adjustTrainingVolume(finalPlan, painLevel);
                 const isSOS = checkPlan?._modificationInfo?.shouldSuggestSOS;
 
+                // --- FIX: WYMUSZENIE PRZELICZENIA CZASU ---
+                // Usuwamy właściwość estimatedDurationMin, jeśli została skopiowana
+                if (checkPlan.estimatedDurationMin) delete checkPlan.estimatedDurationMin;
+
+                // 2. Aktualizacja Czasu
                 const newDuration = calculateSmartDuration(checkPlan);
-                const timeDisplay = document.getElementById('today-duration-display');
+                const timeDisplay = document.getElementById('today-time-val');
                 if (timeDisplay) timeDisplay.textContent = `${newDuration} min`;
 
+                // 3. Aktualizacja Obciążenia (Load)
                 const newLoad = calculateSystemLoad(checkPlan);
-                const loadContainer = cardEl.querySelector('.load-metric-container');
-                if (loadContainer) {
+                const gridItems = cardEl.querySelectorAll('div[style*="background: rgba(255,255,255,0.6)"]');
+                const loadTile = gridItems[2];
+
+                if (loadTile) {
                     let loadColor = '#4ade80';
                     let loadLabel = 'Lekki';
                     if (newLoad > 30) { loadColor = '#facc15'; loadLabel = 'Umiarkowany'; }
                     if (newLoad > 60) { loadColor = '#fb923c'; loadLabel = 'Wymagający'; }
                     if (newLoad > 85) { loadColor = '#ef4444'; loadLabel = 'Maksymalny'; }
 
-                    const loadValueSpan = loadContainer.querySelector('span[style*="font-weight:600"]');
+                    const loadValueSpan = loadTile.querySelector('span[style*="font-weight:600"]');
                     if (loadValueSpan) loadValueSpan.textContent = `${newLoad}%`;
 
-                    const loadLabelSpan = loadContainer.querySelector('span > span');
+                    const loadLabelSpan = loadTile.querySelector('div[style*="bottomSlotStyle"] span');
                     if (loadLabelSpan) {
                         loadLabelSpan.textContent = loadLabel;
-                        loadLabelSpan.style.color = (loadColor === '#4ade80' ? '#16a34a' : loadColor);
                     }
 
-                    const barFill = loadContainer.querySelector('div[style*="width:"]');
+                    const barFill = loadTile.querySelector('div[style*="width:"][style*="height:100%"]');
                     if (barFill) {
                         barFill.style.width = `${newLoad}%`;
                         barFill.style.background = loadColor;
@@ -528,13 +528,17 @@ function renderHero() {
     if (heroContainer) {
         try {
             const stats = state.userStats || {};
+            const phaseData = state.settings.phase_manager;
+
             const combinedStats = {
                 ...getGamificationState(state.userProgress),
                 resilience: stats.resilience,
                 streak: stats.streak,
                 totalSessions: stats.totalSessions,
                 level: stats.level,
-                totalMinutes: stats.totalMinutes
+                totalMinutes: stats.totalMinutes,
+                fatigueScore: stats.fatigueScore,
+                phaseData: phaseData
             };
             if (getIsCasting()) sendUserStats(combinedStats);
             heroContainer.classList.remove('hidden');
@@ -542,7 +546,6 @@ function renderHero() {
         } catch (e) { console.error('[Dashboard] Błąd renderowania Hero:', e); }
     }
 }
-
 function renderBioHub() {
     const bioHubContainer = document.createElement('div');
     bioHubContainer.className = 'bio-hub-container';
@@ -627,9 +630,7 @@ function renderUpcomingQueue(days, todayISO) {
     upcomingWrapper.innerHTML = upcomingHTML;
     containers.days.appendChild(upcomingWrapper);
 
-    // --- ISSUE #14: LONG PRESS IMPLEMENTATION ---
     upcomingWrapper.querySelectorAll('.strip-day').forEach(card => {
-        // Dodajemy obsługę Long Press
         attachLongPressHandlers(card, () => ({
             date: card.querySelector('.ctx-menu-btn').dataset.date,
             isRest: card.querySelector('.ctx-menu-btn').dataset.isRest === 'true',
@@ -637,9 +638,8 @@ function renderUpcomingQueue(days, todayISO) {
         }));
 
         if (card.dataset.isRest === 'true') return;
-        
+
         card.addEventListener('click', (e) => {
-            // Blokada jeśli wyzwolono Long Press
             if (card.dataset.longPressTriggered === "true") return;
             if (e.target.closest('.ctx-menu-btn')) return;
             e.stopPropagation();

@@ -3,7 +3,7 @@ import { state } from '../../state.js';
 import { screens } from '../../dom.js';
 import { navigateTo, showLoader, hideLoader } from '../core.js';
 import dataStore from '../../dataStore.js';
-import { renderEvolutionModal } from '../modals.js';
+import { renderEvolutionModal, renderPhaseTransitionModal } from '../modals.js';
 import { getIsCasting, sendShowIdle } from '../../cast.js';
 import { clearSessionBackup } from '../../sessionRecovery.js';
 import { clearPlanFromStorage } from './dashboard.js';
@@ -140,9 +140,8 @@ export const renderSummaryScreen = () => {
     });
 
     // NOWA LOGIKA KCIUKÓW (INTERAKTYWNA)
-    // Pobieramy formularz i szukamy kart tylko w nim (na wypadek, gdybyśmy mieli stare karty w pamięci)
     const formContainer = summaryScreen.querySelector('#summary-form');
-    
+
     formContainer.querySelectorAll('.rating-card').forEach(card => {
         const id = card.dataset.id;
         const baseScore = parseInt(card.dataset.baseScore, 10);
@@ -197,7 +196,7 @@ export const renderSummaryScreen = () => {
     // Usuwamy stare listenery i dodajemy nowy
     formContainer.removeEventListener('submit', handleSummarySubmit);
     formContainer.addEventListener('submit', handleSummarySubmit);
-    
+
     navigateTo('summary');
 };
 
@@ -205,29 +204,21 @@ export async function handleSummarySubmit(e) {
     e.preventDefault();
     const submitBtn = e.target.querySelector('button[type="submit"]');
     if (submitBtn.disabled) return; // Zapobieganie podwójnemu kliknięciu
-    
-    submitBtn.disabled = true; 
+
+    submitBtn.disabled = true;
     submitBtn.textContent = "Zapisywanie...";
     showLoader();
 
     const ratingsArray = [];
-    
-    // POPRAWKA KRYTYCZNA: Używamy e.target (formularz) do szukania kart.
-    // document.querySelectorAll znalazłby również karty z historii/szczegółów dnia,
-    // jeśli były wcześniej renderowane (SPA trzyma je w DOM w sekcjach ukrytych).
     const ratingCards = e.target.querySelectorAll('.rating-card');
 
     ratingCards.forEach(card => {
         const id = card.dataset.id;
-
-        // 1. Sprawdź Affinity (z obiektu delta)
         const delta = sessionAffinityDeltas[id];
         if (delta) {
             const action = delta === SCORE_LIKE ? 'like' : 'dislike';
             ratingsArray.push({ exerciseId: id, action: action });
         }
-
-        // 2. Sprawdź Difficulty (z DOM)
         const activeDiff = card.querySelector('.diff-btn.selected');
         if (activeDiff) {
             ratingsArray.push({ exerciseId: id, action: activeDiff.dataset.action });
@@ -268,13 +259,27 @@ export async function handleSummarySubmit(e) {
         if (state.todaysDynamicPlan?.type === 'protocol') state.todaysDynamicPlan = null;
 
         if (response?.newStats) state.userStats = { ...state.userStats, ...response.newStats };
+        
+        // --- FIX: MANUALNA INKREMENTACJA LICZNIKA FAZY ---
+        // Dzięki temu widżet Hero na dashboardzie odświeży się natychmiast,
+        // bez konieczności ponownego pobierania całego obiektu settings.
+        const pm = state.settings.phase_manager;
+        if (pm && !response?.phaseUpdate) {
+            // Jeśli backend nie zwrócił zmiany fazy (czyli kontynuujemy obecną), inkrementujemy ręcznie.
+            if (pm.override && pm.override.mode) {
+                pm.override.stats.sessions_completed++;
+            } else if (pm.current_phase_stats) {
+                pm.current_phase_stats.sessions_completed++;
+            }
+        }
+        // --- KONIEC FIX ---
+
         if (document.getElementById('strava-sync-checkbox')?.checked) dataStore.uploadToStrava(sessionPayload);
 
         state.currentTrainingDate = null;
         state.sessionLog = [];
         state.isPaused = false;
 
-        // Aktualizuj lokalny stan preferencji (optimistic update)
         Object.entries(sessionAffinityDeltas).forEach(([id, delta]) => {
             if (state.userPreferences[id]) {
                 let s = state.userPreferences[id].score || 0;
@@ -304,24 +309,48 @@ export async function handleSummarySubmit(e) {
                     try {
                         console.log("[AutoReg] Triggering plan regeneration based on RPE...");
                         await dataStore.generateDynamicPlan(state.settings.wizardData);
-                        clearPlanFromStorage();
+                        clearPlanFromStorage(); 
                         alert("Plan został pomyślnie zaktualizowany przez Asystenta.");
                     } catch (e) {
                         console.error("[AutoReg] Failed:", e);
-                        alert("Nie udało się przeliczyć planu automatycznie. Zmiany nie zostały wprowadzone.");
+                        alert("Nie udało się przeliczyć planu automatycznie.");
                     }
                 }
             }
             await finalizeProcess();
         };
 
+        const checkPhaseTransition = () => {
+            if (response && response.phaseUpdate) {
+                // Jeśli backend zwrócił update fazy, nadpisujemy lokalne dane (ważniejsze niż manualna inkrementacja)
+                if (state.settings.phase_manager) {
+                    // Update ID
+                    state.settings.phase_manager.current_phase_stats.phase_id = response.phaseUpdate.newPhaseId;
+                    // Reset licznika dla nowej fazy
+                    state.settings.phase_manager.current_phase_stats.sessions_completed = 0;
+                    
+                    // Reset override jeśli był
+                    if (state.settings.phase_manager.override) {
+                        state.settings.phase_manager.override.mode = null;
+                    }
+                }
+
+                hideLoader();
+                renderPhaseTransitionModal(response.phaseUpdate, () => {
+                    checkRpeAndNavigate();
+                });
+            } else {
+                checkRpeAndNavigate();
+            }
+        };
+
         if (response && response.adaptation) {
             hideLoader();
             renderEvolutionModal(response.adaptation, () => {
-                checkRpeAndNavigate();
+                checkPhaseTransition();
             });
         } else {
-            await checkRpeAndNavigate();
+            checkPhaseTransition();
         }
 
     } catch (error) {

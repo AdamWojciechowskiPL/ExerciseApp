@@ -3,6 +3,28 @@ import { extractYoutubeId, calculateSystemLoad, calculateClinicalProfile, getSes
 
 // --- HELPERY (WEWNĘTRZNE) ---
 
+// Słownik nazw faz (PL)
+const PHASE_NAMES = {
+    'control': 'Kontrola',
+    'mobility': 'Mobilność',
+    'capacity': 'Pojemność',
+    'strength': 'Siła',
+    'metabolic': 'Metabolizm',
+    'deload': 'Deload',
+    'rehab': 'Rehab'
+};
+
+// Słownik Celów (do mapowania template_id)
+const GOAL_NAMES = {
+    'pain_relief': 'Redukcja Bólu',
+    'fat_loss': 'Redukcja Tłuszczu',
+    'strength': 'Siła & Hipertrofia',
+    'prevention': 'Zdrowie & Prewencja',
+    'mobility': 'Sprawność',
+    'sport_return': 'Powrót do Sportu',
+    'default': 'Ogólnorozwojowy'
+};
+
 const formatCategoryName = (catId) => {
     if (!catId) return 'Ogólne';
     return catId.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
@@ -31,7 +53,6 @@ const formatFeedback = (session) => {
             if (value === -1) return { label: 'Gorzej', icon: '⚡', class: 'danger', bg: '#fef2f2' };
         }
     }
-    // Fallback dla starych danych
     if (session.pain_during !== undefined && session.pain_during !== null) {
         return { label: `Ból: ${session.pain_during}`, icon: '🤕', class: 'neutral', bg: '#f3f4f6' };
     }
@@ -86,6 +107,74 @@ export const getAffinityBadge = (exerciseId) => {
     `;
 };
 
+// --- PHASE WIDGET GENERATOR (KOMPAKTOWY) ---
+function generatePhaseWidget(phaseData) {
+    if (!phaseData) return '';
+
+    let activePhaseId = phaseData.current_phase_stats?.phase_id;
+    let sessionsDone = phaseData.current_phase_stats?.sessions_completed || 0;
+    let target = phaseData.current_phase_stats?.target_sessions || 12;
+    let isOverride = false;
+    let overrideLabel = '';
+
+    const goalId = phaseData.template_id || 'default';
+    const goalName = GOAL_NAMES[goalId] || 'Plan Treningowy';
+
+    if (phaseData.override && phaseData.override.mode) {
+        isOverride = true;
+        activePhaseId = phaseData.override.mode;
+        sessionsDone = phaseData.override.stats.sessions_completed;
+        target = 0;
+        if (activePhaseId === 'rehab') overrideLabel = '🚑 REHAB';
+        if (activePhaseId === 'deload') overrideLabel = '🔋 DELOAD';
+    }
+
+    const phaseName = PHASE_NAMES[activePhaseId] || activePhaseId.toUpperCase();
+
+    let percent = 0;
+    if (!isOverride && target > 0) {
+        percent = Math.min(100, Math.round((sessionsDone / target) * 100));
+    }
+
+    const widgetClass = isOverride ? 'hero-phase-widget override' : 'hero-phase-widget';
+    const barClass = isOverride ? 'phase-progress-fill override' : 'phase-progress-fill';
+
+    let progressText = `${sessionsDone}/${target}`;
+    if (isOverride) progressText = `${sessionsDone}`;
+
+    return `
+        <div class="${widgetClass}">
+            <div class="phase-compact-row">
+                <div class="phase-meta-col">
+                    <span class="phase-label-tiny">CEL GŁÓWNY</span>
+                    <span class="phase-value-main">${goalName}</span>
+                </div>
+                <div class="phase-sep"></div>
+                <div class="phase-meta-col">
+                    <span class="phase-label-tiny">FAZA ${isOverride ? overrideLabel : ''}</span>
+                    <span class="phase-value-main highlight">${phaseName}</span>
+                </div>
+            </div>
+
+            ${!isOverride ? `
+                <div class="phase-progress-wrapper">
+                    <div class="phase-progress-track">
+                        <div class="${barClass}" style="width: ${percent}%;"></div>
+                    </div>
+                    <div class="phase-mini-stats">
+                        <span>${percent}%</span>
+                        <span>${progressText} sesji</span>
+                    </div>
+                </div>
+            ` : `
+                <div class="phase-override-info compact">
+                    Tryb bezpieczny aktywny.
+                </div>
+            `}
+        </div>
+    `;
+}
+
 export function generateHeroDashboardHTML(stats) {
     const isLoading = !stats.resilience;
     const resilienceScore = isLoading ? '--' : stats.resilience.score;
@@ -107,36 +196,30 @@ export function generateHeroDashboardHTML(stats) {
         return `<div class="week-day-col"><div class="day-bar ${statusClass}" title="${dateKey}"></div><span class="day-label">${dayName}</span></div>`;
     }).join('');
 
-    let timeLabel = "0m";
-    const totalMin = stats.totalMinutes || 0;
-    if (totalMin > 60) { const h = Math.floor(totalMin / 60); const m = totalMin % 60; timeLabel = `${h}h ${m}m`; } else { timeLabel = `${totalMin}m`; }
-
-    // --- NOWOŚĆ: Logika Zmęczenia (Fatigue) ---
     const fatigueScore = stats.fatigueScore || 0;
     let fatigueLabel = 'Świeży';
-    let fatigueClass = 'fresh'; // green
+    let fatigueClass = 'fresh';
+    if (fatigueScore >= 80) { fatigueLabel = 'Wysokie'; fatigueClass = 'critical'; }
+    else if (fatigueScore >= 40) { fatigueLabel = 'Średnie'; fatigueClass = 'moderate'; }
 
-    if (fatigueScore >= 80) {
-        fatigueLabel = 'Wysokie';
-        fatigueClass = 'critical'; // red
-    } else if (fatigueScore >= 40) {
-        fatigueLabel = 'Średnie';
-        fatigueClass = 'moderate'; // yellow/orange
-    }
+    const phaseWidgetHTML = generatePhaseWidget(stats.phaseData);
 
     return `
-    <div class="hero-avatar-wrapper"><div class="progress-ring" style="--progress-deg: ${progressDegrees}deg;"></div><img src="${stats.iconPath || '/icons/badge-level-1.svg'}" class="hero-avatar" alt="Ranga"><div class="level-badge">LVL ${stats.level || 1}</div></div>
-    <div class="hero-content">
-        <h3 class="hero-rank-title ${loadingClass}">${stats.tierName || 'Ładowanie...'}</h3>
-        <div class="hero-metrics-grid">
-            <div class="metric-item" title="Twoja aktualna seria"><svg class="metric-icon" width="16" height="16"><use href="#icon-streak-fire"/></svg><div class="metric-text"><span class="metric-label">Seria</span><span class="metric-value ${loadingClass}">${stats.streak !== undefined ? stats.streak : '-'} Dni</span></div></div>
-            <div class="metric-item" title="Wskaźnik odporności"><svg class="metric-icon" width="16" height="16"><use href="#icon-shield-check"/></svg><div class="metric-text"><span class="metric-label">Tarcza</span><span class="metric-value shield-score ${shieldClass} ${loadingClass}">${resilienceScore}${isLoading ? '' : '%'}</span></div></div>
-            <div class="metric-item" title="Czas treningów"><svg class="metric-icon" width="16" height="16"><use href="#icon-clock"/></svg><div class="metric-text"><span class="metric-label">Czas</span><span class="metric-value ${loadingClass}">${isLoading ? '--' : timeLabel}</span></div></div>
-            <!-- NOWY KAFELEK ZMĘCZENIA -->
-            <div class="metric-item" title="Poziom zmęczenia (Acute Fatigue)"><svg class="metric-icon" width="16" height="16"><use href="#icon-battery"/></svg><div class="metric-text"><span class="metric-label">Zmęczenie</span><span class="metric-value fatigue-score ${fatigueClass} ${loadingClass}">${fatigueLabel}</span></div></div>
+    <div class="hero-top-row">
+        <div class="hero-avatar-wrapper"><div class="progress-ring" style="--progress-deg: ${progressDegrees}deg;"></div><img src="${stats.iconPath || '/icons/badge-level-1.svg'}" class="hero-avatar" alt="Ranga"><div class="level-badge">LVL ${stats.level || 1}</div></div>
+        <div class="hero-content">
+            <h3 class="hero-rank-title ${loadingClass}">${stats.tierName || 'Ładowanie...'}</h3>
+            <div class="hero-metrics-grid">
+                <div class="metric-item" title="Twoja aktualna seria"><svg class="metric-icon" width="16" height="16"><use href="#icon-streak-fire"/></svg><div class="metric-text"><span class="metric-label">Seria</span><span class="metric-value ${loadingClass}">${stats.streak !== undefined ? stats.streak : '-'} Dni</span></div></div>
+                <div class="metric-item" title="Wskaźnik odporności"><svg class="metric-icon" width="16" height="16"><use href="#icon-shield-check"/></svg><div class="metric-text"><span class="metric-label">Tarcza</span><span class="metric-value shield-score ${shieldClass} ${loadingClass}">${resilienceScore}${isLoading ? '' : '%'}</span></div></div>
+                <div class="metric-item" title="Poziom zmęczenia"><svg class="metric-icon" width="16" height="16"><use href="#icon-battery"/></svg><div class="metric-text"><span class="metric-label">Zmęczenie</span><span class="metric-value fatigue-score ${fatigueClass} ${loadingClass}">${fatigueLabel}</span></div></div>
+            </div>
         </div>
+        <div class="hero-weekly-rhythm"><div class="weekly-chart-label">TWÓJ TYDZIEŃ</div><div class="weekly-chart-grid">${weeklyBarsHTML}</div></div>
     </div>
-    <div class="hero-weekly-rhythm"><div class="weekly-chart-label">TWÓJ TYDZIEŃ</div><div class="weekly-chart-grid">${weeklyBarsHTML}</div></div>`;
+
+    ${phaseWidgetHTML}
+    `;
 }
 
 export function generateSkeletonDashboardHTML() {
@@ -171,7 +254,7 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
         ? filteredEquipment.map(item => item.charAt(0).toUpperCase() + item.slice(1)).join(', ')
         : 'Bodyweight';
 
-    const systemLoad = calculateSystemLoad(dayData, false); // false = Plan Mode
+    const systemLoad = calculateSystemLoad(dayData, false);
     const clinicalTags = calculateClinicalProfile(dayData);
     const focusArea = getSessionFocus(dayData);
 
@@ -181,7 +264,6 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
     if (systemLoad > 60) { loadColor = '#fb923c'; loadLabel = 'Wymagający'; }
     if (systemLoad > 85) { loadColor = '#ef4444'; loadLabel = 'Maksymalny'; }
 
-    // --- FIX: SZTYWNE KONTENERY DLA WYRÓWNANIA (GRID/FLEX) ---
     const gridItemStyle = `
         background: rgba(255,255,255,0.6);
         padding: 8px 4px;
@@ -239,19 +321,10 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
 
                 <div class="wc-header">
                     <h3 class="wc-title">${dayData.title}</h3>
-                    <div class="time-badge-pill">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                        <span id="today-duration-display">${estimatedMinutes} min</span>
-                    </div>
                 </div>
 
-                <div style="font-size:0.85rem; color:#64748b; margin-bottom:12px; font-weight:500;">
-                    Cel: <strong style="color:var(--primary-color);">${focusArea}</strong>
-                </div>
-
-                <!-- Grid Statystyk z wyrównaniem -->
                 <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px; margin-top:15px; margin-bottom:15px;">
-                    <!-- Czas -->
+                    <!-- KAFEL 1: CZAS -->
                     <div style="${gridItemStyle}">
                         <div style="${topSlotStyle}">
                             <div style="font-size:1.4rem;">⏱️</div>
@@ -262,19 +335,19 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
                         <div style="${bottomSlotStyle}">Przewidywany</div>
                     </div>
 
-                    <!-- Asystent (Placeholder na Pain Level) -->
+                    <!-- KAFEL 2: CEL (ZAMIENIONO ASYSTENTA NA CEL) -->
                     <div style="${gridItemStyle}">
                         <div style="${topSlotStyle}">
-                            <div style="font-size:1.4rem;">🛡️</div>
+                            <div style="font-size:1.4rem;">🎯</div>
                         </div>
                         <div style="${middleSlotStyle}">
-                            <div style="font-weight:800; font-size:0.9rem; color:#333;">Asystent</div>
+                            <div style="font-weight:800; font-size:0.85rem; color:#333; line-height:1.1; padding:0 2px; word-break: break-word;">${focusArea}</div>
                         </div>
-                        <div style="${bottomSlotStyle}">Tryb</div>
+                        <div style="${bottomSlotStyle}">Cel Sesji</div>
                     </div>
 
-                    <!-- Load -->
-                    <div style="${gridItemStyle} class="load-metric-container">
+                    <!-- KAFEL 3: OBCIĄŻENIE (POPRAWIONO: USUNIĘTO KLASĘ Z MARGINESAMI) -->
+                    <div style="${gridItemStyle}">
                         <div style="${topSlotStyle}">
                              <div style="width:100%; height:6px; background:#e5e7eb; border-radius:3px; overflow:hidden;">
                                 <div style="width:${systemLoad}%; height:100%; background:${loadColor}; border-radius:3px;"></div>
@@ -346,25 +419,19 @@ export function generateRestCalendarPageHTML(dateObj) {
     </div>`;
 }
 
-// ============================================================================
-// NOWA WERSJA KARTY SESJI W HISTORII (TROPHY ROOM)
-// ============================================================================
 export function generateSessionCardHTML(session) {
     const planId = session.planId || 'l5s1-foundation';
     const isDynamic = planId.startsWith('dynamic-') || planId.startsWith('rolling-');
     const isProtocol = (session.trainingTitle || '').includes('Bio-Protokół') || (session.trainingTitle || '').includes('Szyja');
     const title = session.trainingTitle || 'Trening';
 
-    // Badge statusu (Prawy Górny Róg)
     let statusBadge = '';
     if (isProtocol) statusBadge = `<span class="meta-badge" style="background:#e0f2fe; color:#0369a1; border-color:#bae6fd;">🧬 BIO-PROTOKÓŁ</span>`;
     else if (isDynamic) statusBadge = `<span class="meta-badge" style="background:#f0fdf4; color:#15803d; border-color:#bbf7d0;">🧬 VIRTUAL PHYSIO</span>`;
 
-    // Data
     const completedDate = new Date(session.completedAt || new Date());
     const dateStr = completedDate.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
-    // Obliczanie czasu
     let durationNetto = 0;
     if (session.netDurationSeconds !== undefined) durationNetto = session.netDurationSeconds;
     else if (session.startedAt && session.completedAt) {
@@ -372,46 +439,37 @@ export function generateSessionCardHTML(session) {
     }
     const mins = Math.floor(durationNetto / 60);
 
-    // Feedback Info
     const fb = formatFeedback(session);
 
-    // Odtwarzanie System Load (Teraz używamy uniwersalnej funkcji)
     let sessionLoad = 0;
     if (session.sessionLog) {
-        sessionLoad = calculateSystemLoad(session.sessionLog, true); // true = fromHistory
+        sessionLoad = calculateSystemLoad(session.sessionLog, true);
     }
-    if (sessionLoad === 0) sessionLoad = 50; // Fallback wizualny
+    if (sessionLoad === 0) sessionLoad = 50;
 
-    let loadColor = '#facc15'; // Umiarkowany
-    if (sessionLoad > 75) loadColor = '#ef4444'; // Wysoki
-    else if (sessionLoad < 35) loadColor = '#4ade80'; // Niski
+    let loadColor = '#facc15';
+    if (sessionLoad > 75) loadColor = '#ef4444';
+    else if (sessionLoad < 35) loadColor = '#4ade80';
 
-    // --- MAPOWANIE OCEN SESJI (HISTORYCZNE) ---
-    // Służy do zaznaczenia, co user kliknął W TRAKCIE sesji
     const sessionRatings = {};
     if (session.exerciseRatings && Array.isArray(session.exerciseRatings)) {
         session.exerciseRatings.forEach(r => sessionRatings[r.exerciseId] = r.action);
     }
 
-    // LISTA ĆWICZEŃ (Nowy Styl)
     const exercisesHtml = (session.sessionLog || []).filter(l => l.status === 'completed' && !l.isRest).map(item => {
         const id = item.exerciseId || item.id;
         const displayName = item.name.replace(/\s*\((Lewa|Prawa)\)/gi, '').trim();
 
-        // 1. GLOBALNE AFFINITY (AKTUALNY WYNIK)
-        // To jest "live" wynik z bazy, który może się zmienić
         const pref = state.userPreferences[id] || { score: 0, difficulty: 0 };
         const score = pref.score || 0;
         const affinityBadge = getAffinityBadge(id);
 
-        // Wyświetlanie surowego wyniku
         let scoreText = score > 0 ? `+${score}` : `${score}`;
-        let scoreColor = '#6b7280'; // gray
-        if (score > 0) scoreColor = '#10b981'; // green
-        if (score < 0) scoreColor = '#ef4444'; // red
+        let scoreColor = '#6b7280';
+        if (score > 0) scoreColor = '#10b981';
+        if (score < 0) scoreColor = '#ef4444';
         const rawScoreDisplay = `<span style="font-size:0.75rem; font-weight:800; color:${scoreColor}; margin-left:4px;">[${scoreText}]</span>`;
 
-        // Wyświetlanie rzeczywistego czasu
         let actualTimeBadge = '';
         if (item.duration && item.duration > 0) {
             const dm = Math.floor(item.duration / 60);
@@ -420,17 +478,11 @@ export function generateSessionCardHTML(session) {
             actualTimeBadge = `<span class="time-badge" style="background:#fefce8; color:#b45309; border:1px solid #fde047; font-size:0.7rem;">⏱ ${dStr}</span>`;
         }
 
-        // --- 2. USTAWIENIE STANU PRZYCISKÓW ---
-        // Affinity: Bierzemy z zapisu sesji (sessionRatings), bo to jest "Historyczne Głosowanie"
-        const sessionAction = sessionRatings[id]; // 'like', 'dislike'
-
-        // Difficulty: Bierzemy z GLOBALNEGO STANU (pref.difficulty), bo to jest "Trwała Flaga"
-        // Jeśli ustawiłem "Za trudne" miesiąc temu, to nadal jest "Za trudne", dopóki nie zmienię.
-        const currentDiff = pref.difficulty || 0; // -1, 0, 1
+        const sessionAction = sessionRatings[id];
+        const currentDiff = pref.difficulty || 0;
 
         const isLikeActive = sessionAction === 'like' ? 'active' : '';
         const isDislikeActive = sessionAction === 'dislike' ? 'active' : '';
-
         const isEasySelected = currentDiff === -1 ? 'selected' : '';
         const isHardSelected = currentDiff === 1 ? 'selected' : '';
 
@@ -452,15 +504,12 @@ export function generateSessionCardHTML(session) {
             </div>
 
             <div class="rating-actions-group">
-                <!-- Grupa LIKE / DISLIKE (Source: Session History) -->
                 <div class="btn-group-affinity" style="background:transparent; border:1px solid #e5e7eb;">
                     <button class="rate-btn-hist affinity-btn ${isLikeActive}"
                             data-id="${id}" data-action="like" title="Super">👍</button>
                     <button class="rate-btn-hist affinity-btn ${isDislikeActive}"
                             data-id="${id}" data-action="dislike" title="Słabo">👎</button>
                 </div>
-
-                <!-- Grupa TRUDNOŚĆ (Source: Global Preference) -->
                 <div class="btn-group-difficulty" style="background:transparent; border:1px solid #e5e7eb;">
                     <button class="rate-btn-hist diff-btn ${isEasySelected}"
                             data-id="${id}" data-action="easy" title="Za łatwe">💤</button>
@@ -477,7 +526,6 @@ export function generateSessionCardHTML(session) {
         </div>
     ` : '';
 
-    // --- FIX: SZTYWNE KONTENERY DLA WYRÓWNANIA (GRID/FLEX) ---
     const gridItemStyle = `
         background: rgba(255,255,255,0.6);
         padding: 8px 4px;
@@ -516,10 +564,7 @@ export function generateSessionCardHTML(session) {
 
     return `
     <div class="calendar-sheet completed-mode" style="border:none; box-shadow: 0 4px 20px rgba(0,0,0,0.08); margin-bottom: 2rem;">
-        <!-- Header Karty -->
         <div class="workout-context-card" style="background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%); border: 1px solid var(--success-color); border-radius: 12px; padding: 0; overflow:hidden;">
-
-            <!-- Górny pasek -->
             <div style="padding: 1.2rem; border-bottom: 1px solid rgba(0,0,0,0.05);">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 5px;">
                     <div style="display:flex; align-items:center; gap:10px;">
@@ -532,9 +577,7 @@ export function generateSessionCardHTML(session) {
                     ${statusBadge}
                 </div>
 
-                <!-- Grid Statystyk z wyrównaniem -->
                 <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px; margin-top:15px;">
-                    <!-- Czas -->
                     <div style="${gridItemStyle}">
                         <div style="${topSlotStyle}">
                             <div style="font-size:1.4rem;">⏱️</div>
@@ -545,7 +588,6 @@ export function generateSessionCardHTML(session) {
                         <div style="${bottomSlotStyle}">Czas Netto</div>
                     </div>
 
-                    <!-- Feedback -->
                     <div style="${gridItemStyle} background:${fb.bg};">
                         <div style="${topSlotStyle}">
                             <div style="font-size:1.4rem;">${fb.icon}</div>
@@ -556,7 +598,6 @@ export function generateSessionCardHTML(session) {
                         <div style="${bottomSlotStyle}">Odbiór</div>
                     </div>
 
-                    <!-- Load -->
                     <div style="${gridItemStyle}">
                         <div style="${topSlotStyle}">
                              <div style="width:100%; height:6px; background:#e5e7eb; border-radius:3px; overflow:hidden;">
@@ -573,12 +614,10 @@ export function generateSessionCardHTML(session) {
                 ${notesHtml}
             </div>
 
-            <!-- Lista Ćwiczeń -->
             <div class="history-exercise-list" style="background:#fff;">
                 ${exercisesHtml}
             </div>
 
-            <!-- Stopka z Opcjami -->
             <div style="padding: 10px; background:#f9fafb; border-top:1px solid #f3f4f6; display:flex; justify-content:flex-end;">
                 <button class="delete-session-btn" data-session-id="${session.sessionId}" style="background:transparent; border:none; color:#ef4444; font-size:0.8rem; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:5px; opacity:0.7; transition:opacity 0.2s;">
                     <svg width="16" height="16"><use href="#icon-trash"/></svg> Usuń Sesję
@@ -653,8 +692,6 @@ export function generatePreTrainingCardHTML(ex, index) {
     `;
 
     const videoId = extractYoutubeId(ex.youtube_url);
-
-    // MODYFIKACJA: Ikona wideo wewnątrz dedykowanego kontenera (60px)
     const videoLink = videoId
         ? `<a href="https://youtu.be/${videoId}" target="_blank" class="link-youtube"
              style="text-decoration:none; font-size:2.2rem; display:flex; align-items:center; justify-content:center; line-height:1; width:100%; height:100%;"
@@ -686,13 +723,10 @@ export function generatePreTrainingCardHTML(ex, index) {
         <p class="pre-training-description" style="padding-left:10px; opacity:0.8;">${ex.description || 'Brak opisu.'}</p>
         ${targetsHTML}
 
-        <!-- ZMODYFIKOWANA STOPKA: Align Items Center -->
         <div class="training-footer" style="display:flex; align-items:center;">
-            <!-- Dedykowana kolumna dla ikony wideo (60px) -->
             <div style="flex: 0 0 60px; display:flex; align-items:center; justify-content:center; margin-right:10px;">
                 ${videoLink}
             </div>
-            <!-- Tekst (Tempo) -->
             <div style="flex:1;">
                 ${ex.tempo_or_iso ? `<span class="tempo-badge" style="display:block; width:100%;">Tempo: ${ex.tempo_or_iso}</span>` : ''}
             </div>
@@ -701,7 +735,6 @@ export function generatePreTrainingCardHTML(ex, index) {
 }
 
 export function generateCompletedMissionCardHTML(session) {
-    // To jest skrócona wersja dla Dashboardu (mała karta)
     const durationSeconds = session.netDurationSeconds || 0;
     const minutes = Math.floor(durationSeconds / 60);
     const feedbackInfo = formatFeedback(session);

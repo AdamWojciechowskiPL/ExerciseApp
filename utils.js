@@ -98,19 +98,18 @@ export const getHydratedDay = (dayData) => {
                 if (!mergedExercise.tempo_or_iso) mergedExercise.tempo_or_iso = libraryDetails.defaultTempo || "Kontrolowane";
                 if (mergedExercise.is_unilateral === undefined) mergedExercise.is_unilateral = libraryDetails.isUnilateral || false;
 
-                // --- TASK M1: HYDRATION (LEGACY SUPPORT) ---
-                // Upewnij się, że obiekt ma `calculated_timing` lub `baseRestSeconds`.
-                // Jeśli backend w planie nie zapisał (stary plan), weź z biblioteki.
-                if (!mergedExercise.calculated_timing) {
-                    // Sprawdzamy czy biblioteka ma dane (z Tasku B3)
-                    if (libraryDetails.baseRestSeconds) {
-                        mergedExercise.calculated_timing = {
-                            rest_sec: libraryDetails.baseRestSeconds,
-                            transition_sec: libraryDetails.baseTransitionSeconds || 5
-                        };
+                // --- PRIORYTET DLA DANYCH Z PLANU (BACKEND) ---
+                if (!mergedExercise.restAfterExercise) {
+                    // Fallback jeśli plan jest stary i nie ma tych danych
+                    if (mergedExercise.calculated_timing) {
+                        mergedExercise.restAfterExercise = mergedExercise.calculated_timing.rest_sec;
+                        mergedExercise.transitionTime = mergedExercise.calculated_timing.transition_sec;
+                    } else if (libraryDetails.baseRestSeconds) {
+                        mergedExercise.restAfterExercise = libraryDetails.baseRestSeconds;
+                        mergedExercise.transitionTime = libraryDetails.baseTransitionSeconds || (mergedExercise.is_unilateral ? 12 : 5);
                     } else {
-                        // Ostateczny fallback
-                        mergedExercise.calculated_timing = { rest_sec: 30, transition_sec: 5 };
+                        mergedExercise.restAfterExercise = 30; // Absolutny fallback
+                        mergedExercise.transitionTime = 5;
                     }
                 }
 
@@ -127,8 +126,6 @@ export const parseSetCount = (setsString) => {
     return parseInt(parts[parts.length - 1].trim(), 10) || 1;
 };
 
-// --- CALCULATE SMART DURATION & LOAD METRICS ---
-
 const parseRepsOrTime = (val) => {
     const t = String(val || '').trim().toLowerCase();
     if (t.includes('s')) return Math.max(5, parseInt(t, 10) || 30);
@@ -136,31 +133,32 @@ const parseRepsOrTime = (val) => {
     return parseInt(t, 10) || 10;
 };
 
-/**
- * CENTRALNA LOGIKA PRZERW (Explicit Base Rest Architecture - Task F1)
- * Zamiast zgadywać kategorię, używamy wartości z backendu.
- */
 export const calculateSmartRest = (exercise, userRestFactor = 1.0) => {
-    // 1. Priorytet: Jawne nadpisanie (np. z protokołu Tabata)
+    // To jest "intra-set rest" (pomiędzy seriami TEGO SAMEGO ćwiczenia)
+    // Zgodnie z backendem: intra-set rest = restAfterExercise (chyba że conditioning interval)
+    
     if (exercise.restBetweenSets) {
         return Math.round(parseInt(exercise.restBetweenSets, 10) * userRestFactor);
     }
-
-    // 2. Pobranie bazy z obiektu (z backendu)
-    let baseRest = 30; // Fallback
-
-    if (exercise.calculated_timing && exercise.calculated_timing.rest_sec) {
+    
+    let baseRest = 30;
+    if (exercise.restAfterExercise) {
+        baseRest = exercise.restAfterExercise;
+    } else if (exercise.calculated_timing && exercise.calculated_timing.rest_sec) {
         baseRest = exercise.calculated_timing.rest_sec;
     } else if (exercise.baseRestSeconds) {
-        // Fallback dla obiektów z Atlasu
         baseRest = exercise.baseRestSeconds;
     }
-
-    // 3. Aplikacja Globalnego Faktora Użytkownika
+    
     return Math.max(10, Math.round(baseRest * userRestFactor));
 };
 
+// --- SINGLE SOURCE OF TRUTH FIX ---
 export const calculateSmartDuration = (dayPlan) => {
+    if (dayPlan.estimatedDurationMin && dayPlan.estimatedDurationMin > 0) {
+        return dayPlan.estimatedDurationMin;
+    }
+
     if (!dayPlan) return 0;
 
     const globalSpr = state.settings.secondsPerRep || 6;
@@ -172,7 +170,8 @@ export const calculateSmartDuration = (dayPlan) => {
         ...(dayPlan.cooldown || [])
     ];
 
-    let totalSeconds = 0;
+    // Global buffer startowy (zgodnie z backendem)
+    let totalSeconds = 5;
 
     allExercises.forEach((ex, index) => {
         const sets = parseSetCount(ex.sets);
@@ -186,7 +185,6 @@ export const calculateSmartDuration = (dayPlan) => {
             tempoToUse = state.exercisePace[exId];
         }
 
-        // Czas pracy
         let workTimePerSet = 0;
         const valStr = String(ex.reps_or_time).toLowerCase();
 
@@ -199,26 +197,26 @@ export const calculateSmartDuration = (dayPlan) => {
 
         let exDuration = sets * workTimePerSet;
 
-        // Czas przerw między seriami
+        const restBase = ex.restAfterExercise || 30;
+        const smartRestTime = Math.round(restBase * restFactor);
+
         if (sets > 1) {
-            const restTime = calculateSmartRest(ex, restFactor);
-            exDuration += (sets - 1) * restTime;
+            exDuration += (sets - 1) * smartRestTime;
         }
 
-        // Czas zmiany strony / przejścia (Task F1: używamy danych z backendu jeśli są)
-        let transitionTime = Math.max(12, Math.round(12 * restFactor));
-        if (ex.calculated_timing && ex.calculated_timing.transition_sec) {
-             transitionTime = Math.max(5, Math.round(ex.calculated_timing.transition_sec * restFactor));
+        let transitionTime = 0;
+        if (isUnilateral) {
+             transitionTime = ex.transitionTime || (ex.calculated_timing ? ex.calculated_timing.transition_sec : 12);
         }
-
-        const transitionsTotal = sets * (isUnilateral ? transitionTime : 5);
+        
+        const transitionsTotal = sets * transitionTime;
         exDuration += transitionsTotal;
 
         totalSeconds += exDuration;
 
-        // Przerwa między ćwiczeniami (też skalowana)
+        // Rest after exercise (zanim zacznie się następne)
         if (index < allExercises.length - 1) {
-            totalSeconds += Math.round(30 * restFactor);
+            totalSeconds += smartRestTime;
         }
     });
 
@@ -230,7 +228,6 @@ export const calculateSystemLoad = (inputData, fromHistory = false) => {
 
     let exercises = [];
 
-    // Case A: Plan (Dashboard) - Struktura z sekcjami
     if (!fromHistory && (inputData.warmup || inputData.main || inputData.cooldown)) {
         exercises = [
             ...(inputData.warmup || []),
@@ -238,10 +235,8 @@ export const calculateSystemLoad = (inputData, fromHistory = false) => {
             ...(inputData.cooldown || [])
         ];
     }
-    // Case B: Lista (Historia/Log) - Płaska tablica
     else if (Array.isArray(inputData)) {
         exercises = inputData.filter(ex => {
-            // W historii bierzemy tylko zakończone i nie będące przerwami
             if (fromHistory) return ex.status === 'completed' && !ex.isRest;
             return true;
         });
@@ -254,28 +249,18 @@ export const calculateSystemLoad = (inputData, fromHistory = false) => {
     let weightedDifficultySum = 0;
 
     exercises.forEach(ex => {
-        // --- DIFFICULTY LEVEL ---
-        // Plan: z bazy. Historia: zapisane w logu (lub fallback 1)
         const difficulty = parseInt(ex.difficultyLevel || 1, 10);
-
-        // --- UNILATERAL LOGIC ---
-        // Plan: Agregowany ("3 serie po 10 powtórzeń na stronę") -> Mnożymy x2
-        // Historia: Rozwinięty ("Seria 1 Lewa", "Seria 1 Prawa") -> Nie mnożymy, bo są osobne wpisy
         let multiplier = 1;
         if (!fromHistory) {
             const isUnilateral = ex.isUnilateral || ex.is_unilateral || String(ex.reps_or_time).includes('/str');
             if (isUnilateral) multiplier = 2;
         }
 
-        // --- SETS COUNT ---
-        // Plan: "3" lub "1-3" -> parsujemy
-        // Historia: Każdy wpis w logu to jedna wykonana "seria" (lub krok) -> zawsze 1
         let sets = 1;
         if (!fromHistory) {
             sets = parseSetCount(ex.sets);
         }
 
-        // --- WORK TIME CALCULATION ---
         let singleSetWorkTime = 0;
         const valStr = String(ex.reps_or_time).toLowerCase();
 
@@ -294,7 +279,6 @@ export const calculateSystemLoad = (inputData, fromHistory = false) => {
     if (totalWorkSeconds === 0) return 0;
 
     const avgDifficulty = weightedDifficultySum / totalWorkSeconds;
-    // 7200 = Arbitralny punkt odniesienia (np. 60 min ciągłej pracy o trudności 2)
     const maxScoreRef = 7200;
     const rawScore = (avgDifficulty * totalWorkSeconds);
 

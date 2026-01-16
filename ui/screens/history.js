@@ -1,10 +1,13 @@
 // js/ui/screens/history.js
 import { state } from '../../state.js';
 import { containers, screens } from '../../dom.js';
-import { getISODate, getTrainingDayForDate } from '../../utils.js';
+import { getISODate } from '../../utils.js';
 import { showLoader, hideLoader, navigateTo } from '../core.js';
 import { generateSessionCardHTML } from '../templates.js';
 import dataStore from '../../dataStore.js';
+
+// Importujemy helpery do generowania badge'a punktowego
+import { getAffinityBadge } from '../templates.js';
 
 export const renderHistoryScreen = async (forceRefresh = false) => {
     navigateTo('history');
@@ -17,7 +20,7 @@ export const renderHistoryScreen = async (forceRefresh = false) => {
     try {
         await dataStore.getHistoryForMonth(year, month, forceRefresh);
         const headerContainer = document.getElementById('month-year-header');
-        headerContainer.innerHTML = `<span style="vertical-align: middle;">${date.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' })}</span><button id="refresh-history-btn" style="background:none; border:none; cursor:pointer; margin-left:10px; vertical-align: middle; opacity: 0.6;" title="Odśwież"><img src="/icons/refresh-cw.svg" width="16" height="16" alt="Odśwież"></button>`;
+        headerContainer.innerHTML = `<span style="vertical-align: middle;">${date.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' })}</span><button id="refresh-history-btn" style="background:none; border:none; cursor:pointer; margin-left:10px; vertical-align: middle; opacity: 0.6;" title="Odśwież"><svg width="16" height="16"><use href="#icon-refresh-cw"/></svg></button>`;
         document.getElementById('refresh-history-btn').addEventListener('click', (e) => { e.stopPropagation(); renderHistoryScreen(true); });
         const grid = containers.calendarGrid;
         grid.innerHTML = '';
@@ -58,42 +61,6 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
         <h2 id="details-day-title">${date.toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' })}</h2>
         <div id="day-details-content">${sessionsHtml}</div>
         <button id="details-back-btn" class="action-btn">${backButtonLabel}</button>
-        
-        <style>
-            .rate-btn-hist { 
-                background: transparent; 
-                border: 1px solid #e0e0e0; 
-                border-radius: 6px; 
-                padding: 4px 8px; 
-                cursor: pointer; 
-                opacity: 0.5; 
-                filter: grayscale(100%); 
-                transition: all 0.2s; 
-                font-size: 1.1rem;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                min-width: 32px;
-            }
-            .rate-btn-hist:hover { 
-                opacity: 0.8; 
-                filter: grayscale(50%); 
-                transform: scale(1.1); 
-                background: #f9f9f9;
-            }
-            .rate-btn-hist.active { 
-                opacity: 1; 
-                filter: grayscale(0%); 
-                border-color: var(--primary-color); 
-                background: #e0f2fe; 
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }
-            .hist-rating-actions {
-                display: flex;
-                gap: 6px;
-                margin-left: auto;
-            }
-        </style>
     `;
 
     const backBtn = screens.dayDetails.querySelector('#details-back-btn');
@@ -102,9 +69,11 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
     });
 
     const contentContainer = screens.dayDetails.querySelector('#day-details-content');
-    
+
+    // === DELEGACJA ZDARZEŃ W HISTORII ===
     contentContainer.addEventListener('click', async (e) => {
-        // DELETE SESSION
+
+        // 1. USUWANIE SESJI
         const delBtn = e.target.closest('.delete-session-btn');
         if (delBtn) {
             const sessionId = delBtn.dataset.sessionId;
@@ -119,85 +88,141 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
             return;
         }
 
-        // --- RESET DIFFICULTY (NOWA POPRAWKA) ---
-        const resetBtn = e.target.closest('.reset-diff-btn');
-        if (resetBtn) {
-            e.stopPropagation();
-            if (!confirm("Czy na pewno cofnąć oznaczenie trudności? Spowoduje to przywrócenie poprzedniego wariantu ćwiczenia.")) return;
-            
-            const id = resetBtn.dataset.id;
-            
-            // 1. Optymistyczna aktualizacja UI (DLA WSZYSTKICH WYSTĄPIEŃ TEGO ĆWICZENIA)
-            // Szukamy wszystkich przycisków resetu dla tego ID w kontenerze
-            const allResetButtons = contentContainer.querySelectorAll(`.reset-diff-btn[data-id="${id}"]`);
-            allResetButtons.forEach(btn => btn.style.display = 'none');
-            
-            // 2. Aktualizacja lokalnego stanu
-            if (state.userPreferences[id]) state.userPreferences[id].difficulty = 0;
-
-            // 3. API Call
-            try {
-                await dataStore.updatePreference(id, 'reset_difficulty');
-                console.log("Difficulty reset successful");
-            } catch (err) {
-                console.error("Failed to reset difficulty:", err);
-                // W razie błędu przywracamy widoczność
-                allResetButtons.forEach(btn => btn.style.display = 'inline-block');
-                alert("Błąd połączenia. Spróbuj ponownie.");
-            }
-            return;
-        }
-
-        // RATE EXERCISE (AFFINITY ONLY)
+        // 2. PRZYCISKI OCEN (RATE BTN) - LOGIKA TOGGLE & SYNC
         const rateBtn = e.target.closest('.rate-btn-hist');
         if (rateBtn) {
             e.stopPropagation();
-            
-            const id = rateBtn.dataset.id;
-            const action = rateBtn.dataset.action; // 'like' or 'dislike'
-            
-            if (!state.userPreferences[id]) state.userPreferences[id] = { score: 0, difficulty: 0 };
-            const currentScore = state.userPreferences[id].score;
-            
-            let newScore = 0;
-            let apiAction = 'neutral';
 
-            if (action === 'like') {
-                if (currentScore >= 50) { // Próg 50 dla nowego toggle
-                    newScore = 0;
-                    apiAction = 'neutral';
-                } else {
-                    newScore = 50;
-                    apiAction = 'like';
+            const exerciseId = rateBtn.dataset.id; // To ID jest wspólne dla wszystkich serii tego ćwiczenia
+            const action = rateBtn.dataset.action; // 'like' | 'dislike' | 'hard' | 'easy'
+            const isAffinity = rateBtn.classList.contains('affinity-btn'); // Kciuki
+            const isDifficulty = rateBtn.classList.contains('diff-btn'); // Ogień/Sen
+
+            // Znajdujemy WSZYSTKIE wystąpienia tego ćwiczenia w widoku (wszystkie serie)
+            // Używamy querySelectorAll na kontenerze szczegółów dnia
+            const allRowsForExercise = contentContainer.querySelectorAll(`.rating-card[data-id="${exerciseId}"]`);
+
+            if (isAffinity) {
+                // --- LOGIKA PUNKTACJI (SCORE) ---
+                const SCORE_LIKE = 15;
+                const SCORE_DISLIKE = 30; // Backend odejmuje 30, więc undo dodaje 30
+
+                // Sprawdzamy stan klikniętego przycisku (czy wyłączamy go?)
+                const isTurningOff = rateBtn.classList.contains('active');
+
+                // Sprawdzamy czy przeciwny przycisk był aktywny (np. klikam Like, a Dislike był włączony)
+                // Wystarczy sprawdzić stan w bieżącym wierszu (bo są zsynchronizowane)
+                const currentRow = rateBtn.closest('.rating-card');
+                const siblingBtn = action === 'like'
+                    ? currentRow.querySelector('[data-action="dislike"]')
+                    : currentRow.querySelector('[data-action="like"]');
+                const isSwitching = siblingBtn && siblingBtn.classList.contains('active');
+
+                // Obliczamy zmianę punktów (Delta)
+                let delta = 0;
+
+                if (action === 'like') {
+                    if (isTurningOff) {
+                        delta = -SCORE_LIKE; // Cofamy Like (-15)
+                    } else {
+                        delta = SCORE_LIKE; // Dodajemy Like (+15)
+                        if (isSwitching) delta += SCORE_DISLIKE; // Cofamy Dislike (+30) -> razem +45
+                    }
+                } else if (action === 'dislike') {
+                    if (isTurningOff) {
+                        delta = SCORE_DISLIKE; // Cofamy Dislike (+30)
+                    } else {
+                        delta = -SCORE_DISLIKE; // Odejmujemy Dislike (-30)
+                        if (isSwitching) delta -= SCORE_LIKE; // Cofamy Like (-15) -> razem -45
+                    }
                 }
-            } 
-            else if (action === 'dislike') {
-                if (currentScore <= -50) {
-                    newScore = 0;
-                    apiAction = 'neutral';
-                } else {
-                    newScore = -50;
-                    apiAction = 'dislike';
+
+                // Aplikujemy zmianę do globalnego stanu
+                let currentScore = state.userPreferences[exerciseId]?.score || 0;
+                let newScore = currentScore + delta;
+                // Clamp do zakresu -100..100
+                newScore = Math.max(-100, Math.min(100, newScore));
+                if (!state.userPreferences[exerciseId]) state.userPreferences[exerciseId] = {};
+                state.userPreferences[exerciseId].score = newScore;
+
+                // Synchronizacja wizualna WSZYSTKICH serii
+                allRowsForExercise.forEach(row => {
+                    const likeBtn = row.querySelector('[data-action="like"]');
+                    const dislikeBtn = row.querySelector('[data-action="dislike"]');
+
+                    // Reset
+                    likeBtn.classList.remove('active');
+                    dislikeBtn.classList.remove('active');
+
+                    // Set new state
+                    if (!isTurningOff) {
+                        if (action === 'like') likeBtn.classList.add('active');
+                        if (action === 'dislike') dislikeBtn.classList.add('active');
+                    }
+
+                    // Update Badge HTML
+                    const headerDiv = row.querySelector('div[style*="display:flex; align-items:center; gap:6px"]');
+                    if (headerDiv) {
+                        // Usuwamy stare
+                        const oldBadge = headerDiv.querySelector('.affinity-badge');
+                        const oldRawScore = headerDiv.querySelector('span[style*="font-weight:800"]'); // [score]
+                        if(oldBadge) oldBadge.remove();
+                        if(oldRawScore) oldRawScore.remove();
+
+                        // Generujemy nowe
+                        const newBadgeHtml = getAffinityBadge(exerciseId); // Korzysta ze zaktualizowanego stanu
+                        let scoreText = newScore > 0 ? `+${newScore}` : `${newScore}`;
+                        let scoreColor = '#6b7280';
+                        if (newScore > 0) scoreColor = '#10b981';
+                        if (newScore < 0) scoreColor = '#ef4444';
+                        const newRawScoreHtml = `<span style="font-size:0.75rem; font-weight:800; color:${scoreColor}; margin-left:4px;">[${scoreText}]</span>`;
+
+                        headerDiv.insertAdjacentHTML('beforeend', newBadgeHtml + newRawScoreHtml);
+                    }
+                });
+
+                // Send Absolute Value to Backend (Bezpieczniejsze niż przyrostowe)
+                try {
+                    await dataStore.updatePreference(exerciseId, 'set', newScore);
+                    console.log(`[History] Zaktualizowano punkty: ${newScore} dla ${exerciseId} (Action: ${action})`);
+                } catch (err) {
+                    console.error("Błąd zapisu punktów:", err);
                 }
-            }
 
-            state.userPreferences[id].score = newScore;
+            } else if (isDifficulty) {
+                // --- LOGIKA TRUDNOŚCI (DIFFICULTY) ---
+                // Tu wartości to flagi: -1 (easy), 0 (ok), 1 (hard)
+                const isTurningOff = rateBtn.classList.contains('selected');
+                let newValue = 0;
 
-            const allButtonsForId = contentContainer.querySelectorAll(`.rate-btn-hist[data-id="${id}"]`);
-            allButtonsForId.forEach(btn => {
-                const btnAction = btn.dataset.action;
-                let isActive = false;
-                // Wizualizacja: >= 10 dla Like (żeby uwzględnić stare), <= -10 dla Dislike
-                // Ale przy toggle ustawiamy 50/-50
-                if (btnAction === 'like' && newScore >= 10) isActive = true;
-                if (btnAction === 'dislike' && newScore <= -10) isActive = true;
-                btn.classList.toggle('active', isActive);
-            });
+                if (!isTurningOff) {
+                    newValue = (action === 'easy') ? -1 : 1;
+                }
 
-            try {
-                await dataStore.updatePreference(id, apiAction);
-            } catch (err) {
-                console.error("Błąd aktualizacji preferencji:", err);
+                // Aktualizuj stan lokalny
+                if (!state.userPreferences[exerciseId]) state.userPreferences[exerciseId] = {};
+                state.userPreferences[exerciseId].difficulty = newValue;
+
+                // Synchronizacja wizualna
+                allRowsForExercise.forEach(row => {
+                    const easyBtn = row.querySelector('[data-action="easy"]');
+                    const hardBtn = row.querySelector('[data-action="hard"]');
+
+                    easyBtn.classList.remove('selected');
+                    hardBtn.classList.remove('selected');
+
+                    if (newValue === -1) easyBtn.classList.add('selected');
+                    if (newValue === 1) hardBtn.classList.add('selected');
+                });
+
+                // Send to Backend
+                try {
+                    const backendAction = (newValue === 0) ? 'reset_difficulty' : 'set_difficulty';
+                    await dataStore.updatePreference(exerciseId, backendAction, newValue);
+                    console.log(`[History] Zaktualizowano trudność: ${newValue} dla ${exerciseId}`);
+                } catch (err) {
+                    console.error("Błąd zapisu trudności:", err);
+                }
             }
         }
     });

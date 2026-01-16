@@ -1,3 +1,4 @@
+// ExerciseApp/app.js
 // === 1. IMPORTY MODUŁÓW ===
 import { state } from './state.js';
 import dataStore from './dataStore.js';
@@ -9,7 +10,6 @@ import {
     renderDayDetailsScreen,
     renderLibraryScreen,
     renderTrainingScreen,
-    renderHelpScreen,
     navigateTo,
     showLoader,
     hideLoader,
@@ -22,30 +22,24 @@ import { loadVoices } from './tts.js';
 import { initializeCastApi, getIsCasting, sendShowIdle } from './cast.js';
 import { getSessionBackup, clearSessionBackup, calculateTimeGap, formatTimeGap } from './sessionRecovery.js';
 import { renderSessionRecoveryModal } from './ui/modals.js';
+import { shouldSynchronizePlan } from './utils.js';
 
 
 // === 2. POMOCNICZE FUNKCJE NAWIGACJI ===
 
-/**
- * Sprawdza, czy można bezpiecznie opuścić obecny ekran.
- * Jeśli użytkownik jest na ekranie podsumowania (niezapisany trening),
- * pyta o potwierdzenie i czyści backup w razie zgody.
- */
 function checkUnsavedSummaryNavigation() {
     const summaryScreen = document.getElementById('summary-screen');
-    // Sprawdzamy czy ekran podsumowania jest aktywny
     if (summaryScreen && summaryScreen.classList.contains('active')) {
         const confirmed = confirm("Twoja sesja nie została zapisana. Czy na pewno chcesz wyjść? Dane tego treningu zostaną bezpowrotnie utracone.");
         if (confirmed) {
-            clearSessionBackup(); // Użytkownik świadomie porzuca sesję -> czyścimy backup
-            return true; // Pozwalamy na nawigację
+            clearSessionBackup();
+            return true;
         }
-        return false; // Blokujemy nawigację
+        return false;
     }
-    return true; // Inny ekran, droga wolna
+    return true;
 }
 
-// Funkcja wyświetlająca powiadomienie o aktualizacji PWA
 function showUpdateNotification(worker) {
     const notification = document.createElement('div');
     notification.className = 'update-notification';
@@ -55,9 +49,7 @@ function showUpdateNotification(worker) {
             <button id="reload-btn">Odśwież</button>
         </div>
     `;
-
     document.body.appendChild(notification);
-
     document.getElementById('reload-btn').addEventListener('click', () => {
         worker.postMessage({ type: 'SKIP_WAITING' });
     });
@@ -69,7 +61,6 @@ function showUpdateNotification(worker) {
 function initAppLogic() {
     renderTrainingScreen();
 
-    // Obsługa kliknięcia w logo/nazwę aplikacji
     const brandContainer = document.querySelector('.brand-container');
     if (brandContainer) {
         brandContainer.addEventListener('click', () => {
@@ -103,16 +94,7 @@ function initAppLogic() {
     if (bottomNav) {
         bottomNav.addEventListener('click', (e) => {
             const button = e.target.closest('.bottom-nav-btn');
-            if (!button) return;
-
-            // Sprawdzamy czy to nie jest ten sam ekran (opcjonalna optymalizacja)
-            // ale ważniejsze: sprawdzamy czy można wyjść z summary
-            if (!checkUnsavedSummaryNavigation()) {
-                // Jeśli użytkownik anulował, musimy upewnić się, że wizualnie
-                // aktywny przycisk na dole nie przeskoczył (jeśli dany framework UI to robi automatycznie).
-                // W Twoim kodzie klasa 'active' jest nadawana poniżej, więc return wystarczy.
-                return;
-            }
+            if (!button || !checkUnsavedSummaryNavigation()) return;
 
             const screen = button.dataset.screen;
             bottomNav.querySelectorAll('.bottom-nav-btn').forEach(btn => btn.classList.remove('active'));
@@ -136,39 +118,47 @@ function initAppLogic() {
     const searchInput = document.getElementById('library-search-input');
     if (searchInput) searchInput.addEventListener('input', (e) => { renderLibraryScreen(e.target.value); });
 
-    const settingsForm = document.getElementById('settings-form');
-    if (settingsForm) settingsForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        state.settings.appStartDate = e.target['setting-start-date'].value;
-
-        if (e.target['setting-training-plan']) {
-            state.settings.activePlanId = e.target['setting-training-plan'].value;
-        }
-
-        const ttsCheckbox = e.target.querySelector('#setting-tts');
-        if (ttsCheckbox) {
-            state.settings.ttsEnabled = ttsCheckbox.checked;
-            state.tts.isSoundOn = state.settings.ttsEnabled;
-        }
-
-        await dataStore.saveSettings();
-        alert('Ustawienia zostały zapisane.');
-        navigateTo('main');
-        renderMainScreen();
-    });
-
-    const deleteAccountBtn = document.getElementById('delete-account-btn');
-    if (deleteAccountBtn) deleteAccountBtn.addEventListener('click', async () => { const confirmation1 = prompt("Czy na pewno chcesz usunąć swoje konto? Wpisz 'usuń moje konto' aby potwierdzić."); if (confirmation1 !== 'usuń moje konto') return; if (!confirm("OSTATECZNE POTWIERDZENIE: Dane zostaną trwale usunięte.")) return; showLoader(); try { await dataStore.deleteAccount(); hideLoader(); alert("Konto usunięte."); logout(); } catch (error) { hideLoader(); alert(error.message); } });
-
     if (screens.training) {
         screens.training.addEventListener('click', (e) => {
             const target = e.target;
+            const skipBtn = document.getElementById('skip-btn');
+
+            if (skipBtn && skipBtn.classList.contains('confirm-state') && !target.closest('#skip-btn')) {
+                skipBtn.classList.remove('confirm-state');
+            }
+
             if (target.closest('#exit-training-btn')) { if (confirm('Przerwać trening?')) { stopTimer(); stopStopwatch(); if (state.tts.isSupported) state.tts.synth.cancel(); if (getIsCasting()) sendShowIdle(); clearSessionBackup(); state.currentTrainingDate = null; state.sessionLog = []; state.isPaused = false; navigateTo('main'); renderMainScreen(); } return; }
-            if (target.closest('#tts-toggle-btn')) { state.tts.isSoundOn = !state.tts.isSoundOn; const icon = document.getElementById('tts-icon'); if (icon) icon.src = state.tts.isSoundOn ? '/icons/sound-on.svg' : '/icons/sound-off.svg'; if (!state.tts.isSoundOn && state.tts.isSupported) state.tts.synth.cancel(); return; }
+
+            // --- ZMIANA DLA TTS TOGGLE (SPRITE SUPPORT) ---
+            const ttsBtn = target.closest('#tts-toggle-btn');
+            if (ttsBtn) {
+                state.tts.isSoundOn = !state.tts.isSoundOn;
+                const iconUse = document.getElementById('tts-icon').querySelector('use');
+                if (iconUse) {
+                    iconUse.setAttribute('href', state.tts.isSoundOn ? '#icon-sound-on' : '#icon-sound-off');
+                }
+                if (!state.tts.isSoundOn && state.tts.isSupported) state.tts.synth.cancel();
+                return;
+            }
+
             if (target.closest('#prev-step-btn')) { moveToPreviousExercise(); return; }
             if (target.closest('#pause-resume-btn')) { togglePauseTimer(); return; }
-            if (target.closest('#skip-btn')) { moveToNextExercise({ skipped: true }); return; }
-            if (target.closest('#rep-based-done-btn')) { moveToNextExercise({ skipped: false }); return; }
+
+            const skipTarget = target.closest('#skip-btn');
+            if (skipTarget) {
+                if (skipTarget.classList.contains('confirm-state')) {
+                    skipTarget.classList.remove('confirm-state');
+                    moveToNextExercise({ skipped: true });
+                } else {
+                    skipTarget.classList.add('confirm-state');
+                }
+                return;
+            }
+
+            if (target.closest('#rep-based-done-btn')) {
+                moveToNextExercise({ skipped: false });
+                return;
+            }
         });
     }
     if (state.tts.isSupported) { loadVoices(); if (speechSynthesis.onvoiceschanged !== undefined) speechSynthesis.onvoiceschanged = loadVoices; }
@@ -179,19 +169,17 @@ function initAppLogic() {
 function checkAndMigrateLocalData() {
     const localProgressRaw = localStorage.getItem('trainingAppProgress');
     if (!localProgressRaw) return;
-
     try {
         const parsedData = JSON.parse(localProgressRaw);
         if (Object.keys(parsedData).length > 0) {
             setTimeout(() => {
                 if (confirm("Wykryliśmy dane lokalne. Przenieść na konto?")) {
                     showLoader();
-                    dataStore.migrateData(parsedData).then(() => { localStorage.removeItem('trainingAppProgress'); localStorage.removeItem('trainingAppSettings'); alert("Zmigrowano! Przeładowanie..."); window.location.reload(); }).catch(e => { hideLoader(); alert("Błąd migracji: " + e.message); });
+                    dataStore.migrateData(parsedData).then(() => { localStorage.removeItem('trainingAppProgress'); localStorage.removeItem('trainingAppSettings'); alert("Zmigrowano!"); window.location.reload(); }).catch(e => { hideLoader(); alert("Błąd migracji."); });
                 }
             }, 1000);
         }
     } catch (e) {
-        console.error("Błąd parsowania lokalnych danych:", e);
         localStorage.removeItem('trainingAppProgress');
     }
 }
@@ -217,8 +205,6 @@ export async function main() {
             window.history.replaceState({}, document.title, "/");
         }
 
-        // --- FIX KOLEJNOŚCI ŁADOWANIA (RACE CONDITION) ---
-        // Najpierw sprawdzamy autoryzację, aby wiedzieć czy pobierać content spersonalizowany
         const isAuth = await isAuthenticated();
 
         if (isAuth) {
@@ -227,28 +213,48 @@ export async function main() {
             if (userInfoContainer) userInfoContainer.classList.remove('hidden');
             if (mainNav) mainNav.classList.remove('hidden');
 
-            await getToken(); // Upewniamy się, że mamy token przed pobraniem treści
+            await getToken();
             const profile = getUserProfile();
             const nameEl = document.getElementById('user-display-name');
             if (nameEl) nameEl.textContent = profile.name || profile.email || 'Użytkownik';
 
-            // --- POBIERANIE TREŚCI (TERAZ Z GWARANCJĄ TOKENA) ---
-            // Backend otrzyma token i przefiltruje ćwiczenia (np. isAllowed: false dla kontuzji)
             await dataStore.loadAppContent();
-
             initAppLogic();
 
             try {
                 localStorage.removeItem('cachedUserStats');
-                
-                // --- POBIERANIE USTAWIEŃ UŻYTKOWNIKA ---
-                // Tutaj pobieramy wizardData (restrykcje), które frontendowy generator też używa
-                await dataStore.initialize(); 
-                
+                await dataStore.initialize();
                 state.isAppInitialized = true;
 
                 if (bottomNav) bottomNav.classList.remove('hidden');
                 hideLoader();
+
+                const wizardData = state.settings.wizardData;
+                const hasWizardData = wizardData && Object.keys(wizardData).length > 0;
+
+                if (hasWizardData) {
+                    const syncStatus = shouldSynchronizePlan(state.settings.dynamicPlanData);
+
+                    if (syncStatus.needed) {
+                        console.log(`[App] Sync needed: ${syncStatus.reason}`);
+                        if (syncStatus.reason === 'missing_today') {
+                            showLoader();
+                            try {
+                                await dataStore.generateDynamicPlan(wizardData);
+                                console.log("[App] Critical Plan generated.");
+                            } catch (e) {
+                                console.error("[App] Critical Sync Failed:", e);
+                            } finally {
+                                hideLoader();
+                            }
+                        } else {
+                            dataStore.generateDynamicPlan(wizardData)
+                                .then(() => console.log("[App] Background Sync complete."))
+                                .catch(e => console.warn("[App] Background Sync failed:", e));
+                        }
+                    }
+                }
+
                 renderMainScreen(true);
 
                 await dataStore.loadRecentHistory(90);
@@ -266,40 +272,27 @@ export async function main() {
                         const backup = getSessionBackup();
                         if (backup) {
                             const timeGap = calculateTimeGap(backup);
-                            const timeGapFormatted = formatTimeGap(timeGap);
-
                             renderSessionRecoveryModal(
                                 backup,
-                                timeGapFormatted,
-                                () => {
-                                    resumeFromBackup(backup, timeGap);
-                                },
-                                () => {
-                                    clearSessionBackup();
-                                    renderMainScreen(false);
-                                }
+                                formatTimeGap(timeGap),
+                                () => resumeFromBackup(backup, timeGap),
+                                () => { clearSessionBackup(); renderMainScreen(false); }
                             );
-                        } else {
-                            renderMainScreen(false);
-                        }
+                        } else renderMainScreen(false);
                     }
                 }
 
                 checkAndMigrateLocalData();
                 await dataStore.fetchDetailedStats();
                 const mainScreen = document.getElementById('main-screen');
-                if (mainScreen && mainScreen.classList.contains('active')) {
-                    renderMainScreen(false);
-                }
+                if (mainScreen && mainScreen.classList.contains('active')) renderMainScreen(false);
             } catch (initError) {
-                console.error("Błąd inicjalizacji:", initError);
                 hideLoader();
+                console.error(initError);
             }
 
         } else {
-            // Jeśli nie ma autoryzacji, pobieramy wersję publiczną (bez personalizacji)
             await dataStore.loadAppContent();
-            
             document.getElementById('welcome-screen').classList.remove('hidden');
             document.querySelector('main').classList.add('hidden');
             if (userInfoContainer) userInfoContainer.classList.add('hidden');
@@ -308,8 +301,8 @@ export async function main() {
             hideLoader();
         }
     } catch (error) {
-        console.error("Błąd startu:", error);
         hideLoader();
+        console.error(error);
     }
 }
 
@@ -319,30 +312,18 @@ if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('/service-worker.js')
             .then(registration => {
-                console.log('SW OK:', registration.scope);
-
-                if (registration.waiting) {
-                    showUpdateNotification(registration.waiting);
-                    return;
-                }
-
+                if (registration.waiting) showUpdateNotification(registration.waiting);
                 registration.addEventListener('updatefound', () => {
                     const newWorker = registration.installing;
                     newWorker.addEventListener('statechange', () => {
-                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                            showUpdateNotification(newWorker);
-                        }
+                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) showUpdateNotification(newWorker);
                     });
                 });
-            })
-            .catch(err => console.error('SW Fail:', err));
+            });
 
         let refreshing = false;
         navigator.serviceWorker.addEventListener('controllerchange', () => {
-            if (!refreshing) {
-                window.location.reload();
-                refreshing = true;
-            }
+            if (!refreshing) { window.location.reload(); refreshing = true; }
         });
     });
 }

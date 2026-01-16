@@ -1,8 +1,11 @@
-// dataStore.js
-
 import { state } from './state.js';
 import { getToken, getUserPayload } from './auth.js';
 import { getISODate } from './utils.js';
+
+const SCORE_LIKE = 15;
+const SCORE_DISLIKE = -30;
+const SCORE_MAX = 100;
+const SCORE_MIN = -100;
 
 const callAPI = async (endpoint, { body, method = 'GET', params } = {}) => {
     const token = await getToken();
@@ -39,49 +42,90 @@ const dataStore = {
             const token = await getToken();
             const headers = { 'Content-Type': 'application/json' };
             if (token) headers['Authorization'] = `Bearer ${token}`;
-            
+
             const response = await fetch('/.netlify/functions/get-app-content', { headers });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            
+
             const data = await response.json();
             state.exerciseLibrary = data.exercises || {};
-            state.trainingPlans = data.training_plans || {};
-            
-            // --- DIAGNOSTYKA WHITE-LIST PATTERN ---
+
             const total = Object.keys(state.exerciseLibrary).length;
             const blocked = Object.values(state.exerciseLibrary).filter(ex => ex.isAllowed === false).length;
             const allowed = total - blocked;
-            
-            console.log(token 
-                ? `📦 Zasoby PERSONALIZOWANE: ${allowed} dostępnych, ${blocked} zablokowanych (Sprzęt/Zdrowie).` 
-                : '📦 Zasoby PUBLICZNE załadowane (Brak personalizacji).');
-                
+
+            console.log(token
+                ? `📦 Zasoby PERSONALIZOWANE: ${allowed} dostępnych, ${blocked} zablokowanych.`
+                : '📦 Zasoby PUBLICZNE załadowane.');
+
         } catch (error) {
             console.error("Critical: Failed to load app content:", error);
         }
     },
 
+    fetchExerciseAnimation: async (exerciseId) => {
+        if (!exerciseId) return null;
+        if (state.animationCache.has(exerciseId)) {
+            return state.animationCache.get(exerciseId);
+        }
+        try {
+            const result = await callAPI('get-exercise-animation', { params: { id: exerciseId } });
+            if (result && result.svg) {
+                state.animationCache.set(exerciseId, result.svg);
+                return result.svg;
+            }
+        } catch (e) {
+            console.error(`Błąd pobierania animacji dla ${exerciseId}:`, e);
+        }
+        return null;
+    },
+
     initialize: async () => {
         try {
-            const [data, preferences] = await Promise.all([
-                callAPI('get-or-create-user-data'),
-                callAPI('get-user-preferences').catch(e => ({}))
-            ]);
-            state.userPreferences = preferences || {};
+            console.time("Bootstrap");
+            const data = await callAPI('get-or-create-user-data');
+            console.timeEnd("Bootstrap");
+
             if (!state.userProgress) state.userProgress = {};
+
             if (data.settings) {
                 state.settings = { ...state.settings, ...data.settings };
-                state.tts.isSoundOn = state.settings.ttsEnabled ?? true;
-                if (!state.settings.planMode) {
-                    if (state.settings.dynamicPlanData && state.settings.dynamicPlanData.days) state.settings.planMode = 'dynamic';
-                    else state.settings.planMode = 'static';
+                if (typeof state.settings.restTimeFactor !== 'number') {
+                    state.settings.restTimeFactor = 1.0;
                 }
+                state.tts.isSoundOn = state.settings.ttsEnabled ?? true;
+                state.settings.planMode = 'dynamic';
             }
+
+            if (data.exercisePace) {
+                state.exercisePace = data.exercisePace;
+                console.log("⏱️ Adaptive Pacing: Loaded stats for", Object.keys(data.exercisePace).length, "exercises.");
+            }
+
             if (data.integrations) state.stravaIntegration.isConnected = !!data.integrations.isStravaConnected;
+
+            if (data.userPreferences) {
+                state.userPreferences = data.userPreferences;
+            } else {
+                state.userPreferences = {};
+            }
+
+            if (data.blacklist) {
+                state.blacklist = data.blacklist;
+            } else {
+                state.blacklist = [];
+            }
+
+            if (data.overrides) {
+                state.overrides = data.overrides;
+            } else {
+                state.overrides = {};
+            }
+
             const cachedStats = localStorage.getItem('cachedUserStats');
             if (cachedStats) {
                 try { state.userStats = JSON.parse(cachedStats); } catch (e) { state.userStats = { totalSessions: 0, streak: 0, resilience: null }; }
             } else { state.userStats = { totalSessions: 0, streak: 0, resilience: null }; }
+
             if (data.recentSessions) {
                 data.recentSessions.forEach(session => {
                     const dateKey = getISODate(new Date(session.completedAt));
@@ -90,18 +134,24 @@ const dataStore = {
                     if (!exists) state.userProgress[dateKey].push(session);
                 });
             }
-            await dataStore.fetchBlacklist();
+
             return data;
         } catch (error) { console.error("Initialization failed:", error); throw error; }
     },
 
     generateDynamicPlan: async (q) => {
-        const result = await callAPI('generate-plan', { method: 'POST', body: q });
+        const payload = {
+            ...q,
+            secondsPerRep: state.settings.secondsPerRep || 6,
+            restTimeFactor: state.settings.restTimeFactor || 1.0
+        };
+
+        const result = await callAPI('generate-plan', { method: 'POST', body: payload });
         if (result && result.plan) {
             state.settings.dynamicPlanData = result.plan;
             state.settings.planMode = 'dynamic';
             state.settings.onboardingCompleted = true;
-            state.settings.wizardData = q;
+            state.settings.wizardData = { ...state.settings.wizardData, ...q };
             return result;
         } else throw new Error("Pusta odpowiedź z generatora.");
     },
@@ -115,15 +165,6 @@ const dataStore = {
         } catch (error) { return null; }
     },
 
-    fetchMasteryStats: async (force = false) => {
-        if (!force && state.masteryStats && state.masteryStats.length > 0) return state.masteryStats;
-        try {
-            const stats = await callAPI('get-exercise-mastery');
-            state.masteryStats = stats || [];
-            return stats;
-        } catch (error) { return []; }
-    },
-
     fetchUserPreferences: async () => {
         try {
             const preferences = await callAPI('get-user-preferences');
@@ -134,7 +175,7 @@ const dataStore = {
 
     saveSettings: async () => { await callAPI('save-settings', { method: 'PUT', body: state.settings }); },
     deleteAccount: async () => { await callAPI('delete-user-data', { method: 'DELETE' }); },
-    fetchBlacklist: async () => { const ids = await callAPI('manage-blacklist'); state.blacklist = ids || []; },
+    
     addToBlacklist: async (eid, rid) => { await callAPI('manage-blacklist', { method: 'POST', body: { exerciseId: eid, replacementId: rid } }); if (!state.blacklist.includes(eid)) state.blacklist.push(eid); },
     removeFromBlacklist: async (eid) => { await callAPI('manage-blacklist', { method: 'DELETE', body: { exerciseId: eid } }); state.blacklist = state.blacklist.filter(id => id !== eid); },
 
@@ -169,20 +210,12 @@ const dataStore = {
     saveSession: async (sessionData) => {
         const result = await callAPI('save-session', { method: 'POST', body: sessionData });
         state.loadedMonths.clear();
-        state.masteryStats = null;
-        if (sessionData.exerciseRatings && sessionData.exerciseRatings.length > 0) {
-            sessionData.exerciseRatings.forEach(rating => {
-                const id = rating.exerciseId;
-                if (!state.userPreferences[id]) state.userPreferences[id] = { score: 0, difficulty: 0 };
-                let delta = 0;
-                if (rating.action === 'like') delta = 20; else if (rating.action === 'dislike') delta = -20;
-                else if (rating.action === 'hard') delta = -10; else if (rating.action === 'easy') delta = -5;
-                state.userPreferences[id].score = Math.max(-100, Math.min(100, state.userPreferences[id].score + delta));
-                if (rating.action === 'hard') state.userPreferences[id].difficulty = 1;
-                else if (rating.action === 'easy') state.userPreferences[id].difficulty = -1;
-            });
-        }
+        // Removed masteryStats invalidation as functionality is removed
         return result;
+    },
+
+    recalculateStats: async () => {
+        return await callAPI('recalculate-stats', { method: 'POST' });
     },
 
     deleteSession: async (sid) => { await callAPI('delete-session', { method: 'DELETE', params: { sessionId: sid } }); state.loadedMonths.clear(); },
@@ -193,24 +226,33 @@ const dataStore = {
 
     updatePreference: async (exerciseId, action, value = null) => {
         if (!state.userPreferences[exerciseId]) state.userPreferences[exerciseId] = { score: 0, difficulty: 0 };
-        
+
         if (action === 'set') {
             state.userPreferences[exerciseId].score = value;
         } else if (action === 'set_difficulty') {
             state.userPreferences[exerciseId].difficulty = value;
+        } else if (action === 'reset_difficulty') {
+            state.userPreferences[exerciseId].difficulty = 0;
         } else {
-            let delta = 0;
-            if (action === 'like') delta = 20; else if (action === 'dislike') delta = -20;
-            else if (action === 'hard') { delta = -10; state.userPreferences[exerciseId].difficulty = 1; }
-            else if (action === 'easy') { delta = -5; state.userPreferences[exerciseId].difficulty = -1; }
-            state.userPreferences[exerciseId].score += delta;
+            let current = state.userPreferences[exerciseId].score || 0;
+            if (action === 'like') {
+                current += SCORE_LIKE;
+            } else if (action === 'dislike') {
+                current += SCORE_DISLIKE;
+            }
+            state.userPreferences[exerciseId].score = Math.max(SCORE_MIN, Math.min(SCORE_MAX, current));
+
+            if (action === 'hard') state.userPreferences[exerciseId].difficulty = 1;
+            else if (action === 'easy') state.userPreferences[exerciseId].difficulty = -1;
         }
+
+        state.userPreferences[exerciseId].updatedAt = new Date().toISOString();
 
         try {
             const res = await callAPI('update-preference', { method: 'POST', body: { exerciseId, action, value } });
             if (res) {
-                state.userPreferences[exerciseId].score = res.newScore;
-                state.userPreferences[exerciseId].difficulty = res.newDifficulty;
+                if (res.newScore !== undefined) state.userPreferences[exerciseId].score = res.newScore;
+                if (res.newDifficulty !== undefined) state.userPreferences[exerciseId].difficulty = res.newDifficulty;
             }
             return res;
         } catch (error) { console.error("Update pref failed:", error); }

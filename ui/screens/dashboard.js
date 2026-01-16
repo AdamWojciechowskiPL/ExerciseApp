@@ -1,65 +1,324 @@
-// js/ui/screens/dashboard.js
+// ExerciseApp/ui/screens/dashboard.js
 import { state } from '../../state.js';
 import { containers } from '../../dom.js';
-import { getActiveTrainingPlan, getHydratedDay, getISODate, isTodayRestDay, getNextLogicalDay, getTrainingDayForDate } from '../../utils.js';
+import { getHydratedDay, getISODate, calculateSmartDuration, calculateSystemLoad } from '../../utils.js';
 import { getIsCasting, sendUserStats } from '../../cast.js';
 import { getGamificationState } from '../../gamification.js';
 import { assistant } from '../../assistantEngine.js';
-import { navigateTo } from '../core.js';
-import { generateHeroDashboardHTML, generateMissionCardHTML, generateCompletedMissionCardHTML, generateSkeletonDashboardHTML } from '../templates.js';
+import { navigateTo, showLoader, hideLoader } from '../core.js';
+import {
+    generateHeroDashboardHTML,
+    generateCalendarPageHTML,
+    generateRestCalendarPageHTML,
+    generateCompletedMissionCardHTML,
+    generateSkeletonDashboardHTML
+} from '../templates.js';
 import { renderPreTrainingScreen, renderProtocolStart } from './training.js';
 import { renderDayDetailsScreen } from './history.js';
-import { workoutMixer } from '../../workoutMixer.js';
-import { getUserPayload } from '../../auth.js';
 import { generateBioProtocol } from '../../protocolGenerator.js';
+import { renderMoveDayModal } from '../modals.js';
+import dataStore from '../../dataStore.js';
+import { initWizard } from '../wizard.js';
 
 // --- POMOCNICZE FUNKCJE STORAGE ---
 
-const getStorageKey = () => {
-    const user = getUserPayload();
-    const userId = user ? user.sub : 'anon';
-    const date = getISODate(new Date());
-    return `dynamic_plan_${userId}_${date}`;
-};
+const getStorageKey = (date) => `todays_plan_cache_${date}`;
 
-const savePlanToStorage = (plan) => {
-    try {
-        localStorage.setItem(getStorageKey(), JSON.stringify(plan));
-    } catch (e) { console.error("Błąd zapisu planu:", e); }
+const savePlanToStorage = (plan, date) => {
+    try { localStorage.setItem(getStorageKey(date), JSON.stringify(plan)); } catch (e) { console.error("Błąd zapisu planu:", e); }
 };
 
 export const clearPlanFromStorage = () => {
+    const today = getISODate(new Date());
     try {
-        localStorage.removeItem(getStorageKey());
+        localStorage.removeItem(getStorageKey(today));
         state.todaysDynamicPlan = null;
     } catch (e) { console.error("Błąd czyszczenia planu:", e); }
 };
 
-const loadPlanFromStorage = () => {
+// --- LOGIKA MODYFIKACJI PLANU ---
+
+const savePlanToDB = async (planData) => {
+    state.settings.dynamicPlanData = planData;
     try {
-        const raw = localStorage.getItem(getStorageKey());
-        return raw ? JSON.parse(raw) : null;
-    } catch (e) { return null; }
+        await dataStore.saveSettings();
+        return true;
+    } catch (e) {
+        console.error("Błąd zapisu planu do DB:", e);
+        alert("Nie udało się zapisać zmian w chmurze. Spróbuj ponownie.");
+        return false;
+    }
 };
 
-const getDynamicDayFromSettings = (dayIndex) => {
-    const dynamicPlan = state.settings.dynamicPlanData;
-    if (!dynamicPlan || !dynamicPlan.days) return null;
+const handleTurnToRest = async (dayDateISO) => {
+    if (!confirm("Czy na pewno chcesz anulować ten trening i zamienić go na dzień regeneracji?")) return;
 
-    const planLength = dynamicPlan.days.length;
-    const arrayIndex = (dayIndex - 1) % planLength;
+    showLoader();
+    const plan = JSON.parse(JSON.stringify(state.settings.dynamicPlanData));
+    const dayIndex = plan.days.findIndex(d => d.date === dayDateISO);
 
-    return dynamicPlan.days[arrayIndex];
+    if (dayIndex > -1) {
+        plan.days[dayIndex].type = 'rest';
+        plan.days[dayIndex].title = 'Regeneracja (Manualnie)';
+        plan.days[dayIndex].warmup = [];
+        plan.days[dayIndex].main = [];
+        plan.days[dayIndex].cooldown = [];
+        delete plan.days[dayIndex].estimatedDurationMin;
+
+        const success = await savePlanToDB(plan);
+        if (success) {
+            clearPlanFromStorage();
+            setTimeout(async () => {
+                if (confirm("Zmodyfikowałeś ten dzień. Czy chcesz przeliczyć pozostałe dni planu?")) {
+                    showLoader();
+                    const payload = JSON.parse(JSON.stringify(state.settings.wizardData || {}));
+                    if (!payload.forced_rest_dates) payload.forced_rest_dates = [];
+                    if (!payload.forced_rest_dates.includes(dayDateISO)) {
+                        payload.forced_rest_dates.push(dayDateISO);
+                    }
+                    await dataStore.generateDynamicPlan(payload);
+                }
+                hideLoader();
+                renderMainScreen(false);
+            }, 100);
+        } else {
+            hideLoader();
+        }
+    } else {
+        hideLoader();
+    }
 };
 
-const getPlanDaysArray = (plan) => {
-    if (!plan) return [];
-    return plan.Days || plan.days || [];
+const handleMoveDay = (sourceDateISO) => {
+    const plan = state.settings.dynamicPlanData;
+    const todayISO = getISODate(new Date());
+
+    const availableTargets = plan.days.filter(d =>
+        d.type === 'rest' &&
+        d.date !== sourceDateISO &&
+        d.date >= todayISO
+    );
+
+    if (availableTargets.length === 0) {
+        alert("Brak wolnych dni w bieżącym cyklu (od dzisiaj w górę), na które można przenieść trening.");
+        return;
+    }
+
+    renderMoveDayModal(availableTargets, async (targetDateISO) => {
+        showLoader();
+        const newPlan = JSON.parse(JSON.stringify(plan));
+        const sourceIndex = newPlan.days.findIndex(d => d.date === sourceDateISO);
+        const targetIndex = newPlan.days.findIndex(d => d.date === targetDateISO);
+
+        if (sourceIndex > -1 && targetIndex > -1) {
+            const sourceDayContent = newPlan.days[sourceIndex];
+            const targetDayContent = newPlan.days[targetIndex];
+
+            const tempSourceContent = { ...sourceDayContent };
+            delete tempSourceContent.date;
+            delete tempSourceContent.dayNumber;
+
+            const tempTargetContent = { ...targetDayContent };
+            delete tempTargetContent.date;
+            delete tempTargetContent.dayNumber;
+
+            Object.assign(newPlan.days[targetIndex], tempSourceContent);
+            Object.assign(newPlan.days[sourceIndex], tempTargetContent);
+
+            const success = await savePlanToDB(newPlan);
+            if (success) {
+                clearPlanFromStorage();
+                setTimeout(async () => {
+                    if (confirm("Trening został przeniesiony. Czy chcesz przeliczyć pozostałe dni planu?")) {
+                        showLoader();
+                        await dataStore.generateDynamicPlan(state.settings.wizardData);
+                    }
+                    hideLoader();
+                    renderMainScreen(false);
+                }, 100);
+            } else {
+                hideLoader();
+            }
+        } else {
+            hideLoader();
+        }
+    });
 };
+
+const handleResetPlan = async () => {
+    if (!confirm("Czy na pewno chcesz zresetować wszystkie manualne zmiany i wygenerować plan na nowo?")) return;
+    showLoader();
+    try {
+        const cleanPayload = { ...state.settings.wizardData };
+        if (cleanPayload.forced_rest_dates) {
+            cleanPayload.forced_rest_dates = [];
+        }
+
+        await dataStore.generateDynamicPlan(cleanPayload);
+        clearPlanFromStorage();
+        hideLoader();
+        renderMainScreen(false);
+    } catch (e) {
+        hideLoader();
+        alert("Błąd resetowania planu: " + e.message);
+        renderMainScreen(false);
+    }
+};
+
+// --- GLOBAL CONTEXT MENU MANAGER ---
+
+let globalMenu = null;
+
+const createGlobalMenu = () => {
+    if (globalMenu) return globalMenu;
+    globalMenu = document.createElement('div');
+    globalMenu.className = 'global-ctx-menu';
+    document.body.appendChild(globalMenu);
+
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.global-ctx-menu') && !e.target.closest('.ctx-menu-btn')) {
+            closeGlobalMenu();
+        }
+    });
+
+    globalMenu.addEventListener('click', (e) => {
+        const actionBtn = e.target.closest('.ctx-action');
+        if (actionBtn) {
+            e.stopPropagation();
+            const action = actionBtn.dataset.action;
+            const date = actionBtn.dataset.date;
+            const dayId = actionBtn.dataset.dayId;
+
+            closeGlobalMenu();
+
+            if (action === 'preview') {
+                renderPreTrainingScreen(parseInt(dayId, 10), 3, true);
+            }
+            if (action === 'rest') handleTurnToRest(date);
+            if (action === 'move') handleMoveDay(date);
+            if (action === 'reset') handleResetPlan();
+        }
+    });
+
+    return globalMenu;
+};
+
+const openGlobalMenu = (targetElement, dateISO, isRest, dayNumber) => {
+    const menu = createGlobalMenu();
+
+    let content = '';
+    if (!isRest) {
+        content += `<button class="ctx-action" data-action="preview" data-day-id="${dayNumber}">
+            <svg width="18" height="18"><use href="#icon-eye"/></svg>
+            <span>👁️ Podgląd</span>
+        </button>`;
+        content += `<button class="ctx-action" data-action="rest" data-date="${dateISO}">
+            <svg width="18" height="18"><use href="#icon-rest-coffee"/></svg>
+            <span>Zmień na Wolne</span>
+        </button>`;
+        content += `<button class="ctx-action" data-action="move" data-date="${dateISO}">
+            <svg width="18" height="18"><use href="#icon-calendar-move"/></svg>
+            <span>Przenieś...</span>
+        </button>`;
+    }
+    content += `<button class="ctx-action" data-action="reset">
+        <svg width="18" height="18"><use href="#icon-reset-ccw"/></svg>
+        <span>Resetuj Plan</span>
+    </button>`;
+
+    menu.innerHTML = content;
+
+    const rect = targetElement.getBoundingClientRect();
+    const menuWidth = 200;
+
+    let left = rect.right - menuWidth; // Domyślnie do lewej od elementu
+    // Jeśli element jest szeroki (np. strip-day), centrujemy lub dajemy pod palcem
+    if (rect.width > 100) {
+        left = rect.left + (rect.width / 2) - (menuWidth / 2);
+    }
+
+    if (left < 10) left = 10;
+    if (left + menuWidth > window.innerWidth) {
+        left = window.innerWidth - menuWidth - 10;
+    }
+
+    let top = rect.bottom + 5;
+    if (top + 200 > window.innerHeight) {
+        top = rect.top - 5 - menu.offsetHeight;
+    }
+
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+    menu.classList.add('active');
+};
+
+const closeGlobalMenu = () => {
+    if (globalMenu) globalMenu.classList.remove('active');
+};
+
+// --- ISSUE #14: LONG PRESS LOGIC ---
+function attachLongPressHandlers(element, dataCallback) {
+    let timer = null;
+    let startY = 0;
+    const LONG_PRESS_DURATION = 600; // ms
+
+    element.addEventListener('touchstart', (e) => {
+        startY = e.touches[0].clientY;
+        timer = setTimeout(() => {
+            if (navigator.vibrate) navigator.vibrate(50);
+            
+            // Oznaczamy element, że został na nim wywołany long press
+            // Pozwoli to zablokować zwykły click
+            element.dataset.longPressTriggered = "true";
+            
+            const data = dataCallback();
+            openGlobalMenu(element, data.date, data.isRest, data.dayId);
+        }, LONG_PRESS_DURATION);
+    }, { passive: true });
+
+    element.addEventListener('touchmove', (e) => {
+        const moveY = e.touches[0].clientY;
+        if (Math.abs(moveY - startY) > 10) {
+            clearTimeout(timer); // Anuluj jeśli scrolluje
+        }
+    }, { passive: true });
+
+    element.addEventListener('touchend', () => {
+        clearTimeout(timer);
+        // Czyścimy flagę z małym opóźnieniem, żeby event click zdążył ją sprawdzić
+        setTimeout(() => {
+            delete element.dataset.longPressTriggered;
+        }, 100);
+    });
+    
+    // Blokada menu kontekstowego przeglądarki
+    element.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+    });
+}
 
 // --- GŁÓWNA FUNKCJA RENDERUJĄCA ---
 
-export const renderMainScreen = (isLoading = false) => {
+export const renderMainScreen = async (isLoading = false) => {
+    // Listener delegowany dla PRZYCISKÓW menu (trzy kropki) - obsługa Desktop/Click
+    if (!containers.days._hasDashboardListeners) {
+        containers.days.addEventListener('click', (e) => {
+            const btn = e.target.closest('.ctx-menu-btn');
+            if (btn) {
+                e.stopPropagation();
+                e.preventDefault();
+
+                const date = btn.dataset.date;
+                const isRest = btn.dataset.isRest === 'true';
+                const dayId = btn.dataset.dayId;
+
+                openGlobalMenu(btn, date, isRest, dayId);
+            }
+        });
+        containers.days._hasDashboardListeners = true;
+    }
 
     if (isLoading) {
         const heroContainer = document.getElementById('hero-dashboard');
@@ -72,32 +331,199 @@ export const renderMainScreen = (isLoading = false) => {
         return;
     }
 
-    const hasDynamicData = state.settings.dynamicPlanData && state.settings.dynamicPlanData.days && state.settings.dynamicPlanData.days.length > 0;
+    const wizardData = state.settings.wizardData;
+    const hasWizardData = wizardData && Object.keys(wizardData).length > 0;
 
-    let isDynamicMode = false;
-
-    if (state.settings.planMode === 'dynamic') {
-        isDynamicMode = true;
-    } else if (state.settings.planMode === 'static') {
-        isDynamicMode = false;
-    } else {
-        isDynamicMode = hasDynamicData;
-    }
-
-    const activePlan = isDynamicMode && hasDynamicData
-        ? state.settings.dynamicPlanData
-        : getActiveTrainingPlan();
-
-    if (!activePlan) {
-        containers.days.innerHTML = '<p style="padding:2rem; text-align:center;">Brak aktywnego planu. Sprawdź ustawienia.</p>';
+    if (!hasWizardData) {
+        containers.days.innerHTML = `
+            <div style="text-align:center; padding: 3rem 1rem;">
+                <h3>Witaj w Virtual Physio</h3>
+                <p>Nie mamy Twoich danych. Wypełnij ankietę, aby wygenerować program.</p>
+                <button id="start-wizard-btn" class="action-btn" style="margin-top:1rem;">Uruchom Kreatora</button>
+            </div>
+        `;
+        document.getElementById('start-wizard-btn').addEventListener('click', () => initWizard(true));
+        renderHero();
+        renderBioHub();
         return;
     }
 
-    const currentPlanId = isDynamicMode
-        ? (state.settings.dynamicPlanData.id || 'dynamic')
-        : state.settings.activePlanId;
+    const dynamicPlan = state.settings.dynamicPlanData;
+    const today = new Date();
+    const todayISO = getISODate(today);
 
-    // 1. RENDEROWANIE HERO STATS
+    let todayPlanEntry = null;
+    if (dynamicPlan && dynamicPlan.days) {
+        todayPlanEntry = dynamicPlan.days.find(d => d.date === todayISO);
+    }
+
+    if (!todayPlanEntry) {
+        console.log(`[Dashboard] Brak planu na ${todayISO}. Rolling Update...`);
+        containers.days.innerHTML = generateSkeletonDashboardHTML();
+        try {
+            await dataStore.generateDynamicPlan(wizardData);
+            return renderMainScreen(false);
+        } catch (e) {
+            console.error(e);
+            containers.days.innerHTML = `<div class="error-msg">Błąd aktualizacji planu.</div>`;
+            return;
+        }
+    }
+
+    renderHero();
+    containers.days.innerHTML = '';
+
+    const todaysSessions = state.userProgress[todayISO] || [];
+    const completedSession = todaysSessions.find(s => s.status === 'completed');
+
+    const getMenuBtn = (date, isRest, dayNum) => `
+        <div class="ctx-menu-wrapper" style="position: absolute; top: 10px; right: 10px; z-index: 20;">
+            <button class="ctx-menu-btn"
+                data-date="${date}"
+                data-is-rest="${isRest}"
+                data-day-id="${dayNum}">
+                <svg width="24" height="24"><use href="#icon-dots-vertical"/></svg>
+            </button>
+        </div>
+    `;
+
+    if (completedSession) {
+        const missionWrapper = document.createElement('div');
+        missionWrapper.className = 'mission-card-wrapper';
+        missionWrapper.innerHTML = generateCompletedMissionCardHTML(completedSession);
+        containers.days.appendChild(missionWrapper);
+        clearPlanFromStorage();
+
+        const detailsBtn = missionWrapper.querySelector('.view-details-btn');
+        if (detailsBtn) detailsBtn.addEventListener('click', () => renderDayDetailsScreen(todayISO, () => { navigateTo('main'); renderMainScreen(); }));
+
+    } else if (todayPlanEntry.type === 'rest') {
+        const cardWrapper = document.createElement('div');
+        cardWrapper.style.position = 'relative';
+        cardWrapper.innerHTML = generateRestCalendarPageHTML(today);
+        cardWrapper.insertAdjacentHTML('beforeend', getMenuBtn(todayISO, true, todayPlanEntry.dayNumber));
+        containers.days.appendChild(cardWrapper);
+        clearPlanFromStorage();
+
+        cardWrapper.querySelector('#force-workout-btn').addEventListener('click', () => {
+            try {
+                const recoveryProtocol = generateBioProtocol({
+                    mode: 'reset', 
+                    focusZone: 'full_body',
+                    durationMin: 15,
+                    userContext: state.settings.wizardData || {}
+                });
+                recoveryProtocol.title = "Dodatkowa Regeneracja";
+                recoveryProtocol.description = "Lekka sesja mobilności wygenerowana na żądanie.";
+                renderProtocolStart(recoveryProtocol);
+            } catch (err) {
+                console.error("Błąd generowania recovery:", err);
+                const bioHub = document.querySelector('.bio-hub-container');
+                if (bioHub) bioHub.scrollIntoView({ behavior: 'smooth' });
+            }
+        });
+
+    } else {
+        let finalPlan = getHydratedDay(todayPlanEntry);
+        finalPlan.planId = dynamicPlan.id;
+        state.todaysDynamicPlan = finalPlan;
+        state.currentTrainingDayId = todayPlanEntry.dayNumber;
+        savePlanToStorage(finalPlan, todayISO);
+
+        let estimatedMinutes = calculateSmartDuration(finalPlan);
+
+        const missionWrapper = document.createElement('div');
+        missionWrapper.className = 'mission-card-wrapper';
+        missionWrapper.innerHTML = generateCalendarPageHTML(finalPlan, estimatedMinutes, today, wizardData);
+
+        const cardContainer = missionWrapper.querySelector('.calendar-sheet');
+        if (cardContainer) {
+            cardContainer.style.position = 'relative';
+            cardContainer.insertAdjacentHTML('beforeend', getMenuBtn(todayISO, false, todayPlanEntry.dayNumber));
+        }
+
+        containers.days.appendChild(missionWrapper);
+
+        const cardEl = missionWrapper.querySelector('.calendar-sheet');
+        const startBtn = cardEl.querySelector('#start-mission-btn');
+        const painOptions = cardEl.querySelectorAll('.pain-option');
+
+        painOptions.forEach(opt => {
+            opt.addEventListener('click', () => {
+                painOptions.forEach(o => o.classList.remove('selected'));
+                opt.classList.add('selected');
+                const painLevel = parseInt(opt.dataset.level, 10);
+
+                const checkPlan = assistant.adjustTrainingVolume(finalPlan, painLevel);
+                const isSOS = checkPlan?._modificationInfo?.shouldSuggestSOS;
+
+                const newDuration = calculateSmartDuration(checkPlan);
+                const timeDisplay = document.getElementById('today-duration-display');
+                if (timeDisplay) timeDisplay.textContent = `${newDuration} min`;
+
+                const newLoad = calculateSystemLoad(checkPlan);
+                const loadContainer = cardEl.querySelector('.load-metric-container');
+                if (loadContainer) {
+                    let loadColor = '#4ade80';
+                    let loadLabel = 'Lekki';
+                    if (newLoad > 30) { loadColor = '#facc15'; loadLabel = 'Umiarkowany'; }
+                    if (newLoad > 60) { loadColor = '#fb923c'; loadLabel = 'Wymagający'; }
+                    if (newLoad > 85) { loadColor = '#ef4444'; loadLabel = 'Maksymalny'; }
+
+                    const loadValueSpan = loadContainer.querySelector('span[style*="font-weight:600"]');
+                    if (loadValueSpan) loadValueSpan.textContent = `${newLoad}%`;
+
+                    const loadLabelSpan = loadContainer.querySelector('span > span');
+                    if (loadLabelSpan) {
+                        loadLabelSpan.textContent = loadLabel;
+                        loadLabelSpan.style.color = (loadColor === '#4ade80' ? '#16a34a' : loadColor);
+                    }
+
+                    const barFill = loadContainer.querySelector('div[style*="width:"]');
+                    if (barFill) {
+                        barFill.style.width = `${newLoad}%`;
+                        barFill.style.background = loadColor;
+                    }
+                }
+
+                if (isSOS) {
+                    startBtn.textContent = "🏥 Aktywuj Protokół SOS";
+                    startBtn.style.backgroundColor = "var(--danger-color)";
+                    startBtn.dataset.mode = 'sos';
+                } else {
+                    startBtn.innerHTML = `<div class="btn-content-wrapper"><span class="btn-icon-bg"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg></span><span>Rozpocznij Trening</span></div>`;
+                    startBtn.style.backgroundColor = "";
+                    startBtn.dataset.mode = 'normal';
+                }
+                startBtn.dataset.initialPain = painLevel;
+            });
+        });
+
+        startBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const pain = parseInt(startBtn.dataset.initialPain, 10) || 0;
+            if (startBtn.dataset.mode === 'sos') {
+                if (confirm("Uruchomić bezpieczny Protokół SOS?")) {
+                    const protocol = generateBioProtocol({
+                        mode: 'sos',
+                        focusZone: state.settings.wizardData?.pain_locations?.[0] || 'lumbar_general',
+                        durationMin: 10,
+                        userContext: state.settings.wizardData || {}
+                    });
+                    renderProtocolStart(protocol);
+                    return;
+                }
+            }
+            renderPreTrainingScreen(finalPlan.dayNumber, pain, true);
+        });
+    }
+
+    renderUpcomingQueue(dynamicPlan.days, todayISO);
+    renderBioHub();
+    navigateTo('main');
+};
+
+function renderHero() {
     const heroContainer = document.getElementById('hero-dashboard');
     if (heroContainer) {
         try {
@@ -110,311 +536,38 @@ export const renderMainScreen = (isLoading = false) => {
                 level: stats.level,
                 totalMinutes: stats.totalMinutes
             };
-
             if (getIsCasting()) sendUserStats(combinedStats);
             heroContainer.classList.remove('hidden');
             heroContainer.innerHTML = generateHeroDashboardHTML(combinedStats);
-        } catch (e) {
-            console.error('[Dashboard] Błąd renderowania Hero:', e);
-        }
+        } catch (e) { console.error('[Dashboard] Błąd renderowania Hero:', e); }
     }
+}
 
-    // 2. RENDEROWANIE ZAWARTOŚCI GŁÓWNEJ
-    containers.days.innerHTML = '';
-
-    const today = new Date();
-    const todayISO = getISODate(today);
-
-    const dateOptions = { weekday: 'long', day: 'numeric', month: 'long' };
-    const dateString = today.toLocaleDateString('pl-PL', dateOptions);
-    const capitalizedDate = dateString.charAt(0).toUpperCase() + dateString.slice(1);
-
-    containers.days.innerHTML += `
-        <div class="daily-mission-header">
-            <div class="dm-text">
-                <span class="dm-subtitle">${capitalizedDate}</span>
-                <h2 class="dm-title">TWOJA MISJA</h2>
-            </div>
-            <div class="dm-icon-wrapper">
-                <div class="dm-icon">🎯</div>
-            </div>
-        </div>
-    `;
-
-    const todaysSessions = state.userProgress[todayISO] || [];
-
-    const completedSession = todaysSessions.find(s =>
-        (isDynamicMode && s.planId && s.planId.startsWith('dynamic')) ||
-        (!isDynamicMode && s.planId === currentPlanId)
-    );
-
-    let currentSequenceDayNum = 1;
-
-    // ============================================================
-    // A. SEKCJA "MISJA NA DZIŚ"
-    // ============================================================
-    if (completedSession) {
-        const missionWrapper = document.createElement('div');
-        missionWrapper.className = 'mission-card-wrapper';
-        missionWrapper.innerHTML = generateCompletedMissionCardHTML(completedSession);
-        containers.days.appendChild(missionWrapper);
-
-        clearPlanFromStorage();
-
-        const detailsBtn = missionWrapper.querySelector('.view-details-btn');
-        if (detailsBtn) {
-            detailsBtn.addEventListener('click', () => {
-                renderDayDetailsScreen(todayISO, () => { navigateTo('main'); renderMainScreen(); });
-            });
-        }
-
-        currentSequenceDayNum = parseInt(completedSession.trainingDayId || 1);
-
-    } else if (isTodayRestDay()) {
-        containers.days.innerHTML += `
-            <div class="mission-card" style="border-left-color: #aaa; background: linear-gradient(135deg, #fff, #f0f0f0);">
-                <div class="mission-header">
-                    <div>
-                        <span class="mission-day-badge" style="background:#888;">REGENERACJA</span>
-                        <h3 class="mission-title">Dzień Wolny</h3>
-                        <p style="opacity:0.7; margin:0">Odpoczynek to część treningu.</p>
-                    </div>
-                    <div style="font-size:2rem;">🔋</div>
-                </div>
-            </div>
-        `;
-        clearPlanFromStorage();
-
-        const allSessions = Object.values(state.userProgress).flat();
-        const dynSessions = allSessions.filter(s => s.planId && s.planId.startsWith('dynamic'));
-        currentSequenceDayNum = dynSessions.length;
-
-    } else {
-        let finalPlan = null;
-        let estimatedMinutes = 0;
-
-        // --- LOGIKA DLA TRYBU DYNAMICZNEGO ---
-        if (isDynamicMode) {
-            const allSessions = Object.values(state.userProgress).flat();
-            const dynSessions = allSessions.filter(s => s.planId && s.planId.startsWith('dynamic'));
-            currentSequenceDayNum = dynSessions.length + 1;
-
-            const rawDay = getDynamicDayFromSettings(currentSequenceDayNum);
-
-            if (!rawDay) {
-                containers.days.innerHTML += `<p class="error-msg">Błąd danych planu dynamicznego.</p>`;
-                return;
-            }
-
-            const cachedPlan = loadPlanFromStorage();
-
-            if (cachedPlan &&
-                cachedPlan.dayNumber === currentSequenceDayNum &&
-                cachedPlan.planId === currentPlanId) {
-                console.log("CACHE HIT: Używam zapisanego planu z dysku.");
-                finalPlan = cachedPlan;
-            } else {
-                console.log("CACHE MISS: Generuję plan na dziś (z Mikserem).");
-                const hydratedDay = getHydratedDay(rawDay);
-
-                finalPlan = workoutMixer.mixWorkout(hydratedDay, false);
-
-                finalPlan.dayNumber = currentSequenceDayNum;
-                finalPlan.planId = currentPlanId;
-                savePlanToStorage(finalPlan);
-            }
-            state.todaysDynamicPlan = finalPlan;
-
-        }
-        // --- LOGIKA DLA TRYBU STATYCZNEGO (Z MIXEREM) ---
-        else {
-            const todayDataRaw = getNextLogicalDay();
-            if (todayDataRaw) {
-                const todayDataStatic = getHydratedDay(todayDataRaw);
-                currentSequenceDayNum = todayDataStatic.dayNumber;
-
-                let dynamicDayData = state.todaysDynamicPlan;
-
-                if (dynamicDayData && dynamicDayData.planId !== currentPlanId) {
-                    dynamicDayData = null;
-                    state.todaysDynamicPlan = null;
-                    clearPlanFromStorage();
-                }
-
-                if (!dynamicDayData) {
-                    const cachedPlan = loadPlanFromStorage();
-                    if (cachedPlan && cachedPlan.dayNumber === currentSequenceDayNum && cachedPlan.planId === currentPlanId) {
-                        if (cachedPlan._isDynamic) {
-                            dynamicDayData = cachedPlan;
-                            state.todaysDynamicPlan = cachedPlan;
-                        } else {
-                            clearPlanFromStorage();
-                        }
-                    }
-                }
-
-                if (!dynamicDayData) {
-                    console.log(`🎲 [Dashboard] Uruchamiam Mixer dla dnia ${currentSequenceDayNum}...`);
-                    state.todaysDynamicPlan = workoutMixer.mixWorkout(todayDataStatic);
-                    dynamicDayData = state.todaysDynamicPlan;
-                    dynamicDayData.planId = currentPlanId;
-                    savePlanToStorage(dynamicDayData);
-                }
-                finalPlan = dynamicDayData || todayDataStatic;
-
-                if (finalPlan && finalPlan._isDynamic) {
-                    state.todaysDynamicPlan = finalPlan;
-                }
-            }
-        }
-
-        if (finalPlan) {
-            const missionWrapper = document.createElement('div');
-            missionWrapper.className = 'mission-card-wrapper';
-            containers.days.appendChild(missionWrapper);
-
-            estimatedMinutes = assistant.estimateDuration(finalPlan);
-
-            const wizardData = isDynamicMode ? state.settings.wizardData : null;
-            missionWrapper.innerHTML = generateMissionCardHTML(finalPlan, estimatedMinutes, wizardData);
-
-            const cardEl = missionWrapper.querySelector('.mission-card');
-            const timeBadge = cardEl.querySelector('#mission-time-val');
-            const timeContainer = cardEl.querySelector('.estimated-time-badge');
-            const startBtn = cardEl.querySelector('#start-mission-btn');
-            const painOptions = cardEl.querySelectorAll('.pain-option');
-
-            if (finalPlan.compressionApplied) {
-                timeContainer.classList.add('reduced');
-                timeBadge.textContent = `${estimatedMinutes} min (limit)`;
-            }
-
-            // --- WELLNESS LOGIC V2.1 ---
-            painOptions.forEach(opt => {
-                opt.addEventListener('click', () => {
-                    painOptions.forEach(o => o.classList.remove('selected'));
-                    opt.classList.add('selected');
-
-                    const painLevel = parseInt(opt.dataset.level, 10);
-
-                    // 1. Sprawdzamy czy to tryb SOS (Level 8+)
-                    // Używamy helpera z assistantEngine, żeby zasymulować odpowiedź
-                    const checkPlan = assistant.adjustTrainingVolume(finalPlan, painLevel);
-                    const isSOS = checkPlan?._modificationInfo?.shouldSuggestSOS;
-
-                    // Aktualizacja przycisku Start
-                    if (isSOS) {
-                        startBtn.textContent = "🏥 Aktywuj Protokół SOS";
-                        startBtn.style.backgroundColor = "var(--danger-color)";
-                        startBtn.dataset.mode = 'sos';
-                        // FIX: Aktualizujemy czas na sztywno dla SOS (protokół trwa ok 10 min)
-                        timeBadge.textContent = "10 min";
-                    } else {
-                        // Standardowa aktualizacja czasu
-                        const newDuration = assistant.estimateDuration(checkPlan);
-                        timeBadge.textContent = `${newDuration} min`;
-
-                        startBtn.textContent = "Start Misji";
-                        startBtn.style.backgroundColor = ""; // Reset do domyślnego
-                        startBtn.dataset.mode = 'normal';
-                    }
-
-                    startBtn.dataset.initialPain = painLevel;
-                });
-            });
-
-            startBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const pain = parseInt(startBtn.dataset.initialPain, 10) || 0;
-
-                // Obsługa przekierowania SOS
-                if (startBtn.dataset.mode === 'sos') {
-                    if (confirm("Wykryto wysoki poziom bólu. Czy uruchomić bezpieczny Protokół SOS zamiast głównego planu?")) {
-                        try {
-                            const protocol = generateBioProtocol({
-                                mode: 'sos',
-                                focusZone: state.settings.wizardData?.pain_locations?.[0] || 'lumbar_general',
-                                durationMin: 10,
-                                userContext: state.settings.wizardData || {}
-                            });
-                            renderProtocolStart(protocol);
-                            return;
-                        } catch (err) {
-                            console.error("SOS Gen Error:", err);
-                            // Fallback do normalnego startu
-                        }
-                    }
-                }
-
-                renderPreTrainingScreen(finalPlan.dayNumber, pain, isDynamicMode);
-            });
-        }
-    }
-
-    // ============================================================
-    // B. LABORATORIUM REGENERACJI (z nowymi trybami)
-    // ============================================================
+function renderBioHub() {
     const bioHubContainer = document.createElement('div');
     bioHubContainer.className = 'bio-hub-container';
-
     const wz = state.settings.wizardData || {};
     const protocols = [];
 
-    // 1. ZAWSZE DOSTĘPNE (Baza)
-    protocols.push({ mode: 'booster', zone: 'core', time: 5, title: 'Brzuch ze stali', desc: 'Szybki obwód', icon: '🔥' });
+    const canBurn = state.userStats?.resilience?.status !== 'Critical';
+    if (canBurn) protocols.push({ mode: 'burn', zone: 'metabolic', time: 15, title: 'Metabolic Burn', desc: 'Low-impact Fat Loss', icon: '🔥', styleClass: 'bio-card-booster' });
+
+    protocols.push({ mode: 'booster', zone: 'core', time: 5, title: 'Brzuch ze stali', desc: 'Szybki obwód', icon: '⚡' });
     protocols.push({ mode: 'flow', zone: 'full_body', time: 8, title: 'Mobility Flow', desc: 'Płynny ruch całego ciała', icon: '🌊' });
     protocols.push({ mode: 'calm', zone: 'sleep', time: 10, title: 'Głęboki Reset', desc: 'Oddech i wyciszenie', icon: '🌙' });
 
-    // 2. KONTEKSTOWE (Na podstawie Wizarda)
-    
-    // Praca siedząca -> Anty-Biuro (Flow lub Reset)
-    if (wz.work_type === 'sedentary') {
-        protocols.unshift({ mode: 'flow', zone: 'office', time: 5, title: 'Anty-Biuro', desc: 'Rozprostuj się po pracy', icon: '🪑' });
-    }
-
-    // Szyja -> SOS lub Flow
-    if (wz.pain_locations?.includes('cervical')) {
-        protocols.unshift({ mode: 'sos', zone: 'cervical', time: 4, title: 'Szyja: Ratunek', desc: 'Ulga w napięciu karku', icon: '💊' });
-    }
-
-    // Rwa kulszowa / Biodra -> NEURO
-    const hasSciatica = wz.medical_diagnosis?.includes('sciatica') || wz.pain_locations?.includes('sciatica');
-    const hasHipIssues = wz.pain_locations?.includes('hip') || wz.medical_diagnosis?.includes('piriformis');
-    
-    if (hasSciatica || hasHipIssues) {
-        protocols.unshift({ mode: 'neuro', zone: 'sciatica', time: 6, title: 'Neuro-Ślizgi', desc: 'Mobilizacja nerwów', icon: '⚡' });
-    }
-
-    // Jeśli użytkownik jest zaawansowany -> LADDER
-    if (wz.exercise_experience === 'advanced' || wz.exercise_experience === 'regular') {
-        protocols.push({ mode: 'ladder', zone: 'full_body', time: 12, title: 'Drabina Progresji', desc: 'Buduj technikę', icon: '🧗' });
-    }
-
-    // Fallback: Glute Pump jeśli mało kart
-    if (protocols.length < 3) {
-        protocols.push({ mode: 'booster', zone: 'glute', time: 6, title: 'Glute Pump', desc: 'Aktywacja pośladków', icon: '🍑' });
-    }
+    if (wz.work_type === 'sedentary') protocols.unshift({ mode: 'flow', zone: 'office', time: 5, title: 'Anty-Biuro', desc: 'Rozprostuj się po pracy', icon: '🪑' });
+    if (wz.pain_locations?.includes('cervical')) protocols.unshift({ mode: 'sos', zone: 'cervical', time: 4, title: 'Szyja: Ratunek', desc: 'Ulga w napięciu karku', icon: '💊' });
 
     const cardsHTML = protocols.map(p => `
-        <div class="bio-card bio-card-${p.mode}"
-             data-mode="${p.mode}" data-zone="${p.zone}" data-time="${p.time}">
+        <div class="bio-card ${p.styleClass || `bio-card-${p.mode}`}" data-mode="${p.mode}" data-zone="${p.zone}" data-time="${p.time}">
             <div class="bio-bg-icon">${p.icon}</div>
-            <div class="bio-header">
-                <span class="bio-tag">${p.mode.toUpperCase()}</span>
-                <span class="bio-duration">⏱ ${p.time} min</span>
-            </div>
-            <div>
-                <div class="bio-title">${p.title}</div>
-                <div class="bio-desc">${p.desc}</div>
-            </div>
+            <div class="bio-header"><span class="bio-tag">${p.mode.toUpperCase()}</span><span class="bio-duration">⏱ ${p.time} min</span></div>
+            <div><div class="bio-title">${p.title}</div><div class="bio-desc">${p.desc}</div></div>
         </div>
     `).join('');
 
-    bioHubContainer.innerHTML = `
-        <div class="section-title" style="margin-top:1.5rem; margin-bottom:0.8rem; padding-left:4px;">PROTOKOŁY CELOWANE</div>
-        <div class="bio-hub-scroll">${cardsHTML}</div>
-    `;
-
+    bioHubContainer.innerHTML = `<div class="section-title bio-hub-title">PROTOKOŁY CELOWANE</div><div class="bio-hub-scroll">${cardsHTML}</div>`;
     containers.days.appendChild(bioHubContainer);
 
     bioHubContainer.querySelectorAll('.bio-card').forEach(card => {
@@ -427,56 +580,70 @@ export const renderMainScreen = (isLoading = false) => {
                     userContext: state.settings.wizardData || {}
                 });
                 renderProtocolStart(protocol);
-            } catch (err) {
-                console.error("Błąd generowania protokołu:", err);
-                alert("Nie udało się utworzyć tej sesji: " + err.message);
-            }
+            } catch (err) { alert("Nie udało się utworzyć tej sesji: " + err.message); }
         });
     });
+}
 
-    // ============================================================
-    // C. SEKCJA "KOLEJNE W CYKLU"
-    // ============================================================
-    let upcomingHTML = '';
-    const planDays = getPlanDaysArray(activePlan);
-    const totalDaysInPlan = planDays.length;
+function renderUpcomingQueue(days, todayISO) {
+    const futureDays = days.filter(d => d.date > todayISO);
+    if (futureDays.length === 0) return;
 
-    if (totalDaysInPlan > 0) {
-        upcomingHTML += `<div class="section-title" style="margin-top:1.5rem; margin-bottom:0.8rem; padding-left:4px;">KOLEJNE W CYKLU</div>`;
-        upcomingHTML += `<div class="upcoming-scroll-container">`;
+    let upcomingHTML = `<div class="section-title upcoming-title">NADCHODZĄCE DNI</div>`;
 
-        for (let i = 0; i < 5; i++) {
-            let targetLogicalNum = currentSequenceDayNum + 1 + i;
-            const arrayIndex = (targetLogicalNum - 1) % totalDaysInPlan;
-            const dayDataRaw = planDays[arrayIndex];
+    upcomingHTML += `<div class="calendar-strip">`;
 
-            const dayData = getHydratedDay(dayDataRaw);
-            dayData.dayNumber = targetLogicalNum;
+    futureDays.slice(0, 6).forEach(dayRaw => {
+        const dayData = getHydratedDay(dayRaw);
+        const dateObj = new Date(dayData.date);
+        const dayShort = dateObj.toLocaleDateString('pl-PL', { weekday: 'short' }).toUpperCase().replace('.', '');
+        const dayNum = dateObj.getDate();
+        const isRest = dayData.type === 'rest';
 
-            upcomingHTML += `
-                <div class="upcoming-card" data-day-id="${targetLogicalNum}">
-                    <div>
-                        <div class="upcoming-day-label">Dzień ${dayData.dayNumber}</div>
-                        <div class="upcoming-title">${dayData.title}</div>
-                    </div>
-                    <button class="upcoming-btn">Podgląd</button>
-                </div>
-            `;
-        }
-        upcomingHTML += `</div>`;
+        const stripDayClass = isRest ? 'strip-day rest' : 'strip-day workout';
+        const weekendClass = (dateObj.getDay() === 0 || dateObj.getDay() === 6) ? ' weekend' : '';
 
-        const upcomingWrapper = document.createElement('div');
-        upcomingWrapper.innerHTML = upcomingHTML;
-        containers.days.appendChild(upcomingWrapper);
+        const btnHtml = `
+            <button class="strip-menu-btn ctx-menu-btn"
+                data-date="${dayData.date}"
+                data-is-rest="${isRest}"
+                data-day-id="${dayData.dayNumber}">
+                <svg width="16" height="16" fill="currentColor" style="color: #94a3b8;"><use href="#icon-dots-vertical"/></svg>
+            </button>
+        `;
 
-        upcomingWrapper.querySelectorAll('.upcoming-card').forEach(card => {
-            card.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const dayId = parseInt(card.dataset.dayId, 10);
-                renderPreTrainingScreen(dayId, 0, isDynamicMode);
-            });
+        upcomingHTML += `
+            <div class="${stripDayClass}${weekendClass}" data-day-id="${dayData.dayNumber}" data-is-rest="${isRest}">
+                ${btnHtml}
+                <span class="strip-day-name">${dayShort}</span>
+                <span class="strip-day-number">${dayNum}</span>
+                <div class="strip-status-dot"></div>
+            </div>
+        `;
+    });
+    upcomingHTML += `</div>`;
+
+    const upcomingWrapper = document.createElement('div');
+    upcomingWrapper.innerHTML = upcomingHTML;
+    containers.days.appendChild(upcomingWrapper);
+
+    // --- ISSUE #14: LONG PRESS IMPLEMENTATION ---
+    upcomingWrapper.querySelectorAll('.strip-day').forEach(card => {
+        // Dodajemy obsługę Long Press
+        attachLongPressHandlers(card, () => ({
+            date: card.querySelector('.ctx-menu-btn').dataset.date,
+            isRest: card.querySelector('.ctx-menu-btn').dataset.isRest === 'true',
+            dayId: card.dataset.dayId
+        }));
+
+        if (card.dataset.isRest === 'true') return;
+        
+        card.addEventListener('click', (e) => {
+            // Blokada jeśli wyzwolono Long Press
+            if (card.dataset.longPressTriggered === "true") return;
+            if (e.target.closest('.ctx-menu-btn')) return;
+            e.stopPropagation();
+            renderPreTrainingScreen(parseInt(card.dataset.dayId, 10), 3, true);
         });
-    }
-
-    navigateTo('main');
-};
+    });
+}

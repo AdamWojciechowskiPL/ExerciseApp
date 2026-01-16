@@ -1,20 +1,22 @@
-// netlify/functions/_clinical-rule-engine.js
+// ExerciseApp/clinicalEngine.js
+// Frontendowa wersja silnika reguł (Ported from _clinical-rule-engine.js)
+
+export const KNOWN_POSITIONS = [
+    'standing', 'sitting', 'kneeling', 'half_kneeling', 'quadruped', 'supine', 'prone', 'side_lying'
+];
 
 const DIFFICULTY_MAP = {
     'none': 1, 'occasional': 2, 'regular': 3, 'advanced': 4
 };
 
-// P1.2: Dodano half_kneeling
-const KNOWN_POSITIONS = [
-    'standing', 'sitting', 'kneeling', 'half_kneeling', 'quadruped', 'supine', 'prone', 'side_lying'
-];
+// --- HELPERY KONTEKSTU ---
 
-const isRotationalPlane = (p) => {
+export const isRotationalPlane = (p) => {
     const plane = String(p || '').toLowerCase();
     return plane === 'rotation' || plane === 'transverse';
 };
 
-function detectTolerancePattern(triggers, reliefs) {
+export function detectTolerancePattern(triggers, reliefs) {
     if (!Array.isArray(triggers)) triggers = [];
     if (!Array.isArray(reliefs)) reliefs = [];
 
@@ -23,18 +25,20 @@ function detectTolerancePattern(triggers, reliefs) {
     return 'neutral';
 }
 
-function buildUserContext(userData) {
-    const tolerancePattern = detectTolerancePattern(userData.trigger_movements, userData.relief_movements);
-    const painChar = userData.pain_character || [];
+export function buildClinicalContext(wizardData) {
+    if (!wizardData) return null;
+
+    const tolerancePattern = detectTolerancePattern(wizardData.trigger_movements, wizardData.relief_movements);
+    const painChar = wizardData.pain_character || [];
     const isPainSharp = painChar.includes('sharp') || painChar.includes('burning') || painChar.includes('radiating');
-    const painInt = parseInt(userData.pain_intensity) || 0;
-    const impact = parseInt(userData.daily_impact) || 0;
+    const painInt = parseInt(wizardData.pain_intensity) || 0;
+    const impact = parseInt(wizardData.daily_impact) || 0;
 
     let severityScore = (painInt + impact) / 2;
     if (isPainSharp) severityScore *= 1.2;
     const isSevere = severityScore >= 6.5;
 
-    const experienceKey = userData.exercise_experience;
+    const experienceKey = wizardData.exercise_experience;
     const baseDifficultyCap = DIFFICULTY_MAP[experienceKey] || 2;
     let difficultyCap = baseDifficultyCap;
 
@@ -44,23 +48,26 @@ function buildUserContext(userData) {
         difficultyCap = Math.min(baseDifficultyCap, 3);
     }
 
-    const painLocs = userData.pain_locations || [];
+    const painLocs = wizardData.pain_locations || [];
     const painFilters = new Set();
     if (painLocs.length > 0) {
         painLocs.forEach(loc => painFilters.add(loc));
         if (painLocs.includes('si_joint') || painLocs.includes('hip')) painFilters.add('lumbar_general');
+        if (painLocs.includes('sciatica')) painFilters.add('sciatica');
         if (painLocs.includes('knee')) painFilters.add('knee');
     } else {
         painFilters.add('lumbar_general');
         painFilters.add('thoracic');
     }
 
+    // P1.1: Normalizacja sprzętu usera (Set dla szybkiego lookupu)
+    // Trim + Lowercase. Żadnych synonimów "w locie".
     const userEquipment = new Set(
-        (userData.equipment_available || []).map(e => String(e).trim().toLowerCase()).filter(Boolean)
+        (wizardData.equipment_available || []).map(e => String(e).trim().toLowerCase()).filter(Boolean)
     );
 
-    const physicalRestrictions = userData.physical_restrictions || [];
-    const medicalDiagnosis = userData.medical_diagnosis || [];
+    const physicalRestrictions = wizardData.physical_restrictions || [];
+    const medicalDiagnosis = wizardData.medical_diagnosis || [];
 
     return {
         tolerancePattern,
@@ -70,49 +77,61 @@ function buildUserContext(userData) {
         painFilters,
         userEquipment,
         physicalRestrictions,
-        medicalDiagnosis,
-        blockedIds: new Set()
+        medicalDiagnosis
     };
 }
 
-function checkEquipment(ex, userEquipmentSet) {
+// --- LOGIKA WALIDACJI (Core Rules) ---
+
+export function checkEquipment(ex, userEquipmentSet) {
+    // Jeśli userEquipment nie jest podany (lub null), zakładamy brak sprzętu (lub ignorujemy check w zależności od kontekstu)
+    // Tutaj zakładamy, że jeśli null, to pomijamy walidację (chyba że wywołujący wymusi).
+    // Ale w kontekście P1.1: strict matching.
     if (!userEquipmentSet) return true;
 
-    const exEquipRaw = Array.isArray(ex.equipment) ? ex.equipment : (ex.equipment ? ex.equipment.split(',') : []);
-    const requirements = exEquipRaw.map(e => String(e).trim().toLowerCase()).filter(Boolean);
+    // Normalizacja wymagań ćwiczenia
+    let requirements = [];
+    if (Array.isArray(ex.equipment)) {
+        requirements = ex.equipment.map(e => String(e).trim().toLowerCase());
+    } else if (typeof ex.equipment === 'string') {
+        requirements = ex.equipment.split(',').map(e => String(e).trim().toLowerCase());
+    } else {
+        // Brak pola equipment = brak wymagań
+        return true;
+    }
 
+    // Filtrowanie pustych
+    requirements = requirements.filter(Boolean);
     if (requirements.length === 0) return true;
 
-    const ignorable = new Set(['none', 'brak', '', 'brak sprzętu', 'masa własna', 'bodyweight']);
-
-    // FIX: Zmieniono 'req' na 'requirements'
-    const required = requirements.filter(x => !ignorable.has(x));
+    // P1.1: Lista ignorowanych (ujednolicona z backendem)
+    // 'mat' usunięte z ignorowanych (jest to realny sprzęt)
+    const ignorable = ['brak', 'none', 'brak sprzętu', 'masa własna', 'bodyweight', ''];
     
-    if (required.length === 0) return true;
-    if (!userEquipmentSet || userEquipmentSet.size === 0) return false;
+    // Sprawdzamy czy wymóg nie jest trywialny
+    const isNone = requirements.some(req => ignorable.includes(req));
+    if (isNone) return true;
 
-    for (const item of required) {
-        if (!userEquipmentSet.has(item)) return false;
-    }
-    return true;
+    // Strict check: User MUSI posiadać każdy wymagany element
+    // P1.1: Zastąpienie `includes` (substring) przez `Set.has` (exact match)
+    return requirements.every(req => userEquipmentSet.has(req));
 }
 
-function violatesRestrictions(ex, ctx) {
+export function violatesRestrictions(ex, ctx) {
     const restrictions = ctx.physicalRestrictions;
     const diagnosis = ctx.medicalDiagnosis || [];
 
-    const plane = String(ex.primary_plane || 'multi').toLowerCase();
+    const plane = String(ex.primaryPlane || 'multi').toLowerCase();
     const pos = String(ex.position || '').toLowerCase();
+    const impact = String(ex.impactLevel || 'low').toLowerCase();
+    const kneeLoad = String(ex.kneeLoadLevel || 'low').toLowerCase();
 
-    const impact = String(ex.impact_level || 'low').toLowerCase();
-    const kneeLoad = String(ex.knee_load_level || 'low').toLowerCase();
-
-    // 1. Klękanie - P1.2 (+ half_kneeling)
+    // 1. Klękanie - P1.2 (dodano half_kneeling)
     if (restrictions.includes('no_kneeling')) {
         if (pos === 'kneeling' || pos === 'quadruped' || pos === 'half_kneeling') return true;
     }
 
-    // 2. Skręty
+    // 2. Skręty - P0.2
     if (restrictions.includes('no_twisting')) {
         if (isRotationalPlane(plane)) return true;
     }
@@ -122,21 +141,21 @@ function violatesRestrictions(ex, ctx) {
         if (pos === 'sitting') return true;
     }
 
-    // 4. Uderzenia / Skoki
+    // 4. Uderzenia / Skoki (High Impact) - P0.1, P0.6
     if (restrictions.includes('no_high_impact')) {
         if (impact === 'high') return true;
     }
 
-    // 5. Uraz stopy
+    // 5. Uraz stopy (Non-weight bearing) - P0.1, P0.6
     if (restrictions.includes('foot_injury')) {
-        if (ex.is_foot_loading === true) return true;
+        if (ex.isFootLoading === true) return true;
         if (impact === 'moderate' || impact === 'high') return true;
-
+        
         const blockedPositions = ['standing', 'lunge', 'squat', 'half_kneeling']; // P1.2 updated
         if (blockedPositions.includes(pos)) return true;
     }
 
-    // 6. Ochrona Kolan
+    // 6. Ochrona Kolan (Knee Protection Logic)
     const hasKneeIssue = ctx.painFilters.has('knee') || ctx.painFilters.has('knee_anterior');
     const isChondromalacia = diagnosis.includes('chondromalacia') || diagnosis.includes('runners_knee');
 
@@ -147,54 +166,47 @@ function violatesRestrictions(ex, ctx) {
     return false;
 }
 
-function passesTolerancePattern(ex, tolerancePattern) {
-    const plane = String(ex.primary_plane || 'multi').toLowerCase();
-    const tags = Array.isArray(ex.tolerance_tags) ? ex.tolerance_tags : [];
+export function passesTolerancePattern(ex, tolerancePattern) {
+    const plane = String(ex.primaryPlane || 'multi').toLowerCase();
+    
+    // P0.3 Tolerance Tags Logic
+    const tags = Array.isArray(ex.toleranceTags) ? ex.toleranceTags : (ex.tolerance_tags || []);
 
     if (tolerancePattern === 'flexion_intolerant') {
         if (plane === 'flexion' && !tags.includes('ok_for_flexion_intolerant')) return false;
-    }
-    else if (tolerancePattern === 'extension_intolerant') {
+    } else if (tolerancePattern === 'extension_intolerant') {
         if (plane === 'extension' && !tags.includes('ok_for_extension_intolerant')) return false;
     }
-
     return true;
 }
 
-function checkExerciseAvailability(ex, ctx, options = {}) {
+export function checkExerciseAvailability(ex, ctx, options = {}) {
     const { ignoreDifficulty = false, ignoreEquipment = false, strictSeverity = true } = options;
 
-    if (ctx.blockedIds.has(ex.id)) return { allowed: false, reason: 'blacklisted' };
+    if (ctx.blockedIds && ctx.blockedIds.has(ex.id)) return { allowed: false, reason: 'blacklisted' };
+
+    // P1.1 Equipment Check (ctx.userEquipment is now a Set)
     if (!ignoreEquipment && !checkEquipment(ex, ctx.userEquipment)) return { allowed: false, reason: 'missing_equipment' };
 
-    const exLevel = ex.difficulty_level || 1;
+    const exLevel = ex.difficultyLevel || 1;
     if (!ignoreDifficulty && ctx.difficultyCap && exLevel > ctx.difficultyCap) return { allowed: false, reason: 'too_hard_calculated' };
 
     if (violatesRestrictions(ex, ctx)) return { allowed: false, reason: 'physical_restriction' };
     if (!passesTolerancePattern(ex, ctx.tolerancePattern)) return { allowed: false, reason: 'biomechanics_mismatch' };
 
     if (strictSeverity && ctx.isSevere) {
-        const spineLoad = String(ex.spine_load_level || 'low').toLowerCase();
+        const spineLoad = String(ex.spineLoadLevel || 'low').toLowerCase();
         if (spineLoad === 'high') return { allowed: false, reason: 'severity_filter' };
 
-        const kneeLoad = String(ex.knee_load_level || 'low').toLowerCase();
+        const kneeLoad = String(ex.kneeLoadLevel || 'low').toLowerCase();
         if ((ctx.painFilters.has('knee') || ctx.painFilters.has('knee_anterior')) && kneeLoad === 'high') {
             return { allowed: false, reason: 'severity_filter' };
         }
 
-        const zones = Array.isArray(ex.pain_relief_zones) ? ex.pain_relief_zones : [];
+        const zones = Array.isArray(ex.painReliefZones) ? ex.painReliefZones : [];
         const helpsZone = zones.some(z => ctx.painFilters.has(z));
         if (!helpsZone) return { allowed: false, reason: 'severity_filter' };
     }
 
     return { allowed: true, reason: null };
 }
-
-module.exports = {
-    buildUserContext,
-    checkExerciseAvailability,
-    checkEquipment,
-    detectTolerancePattern,
-    KNOWN_POSITIONS,
-    isRotationalPlane
-};

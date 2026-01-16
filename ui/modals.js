@@ -1,18 +1,84 @@
+// ExerciseApp/ui/modals.js
 import { state } from '../state.js';
 import dataStore from '../dataStore.js';
+import { processSVG } from '../utils.js';
+import { buildClinicalContext, checkExerciseAvailability } from '../clinicalEngine.js';
+
+export function renderMoveDayModal(availableTargets, onConfirm) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+
+    const datesHtml = availableTargets.map(d => {
+        const dateObj = new Date(d.date);
+        const dayName = dateObj.toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'short' });
+        return `
+            <button class="target-date-btn" data-date="${d.date}">
+                📅 ${dayName}
+            </button>
+        `;
+    }).join('');
+
+    overlay.innerHTML = `
+        <div class="swap-modal">
+            <h3>Przenieś trening</h3>
+            <p class="swap-subtitle">Wybierz dzień wolny, na który chcesz przenieść ten trening:</p>
+            <div class="modal-dates-list">
+                ${datesHtml}
+            </div>
+            <button id="cancel-move" class="nav-btn modal-full-btn">Anuluj</button>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    overlay.querySelectorAll('.target-date-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            onConfirm(btn.dataset.date);
+            overlay.remove();
+        });
+    });
+
+    overlay.querySelector('#cancel-move').addEventListener('click', () => overlay.remove());
+}
 
 export function renderSwapModal(currentExercise, onConfirm) {
     const currentId = currentExercise.id || currentExercise.exerciseId;
     let categoryId = currentExercise.categoryId;
     const libraryExercise = state.exerciseLibrary[currentId];
+
     if (!categoryId && libraryExercise) categoryId = libraryExercise.categoryId;
     if (!categoryId) { alert("Błąd danych: brak kategorii."); return; }
 
+    const wizardData = state.settings.wizardData;
+    let clinicalCtx = null;
+
+    if (wizardData) {
+        clinicalCtx = buildClinicalContext(wizardData);
+        if (clinicalCtx) {
+            clinicalCtx.blockedIds = new Set(state.blacklist || []);
+        }
+    }
+
     const alternatives = Object.entries(state.exerciseLibrary)
         .map(([id, data]) => ({ id, ...data }))
-        .filter(ex => ex.categoryId === categoryId && String(ex.id) !== String(currentId));
+        .filter(ex => {
+            if (ex.categoryId !== categoryId) return false;
+            if (String(ex.id) === String(currentId)) return false;
+            if (clinicalCtx) {
+                const result = checkExerciseAvailability(ex, clinicalCtx, {
+                    ignoreEquipment: false,
+                    strictSeverity: true,
+                    ignoreDifficulty: false
+                });
+                return result.allowed;
+            }
+            return true;
+        });
 
-    if (alternatives.length === 0) { alert(`Brak alternatyw dla kategorii "${categoryId}".`); return; }
+    if (alternatives.length === 0) {
+        alert(`Brak bezpiecznych alternatyw dla kategorii "${categoryId}".`);
+        return;
+    }
 
     const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
 
@@ -28,19 +94,18 @@ export function renderSwapModal(currentExercise, onConfirm) {
     overlay.innerHTML = `
         <div class="swap-modal">
             <h3>Wymień: ${currentExercise.name || libraryExercise?.name}</h3>
-            <p style="font-size:0.85rem; color:#666;">Kategoria: ${categoryId}</p>
+            <p class="swap-subtitle">Kategoria: ${categoryId}</p>
             <div class="swap-options-list">${altsHtml}</div>
             <div class="swap-actions">
-                <div style="font-size:0.85rem; font-weight:bold;">Tryb wymiany:</div>
+                <div class="swap-section-label">Tryb wymiany:</div>
                 <div class="swap-type-toggle">
                     <button class="toggle-btn active" data-type="today">Tylko dziś</button>
                     <button class="toggle-btn" data-type="blacklist">🚫 Nie lubię</button>
                 </div>
-                
-                <!-- POPRAWIONA SEKCJA PRZYCISKÓW -->
-                <div style="display:flex; gap:10px; margin-top:1.5rem;">
-                    <button id="cancel-swap" class="nav-btn" style="flex:1; padding: 0.8rem; justify-content: center; height: auto;">Anuluj</button>
-                    <button id="confirm-swap" class="action-btn" style="flex:1; margin-top: 0;" disabled>Wymień</button>
+
+                <div class="modal-actions-row">
+                    <button id="cancel-swap" class="nav-btn" style="flex:1;">Anuluj</button>
+                    <button id="confirm-swap" class="action-btn" style="flex:1; margin-top:0;" disabled>Wymień</button>
                 </div>
             </div>
         </div>
@@ -61,8 +126,6 @@ export function renderSwapModal(currentExercise, onConfirm) {
             card.classList.add('selected');
             selectedAltId = card.dataset.id;
             confirmBtn.disabled = false;
-            // Opcjonalnie: zmiana tekstu na przycisku
-            // confirmBtn.textContent = `Wymień`; 
         });
     });
 
@@ -85,11 +148,13 @@ export function renderSwapModal(currentExercise, onConfirm) {
 
 export function renderPreviewModal(svgContent, title) {
     const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
+    const cleanSvg = processSVG(svgContent);
+
     overlay.innerHTML = `
         <div class="swap-modal" style="align-items: center; text-align: center;">
             <h3>${title}</h3>
-            <div style="width: 100%; max-width: 300px; margin: 1rem 0;">${svgContent}</div>
-            <button id="close-preview" class="nav-btn" style="width: 100%">Zamknij</button>
+            <div class="preview-svg-container">${cleanSvg}</div>
+            <button id="close-preview" class="nav-btn modal-full-btn">Zamknij</button>
         </div>
     `;
     document.body.appendChild(overlay);
@@ -138,40 +203,34 @@ export function renderSessionRecoveryModal(backup, timeGapFormatted, onRestore, 
 
     overlay.innerHTML = `
         <div class="swap-modal" style="max-width: 380px;">
-            <div style="text-align: center; margin-bottom: 1.5rem;">
+            <div class="modal-center-content">
                 <span style="font-size: 3rem;">⚠️</span>
                 <h2 style="margin: 0.5rem 0;">Przerwana sesja</h2>
-                <p style="opacity: 0.7; font-size: 0.9rem;">Wykryto niezakończony trening</p>
+                <p class="modal-info-text">Wykryto niezakończony trening</p>
             </div>
 
-            <div style="background: var(--card-color); border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem;">
+            <div class="modal-card">
                 <div style="font-weight: 600; margin-bottom: 0.5rem;">${backup.trainingTitle || 'Trening'}</div>
                 <div style="font-size: 0.85rem; opacity: 0.7; margin-bottom: 0.75rem;">Przerwa: ${timeGapFormatted} temu</div>
 
-                <div style="background: var(--bg-color); border-radius: 8px; padding: 0.5rem;">
-                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.25rem;">
+                <div class="modal-progress-bar">
+                    <div class="modal-progress-row">
                         <span>Postęp</span>
                         <span>${currentStep} / ${totalSteps} (${progressPercent}%)</span>
                     </div>
-                    <div style="height: 6px; background: var(--secondary-color); border-radius: 3px; overflow: hidden;">
-                        <div style="height: 100%; width: ${progressPercent}%; background: var(--primary-color); transition: width 0.3s;"></div>
+                    <div class="modal-progress-track">
+                        <div class="modal-progress-fill" style="width: ${progressPercent}%;"></div>
                     </div>
                 </div>
             </div>
 
-            <p style="font-size: 0.85rem; opacity: 0.8; margin-bottom: 1.5rem; text-align: center;">
+            <p class="modal-note">
                 Czas przerwy zostanie dodany do całkowitego czasu pauzy.
             </p>
 
-            <div style="display: flex; gap: 12px;">
-                <button id="discard-session" class="nav-btn"
-                    style="flex: 1; padding: 12px; font-size: 1rem; display: flex; align-items: center; justify-content: center;">
-                    Porzuć
-                </button>
-                <button id="restore-session" class="action-btn"
-                    style="flex: 1; margin: 0; padding: 12px; font-size: 1rem; display: flex; align-items: center; justify-content: center;">
-                    Przywróć
-                </button>
+            <div class="modal-actions-row" style="margin-top:0;">
+                <button id="discard-session" class="nav-btn" style="flex: 1;">Porzuć</button>
+                <button id="restore-session" class="action-btn" style="flex: 1; margin: 0;">Przywróć</button>
             </div>
         </div>
     `;
@@ -182,8 +241,9 @@ export function renderSessionRecoveryModal(backup, timeGapFormatted, onRestore, 
     overlay.querySelector('#discard-session').addEventListener('click', () => { overlay.remove(); if (onDiscard) onDiscard(); });
 }
 
-// --- TUNER SYNAPTYCZNY (MODAL) ---
 export function renderTunerModal(exerciseId, onUpdate) {
+    console.log(`[ModalDebug] 🟢 START renderTunerModal: ${exerciseId}`);
+
     const exercise = state.exerciseLibrary[exerciseId];
     if (!exercise) return;
 
@@ -194,7 +254,6 @@ export function renderTunerModal(exerciseId, onUpdate) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
 
-    // Style inline dla efektu WOW (Gradient Slider)
     const gradientStyle = `background: linear-gradient(90deg, #ff4d4d 0%, #d1d5db 50%, #2dd4bf 75%, #f59e0b 100%);`;
 
     overlay.innerHTML = `
@@ -228,46 +287,36 @@ export function renderTunerModal(exerciseId, onUpdate) {
                 </div>
             </div>
 
-            <button id="save-tuner" class="action-btn" style="margin-top:1.5rem;">Zapisz Kalibrację</button>
+            <button id="save-tuner" class="action-btn modal-full-btn">Zapisz Kalibrację</button>
         </div>
-
-        <style>
-            .tuner-modal { background: #1f2937; color: white; border: 1px solid #374151; }
-            .tuner-header { text-align: center; margin-bottom: 1.5rem; }
-            .tuner-header h3 { margin: 0; font-size: 1.3rem; color: #f3f4f6; border: none; }
-            .tuner-badge-preview { font-size: 0.8rem; opacity: 0.7; margin-top: 5px; text-transform: uppercase; letter-spacing: 1px; }
-
-            .tuner-section { margin-bottom: 1.5rem; }
-            .tuner-section label { display: block; font-size: 0.85rem; font-weight: 700; color: #9ca3af; margin-bottom: 10px; text-transform: uppercase; }
-
-            /* Custom Range Slider */
-            .slider-wrapper { position: relative; height: 10px; margin: 20px 0; }
-            .tuner-slider {
-                -webkit-appearance: none; width: 100%; height: 10px; background: transparent; position: absolute; z-index: 2; margin: 0; cursor: pointer;
-            }
-            .slider-track {
-                position: absolute; top: 0; left: 0; width: 100%; height: 10px; border-radius: 5px; z-index: 1; opacity: 0.8;
-            }
-            .tuner-slider::-webkit-slider-thumb {
-                -webkit-appearance: none; width: 24px; height: 24px; background: #fff; border-radius: 50%; box-shadow: 0 0 10px rgba(0,0,0,0.5); margin-top: -7px;
-            }
-
-            .tuner-labels { display: flex; justify-content: space-between; font-size: 0.7rem; color: #6b7280; margin-top: 5px; }
-            .tuner-val { text-align: center; font-size: 1.5rem; font-weight: 800; margin-top: 5px; color: #fff; font-variant-numeric: tabular-nums; }
-
-            /* Diff Buttons */
-            .diff-toggle-group { display: flex; gap: 8px; background: #374151; padding: 4px; border-radius: 8px; }
-            .diff-btn { flex: 1; background: transparent; border: none; color: #9ca3af; padding: 10px; border-radius: 6px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-            .diff-btn.active { background: #4b5563; color: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
-            .diff-btn[data-val="-1"].active { background: #0ea5e9; } /* Blue */
-            .diff-btn[data-val="0"].active { background: #10b981; } /* Green */
-            .diff-btn[data-val="1"].active { background: #ef4444; } /* Red */
-        </style>
     `;
 
     document.body.appendChild(overlay);
 
-    // Logic
+    // === FIX STABILNOŚCI ===
+    // 1. Śledzenie mousedown: Zapobiega zamknięciu, gdy ktoś wciśnie klawisz na przycisku otwierającym,
+    //    przesunie mysz i puści ją na overlayu.
+    let isMouseDownOnOverlay = false;
+
+    overlay.addEventListener('mousedown', (e) => {
+        if (e.target === overlay) {
+            isMouseDownOnOverlay = true;
+        } else {
+            isMouseDownOnOverlay = false;
+        }
+    });
+
+    // 2. Opóźnione dodanie listenera kliknięcia
+    // Całkowicie ignoruje jakiekolwiek zdarzenia z "przeszłości" (propagacja).
+    setTimeout(() => {
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay && isMouseDownOnOverlay) {
+                console.log('[ModalDebug] Closing modal (Valid background click)');
+                overlay.remove();
+            }
+        });
+    }, 200);
+
     const slider = overlay.querySelector('#tuner-slider');
     const valDisplay = overlay.querySelector('#tuner-score-val');
     const tierDisplay = overlay.querySelector('#tuner-tier-name');
@@ -286,11 +335,11 @@ export function renderTunerModal(exerciseId, onUpdate) {
         tierDisplay.textContent = tier;
         tierDisplay.style.color = color;
 
-        if (navigator.vibrate) navigator.vibrate(5); // Haptic feedback
+        if (navigator.vibrate) navigator.vibrate(5);
     };
 
     slider.addEventListener('input', updateUI);
-    updateUI(); // Init
+    updateUI();
 
     diffBtns.forEach(btn => {
         btn.addEventListener('click', () => {
@@ -300,21 +349,11 @@ export function renderTunerModal(exerciseId, onUpdate) {
         });
     });
 
-    // Close on click outside
-    overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) overlay.remove();
-    });
-
     overlay.querySelector('#save-tuner').addEventListener('click', async () => {
         const newScore = parseInt(slider.value);
-
-        // Zapisz do store
         await dataStore.updatePreference(exerciseId, 'set', newScore);
         await dataStore.updatePreference(exerciseId, 'set_difficulty', currentDiff);
-
-        // Wywołaj callback odświeżający
         if (onUpdate) onUpdate();
-
         overlay.remove();
     });
 }

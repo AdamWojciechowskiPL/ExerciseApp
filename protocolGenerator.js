@@ -1,21 +1,29 @@
-// protocolGenerator.js
 import { state } from './state.js';
+import { checkExerciseAvailability, buildClinicalContext } from './clinicalEngine.js';
+import { getISODate } from './utils.js';
+
+// --- Task F2: Symulacja Pacing Engine dla protokołów klienckich ---
+const calculateLocalTiming = (ex, mode) => {
+    let baseRest = 30;
+    const cat = (ex.categoryId || '').toLowerCase();
+    const load = parseInt(ex.difficultyLevel || 1, 10);
+
+    // Nadpisania specyficzne dla trybów
+    if (mode === 'sos' || mode === 'calm') baseRest = 20; // Wolniejsze tempo, ale nie siłowe
+    else if (mode === 'booster' || mode === 'burn') baseRest = 15; // Krótkie przerwy
+    else if (cat.includes('neuro')) baseRest = 35;
+    else if (load >= 4) baseRest = 60;
+    else if (cat.includes('mobility')) baseRest = 20;
+
+    return {
+        rest_sec: baseRest,
+        transition_sec: (ex.isUnilateral || String(ex.reps_or_time).includes('/str')) ? 12 : 5
+    };
+};
 
 /**
- * PROTOCOL GENERATOR v5.3 (Compact Sets)
- * Moduł odpowiedzialny za dynamiczne tworzenie sesji "Bio-Protocols".
- *
- * CECHY:
- * - Time-Boxing & Stretch: Dopychanie do czasu.
- * - Organic Variance: Losowe fluktuacje czasu.
- * - Smart Sets Calculation: Obliczanie wymaganej liczby serii w celu wypełnienia czasu.
- * - Compact Output: Zwraca pojedynczy obiekt ćwiczenia z zaktualizowanym atrybutem 'sets',
- *   zamiast rozbijać go na wiele osobnych kroków w tablicy.
+ * PROTOCOL GENERATOR v6.1 (Refactored: Backend-Driven Fatigue Integration)
  */
-
-// ============================================================
-// KONFIGURACJA (STREFY I TRYBY)
-// ============================================================
 
 const ZONE_MAP = {
     'cervical': { type: 'zone', keys: ['cervical', 'neck', 'upper_traps'] },
@@ -24,11 +32,13 @@ const ZONE_MAP = {
     'sciatica': { type: 'zone', keys: ['sciatica', 'piriformis', 'nerve_flossing', 'lumbar_radiculopathy'] },
     'hips': { type: 'cat', keys: ['hip_mobility', 'glute_activation', 'femoral_nerve'] },
     'legs': { type: 'cat', keys: ['stretching', 'nerve_flossing'] },
+    'knee': { type: 'mixed', keys: ['knee', 'knee_anterior', 'knee_stability', 'vmo_activation', 'terminal_knee_extension', 'eccentric_control'] },
     'office': { type: 'mixed', keys: ['thoracic', 'hip_mobility', 'neck'] },
     'sleep': { type: 'cat', keys: ['breathing', 'muscle_relaxation', 'stretching'] },
-    'core': { type: 'cat', keys: ['core_anti_extension', 'core_anti_rotation', 'core_anti_flexion'] },
+    'core': { type: 'cat', keys: ['core_anti_extension', 'core_anti_rotation', 'core_anti_flexion', 'core_anti_lateral_flexion'] },
     'glute': { type: 'cat', keys: ['glute_activation'] },
-    'full_body': { type: 'all', keys: [] }
+    'full_body': { type: 'all', keys: [] },
+    'metabolic': { type: 'tag', keys: ['fat_loss', 'conditioning'] }
 };
 
 const TIMING_CONFIG = {
@@ -38,78 +48,108 @@ const TIMING_CONFIG = {
     'calm': { work: 120, rest: 10, tempo: 'Wolne / nos / przepona' },
     'flow': { work: 40, rest: 5, tempo: 'Płynne / kontrola zakresu' },
     'neuro': { work: 25, rest: 20, tempo: 'Delikatne / bez bólu' },
-    'ladder': { work: 50, rest: 20, tempo: 'Technika / kontrola' }
+    'ladder': { work: 50, rest: 20, tempo: 'Technika / kontrola' },
+    'burn': { work: 30, rest: 15, tempo: 'Żwawe (Low Impact)' }
 };
 
-const SECONDS_PER_REP_ESTIMATE = 4;
 const DEFAULT_MAX_DURATION = 60;
 const DEFAULT_MAX_REPS = 15;
-const INTRA_SET_REST = 15; // Czas przerwy doliczany do kompensacji dryfu
-
-// ============================================================
-// GŁÓWNA FUNKCJA GENERUJĄCA
-// ============================================================
 
 export function generateBioProtocol({ mode, focusZone, durationMin, userContext, timeFactor = 1.0 }) {
-    console.log(`🧪 [ProtocolGenerator] Generowanie v5.3 (Compact Sets): ${mode} / ${focusZone}`);
+    console.log(`🧪 [ProtocolGenerator] Generowanie v6.1: ${mode} / ${focusZone}`);
+
+    // --- CNS SAFETY NET LOGIC (INTEGRATED WITH BACKEND METRICS) ---
+    let actualMode = mode;
+    let safetyMessage = null;
+
+    // Pobieramy Fatigue Score obliczony przez Backend (Model Banistera)
+    // 0-40: Fresh, 40-80: Moderate, >80: Critical
+    const fatigueScore = state.userStats?.fatigueScore || 0;
+    const highLoadModes = ['burn', 'booster', 'ladder'];
+
+    if (highLoadModes.includes(mode)) {
+        if (fatigueScore >= 80) {
+            // CRITICAL: Bezwzględne wymuszenie regeneracji
+            console.warn(`[ProtocolGenerator] 🛡️ CRITICAL FATIGUE (${fatigueScore}). Forcing CALM.`);
+            actualMode = 'calm';
+            focusZone = 'sleep'; // Bezpieczny fallback
+            safetyMessage = `🚨 ALARM PRZETRENOWANIA (Score: ${fatigueScore})\nTwój układ nerwowy jest przeciążony. Wymuszono tryb regeneracji (Calm), aby zapobiec kontuzji.`;
+        }
+        else if (fatigueScore >= 50) {
+            // HIGH RISK: Ostrzeżenie, ale pozwalamy (chyba że user zdecyduje inaczej)
+            safetyMessage = `⚠️ OSTRZEŻENIE (HIGH RISK)\nTwoje skumulowane zmęczenie wynosi ${fatigueScore}/120. Zalecamy zmianę na tryb "Flow" lub "Reset", jeśli nie czujesz się w pełni sił.`;
+        }
+        else if (fatigueScore >= 35) {
+            // MODERATE: Info
+            safetyMessage = `ℹ️ INFO: Narastające zmęczenie (${fatigueScore}). Pamiętaj o technice i nie forsuj tempa ponad siły.`;
+        }
+    }
+    // --- SAFETY INTERVENTION END ---
 
     const targetSeconds = durationMin * 60;
-    const config = TIMING_CONFIG[mode] || TIMING_CONFIG['reset'];
+    const config = TIMING_CONFIG[actualMode] || TIMING_CONFIG['reset'];
+    const globalRestFactor = state.settings.restTimeFactor || 1.0;
 
-    // 1. Dobór kandydatów
-    let candidates = getCandidates(mode, focusZone, { ignoreEquipment: false, userContext });
+    const clinicalCtx = buildClinicalContext(userContext);
+    clinicalCtx.blockedIds = new Set(state.blacklist || []);
 
-    if (candidates.length === 0) candidates = getCandidates(mode, focusZone, { ignoreEquipment: true, userContext });
-    if (candidates.length === 0) candidates = getCandidatesSafeFallback(mode, userContext);
+    let candidates = getCandidates(actualMode, focusZone, { ignoreEquipment: false, clinicalCtx });
+
+    if (candidates.length === 0) candidates = getCandidates(actualMode, focusZone, { ignoreEquipment: true, clinicalCtx });
+    if (candidates.length === 0) candidates = getCandidatesSafeFallback(actualMode, clinicalCtx);
     if (candidates.length === 0) throw new Error("Brak bezpiecznych ćwiczeń.");
 
-    scoreCandidates(candidates, mode, userContext);
+    // Wzbogacamy kandydatów o lokalny timing
+    candidates.forEach(c => {
+        c.calculated_timing = calculateLocalTiming(c, actualMode);
+    });
 
-    // 2. Selekcja sekwencji
-    const { sequence, generatedSeconds } = selectExercisesByMode(candidates, mode, targetSeconds, config, timeFactor);
+    scoreCandidates(candidates, actualMode, userContext);
 
-    // 3. Time Stretch (Globalne skalowanie)
+    const { sequence, generatedSeconds } = selectExercisesByMode(candidates, actualMode, targetSeconds, config, timeFactor, globalRestFactor);
+
     let finalTimeFactor = timeFactor;
     if (generatedSeconds > 0 && generatedSeconds < targetSeconds) {
         const stretchRatio = targetSeconds / generatedSeconds;
-        // Pozwalamy na większy stretch, bo teraz dzielimy na serie
         finalTimeFactor = timeFactor * Math.min(stretchRatio, 3.0);
     }
 
-    // 4. Budowa finalnego planu
-    const flatExercises = buildSteps(sequence, config, mode, finalTimeFactor);
+    const flatExercises = buildSteps(sequence, config, actualMode, finalTimeFactor, globalRestFactor);
 
-    // 5. Finalny czas (szacowany, bo sets > 1 mnoży czas w rzeczywistości, ale tu sumujemy duration kroku)
-    // UWAGA: Aby czas całkowity był poprawny w UI, musimy uwzględnić serie.
     const realTotalDuration = flatExercises.reduce((sum, step) => {
         const sets = parseInt(step.sets) || 1;
         const duration = step.duration || 0;
-        // Jeśli to ćwiczenie (WORK), mnożymy przez serie. Jeśli przerwa (REST), liczymy raz.
+        const intraSetRest = Math.round((step.restBetweenSets || 15) * globalRestFactor);
+
         if (step.isWork) {
-            return sum + (duration * sets) + ((sets - 1) * INTRA_SET_REST);
+            return sum + (duration * sets) + ((sets - 1) * intraSetRest);
         }
         return sum + duration;
     }, 0);
 
+    let finalDescription = generateDescription(actualMode, durationMin);
+    if (safetyMessage) {
+        finalDescription = `${safetyMessage}\n\n${finalDescription}`;
+    }
+
     return {
-        id: `proto_${mode}_${focusZone}_${Date.now()}`,
-        title: generateTitle(mode, focusZone),
-        description: generateDescription(mode, durationMin),
+        id: `proto_${actualMode}_${focusZone}_${Date.now()}`,
+        title: generateTitle(actualMode, focusZone) + (actualMode !== mode ? " (Safety Override)" : ""),
+        description: finalDescription,
         type: 'protocol',
-        mode: mode,
+        mode: actualMode,
         totalDuration: realTotalDuration,
-        xpReward: calculateXP(mode, durationMin),
-        resilienceBonus: calculateResilienceBonus(mode),
+        targetDuration: durationMin,
+        xpReward: calculateXP(actualMode, durationMin),
+        resilienceBonus: calculateResilienceBonus(actualMode),
         flatExercises: flatExercises
     };
 }
 
-// ============================================================
-// LOGIKA SELEKCJI
-// ============================================================
+function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFactor, globalRestFactor) {
+    const scaledRest = config.rest * globalRestFactor;
+    const baseCycleTime = (config.work * timeFactor) + scaledRest;
 
-function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFactor) {
-    const baseCycleTime = (config.work + config.rest) * timeFactor;
     const maxSteps = Math.ceil(targetSeconds / baseCycleTime) + 15;
 
     let sequence = [];
@@ -120,7 +160,13 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
         sequence.push(ex);
         usedIds.add(ex.id);
         const mult = (ex.isUnilateral || String(ex.reps_or_time).includes('/str')) ? 2 : 1;
-        currentSeconds += baseCycleTime * mult;
+
+        let cycleDuration = baseCycleTime;
+        if (mode === 'burn' && ex.recommendedInterval) {
+            const rec = ex.recommendedInterval;
+            cycleDuration = (rec.work * timeFactor) + (rec.rest * timeFactor * globalRestFactor);
+        }
+        currentSeconds += cycleDuration * mult;
     };
 
     const runStrategy = (poolMain, poolFallback) => {
@@ -141,7 +187,13 @@ function selectExercisesByMode(candidates, mode, targetSeconds, config, timeFact
         const breathing = candidates.filter(ex => ['breathing_control', 'breathing'].includes(ex.categoryId));
         const relax = candidates.filter(ex => ex.categoryId === 'muscle_relaxation');
         runStrategy([...breathing, ...relax], candidates);
-    } else {
+    }
+    else if (mode === 'burn') {
+        const highIntensity = candidates.filter(ex => (ex.metabolicIntensity || 1) >= 3);
+        const mediumIntensity = candidates.filter(ex => (ex.metabolicIntensity || 1) === 2);
+        runStrategy(highIntensity, mediumIntensity);
+    }
+    else {
         runStrategy(candidates, null);
     }
 
@@ -158,11 +210,10 @@ function getStrictUnique(pool, usedIds) {
     return null;
 }
 
-// ============================================================
-// BUDOWANIE KROKÓW (COMPACT SETS)
-// ============================================================
+function buildSteps(exercises, config, mode, timeFactor, globalRestFactor) {
+    const SECONDS_PER_REP_ESTIMATE = state.settings.secondsPerRep || 6;
+    const INTRA_SET_REST = Math.round(15 * globalRestFactor);
 
-function buildSteps(exercises, config, mode, timeFactor) {
     const steps = [];
 
     steps.push({
@@ -177,31 +228,35 @@ function buildSteps(exercises, config, mode, timeFactor) {
     let driftCompensation = 0;
 
     exercises.forEach((ex, index) => {
-        const baseWork = config.work * timeFactor;
-        const transitionRest = Math.round(config.rest * timeFactor);
+        let baseWork = config.work * timeFactor;
+        let transitionRest = Math.round(config.rest * timeFactor * globalRestFactor);
 
-        // Organic Variance
+        if (mode === 'burn' && ex.recommendedInterval) {
+            baseWork = ex.recommendedInterval.work * timeFactor;
+            transitionRest = Math.round(ex.recommendedInterval.rest * timeFactor * globalRestFactor);
+        }
+
         const randomJitter = 0.7 + (Math.random() * 0.6);
         const lvl = parseInt(ex.difficultyLevel || 1);
         let difficultyMod = 1.0;
         if (lvl >= 4) difficultyMod = 0.85;
         if (lvl === 1) difficultyMod = 1.15;
 
-        // Target Total Time for this exercise block (all sets combined)
-        let targetTotalSeconds = (baseWork * randomJitter * difficultyMod) - (driftCompensation * 0.3);
+        let targetTotalSeconds = mode === 'burn'
+            ? baseWork
+            : (baseWork * randomJitter * difficultyMod) - (driftCompensation * 0.3);
+
         targetTotalSeconds = Math.max(15, targetTotalSeconds);
 
-        // Type Detection
         const rawReps = String(ex.reps_or_time || "").toLowerCase();
         const hasTimeUnits = rawReps.includes('s') || rawReps.includes('min');
         const tempoStr = (ex.defaultTempo || ex.tempo_or_iso || "").toLowerCase();
         const isIso = tempoStr.includes("izo") || tempoStr.includes("iso");
         const hasMaxDuration = (ex.maxDuration > 0) || (ex.max_recommended_duration > 0);
 
-        const isTimeBased = hasTimeUnits || isIso || hasMaxDuration;
+        const isTimeBased = hasTimeUnits || isIso || hasMaxDuration || mode === 'burn';
         const isRepBased = !isTimeBased;
 
-        // --- CALCULATION (SETS & PER SET VALUE) ---
         let sets = 1;
         let displayValue = "";
         let durationPerSet = 0;
@@ -227,15 +282,11 @@ function buildSteps(exercises, config, mode, timeFactor) {
             durationPerSet = secondsPerSet;
         }
 
-        // Drift update
         const totalDurationCreated = (durationPerSet * sets) + ((sets - 1) * INTRA_SET_REST);
         driftCompensation += (totalDurationCreated - baseWork);
 
         const isUnilateral = ex.isUnilateral || String(ex.reps_or_time).includes('/str');
         const tempoDisplay = config.tempo;
-
-        // --- GENERATING COMPACT STEPS ---
-        // Zamiast pętli, tworzymy jeden wpis z zaktualizowanym atrybutem sets.
 
         const createCompactStep = (suffix) => ({
             ...ex,
@@ -243,26 +294,27 @@ function buildSteps(exercises, config, mode, timeFactor) {
             name: `${ex.name}${suffix}`,
             isWork: true,
             isRest: false,
-            // Ważne: ustawiamy sets na wyliczoną wartość!
             sets: sets.toString(),
-            currentSet: 1,      // Startuje od 1
-            totalSets: sets,    // Informacja dla UI
+            currentSet: 1,
+            totalSets: sets,
             sectionName: mapModeToSectionName(mode),
             reps_or_time: displayValue,
-            duration: durationPerSet, // To jest czas JEDNEJ serii dla timera
+            duration: durationPerSet,
             tempo_or_iso: tempoDisplay,
-            uniqueId: `${ex.id}_p${index}${suffix ? suffix.replace(/[\s()]/g, '') : ''}`
+            uniqueId: `${ex.id}_p${index}${suffix ? suffix.replace(/[\s()]/g, '') : ''}`,
+            restBetweenSets: INTRA_SET_REST,
+            calculated_timing: ex.calculated_timing
         });
 
         if (isUnilateral) {
             steps.push(createCompactStep(' (Lewa)'));
-            steps.push({ name: "Zmiana Strony", isWork: false, isRest: true, duration: 5, sectionName: "Przejście", description: "Druga strona" });
+            const transitionTime = Math.max(5, Math.round(5 * globalRestFactor));
+            steps.push({ name: "Zmiana Strony", isWork: false, isRest: true, duration: transitionTime, sectionName: "Przejście", description: "Druga strona" });
             steps.push(createCompactStep(' (Prawa)'));
         } else {
             steps.push(createCompactStep(''));
         }
 
-        // Przejście do NASTĘPNEGO ćwiczenia
         if (index < exercises.length - 1 && transitionRest > 0) {
             steps.push({
                 name: getRestName(mode), isWork: false, isRest: true, duration: transitionRest, sectionName: "Przejście", description: `Następnie: ${exercises[index + 1].name}`
@@ -273,56 +325,44 @@ function buildSteps(exercises, config, mode, timeFactor) {
     return steps;
 }
 
-// ============================================================
-// HELPERY DANYCH (BEZ ZMIAN)
-// ============================================================
-
-function violatesProtocolRestrictions(ex, restrictions) {
-    if (!restrictions || restrictions.length === 0) return false;
-    const plane = ex.primaryPlane || 'multi';
-    const pos = ex.position || null;
-    const cat = ex.categoryId || '';
-
-    if (restrictions.includes('no_kneeling') && (pos === 'kneeling' || pos === 'quadruped')) return true;
-    if (restrictions.includes('no_twisting') && plane === 'rotation') return true;
-    if (restrictions.includes('no_floor_sitting') && pos === 'sitting') return true;
-
-    if (restrictions.includes('foot_injury')) {
-        const blockedPositions = ['standing', 'kneeling', 'quadruped', 'lunge'];
-        if (blockedPositions.includes(pos)) return true;
-        const blockedCategories = ['squats', 'lunges', 'cardio', 'plyometrics', 'calves'];
-        if (blockedCategories.includes(cat)) return true;
-        const name = (ex.name || '').toLowerCase();
-        if (name.includes('przysiad') || name.includes('wykrok') || name.includes('bieg')) return true;
-    }
-    return false;
-}
-
 function getCandidates(mode, focusZone, ctx = {}) {
-    const { ignoreEquipment, userContext } = ctx;
-    const restrictions = userContext?.physical_restrictions || [];
+    const { ignoreEquipment, clinicalCtx } = ctx;
     const library = Object.entries(state.exerciseLibrary).map(([id, data]) => ({ id, ...data }));
     const zoneConfig = ZONE_MAP[focusZone];
-    const blacklist = state.blacklist || [];
 
     if (!zoneConfig) return [];
 
     return library.filter(ex => {
-        if (blacklist.includes(ex.id)) return false;
-        if (violatesProtocolRestrictions(ex, restrictions)) return false;
-        if (ex.isAllowed !== true) {
-            if (ignoreEquipment && ex.isAllowed === false && ex.rejectionReason === 'missing_equipment') { /* pass */ }
-            else { return false; }
+        const result = checkExerciseAvailability(ex, clinicalCtx, { ignoreEquipment });
+        if (!result.allowed) {
+            if (ignoreEquipment && result.reason === 'missing_equipment') { /* pass */ }
+            else return false;
         }
 
         const difficulty = parseInt(ex.difficultyLevel || 1, 10);
+
+        if (mode === 'burn') {
+            const hasTag = (ex.goalTags && (ex.goalTags.includes('fat_loss') || ex.goalTags.includes('conditioning')));
+            const isCat = ex.categoryId === 'conditioning_low_impact';
+            if (!hasTag && !isCat) return false;
+            if ((ex.metabolicIntensity || 1) < 2) return false;
+            return true;
+        }
+
         if (mode === 'sos' && difficulty > 2) return false;
         if (mode === 'booster' && difficulty < 2) return false;
         if (mode === 'reset' && difficulty > 3) return false;
+
+        if (focusZone === 'knee') {
+            if (mode === 'sos') {
+                if (ex.kneeLoadLevel === 'high' || ex.kneeLoadLevel === 'medium') return false;
+            }
+        }
+
         if (mode === 'calm') {
             if (difficulty > 2) return false;
             if (!['breathing_control', 'breathing', 'muscle_relaxation'].includes(ex.categoryId)) return false;
-            if (ex.position && !['supine', 'sitting'].includes(ex.position)) return false;
+            if (ex.position && !['supine', 'sitting', 'side_lying'].includes(ex.position)) return false;
         }
         if (mode === 'flow') {
             if (difficulty > 3) return false;
@@ -342,17 +382,18 @@ function getCandidates(mode, focusZone, ctx = {}) {
         if (zoneConfig.type === 'zone') return ex.painReliefZones && ex.painReliefZones.some(z => zoneConfig.keys.includes(z));
         else if (zoneConfig.type === 'cat') return zoneConfig.keys.includes(ex.categoryId);
         else if (zoneConfig.type === 'mixed') return zoneConfig.keys.includes(ex.categoryId) || (ex.painReliefZones && ex.painReliefZones.some(z => zoneConfig.keys.includes(z)));
+        else if (zoneConfig.type === 'tag') return ex.goalTags && ex.goalTags.some(t => zoneConfig.keys.includes(t));
         else if (zoneConfig.type === 'all') return true;
         return false;
     });
 }
 
-function getCandidatesSafeFallback(mode, userContext) {
+function getCandidatesSafeFallback(mode, clinicalCtx) {
     const library = Object.entries(state.exerciseLibrary).map(([id, data]) => ({ id, ...data }));
-    const restrictions = userContext?.physical_restrictions || [];
     return library.filter(ex => {
-        if (ex.isAllowed !== true) return false;
-        if (violatesProtocolRestrictions(ex, restrictions)) return false;
+        const result = checkExerciseAvailability(ex, clinicalCtx, { ignoreEquipment: true, ignoreDifficulty: true });
+        if (!result.allowed) return false;
+
         const difficulty = parseInt(ex.difficultyLevel || 1, 10);
         if (mode === 'sos' && difficulty > 2) return false;
         if (mode === 'calm' && difficulty > 2) return false;
@@ -368,26 +409,29 @@ function scoreCandidates(candidates, mode, userContext) {
         score += (pref.score || 0);
         if (recentSessions.includes(ex.id)) score -= 50;
         if (mode === 'booster') score += (parseInt(ex.difficultyLevel || 1) * 5);
+        if (mode === 'burn') {
+            score += (ex.metabolicIntensity || 1) * 10;
+            if (ex.conditioningStyle === 'interval') score += 15;
+        }
         score += Math.random() * 20;
         ex._genScore = score;
     });
     candidates.sort((a, b) => b._genScore - a._genScore);
 }
 
-// ============================================================
-// FORMATOWANIE TEKSTÓW
-// ============================================================
-
 function generateTitle(mode, zone) {
     const zoneName = {
         'cervical': 'Szyja', 'thoracic': 'Plecy (Góra)', 'lumbar': 'Odcinek Lędźwiowy',
         'sciatica': 'Nerw Kulszowy', 'hips': 'Biodra', 'core': 'Brzuch / Core',
         'office': 'Anty-Biuro', 'sleep': 'Sen', 'glute': 'Pośladki', 'full_body': 'Całe Ciało',
-        'legs': 'Nogi'
+        'legs': 'Nogi',
+        'knee': 'Kolana',
+        'metabolic': 'Kondycja'
     }[zone] || 'Bio-Protokół';
     const suffix = {
         'sos': 'Ratunkowy', 'booster': 'Power', 'reset': 'Flow',
-        'calm': 'Wyciszenie', 'flow': 'Mobility Flow', 'neuro': 'Neuro-Ślizgi', 'ladder': 'Progresja'
+        'calm': 'Wyciszenie', 'flow': 'Mobility Flow', 'neuro': 'Neuro-Ślizgi', 'ladder': 'Progresja',
+        'burn': 'Fat Burner'
     }[mode] || '';
     return `${zoneName}: ${suffix}`;
 }
@@ -398,6 +442,7 @@ function generateDescription(mode, duration) {
     if (mode === 'neuro') return `Praca z układem nerwowym (${duration} min). Delikatne zakresy.`;
     if (mode === 'ladder') return `Budowanie techniki (${duration} min). Stopniowanie trudności.`;
     if (mode === 'booster') return `Intensywny trening (${duration} min). Utrzymuj technikę.`;
+    if (mode === 'burn') return `Kondycja Low-Impact (${duration} min). Spalanie bez skoków.`;
     return `Regeneracja (${duration} min). Skup się na oddechu.`;
 }
 
@@ -406,11 +451,13 @@ function mapModeToSectionName(mode) {
     if (mode === 'calm') return 'Wyciszenie';
     if (mode === 'booster') return 'Ogień';
     if (mode === 'ladder') return 'Wyzwanie';
+    if (mode === 'burn') return 'Cardio';
     return 'Regeneracja';
 }
 
 function getRestName(mode) {
     if (mode === 'booster') return 'Szybka Przerwa';
+    if (mode === 'burn') return 'Aktywna Przerwa';
     if (mode === 'calm') return 'Przejście';
     if (mode === 'flow') return 'Płynna zmiana';
     return 'Rozluźnienie';
@@ -419,6 +466,7 @@ function getRestName(mode) {
 function calculateXP(mode, minutes) {
     const base = minutes * 10;
     if (mode === 'booster') return Math.round(base * 1.5);
+    if (mode === 'burn') return Math.round(base * 1.6);
     if (mode === 'ladder') return Math.round(base * 1.2);
     if (mode === 'calm') return Math.round(base * 0.6);
     return base;
@@ -428,5 +476,6 @@ function calculateResilienceBonus(mode) {
     if (mode === 'sos' || mode === 'reset') return 5;
     if (mode === 'calm') return 7;
     if (mode === 'neuro') return 6;
+    if (mode === 'burn') return 8;
     return 1;
 }

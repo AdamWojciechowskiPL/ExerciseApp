@@ -1,89 +1,105 @@
-// js/ui/screens/settings.js
+// ExerciseApp/ui/screens/settings.js
 import { state } from '../../state.js';
 import { navigateTo, showLoader, hideLoader } from '../core.js';
 import { screens } from '../../dom.js';
 import dataStore from '../../dataStore.js';
 import { initWizard } from '../wizard.js';
-import { renderMainScreen } from './dashboard.js';
+import { renderMainScreen, clearPlanFromStorage } from './dashboard.js';
+import { renderHelpScreen } from './help.js'; // Dodano import
 
 export const renderSettingsScreen = () => {
     const screen = screens.settings;
-    
-    // Pobieramy aktualne wartości ze stanu
-    const currentMode = state.settings.planMode || (state.settings.dynamicPlanData ? 'dynamic' : 'static');
-    const activePlanId = state.settings.activePlanId;
+    if (!screen) return;
+
     const startDate = state.settings.appStartDate || new Date().toISOString().split('T')[0];
     const ttsEnabled = state.settings.ttsEnabled ?? true;
     const isStravaConnected = state.stravaIntegration.isConnected;
     const hasDynamicData = !!state.settings.dynamicPlanData;
 
-    // --- HTML STRUCTURE ---
-    
+    const secondsPerRep = state.settings.secondsPerRep || 6;
+    const restTimeFactor = state.settings.restTimeFactor || 1.0;
+    const restTimePercent = Math.round(restTimeFactor * 100);
+
+    let currentSchedule = state.settings.wizardData?.schedule_pattern || [1, 3, 5];
+
+    const days = [
+        { label: 'Pn', val: 1 },
+        { label: 'Wt', val: 2 },
+        { label: 'Śr', val: 3 },
+        { label: 'Cz', val: 4 },
+        { label: 'Pt', val: 5 },
+        { label: 'So', val: 6 },
+        { label: 'Nd', val: 0 }
+    ];
+
+    const daysHtml = days.map(d => `
+        <div class="day-toggle settings-day-toggle ${currentSchedule.includes(d.val) ? 'active' : ''}" data-val="${d.val}">
+            ${d.label}
+        </div>
+    `).join('');
+
     screen.innerHTML = `
         <h2 style="margin-bottom: 1.5rem;">Ustawienia</h2>
-        
         <form id="settings-form-rebuild">
-            
-            <!-- SEKCJA 1: PROFIL & WIZARD -->
+
+            <!-- NOWA SEKCJA: POMOC -->
+            <div class="settings-card" style="background: linear-gradient(145deg, #ffffff 0%, #f0f9ff 100%); border-color: #bae6fd;">
+                <div class="card-header-icon" style="color:#0ea5e9"><svg width="24" height="24"><use href="#icon-info"/></svg></div>
+                <h3>Potrzebujesz pomocy?</h3>
+                <p class="settings-desc">Dowiedz się jak działa Mikser, Tarcza Resilience i sterowanie treningiem.</p>
+                <button type="button" id="open-help-btn" class="nav-btn" style="width:100%; border-color:#7dd3fc; color:#0284c7;">📖 Otwórz Centrum Wiedzy</button>
+            </div>
+
             <div class="settings-card">
-                <div class="card-header-icon">🧬</div>
-                <h3>Wirtualny Fizjoterapeuta</h3>
-                <p class="settings-desc">Zaktualizuj swoje dane medyczne, sprzęt i cele, aby wygenerować nowy plan dynamiczny.</p>
-                
+                <div class="card-header-icon"><svg width="24" height="24"><use href="#icon-calendar"/></svg></div>
+                <h3>Twój Harmonogram</h3>
+                <p class="settings-desc">Wybierz dni, w które chcesz ćwiczyć. Plan automatycznie dostosuje się do zmian.</p>
+
+                <div class="day-selector-container" style="justify-content: space-between; margin-bottom: 1.5rem;">
+                    ${daysHtml}
+                </div>
+
+                <div class="form-group">
+                    <label for="setting-start-date">Data początkowa cyklu</label>
+                    <input type="date" id="setting-start-date" value="${startDate}" required>
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <div class="card-header-icon"><svg width="24" height="24"><use href="#icon-clock"/></svg></div>
+                <h3>Kalibracja Czasu</h3>
+                <div class="form-group slider-group">
+                    <label>Czas 1 powtórzenia: <span id="val-rep" style="font-weight:bold; color:var(--primary-color)">${secondsPerRep}s</span></label>
+                    <input type="range" id="setting-rep-time" min="3" max="10" value="${secondsPerRep}">
+                </div>
+
+                <div class="form-group slider-group">
+                    <label>Tempo Przerw: <span id="val-rest-factor" style="font-weight:bold; color:var(--primary-color)">${restTimePercent}%</span></label>
+                    <input type="range" id="setting-rest-factor" min="50" max="150" step="10" value="${restTimePercent}">
+                    <div style="display:flex; justify-content:space-between; font-size:0.75rem; opacity:0.6; margin-top:5px;">
+                        <span>Szybko (Metabolic)</span>
+                        <span>Standard</span>
+                        <span>Spokojnie (Siła)</span>
+                    </div>
+                </div>
+
+                <button type="button" id="recalc-stats-btn" class="nav-btn" style="width:100%; margin-top:10px;">🔄 Przelicz Statystyki Tempa</button>
+            </div>
+
+            <div class="settings-card">
+                <div class="card-header-icon"><svg width="24" height="24"><use href="#icon-dna"/></svg></div>
+                <h3>Profil Medyczny</h3>
+                <p class="settings-desc">Zaktualizuj dane o bólu, sprzęcie i celach.</p>
                 <button type="button" id="restart-wizard-btn" class="action-btn" style="background: var(--gold-color); color: #000; margin-top:10px;">
                     ${hasDynamicData ? '🔄 Zaktualizuj Ankietę' : '✨ Uruchom Kreatora'}
                 </button>
             </div>
 
-            <!-- SEKCJA 2: KONFIGURACJA PLANU -->
             <div class="settings-card">
-                <div class="card-header-icon">📅</div>
-                <h3>Plan Treningowy</h3>
-                
-                <!-- Tryb Planu -->
-                <div class="form-group">
-                    <label for="setting-plan-mode">Tryb Planu</label>
-                    <select id="setting-plan-mode">
-                        <option value="static" ${currentMode === 'static' ? 'selected' : ''}>Sztywny (Wybór z listy)</option>
-                        <option value="dynamic" ${currentMode === 'dynamic' ? 'selected' : ''}>Dynamiczny (Virtual Physio)</option>
-                    </select>
-                    <p class="settings-hint" id="mode-hint">
-                        ${currentMode === 'dynamic' 
-                            ? 'Plan dopasowuje się automatycznie do Twojego bólu i postępów.' 
-                            : 'Klasyczny plan treningowy ze stałą listą ćwiczeń.'}
-                    </p>
-                </div>
-
-                <!-- Wybór Planu (Tylko dla Static) -->
-                <div class="form-group ${currentMode === 'dynamic' ? 'hidden' : ''}" id="static-plan-selector-group">
-                    <label for="setting-training-plan">Wybierz Szablon</label>
-                    <select id="setting-training-plan">
-                        ${Object.keys(state.trainingPlans).map(planId => `
-                            <option value="${planId}" ${planId === activePlanId ? 'selected' : ''}>
-                                ${state.trainingPlans[planId].name}
-                            </option>
-                        `).join('')}
-                    </select>
-                </div>
-
-                <!-- Data Startu -->
-                <div class="form-group">
-                    <label for="setting-start-date">Początek Cyklu</label>
-                    <input type="date" id="setting-start-date" value="${startDate}" required>
-                    <p class="settings-hint">Data służy do obliczania, który to dzień cyklu.</p>
-                </div>
-            </div>
-
-            <!-- SEKCJA 3: PREFERENCJE (TTS) -->
-            <div class="settings-card">
-                <div class="card-header-icon">🔊</div>
+                <div class="card-header-icon"><svg width="24" height="24"><use href="#icon-sound-on"/></svg></div>
                 <h3>Preferencje Aplikacji</h3>
-                
                 <div class="toggle-row">
-                    <div class="toggle-label">
-                        <strong>Asystent Głosowy (TTS)</strong>
-                        <p>Lektor czyta nazwy ćwiczeń i instrukcje.</p>
-                    </div>
+                    <div class="toggle-label"><strong>Asystent Głosowy (TTS)</strong><p>Lektor czyta instrukcje.</p></div>
                     <label class="switch">
                         <input type="checkbox" id="setting-tts" ${ttsEnabled ? 'checked' : ''}>
                         <span class="slider round"></span>
@@ -91,160 +107,152 @@ export const renderSettingsScreen = () => {
                 </div>
             </div>
 
-            <!-- SEKCJA 4: INTEGRACJE -->
             <div class="settings-card">
-                <div class="card-header-icon">🔗</div>
+                <div class="card-header-icon"><svg width="24" height="24"><use href="#icon-link"/></svg></div>
                 <h3>Integracje</h3>
-                
                 <div class="integration-row">
-                    <div style="display:flex; align-items:center; gap:10px;">
-                        <img src="/icons/strava-logo.svg" onerror="this.style.display='none'" style="height:24px;"> 
-                        <strong>Strava</strong>
-                    </div>
-                    <div id="strava-status-badge" class="status-badge ${isStravaConnected ? 'completed' : 'skipped'}">
-                        ${isStravaConnected ? 'Połączono' : 'Rozłączono'}
-                    </div>
+                    <div style="display:flex; align-items:center; gap:10px;"><img src="/icons/strava-logo.svg" onerror="this.style.display='none'" style="height:24px;"><strong>Strava</strong></div>
+                    <div id="strava-status-badge" class="status-badge ${isStravaConnected ? 'completed' : 'skipped'}">${isStravaConnected ? 'Połączono' : 'Rozłączono'}</div>
                 </div>
-                
                 <div style="margin-top:15px;">
-                    ${isStravaConnected 
+                    ${isStravaConnected
                         ? `<button type="button" id="disconnect-strava-btn" class="nav-btn danger-btn" style="width:100%">Rozłącz konto</button>`
-                        : `<button type="button" id="connect-strava-btn" class="nav-btn strava-btn" style="width:100%; background:#FC4C02; color:white; border:none;">Połącz ze Strava</button>`
-                    }
+                        : `<button type="button" id="connect-strava-btn" class="nav-btn strava-btn" style="width:100%; background:#FC4C02; color:white; border:none;">Połącz ze Strava</button>`}
                 </div>
             </div>
 
-            <!-- SAVE BUTTON (NORMALNY, NA DOLE) -->
             <button type="submit" class="action-btn" style="margin-top: 2rem; margin-bottom: 3rem;">Zapisz Zmiany</button>
         </form>
 
-        <!-- SEKCJA 5: STREFA NIEBEZPIECZNA -->
         <div class="settings-card danger-zone">
             <h3 style="color:var(--danger-color);">Strefa Niebezpieczna</h3>
-            <p class="settings-desc">Usunięcie konta jest nieodwracalne. Stracisz całą historię i postępy.</p>
+            <p class="settings-desc">Usunięcie konta jest nieodwracalne.</p>
             <button id="delete-account-btn" class="nav-btn danger-btn" style="width: 100%;">Usuń konto na stałe</button>
         </div>
-
-        <!-- Style wstrzyknięte lokalnie dla tego ekranu -->
-        <style>
-            .settings-card {
-                background: #fff;
-                border-radius: 12px;
-                padding: 1.5rem;
-                margin-bottom: 1.5rem;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-                border: 1px solid var(--border-color);
-                position: relative;
-                overflow: hidden;
-            }
-            
-            /* FIX IKON */
-            .card-header-icon {
-                position: absolute;
-                top: 1.5rem;
-                right: 1.5rem;
-                font-size: 1.8rem;
-                opacity: 1;       
-                pointer-events: none;
-                line-height: 1;
-            }
-            
-            .settings-card h3 { margin-top: 0; margin-bottom: 0.5rem; color: var(--primary-color); font-size: 1.1rem; padding-right: 40px; }
-            .settings-desc { font-size: 0.85rem; color: var(--muted-text-color); margin-bottom: 0; }
-            .settings-hint { font-size: 0.75rem; color: #999; margin-top: 4px; margin-bottom: 0; }
-            
-            /* Switch Toggle */
-            .switch { position: relative; display: inline-block; width: 50px; height: 26px; flex-shrink: 0; }
-            .switch input { opacity: 0; width: 0; height: 0; }
-            .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
-            .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
-            input:checked + .slider { background-color: var(--secondary-color); }
-            input:checked + .slider:before { transform: translateX(24px); }
-            
-            .toggle-row { display: flex; justify-content: space-between; align-items: center; }
-            .toggle-label p { font-size: 0.8rem; color: #666; margin: 2px 0 0 0; }
-            
-            .integration-row { display: flex; justify-content: space-between; align-items: center; }
-            
-            .danger-zone { border: 1px solid var(--danger-color); background: #fff5f5; }
-            
-            .hidden { display: none; }
-        </style>
     `;
 
-    // ============================================================
-    // LOGIKA INTERAKCJI
-    // ============================================================
-
-    const form = document.getElementById('settings-form-rebuild');
-    const modeSelect = document.getElementById('setting-plan-mode');
-    const planSelectorGroup = document.getElementById('static-plan-selector-group');
-    const modeHint = document.getElementById('mode-hint');
-
-    // 1. Obsługa zmiany trybu (Dynamic/Static)
-    modeSelect.addEventListener('change', (e) => {
-        const val = e.target.value;
-        if (val === 'static') {
-            planSelectorGroup.classList.remove('hidden');
-            modeHint.textContent = 'Klasyczny plan treningowy ze stałą listą ćwiczeń.';
-        } else {
-            planSelectorGroup.classList.add('hidden');
-            modeHint.textContent = 'Plan dopasowuje się automatycznie do Twojego bólu i postępów.';
-        }
+    // --- OBSŁUGA NOWEGO PRZYCISKU POMOCY ---
+    screen.querySelector('#open-help-btn').addEventListener('click', () => {
+        renderHelpScreen();
     });
 
-    // 2. Obsługa Zapisu
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        
-        const newMode = modeSelect.value;
-        const newDate = document.getElementById('setting-start-date').value;
-        const newTts = document.getElementById('setting-tts').checked;
-        
-        state.settings.appStartDate = newDate;
-        state.settings.planMode = newMode;
-        state.settings.ttsEnabled = newTts;
-        state.tts.isSoundOn = newTts;
+    const form = screen.querySelector('#settings-form-rebuild');
+    const repSlider = screen.querySelector('#setting-rep-time');
+    const restFactorSlider = screen.querySelector('#setting-rest-factor');
+    const dayToggles = screen.querySelectorAll('.settings-day-toggle');
 
-        if (newMode === 'static') {
-            const staticId = document.getElementById('setting-training-plan').value;
-            state.settings.activePlanId = staticId;
-        }
-
-        showLoader();
-        try {
-            await dataStore.saveSettings();
-            alert('Ustawienia zostały zapisane.');
-            renderMainScreen(); 
-        } catch (err) {
-            console.error(err);
-            alert("Błąd zapisu.");
-        } finally {
-            hideLoader();
-        }
+    dayToggles.forEach(toggle => {
+        toggle.addEventListener('click', () => {
+            const val = parseInt(toggle.dataset.val);
+            if (currentSchedule.includes(val)) {
+                currentSchedule = currentSchedule.filter(d => d !== val);
+                toggle.classList.remove('active');
+            } else {
+                currentSchedule.push(val);
+                toggle.classList.add('active');
+            }
+            currentSchedule.sort((a, b) => a - b);
+        });
     });
 
-    // 3. Przyciski Akcji
-    document.getElementById('restart-wizard-btn').addEventListener('click', () => {
-        initWizard(true);
-    });
+    if (repSlider) repSlider.addEventListener('input', (e) => screen.querySelector('#val-rep').textContent = e.target.value + 's');
+    if (restFactorSlider) restFactorSlider.addEventListener('input', (e) => screen.querySelector('#val-rest-factor').textContent = e.target.value + '%');
 
-    const connectStravaBtn = document.getElementById('connect-strava-btn');
-    if (connectStravaBtn) {
-        connectStravaBtn.addEventListener('click', () => {
+    if (form) {
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            if (currentSchedule.length === 0) {
+                alert("Musisz wybrać przynajmniej jeden dzień treningowy.");
+                return;
+            }
+
+            const newSecondsPerRep = parseInt(repSlider.value, 10);
+            const newRestFactor = parseInt(restFactorSlider.value, 10) / 100.0;
+
+            const timingChanged = newSecondsPerRep !== state.settings.secondsPerRep ||
+                                  newRestFactor !== (state.settings.restTimeFactor || 1.0);
+
+            const oldSchedule = (state.settings.wizardData?.schedule_pattern || []).sort().toString();
+            const newScheduleStr = currentSchedule.sort().toString();
+            const scheduleChanged = oldSchedule !== newScheduleStr;
+
+            state.settings.appStartDate = screen.querySelector('#setting-start-date').value;
+            state.settings.ttsEnabled = screen.querySelector('#setting-tts').checked;
+            state.tts.isSoundOn = state.settings.ttsEnabled;
+
+            state.settings.secondsPerRep = newSecondsPerRep;
+            state.settings.restTimeFactor = newRestFactor;
+
+            delete state.settings.restBetweenSets;
+            delete state.settings.restBetweenExercises;
+
+            if (!state.settings.wizardData) state.settings.wizardData = {};
+            state.settings.wizardData.schedule_pattern = currentSchedule;
+
             showLoader();
-            dataStore.startStravaAuth();
+            try {
+                await dataStore.saveSettings();
+
+                if ((scheduleChanged || timingChanged) && Object.keys(state.settings.wizardData).length > 0) {
+                    let msg = "Zapisano ustawienia.";
+                    if (scheduleChanged) msg = "Zmieniono dni treningowe. Plan zostanie dostosowany.";
+                    else if (timingChanged) msg = "Zmieniono tempo treningu. Przeliczam plan...";
+
+                    if (confirm(`${msg} Kontynuować?`)) {
+                        const payload = {
+                            ...state.settings.wizardData,
+                            secondsPerRep: newSecondsPerRep,
+                            restTimeFactor: newRestFactor
+                        };
+                        await dataStore.generateDynamicPlan(payload);
+                        clearPlanFromStorage();
+                        alert('Plan został pomyślnie zaktualizowany.');
+                    }
+                } else {
+                    alert('Ustawienia zostały zapisane.');
+                }
+                renderMainScreen();
+            } catch (err) {
+                console.error(err);
+                alert("Błąd zapisu.");
+            } finally {
+                hideLoader();
+            }
         });
     }
 
-    const disconnectStravaBtn = document.getElementById('disconnect-strava-btn');
+    screen.querySelector('#restart-wizard-btn').addEventListener('click', () => initWizard(true));
+
+    screen.querySelector('#recalc-stats-btn').addEventListener('click', async () => {
+        if (confirm("Ta operacja przeanalizuje całą Twoją historię treningową. Może to chwilę potrwać.")) {
+            showLoader();
+            try {
+                const res = await dataStore.recalculateStats();
+                if (res) {
+                    await dataStore.initialize();
+                    alert(`Gotowe! Przeliczono statystyki dla ${res.count || 'kilku'} ćwiczeń.`);
+                }
+            } catch (err) {
+                console.error(err);
+                alert("Wystąpił błąd.");
+            } finally {
+                hideLoader();
+            }
+        }
+    });
+
+    const connectStravaBtn = screen.querySelector('#connect-strava-btn');
+    if (connectStravaBtn) connectStravaBtn.addEventListener('click', () => { showLoader(); dataStore.startStravaAuth(); });
+
+    const disconnectStravaBtn = screen.querySelector('#disconnect-strava-btn');
     if (disconnectStravaBtn) {
         disconnectStravaBtn.addEventListener('click', async () => {
             if (confirm('Czy na pewno chcesz rozłączyć konto Strava?')) {
                 showLoader();
                 try {
                     await dataStore.disconnectStrava();
-                    renderSettingsScreen(); 
+                    renderSettingsScreen();
                 } finally {
                     hideLoader();
                 }
@@ -252,20 +260,17 @@ export const renderSettingsScreen = () => {
         });
     }
 
-    document.getElementById('delete-account-btn').addEventListener('click', async () => {
-        const confirmation1 = prompt("Czy na pewno chcesz usunąć swoje konto? Wpisz 'usuń moje konto' aby potwierdzić.");
-        if (confirmation1 !== 'usuń moje konto') return;
-        
-        if (!confirm("OSTATECZNE POTWIERDZENIE: Dane zostaną trwale usunięte. Nie będzie można ich przywrócić.")) return;
-
-        showLoader();
-        try {
-            await dataStore.deleteAccount();
-            alert("Konto usunięte. Do zobaczenia!");
-            window.location.reload(); 
-        } catch (error) {
-            hideLoader();
-            alert(error.message);
+    screen.querySelector('#delete-account-btn').addEventListener('click', async () => {
+        const c1 = prompt("Wpisz 'usuń moje konto' aby potwierdzić.");
+        if (c1 === 'usuń moje konto' && confirm("Wszystkie Twoje dane zostaną trwale usunięte.")) {
+            showLoader();
+            try {
+                await dataStore.deleteAccount();
+                window.location.reload();
+            } catch (e) {
+                hideLoader();
+                alert(e.message);
+            }
         }
     });
 

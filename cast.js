@@ -2,6 +2,7 @@
 
 import { state } from './state.js';
 import { getGamificationState } from './gamification.js';
+import { extractYoutubeId } from './utils.js'; // ZMIANA: Import parsera
 
 /**
  * ID Aplikacji zarejestrowanej w Google Cast SDK Developer Console.
@@ -28,7 +29,7 @@ export const initializeCastApi = () => {
     }
 
     const context = cast.framework.CastContext.getInstance();
-    
+
     try {
         context.setOptions({
             receiverApplicationId: APPLICATION_ID,
@@ -56,7 +57,7 @@ export const initializeCastApi = () => {
                         castSession = currentCastSession;
                         isCasting = true;
                         console.log('[Cast Sender] ✅ Połączono z urządzeniem Chromecast.');
-                        
+
                         // --- START HEARTBEAT ---
                         startHeartbeat();
 
@@ -70,16 +71,16 @@ export const initializeCastApi = () => {
                     case cast.framework.SessionState.SESSION_ENDING:
                         castSession = null;
                         isCasting = false;
-                        
+
                         // --- STOP HEARTBEAT ---
                         stopHeartbeat();
-                        
+
                         console.log('[Cast Sender] 🔌 Rozłączono sesję.');
                         break;
                 }
             }
         );
-        
+
         console.log('[Cast Sender] API zainicjalizowane.');
 
     } catch (e) {
@@ -92,12 +93,11 @@ export const getIsCasting = () => isCasting && castSession !== null;
 // --- FIX: AGRESYWNY HEARTBEAT (ANTI-IDLE) ---
 function startHeartbeat() {
     stopHeartbeat();
-    
+
     // ZMIANA: Interwał zmniejszony z 240000 (4 min) na 20000 (20 sek).
     // Wiele TV z Androidem usypia połączenie po 60 sekundach braku pakietów.
     heartbeatInterval = setInterval(() => {
         if (getIsCasting()) {
-            // console.log('[Cast Sender] 💓 Sending Heartbeat...'); // Opcjonalnie zakomentuj, żeby nie śmiecić w konsoli
             sendMessage({ type: 'PING' });
         }
     }, 20000);
@@ -113,7 +113,7 @@ function stopHeartbeat() {
 
 function sendMessage(message) {
     if (!getIsCasting()) return;
-    
+
     try {
         castSession.sendMessage(CUSTOM_NAMESPACE, message)
             .catch(error => {
@@ -135,15 +135,15 @@ function sendMessage(message) {
 // ============================================================
 
 export const sendUserStats = (stats) => {
-    sendMessage({ 
-        type: 'UPDATE_USER_STATS', 
+    sendMessage({
+        type: 'UPDATE_USER_STATS',
         payload: {
             level: stats.level,
             tierName: stats.tierName,
             iconPath: stats.iconPath,
             streak: stats.streak,
             totalSessions: stats.totalSessions
-        } 
+        }
     });
 };
 
@@ -151,8 +151,14 @@ export const sendTrainingStateUpdate = (payload) => {
     sendMessage({ type: 'UPDATE_STATE', payload });
 };
 
-export const sendPlayVideo = (youtubeId) => {
-    sendMessage({ type: 'PLAY_VIDEO', payload: { youtubeId } });
+// ZMIANA (Zadanie 9): Obsługa parsowania URL
+export const sendPlayVideo = (urlOrId) => {
+    const youtubeId = extractYoutubeId(urlOrId);
+    if (youtubeId) {
+        sendMessage({ type: 'PLAY_VIDEO', payload: { youtubeId } });
+    } else {
+        console.warn('[Cast Sender] Invalid YouTube URL or ID:', urlOrId);
+    }
 };
 
 export const sendStopVideo = () => {

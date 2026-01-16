@@ -1,53 +1,35 @@
-// state.js
+// ExerciseApp/state.js
 
 export const state = {
-    // --- FLAGA GLOBALNEJ INICJALIZACJI ---
     isAppInitialized: false,
-
     userProgress: {},
-    
-    // Struktura: { "deadBug": { score: 20, difficulty: 0 }, ... }
-    userPreferences: {},
-
+    userPreferences: {}, // { score, difficulty, updatedAt }
+    exercisePace: {},
     masteryStats: null,
+    animationCache: new Map(),
+
+    // NOWOŚĆ: Przechowywanie mapy nadpisań (Ewolucji/Dewolucji)
+    overrides: {}, 
 
     settings: {
         appStartDate: null,
-        activePlanId: "l5s1-foundation",
-        // Tryb planu (static/dynamic)
-        planMode: 'static',
-        // Przechowywanie wygenerowanego planu dynamicznego (tygodniówka)
+        activePlanId: null,
+        planMode: 'dynamic',
         dynamicPlanData: null,
-
         onboardingCompleted: false,
         painZones: [],
         equipment: [],
         schedule: {},
         ttsEnabled: true,
-        wizardData: {} // Pełne dane z ankiety
+        secondsPerRep: 6,
+        restTimeFactor: 1.0,
+        wizardData: {}
     },
 
-    /**
-     * BAZA WIEDZY (Atlas Ćwiczeń)
-     * Teraz zawiera flagi walidacji serwerowej ("White List Pattern"):
-     * {
-     *   "id": {
-     *     ...pola_standardowe,
-     *     "isAllowed": boolean,       // Czy bezpieczne dla usera (sprzęt + zdrowie)
-     *     "rejectionReason": string   // np. "missing_equipment", "physical_restriction"
-     *   }
-     * }
-     */
     exerciseLibrary: {},
-    
-    trainingPlans: {},
     blacklist: [],
-
     isHistoryLoaded: false,
-
-    stravaIntegration: {
-        isConnected: false
-    },
+    stravaIntegration: { isConnected: false },
 
     currentTrainingDate: null,
     loadedMonths: new Set(),
@@ -58,10 +40,8 @@ export const state = {
     sessionStartTime: null,
     totalPausedTime: 0,
     lastPauseStartTime: null,
-    isPaused: false,
     breakTimeoutId: null,
-
-    todaysDynamicPlan: null, // Cache dla planu na dziś (Protocol lub Day)
+    todaysDynamicPlan: null,
 
     timer: {
         interval: null,
@@ -84,7 +64,13 @@ export const state = {
     },
 
     completionSound: () => {
-        if (!state.audioContext) state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        if (!state.audioContext) {
+            state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (state.audioContext.state === 'suspended') {
+            state.audioContext.resume();
+        }
+
         const oscillator = state.audioContext.createOscillator();
         const gainNode = state.audioContext.createGain();
         oscillator.connect(gainNode);
@@ -97,7 +83,13 @@ export const state = {
     },
 
     finalCompletionSound: () => {
-        if (!state.audioContext) state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        if (!state.audioContext) {
+            state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (state.audioContext.state === 'suspended') {
+            state.audioContext.resume();
+        }
+
         const now = state.audioContext.currentTime;
         const oscillator = state.audioContext.createOscillator();
         const gainNode = state.audioContext.createGain();

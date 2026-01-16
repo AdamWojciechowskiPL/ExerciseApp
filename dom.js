@@ -25,23 +25,30 @@ export const mainNav = document.getElementById('main-nav');
 export const focus = {};
 
 export function initializeFocusElements() {
-focus.sectionName = document.getElementById('focus-section-name');
-focus.progress = document.getElementById('focus-progress');
-focus.timerDisplay = document.getElementById('focus-timer-display');
-focus.exerciseName = document.getElementById('focus-exercise-name');
-focus.exerciseDetails = document.getElementById('focus-exercise-details');
-focus.tempo = document.getElementById('focus-tempo'); // NOWE: Referencja do tempa
-focus.exerciseInfoContainer = document.querySelector('.focus-exercise-info');
-focus.focusDescription = document.getElementById('focus-description');
+    // UWAGA: sectionName usunięty z HTML, więc usuwamy też stąd
+    // focus.sectionName = document.getElementById('focus-section-name');
 
-focus.ttsToggleBtn = document.getElementById('tts-toggle-btn');
-focus.ttsIcon = document.getElementById('tts-icon');
+    // ZMIANA: Zastąpiono focus.progress nowym elementem paska
+    focus.progressContainer = document.getElementById('focus-progress-bar'); // NOWY
 
-focus.nextExerciseName = document.getElementById('next-exercise-name');
-focus.exitTrainingBtn = document.getElementById('exit-training-btn');
+    // NOWOŚĆ: Licznik czasu całkowitego
+    focus.sessionElapsedTime = document.getElementById('focus-total-time');
 
-focus.prevStepBtn = document.getElementById('prev-step-btn');
-focus.pauseResumeBtn = document.getElementById('pause-resume-btn');
-focus.repBasedDoneBtn = document.getElementById('rep-based-done-btn');
-focus.skipBtn = document.getElementById('skip-btn');
+    focus.timerDisplay = document.getElementById('focus-timer-display');
+    focus.exerciseName = document.getElementById('focus-exercise-name');
+    focus.exerciseDetails = document.getElementById('focus-exercise-details');
+    focus.tempo = document.getElementById('focus-tempo'); // NOWE: Referencja do tempa
+    focus.exerciseInfoContainer = document.querySelector('.focus-exercise-info');
+    focus.focusDescription = document.getElementById('focus-description');
+
+    focus.ttsToggleBtn = document.getElementById('tts-toggle-btn');
+    focus.ttsIcon = document.getElementById('tts-icon');
+
+    focus.nextExerciseName = document.getElementById('next-exercise-name');
+    focus.exitTrainingBtn = document.getElementById('exit-training-btn');
+
+    focus.prevStepBtn = document.getElementById('prev-step-btn');
+    focus.pauseResumeBtn = document.getElementById('pause-resume-btn');
+    focus.repBasedDoneBtn = document.getElementById('rep-based-done-btn');
+    focus.skipBtn = document.getElementById('skip-btn');
 }

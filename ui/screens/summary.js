@@ -1,4 +1,4 @@
-// js/ui/screens/summary.js
+// ExerciseApp/ui/screens/summary.js
 import { state } from '../../state.js';
 import { screens } from '../../dom.js';
 import { navigateTo, showLoader, hideLoader } from '../core.js';
@@ -6,8 +6,16 @@ import dataStore from '../../dataStore.js';
 import { renderEvolutionModal } from '../modals.js';
 import { getIsCasting, sendShowIdle } from '../../cast.js';
 import { clearSessionBackup } from '../../sessionRecovery.js';
+import { clearPlanFromStorage } from './dashboard.js';
 
 let selectedFeedback = { type: null, value: 0 };
+
+// Tymczasowy stan zmian punktów dla tej sesji
+// Struktura: { "exerciseId": delta } np. { "ex1": 15, "ex2": -30 }
+let sessionAffinityDeltas = {};
+
+const SCORE_LIKE = 15;
+const SCORE_DISLIKE = -30;
 
 export const renderSummaryScreen = () => {
     if (getIsCasting()) sendShowIdle();
@@ -15,22 +23,22 @@ export const renderSummaryScreen = () => {
     let trainingTitle = "Trening";
     let isSafetyMode = false;
 
-    // Ustalanie tytułu i trybu
     if (state.todaysDynamicPlan && state.todaysDynamicPlan.type === 'protocol') {
         trainingTitle = state.todaysDynamicPlan.title;
         isSafetyMode = state.todaysDynamicPlan.mode === 'sos';
     } else {
-        const activePlan = state.settings.dynamicPlanData || state.trainingPlans[state.settings.activePlanId];
-        const daysList = activePlan?.Days || activePlan?.days || [];
+        const activePlan = state.settings.dynamicPlanData;
+        const daysList = activePlan?.days || [];
         const trainingDay = daysList.find(d => d.dayNumber === state.currentTrainingDayId);
         trainingTitle = trainingDay ? trainingDay.title : "Trening";
         isSafetyMode = (state.sessionParams.initialPainLevel || 0) > 3;
     }
 
     selectedFeedback = { type: isSafetyMode ? 'symptom' : 'tension', value: 0 };
+    sessionAffinityDeltas = {}; // Resetujemy zmiany sesyjne
+
     const summaryScreen = screens.summary;
 
-    // Global Feedback HTML (Bez zmian)
     let globalOptionsHtml = isSafetyMode ? `
         <div class="feedback-option" data-type="symptom" data-value="1"><div class="fb-icon">🍃</div><div class="fb-text"><h4>Ulga</h4></div></div>
         <div class="feedback-option selected" data-type="symptom" data-value="0"><div class="fb-icon">⚖️</div><div class="fb-text"><h4>Stabilnie</h4></div></div>
@@ -41,7 +49,6 @@ export const renderSummaryScreen = () => {
         <div class="feedback-option" data-type="tension" data-value="-1"><div class="fb-icon">🥵</div><div class="fb-text"><h4>Za mocno</h4></div></div>
     `;
 
-    // Lista Ćwiczeń
     const processedIds = new Set();
     const uniqueExercises = (state.sessionLog || []).filter(entry => {
         if (entry.isRest || entry.status === 'skipped') return false;
@@ -56,29 +63,31 @@ export const renderSummaryScreen = () => {
         exercisesListHtml = uniqueExercises.map(ex => {
             const id = ex.exerciseId || ex.id;
             const pref = state.userPreferences[id] || { score: 0 };
+            const baseScore = pref.score || 0;
 
-            // --- FIX: CZYSZCZENIE NAZWY Z DOPISKÓW STRON ---
-            // Usuwamy "(Lewa)", "(Prawa)" oraz ewentualne spacje przed nimi
             let displayName = ex.name.replace(/\s*\((Lewa|Prawa)\)/gi, '').trim();
 
-            // Nowa logika stanów (50 / -50)
-            const isLike = pref.score >= 50 ? 'active' : '';
-            const isDislike = pref.score <= -50 ? 'active' : '';
-            // Trudność nie jest już stanem w pref, jest akcją jednorazową
+            // Stylizacja wyniku
+            let scoreColor = '#666';
+            let scorePrefix = '';
+            if (baseScore >= 75) { scoreColor = 'var(--gold-color)'; scorePrefix = '👑 '; }
+            else if (baseScore > 0) { scoreColor = 'var(--success-color)'; scorePrefix = '+'; }
+            else if (baseScore < 0) { scoreColor = 'var(--danger-color)'; }
 
             return `
-            <div class="rating-card" data-id="${id}">
-                <div class="rating-name">${displayName}</div>
-                <div class="rating-actions-group">
-                    <!-- SEKCJA 1: CZĘSTOTLIWOŚĆ (Radio) -->
-                    <div class="btn-group-affinity">
-                        <button type="button" class="rate-btn affinity-btn ${isLike}" data-action="like" title="Róbmy to częściej">👍</button>
-                        <button type="button" class="rate-btn affinity-btn ${isDislike}" data-action="dislike" title="Róbmy to rzadziej">👎</button>
+            <div class="rating-card" data-id="${id}" data-base-score="${baseScore}">
+                <div class="rating-info" style="flex:1;">
+                    <div class="rating-name">${displayName}</div>
+                    <div class="rating-score-display" style="font-size:0.75rem; font-weight:700; color:${scoreColor}; transition:color 0.2s;">
+                        Wynik: <span class="current-score-val">${scorePrefix}${baseScore}</span>
                     </div>
-
+                </div>
+                <div class="rating-actions-group">
+                    <div class="btn-group-affinity">
+                        <button type="button" class="rate-btn affinity-btn" data-action="like" title="Super (+15)">👍</button>
+                        <button type="button" class="rate-btn affinity-btn" data-action="dislike" title="Słabo (-30)">👎</button>
+                    </div>
                     <div class="sep"></div>
-
-                    <!-- SEKCJA 2: TRUDNOŚĆ (Action) -->
                     <div class="btn-group-difficulty">
                         <button type="button" class="rate-btn diff-btn" data-action="easy" title="Za łatwe - Awansuj mnie">💤</button>
                         <button type="button" class="rate-btn diff-btn" data-action="hard" title="Za trudne - Ratuj mnie">🔥</button>
@@ -108,16 +117,7 @@ export const renderSummaryScreen = () => {
                 <div class="feedback-container compact">${globalOptionsHtml}</div>
             </div>
             <div class="form-group" style="margin-top:1.5rem;">
-                <label style="display:block; margin-bottom:5px; font-weight:700;">Kalibracja Ćwiczeń</label>
-
-                <!-- POPRAWIONE NAGŁÓWKI KOLUMN -->
-                <div style="display:flex; justify-content: flex-end; padding-right: 4px; margin-bottom: 6px;">
-                    <div style="display:flex; gap: 10px; font-size: 0.6rem; color: #888; font-weight: 700; text-transform: uppercase;">
-                        <span style="width: 82px; text-align: center;">Częstotliwość</span>
-                        <span style="width: 82px; text-align: center;">Trudność</span>
-                    </div>
-                </div>
-
+                <label style="display:block; margin-bottom:5px; font-weight:700;">Twoja Opinia</label>
                 <div class="ratings-list">${exercisesListHtml}</div>
             </div>
             <div class="form-group" style="margin-top:2rem;">
@@ -127,55 +127,9 @@ export const renderSummaryScreen = () => {
             ${stravaHtml}
             <button type="submit" class="action-btn" style="margin-top:1.5rem;">Zapisz i Zakończ</button>
         </form>
-        <style>
-            /* FIX LAYOUT: Nazwa zajmuje więcej miejsca */
-            .rating-card {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                gap: 10px; /* Odstęp między nazwą a przyciskami */
-            }
-            .rating-name {
-                flex: 1; /* Nazwa zajmuje całą dostępną przestrzeń */
-                max-width: unset; /* Usuwamy limit 50% */
-                padding-right: 5px;
-                font-size: 0.9rem;
-                font-weight: 600;
-                line-height: 1.2;
-            }
-            /* Kontener akcji zajmuje tylko tyle ile potrzebuje */
-            .rating-actions-group {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                justify-content: flex-end;
-                width: auto;
-                flex-shrink: 0;
-            }
-
-            .btn-group-affinity { display: flex; gap: 4px; background: #f0fdfa; padding: 3px; border-radius: 8px; width: 82px; justify-content: center; }
-            .btn-group-difficulty { display: flex; gap: 4px; background: #fff7ed; padding: 3px; border-radius: 8px; width: 82px; justify-content: center; }
-            .rate-btn {
-                background: transparent; border: 1px solid transparent; border-radius: 6px;
-                width: 36px; height: 36px; font-size: 1.2rem; cursor: pointer;
-                transition: all 0.2s; display: flex; align-items: center; justify-content: center;
-                filter: grayscale(100%); opacity: 0.5;
-            }
-            .rate-btn:hover { opacity: 1; filter: grayscale(0%); background: rgba(0,0,0,0.05); }
-
-            /* Aktywne Affinity */
-            .affinity-btn.active { opacity: 1; filter: grayscale(0%); background: #fff; border-color: #2dd4bf; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-
-            /* Kliknięte Difficulty (Zablokowane) */
-            .diff-btn.selected { opacity: 1; filter: grayscale(0%); background: #ea580c; color: white; border-color: #ea580c; cursor: default; transform: scale(0.95); }
-
-            .sep { width: 1px; height: 24px; background: #e5e7eb; }
-        </style>
     `;
 
-    // --- EVENT LISTENERS ---
-
-    // Global Feedback
+    // Listenery
     summaryScreen.querySelectorAll('.feedback-option').forEach(opt => {
         opt.addEventListener('click', () => {
             summaryScreen.querySelectorAll('.feedback-option').forEach(o => o.classList.remove('selected'));
@@ -185,68 +139,95 @@ export const renderSummaryScreen = () => {
         });
     });
 
-    // Exercise Ratings
-    summaryScreen.querySelectorAll('.rating-card').forEach(card => {
+    // NOWA LOGIKA KCIUKÓW (INTERAKTYWNA)
+    // Pobieramy formularz i szukamy kart tylko w nim (na wypadek, gdybyśmy mieli stare karty w pamięci)
+    const formContainer = summaryScreen.querySelector('#summary-form');
+    
+    formContainer.querySelectorAll('.rating-card').forEach(card => {
+        const id = card.dataset.id;
+        const baseScore = parseInt(card.dataset.baseScore, 10);
+        const scoreDisplay = card.querySelector('.current-score-val');
+        const scoreContainer = card.querySelector('.rating-score-display');
 
-        // A. Affinity (Radio Logic)
+        const updateVisuals = () => {
+            const delta = sessionAffinityDeltas[id] || 0;
+            const newScore = Math.max(-100, Math.min(100, baseScore + delta));
+
+            let color = '#666';
+            let prefix = '';
+            if (newScore >= 75) { color = 'var(--gold-color)'; prefix = '👑 '; }
+            else if (newScore > 0) { color = 'var(--success-color)'; prefix = '+'; }
+            else if (newScore < 0) { color = 'var(--danger-color)'; }
+
+            scoreDisplay.textContent = `${prefix}${newScore}`;
+            scoreContainer.style.color = color;
+
+            // Highlight buttons
+            card.querySelectorAll('.affinity-btn').forEach(btn => btn.classList.remove('active'));
+            if (delta === SCORE_LIKE) card.querySelector('[data-action="like"]').classList.add('active');
+            if (delta === SCORE_DISLIKE) card.querySelector('[data-action="dislike"]').classList.add('active');
+        };
+
         const affinityBtns = card.querySelectorAll('.affinity-btn');
         affinityBtns.forEach(btn => {
             btn.addEventListener('click', () => {
-                const isActive = btn.classList.contains('active');
-                // Reset grupy
-                affinityBtns.forEach(b => b.classList.remove('active'));
+                const action = btn.dataset.action;
+                const currentDelta = sessionAffinityDeltas[id] || 0;
 
-                // Toggle (jeśli nie był aktywny, to włącz, jeśli był - to wyłączyliśmy wyżej i zostaje wyłączony = neutral)
-                if (!isActive) {
-                    btn.classList.add('active');
+                // Toggle logic
+                if (action === 'like') {
+                    sessionAffinityDeltas[id] = (currentDelta === SCORE_LIKE) ? 0 : SCORE_LIKE;
+                } else if (action === 'dislike') {
+                    sessionAffinityDeltas[id] = (currentDelta === SCORE_DISLIKE) ? 0 : SCORE_DISLIKE;
                 }
+                updateVisuals();
             });
         });
 
-        // B. Difficulty (Action Logic)
+        // Difficulty buttons (bez zmian logicznych, tylko styl)
         const diffBtns = card.querySelectorAll('.diff-btn');
         diffBtns.forEach(btn => {
             btn.addEventListener('click', () => {
-                // Reset grupy (tylko jeden wybór)
                 diffBtns.forEach(b => b.classList.remove('selected'));
-                // Oznacz jako wybrane
                 btn.classList.add('selected');
-
-                // Wizualny feedback
-                const action = btn.dataset.action;
-                const originalTitle = btn.title;
-                btn.title = "Zgłoszono zmianę";
-                // Opcjonalnie: można dodać alert/toast "Zmienimy to w przyszłości"
             });
         });
     });
 
-    summaryScreen.querySelector('#summary-form').addEventListener('submit', handleSummarySubmit);
+    // Usuwamy stare listenery i dodajemy nowy
+    formContainer.removeEventListener('submit', handleSummarySubmit);
+    formContainer.addEventListener('submit', handleSummarySubmit);
+    
     navigateTo('summary');
 };
 
 export async function handleSummarySubmit(e) {
     e.preventDefault();
     const submitBtn = e.target.querySelector('button[type="submit"]');
-    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Zapisywanie..."; }
+    if (submitBtn.disabled) return; // Zapobieganie podwójnemu kliknięciu
+    
+    submitBtn.disabled = true; 
+    submitBtn.textContent = "Zapisywanie...";
     showLoader();
 
     const ratingsArray = [];
-    const ratingCards = document.querySelectorAll('.rating-card');
+    
+    // POPRAWKA KRYTYCZNA: Używamy e.target (formularz) do szukania kart.
+    // document.querySelectorAll znalazłby również karty z historii/szczegółów dnia,
+    // jeśli były wcześniej renderowane (SPA trzyma je w DOM w sekcjach ukrytych).
+    const ratingCards = e.target.querySelectorAll('.rating-card');
 
     ratingCards.forEach(card => {
         const id = card.dataset.id;
 
-        // 1. Pobierz stan Affinity
-        const activeAffinity = card.querySelector('.affinity-btn.active');
-        if (activeAffinity) {
-            ratingsArray.push({ exerciseId: id, action: activeAffinity.dataset.action });
-        } else {
-            // Jeśli żaden nie jest aktywny, wysyłamy 'neutral' aby zresetować/utrzymać 0
-            ratingsArray.push({ exerciseId: id, action: 'neutral' });
+        // 1. Sprawdź Affinity (z obiektu delta)
+        const delta = sessionAffinityDeltas[id];
+        if (delta) {
+            const action = delta === SCORE_LIKE ? 'like' : 'dislike';
+            ratingsArray.push({ exerciseId: id, action: action });
         }
 
-        // 2. Pobierz stan Difficulty (Action)
+        // 2. Sprawdź Difficulty (z DOM)
         const activeDiff = card.querySelector('.diff-btn.selected');
         if (activeDiff) {
             ratingsArray.push({ exerciseId: id, action: activeDiff.dataset.action });
@@ -255,18 +236,13 @@ export async function handleSummarySubmit(e) {
 
     const now = new Date();
     const durationSeconds = Math.round(Math.max(0, now - state.sessionStartTime - (state.totalPausedTime || 0)) / 1000);
-    
-    // --- FIX: POPRAWNE ID PLANU DLA VIRTUAL PHYSIO ---
-    let planId = state.settings.activePlanId; // Domyślny fallback
 
+    let planId = state.settings.activePlanId;
     if (state.todaysDynamicPlan && state.todaysDynamicPlan.type === 'protocol') {
-        // 1. Jeśli to Bio-Protokół (SOS/Booster)
         planId = state.todaysDynamicPlan.id;
-    } else if (state.settings.planMode === 'dynamic' && state.settings.dynamicPlanData?.id) {
-        // 2. Jeśli to główny plan dynamiczny (Virtual Physio)
+    } else if (state.settings.dynamicPlanData?.id) {
         planId = state.settings.dynamicPlanData.id;
-    } 
-    // 3. W przeciwnym razie zostaje activePlanId (Static)
+    }
 
     const title = document.getElementById('summary-title').textContent;
 
@@ -291,29 +267,68 @@ export async function handleSummarySubmit(e) {
         await dataStore.loadRecentHistory(7);
         if (state.todaysDynamicPlan?.type === 'protocol') state.todaysDynamicPlan = null;
 
-        // Update stats locally
         if (response?.newStats) state.userStats = { ...state.userStats, ...response.newStats };
-
-        // Strava
         if (document.getElementById('strava-sync-checkbox')?.checked) dataStore.uploadToStrava(sessionPayload);
 
-        // Reset App State
         state.currentTrainingDate = null;
         state.sessionLog = [];
         state.isPaused = false;
 
-        hideLoader();
-        const { renderMainScreen } = await import('./dashboard.js');
+        // Aktualizuj lokalny stan preferencji (optimistic update)
+        Object.entries(sessionAffinityDeltas).forEach(([id, delta]) => {
+            if (state.userPreferences[id]) {
+                let s = state.userPreferences[id].score || 0;
+                s = Math.max(-100, Math.min(100, s + delta));
+                state.userPreferences[id].score = s;
+            }
+        });
+
+        const finalizeProcess = async () => {
+            hideLoader();
+            const { renderMainScreen } = await import('/ui/screens/dashboard.js');
+            navigateTo('main');
+            renderMainScreen();
+        };
+
+        const checkRpeAndNavigate = async () => {
+            if (selectedFeedback.value !== 0) {
+                let msg = '';
+                if (selectedFeedback.value === -1) {
+                    msg = "Zgłosiłeś, że trening był za ciężki/bolesny.\n\nCzy chcesz, aby Asystent przeliczył plan i zmniejszył obciążenie na kolejne dni?";
+                } else if (selectedFeedback.value === 1) {
+                    msg = "Zgłosiłeś, że trening był za lekki/nudny.\n\nCzy chcesz, aby Asystent zwiększył intensywność planu?";
+                }
+
+                if (msg && confirm(msg)) {
+                    showLoader();
+                    try {
+                        console.log("[AutoReg] Triggering plan regeneration based on RPE...");
+                        await dataStore.generateDynamicPlan(state.settings.wizardData);
+                        clearPlanFromStorage();
+                        alert("Plan został pomyślnie zaktualizowany przez Asystenta.");
+                    } catch (e) {
+                        console.error("[AutoReg] Failed:", e);
+                        alert("Nie udało się przeliczyć planu automatycznie. Zmiany nie zostały wprowadzone.");
+                    }
+                }
+            }
+            await finalizeProcess();
+        };
 
         if (response && response.adaptation) {
-            renderEvolutionModal(response.adaptation, () => { navigateTo('main'); renderMainScreen(); });
+            hideLoader();
+            renderEvolutionModal(response.adaptation, () => {
+                checkRpeAndNavigate();
+            });
         } else {
-            navigateTo('main'); renderMainScreen();
+            await checkRpeAndNavigate();
         }
+
     } catch (error) {
         console.error(error);
         hideLoader();
         alert("Błąd zapisu.");
         submitBtn.disabled = false;
+        submitBtn.textContent = "Zapisz i Zakończ";
     }
 }

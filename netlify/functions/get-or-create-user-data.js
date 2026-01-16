@@ -1,5 +1,6 @@
 // netlify/functions/get-or-create-user-data.js
 const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
+const { applyEntropy } = require('./_stats-helper.js');
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'GET') return { statusCode: 405, body: 'Method Not Allowed' };
@@ -9,37 +10,57 @@ exports.handler = async (event) => {
     const client = await pool.connect();
 
     try {
+      // 1. GWARANCJA ISTNIENIA UŻYTKOWNIKA
       await client.query('BEGIN');
-      
-      // 1. Ensure User & Settings
       await client.query('INSERT INTO users (id) VALUES ($1) ON CONFLICT (id) DO NOTHING', [userId]);
-      
-      let settingsResult = await client.query('SELECT settings FROM user_settings WHERE user_id = $1', [userId]);
-      let userSettings;
-      
-      if (settingsResult.rows.length === 0) {
-        const defaultSettings = { appStartDate: new Date().toISOString().split('T')[0], progressionFactor: 100, activePlanId: "l5s1-foundation" };
-        await client.query('INSERT INTO user_settings (user_id, settings) VALUES ($1, $2)', [userId, JSON.stringify(defaultSettings)]);
-        userSettings = defaultSettings;
-      } else {
-        userSettings = settingsResult.rows[0].settings;
-      }
 
-      // 2. Integrations
-      const integrationResult = await client.query("SELECT 1 FROM user_integrations WHERE user_id = $1 AND provider = 'strava' LIMIT 1", [userId]);
-      
-      // 3. LIGHTWEIGHT Session Check (Tylko 3 ostatnie, bez liczenia statystyk)
-      // To jest błyskawiczne zapytanie, które pozwala Dashboardowi działać
-      const recentQuery = `
-        SELECT session_id, plan_id, started_at, completed_at, session_data 
-        FROM training_sessions 
-        WHERE user_id = $1 
-        ORDER BY completed_at DESC 
-        LIMIT 3
-      `;
-      const recentResult = await client.query(recentQuery, [userId]);
-      
-      const recentSessions = recentResult.rows.map(row => ({
+      const settingsCheck = await client.query('SELECT 1 FROM user_settings WHERE user_id = $1', [userId]);
+      if (settingsCheck.rowCount === 0) {
+        const defaultSettings = {
+            appStartDate: new Date().toISOString().split('T')[0],
+            planMode: 'dynamic'
+        };
+        await client.query('INSERT INTO user_settings (user_id, settings) VALUES ($1, $2)', [userId, JSON.stringify(defaultSettings)]);
+      }
+      await client.query('COMMIT');
+
+      // 2. APLIKACJA ENTROPII (SMART REHAB)
+      // "Studzenie" emocji przed pobraniem danych
+      await applyEntropy(client, userId);
+
+      // 3. RÓWNOLEGŁE POBIERANIE DANYCH
+      const [
+        settingsResult,
+        integrationResult,
+        recentSessionsResult,
+        paceResult,
+        preferencesResult,
+        blacklistResult,
+        overridesResult
+      ] = await Promise.all([
+        client.query('SELECT settings FROM user_settings WHERE user_id = $1', [userId]),
+        client.query("SELECT 1 FROM user_integrations WHERE user_id = $1 AND provider = 'strava' LIMIT 1", [userId]),
+        client.query(`
+            SELECT session_id, plan_id, started_at, completed_at, session_data
+            FROM training_sessions
+            WHERE user_id = $1
+            ORDER BY completed_at DESC
+            LIMIT 3
+        `, [userId]),
+        client.query('SELECT exercise_id, avg_seconds_per_rep FROM user_exercise_stats WHERE user_id = $1', [userId]),
+        client.query('SELECT exercise_id, affinity_score, difficulty_rating FROM user_exercise_preferences WHERE user_id = $1', [userId]),
+        client.query('SELECT exercise_id, preferred_replacement_id FROM user_exercise_blacklist WHERE user_id = $1', [userId]),
+        client.query('SELECT original_exercise_id, replacement_exercise_id FROM user_plan_overrides WHERE user_id = $1', [userId])
+      ]);
+
+      const userSettings = settingsResult.rows.length > 0 ? settingsResult.rows[0].settings : {};
+
+      const exercisePace = {};
+      paceResult.rows.forEach(row => {
+          exercisePace[row.exercise_id] = parseFloat(row.avg_seconds_per_rep);
+      });
+
+      const recentSessions = recentSessionsResult.rows.map(row => ({
           ...row.session_data,
           sessionId: row.session_id,
           planId: row.plan_id,
@@ -47,19 +68,41 @@ exports.handler = async (event) => {
           completedAt: row.completed_at
       }));
 
-      // Zwracamy null dla stats - frontend doładuje je w tle
+      // Zaokrąglanie wyników Affinity do liczb całkowitych (po kalkulacjach zmiennoprzecinkowych)
+      const preferencesMap = {};
+      preferencesResult.rows.forEach(row => {
+          preferencesMap[row.exercise_id] = {
+              score: Math.round(row.affinity_score || 0),
+              difficulty: row.difficulty_rating
+          };
+      });
+
+      const blacklist = blacklistResult.rows.map(row => row.exercise_id);
+
+      const overrides = {};
+      overridesResult.rows.forEach(row => {
+          overrides[row.original_exercise_id] = row.replacement_exercise_id;
+      });
+
       const dataToReturn = {
         settings: userSettings,
         integrations: { isStravaConnected: integrationResult.rowCount > 0 },
-        stats: null, // <--- Tu jest zmiana. Nie liczymy tego teraz.
-        recentSessions: recentSessions
+        stats: null,
+        exercisePace: exercisePace,
+        recentSessions: recentSessions,
+        userPreferences: preferencesMap,
+        blacklist: blacklist,
+        overrides: overrides
       };
-      
-      await client.query('COMMIT');
-      return { statusCode: 200, body: JSON.stringify(dataToReturn) };
+
+      return {
+        statusCode: 200,
+        headers: { 'Cache-Control': 'private, max-age=5' },
+        body: JSON.stringify(dataToReturn)
+      };
 
     } catch (dbError) {
-      await client.query('ROLLBACK');
+      console.error("DB Error in Bootstrap:", dbError);
       throw dbError;
     } finally {
       client.release();

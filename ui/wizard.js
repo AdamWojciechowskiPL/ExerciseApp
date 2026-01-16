@@ -141,7 +141,6 @@ async function renderStep() {
 
     const content = document.createElement('div');
     content.className = 'wizard-content wizard-content-layout';
-    // FIX: Ustawienie stylu kontenera, aby wypełniał wysokość i nie przewijał się
     content.style.height = '100%';
     content.style.overflow = 'hidden';
 
@@ -217,7 +216,6 @@ async function renderP1(c) {
     const initialMode = (wizardAnswers.pain_locations.length === 0 && wizardAnswers.focus_locations.length > 0) ? 'focus' : 'pain';
     const isInitialPain = initialMode === 'pain';
 
-    // FIX 1: Główny kontener nie przewija się (overflow: hidden), flex column
     c.className = "p1-container wizard-body-layout";
     c.style.display = "flex";
     c.style.flexDirection = "column";
@@ -226,17 +224,13 @@ async function renderP1(c) {
     c.style.justifyContent = "space-between";
 
     c.innerHTML = `
-        <!-- SVG Container: flex: 1 (zajmuje dostępne miejsce), min-height: 0 (kluczowe dla flex scroll fix) -->
         <div class="p1-svg-wrapper" style="flex: 1; min-height: 0; position: relative; display: flex; justify-content: center; align-items: center; padding-bottom: 10px;">
             <div id="svg-placeholder" style="height: 100%; width: 100%; display: flex; justify-content: center;">
                 Ładowanie...
             </div>
         </div>
 
-        <!-- Controls Panel: flex-shrink: 0 (stała wysokość), stylizowany jako karta -->
         <div class="p1-controls-panel" style="flex-shrink: 0; background: rgba(255,255,255,0.08); border-top: 1px solid rgba(255,255,255,0.1); padding: 12px; border-radius: 16px; margin-bottom: 5px;">
-            
-            <!-- Legenda: Pozioma, wyśrodkowana -->
             <div class="p1-legend" style="display: flex; gap: 20px; justify-content: center; margin-bottom: 12px; font-size: 0.85rem; font-weight: 600;">
                 <div style="display: flex; align-items: center; gap: 6px;">
                     <span style="width: 10px; height: 10px; background: var(--danger-color); border-radius: 50%; display: inline-block;"></span> 
@@ -248,7 +242,6 @@ async function renderP1(c) {
                 </div>
             </div>
 
-            <!-- Przełącznik: Flex row, cała szerokość, wyśrodkowany -->
             <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2); padding: 8px 15px; border-radius: 12px;">
                 <div id="tool-label" style="font-weight: 700; font-size: 0.95rem; color: #fff;">
                     ${isInitialPain ? '🖊️ Zaznaczam: BÓL' : '🖊️ Zaznaczam: CEL'}
@@ -329,11 +322,9 @@ async function renderP1(c) {
 
     toggle.addEventListener('change', (e) => {
         label.textContent = e.target.checked ? '🖊️ Zaznaczam: BÓL' : '🖊️ Zaznaczam: CEL';
-        // Animacja koloru tekstu dla lepszego feedbacku
         label.style.color = e.target.checked ? 'var(--danger-color)' : '#3b82f6';
     });
     
-    // Inicjalny kolor
     label.style.color = toggle.checked ? 'var(--danger-color)' : '#3b82f6';
 
     c.querySelectorAll('.zone').forEach(el => {
@@ -346,7 +337,6 @@ async function renderP1(c) {
                     wizardAnswers.pain_locations = wizardAnswers.pain_locations.filter(x => x !== val);
                 } else {
                     wizardAnswers.pain_locations.push(val);
-                    // Usuń z focus jeśli tam był
                     wizardAnswers.focus_locations = wizardAnswers.focus_locations.filter(x => x !== val);
                 }
             } else {
@@ -354,7 +344,6 @@ async function renderP1(c) {
                     wizardAnswers.focus_locations = wizardAnswers.focus_locations.filter(x => x !== val);
                 } else {
                     wizardAnswers.focus_locations.push(val);
-                    // Usuń z pain jeśli tam był
                     wizardAnswers.pain_locations = wizardAnswers.pain_locations.filter(x => x !== val);
                 }
             }
@@ -370,7 +359,10 @@ function renderP2(c) {
             <div id="pain-val-display" class="pain-value-large">${wizardAnswers.pain_intensity}</div>
             <div class="pain-slider-wrapper">
                 <input type="range" min="0" max="10" value="${wizardAnswers.pain_intensity}" style="width:100%;" id="pain-slider">
-                <div class="pain-labels"><span>Brak</span><span>Ekstremalny</span></div>
+                <div class="pain-labels" style="display: flex; justify-content: space-between; width: 100%; margin-top: 5px; font-size: 0.8rem; opacity: 0.8; font-weight: 500;">
+                    <span>🙂 Brak</span>
+                    <span style="color: #ef4444;">😫 Ekstremalny</span>
+                </div>
             </div>
         </div>`;
     c.querySelector('#pain-slider').addEventListener('input', (e) => {
@@ -429,6 +421,10 @@ function renderP7(c) {
             <div id="impact-val-display" class="pain-value-large" style="color:var(--primary-color)">${wizardAnswers.daily_impact}</div>
             <div class="pain-slider-wrapper">
                 <input type="range" min="0" max="10" value="${wizardAnswers.daily_impact}" style="width:100%;" id="impact-slider">
+                <div class="pain-labels" style="display: flex; justify-content: space-between; width: 100%; margin-top: 5px; font-size: 0.8rem; opacity: 0.8; font-weight: 500;">
+                    <span>Brak wpływu</span>
+                    <span>Paraliżujący</span>
+                </div>
             </div>
         </div>`;
     c.querySelector('#impact-slider').addEventListener('input', (e) => {
@@ -651,19 +647,30 @@ async function renderProcessing(c) {
             <div class="processing-spinner"></div>
             <div id="console-output" class="processing-log">Analiza danych...</div>
         </div>`;
+    
+    // ZMIANA: Usunięcie "Gotowe!" z fałszywej pętli
+    const logs = [
+        "Analiza profilu biometrycznego...",
+        "Weryfikacja wykluczeń medycznych...",
+        "Dobór optymalnej objętości...",
+        "Wysyłanie zapytania..."
+    ];
+    
     const consoleDiv = c.querySelector('#console-output');
-    const logs = ["Mapowanie stref...", "Analiza sprzętu...", "Wybór ćwiczeń...", "Optymalizacja...", "Gotowe!"];
     let delay = 0;
+    
     logs.forEach((log, index) => {
         setTimeout(() => {
             consoleDiv.textContent = log;
-            if (index === logs.length - 1) { setTimeout(finalizeGeneration, 500); }
+            if (index === logs.length - 1) { 
+                setTimeout(() => finalizeGeneration(consoleDiv), 500); 
+            }
         }, delay);
         delay += 800;
     });
 }
 
-async function finalizeGeneration() {
+async function finalizeGeneration(consoleDiv) {
     try {
         const payload = {
             ...wizardAnswers,
@@ -672,8 +679,22 @@ async function finalizeGeneration() {
             restBetweenExercises: state.settings.restBetweenExercises || 30
         };
 
+        // ZMIANA: Aktualizacja UI w trakcie czekania na serwer
+        if(consoleDiv) consoleDiv.textContent = "Generowanie planu (AI)...";
+
         await dataStore.generateDynamicPlan(payload);
-        closeWizardWithoutSaving();
+        
+        // ZMIANA: Sukces wyświetlany dopiero po zakończeniu requestu
+        if(consoleDiv) {
+            consoleDiv.textContent = "✅ Plan utworzony pomyślnie!";
+            consoleDiv.style.color = "var(--success-color)";
+        }
+
+        // Opóźnienie zamknięcia, aby user zobaczył sukces
+        setTimeout(() => {
+            closeWizardWithoutSaving();
+        }, 1500);
+
     } catch (e) {
         alert("Błąd generowania planu: " + e.message);
         currentStep--;

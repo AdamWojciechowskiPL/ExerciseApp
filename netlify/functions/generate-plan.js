@@ -24,7 +24,7 @@ const DEFAULT_TARGET_MIN = 30;
 const DEFAULT_SCHEDULE_PATTERN = [1, 3, 5];
 
 const MIN_MAIN_EXERCISES = 1;
-const MAX_SETS_MAIN = 5;
+const MAX_SETS_MAIN = 6;
 const MAX_SETS_MOBILITY = 3;
 const MAX_BREATHING_SEC = 240;
 const GLOBAL_MAX_REPS = 25;
@@ -154,38 +154,38 @@ function validateExerciseRecord(ex) {
 
 // --- CATEGORY MAPPING HELPERS (Refined for DB IDs) ---
 // IDs: 18 (breathing), 10 (muscle_relaxation)
-function isBreathingCategory(cat) { 
-    const s = String(cat || '').toLowerCase(); 
-    return s.includes('breathing') || s.includes('breath') || s.includes('relax') || s.includes('parasymp'); 
+function isBreathingCategory(cat) {
+    const s = String(cat || '').toLowerCase();
+    return s.includes('breathing') || s.includes('breath') || s.includes('relax') || s.includes('parasymp');
 }
 
 // IDs: 1, 4, 7, 8 (mobility), 16 (stretch)
-function isMobilityCategory(cat) { 
-    const s = String(cat || '').toLowerCase(); 
-    return s.includes('mobility') || s.includes('stretch') || s.includes('flexor') || s.includes('decompression'); 
+function isMobilityCategory(cat) {
+    const s = String(cat || '').toLowerCase();
+    return s.includes('mobility') || s.includes('stretch') || s.includes('flexor') || s.includes('decompression');
 }
 
 // IDs: 20 (conditioning_low_impact)
-function isConditioningCategory(cat) { 
-    const s = String(cat || '').toLowerCase(); 
-    return s.includes('conditioning') || s.includes('cardio') || s.includes('aerobic'); 
+function isConditioningCategory(cat) {
+    const s = String(cat || '').toLowerCase();
+    return s.includes('conditioning') || s.includes('cardio') || s.includes('aerobic');
 }
 
 // IDs: 2, 5, 6, 13 (core_anti...), 19 (core_stability)
-function isCoreCategory(cat) { 
-    const s = String(cat || '').toLowerCase(); 
-    return s.startsWith('core_') || s === 'core' || s.includes('core_stability') || s.includes('anti_'); 
+function isCoreCategory(cat) {
+    const s = String(cat || '').toLowerCase();
+    return s.startsWith('core_') || s === 'core' || s.includes('core_stability') || s.includes('anti_');
 }
 
 // IDs: 3 (glute), 9 (terminal_knee), 11 (calves), 12 (vmo), 17 (knee_stability), 15 (eccentric - usually lower limb), 14 (flossing - sciatic/femoral)
-function isLowerLimbCategory(cat) { 
-    const s = String(cat || '').toLowerCase(); 
+function isLowerLimbCategory(cat) {
+    const s = String(cat || '').toLowerCase();
     return (
-        s.includes('knee') || s.includes('vmo') || s.includes('calf') || s.includes('calves') || 
-        s.includes('ankle') || s.includes('glute') || s.includes('hip_extension') || 
+        s.includes('knee') || s.includes('vmo') || s.includes('calf') || s.includes('calves') ||
+        s.includes('ankle') || s.includes('glute') || s.includes('hip_extension') ||
         s.includes('unilateral') || s.includes('hamstring') || s.includes('quad') ||
         s.includes('eccentric') || s.includes('nerve')
-    ); 
+    );
 }
 
 function isUpperBodyMobilityNeed(workType, hobby) { const wt = String(workType || '').toLowerCase(); const hb = String(hobby || '').toLowerCase(); return wt === 'sedentary' || hb === 'cycling'; }
@@ -765,11 +765,16 @@ function estimateExerciseDurationSeconds(exEntry, userData, paceMap) {
   const multiplier = isUnilateral ? 2 : 1;
 
   let workTimePerSet = 0;
-  const valStr = String(exEntry.reps_or_time).toLowerCase();
-  if (valStr.includes('s')) {
-      workTimePerSet = parseRepsOrTimeToSeconds(exEntry.reps_or_time) * multiplier;
+  // FIX: Usuwamy '/str' przed sprawdzaniem czy to czas ('s'), aby uniknąć false positive
+  const rawStr = String(exEntry.reps_or_time).toLowerCase();
+  const cleanStr = rawStr.replace(/\/str\.?|stron.*/g, '').trim();
+
+  // Teraz sprawdzamy czy zostały jednostki czasu
+  if (cleanStr.includes('s') || cleanStr.includes('min') || cleanStr.includes(':')) {
+      workTimePerSet = parseRepsOrTimeToSeconds(cleanStr) * multiplier;
   } else {
-      const reps = parseRepsOrTimeToSeconds(exEntry.reps_or_time);
+      // To są powtórzenia
+      const reps = parseInt(cleanStr, 10) || 10;
       workTimePerSet = reps * tempoToUse * multiplier;
   }
 
@@ -1007,12 +1012,19 @@ function logFinalSessionBreakdown(session, userData, paceMap) {
         const isUnilateral = ex.is_unilateral || String(ex.reps_or_time || '').includes('/str');
         const multiplier = isUnilateral ? 2 : 1;
 
+        // --- POPRAWKA LOGOWANIA (IDENTYCZNA Z ESTIMATE) ---
+        const rawStr = String(ex.reps_or_time).toLowerCase();
+        const cleanStr = rawStr.replace(/\/str\.?|stron.*/g, '').trim();
+
         let workTimePerSet = 0;
-        const valStr = String(ex.reps_or_time).toLowerCase();
-        if (valStr.includes('s')) {
-            workTimePerSet = parseRepsOrTimeToSeconds(ex.reps_or_time) * multiplier;
+        let typeLabel = "Time";
+
+        // Sprawdzamy czy to czas (po usunięciu /str)
+        if (cleanStr.includes('s') || cleanStr.includes('min') || cleanStr.includes(':')) {
+            workTimePerSet = parseRepsOrTimeToSeconds(cleanStr) * multiplier;
         } else {
-            const reps = parseRepsOrTimeToSeconds(ex.reps_or_time);
+            typeLabel = "Reps";
+            const reps = parseInt(cleanStr, 10) || 10;
             workTimePerSet = reps * tempoToUse * multiplier;
         }
 
@@ -1035,7 +1047,7 @@ function logFinalSessionBreakdown(session, userData, paceMap) {
         // Exercise Total Duration
         const dur = (sets * workTimePerSet) + ((sets - 1) * intraSetRest) + totalTransition;
 
-        console.log(`[Ex] ${ex.name}: ${sets}x(${Math.round(workTimePerSet)}s work + ${intraSetRest}s rest) + ${totalTransition}s transition = ${Math.round(dur)}s`);
+        console.log(`[Ex] ${ex.name} [${typeLabel}]: ${sets}x(${Math.round(workTimePerSet)}s work + ${intraSetRest}s rest) + ${totalTransition}s transition = ${Math.round(dur)}s`);
         runningTotal += dur;
 
         if (i < all.length - 1) {
@@ -1100,7 +1112,7 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
             ['warmup', 'main', 'cooldown'].forEach(sec => {
                 const counts = deriveSessionCounts(userData, ctx, targetMin);
                 for (let i = 0; i < counts[sec]; i++) {
-                    
+
                     // --- ZMIANA: Filtr Difficulty (Max Lvl 2 dla Warmup/Cooldown) ---
                     const sectionFilter = (c) => {
                         if (sec === 'warmup' || sec === 'cooldown') {

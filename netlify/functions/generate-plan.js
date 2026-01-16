@@ -593,16 +593,16 @@ function deriveSessionCounts(userData, ctx, targetMin) {
   let warmup = 2; let main = 2; let cooldown = 2; // Default conservative
 
   if (targetMin <= 20) {
-      warmup = 2; main = 1; cooldown = 1;
+      warmup = 2; main = 2; cooldown = 1;
   }
   else if (targetMin <= 35) {
-      warmup = 2; main = 3; cooldown = 2;
+      warmup = 2; main = 4; cooldown = 2;
   }
   else if (targetMin <= 50) {
-      warmup = 3; main = 4; cooldown = 2;
+      warmup = 3; main = 5; cooldown = 2;
   }
   else {
-      warmup = 3; main = 5; cooldown = 2;
+      warmup = 3; main = 6; cooldown = 2;
   }
   return { warmup, main: Math.max(MIN_MAIN_EXERCISES, main), cooldown };
 }

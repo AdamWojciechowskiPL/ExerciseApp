@@ -128,7 +128,8 @@ export const parseSetCount = (setsString) => {
 
 const parseRepsOrTime = (val) => {
     const t = String(val || '').trim().toLowerCase();
-    if (t.includes('s')) return Math.max(5, parseInt(t, 10) || 30);
+    // FIX: Tutaj też sanityzujemy, chociaż ta funkcja jest prosta
+    if (t.includes('s') && !t.includes('/str')) return Math.max(5, parseInt(t, 10) || 30);
     if (t.includes('min')) return Math.max(10, (parseInt(t, 10) || 1) * 60);
     return parseInt(t, 10) || 10;
 };
@@ -136,11 +137,11 @@ const parseRepsOrTime = (val) => {
 export const calculateSmartRest = (exercise, userRestFactor = 1.0) => {
     // To jest "intra-set rest" (pomiędzy seriami TEGO SAMEGO ćwiczenia)
     // Zgodnie z backendem: intra-set rest = restAfterExercise (chyba że conditioning interval)
-    
+
     if (exercise.restBetweenSets) {
         return Math.round(parseInt(exercise.restBetweenSets, 10) * userRestFactor);
     }
-    
+
     let baseRest = 30;
     if (exercise.restAfterExercise) {
         baseRest = exercise.restAfterExercise;
@@ -149,14 +150,16 @@ export const calculateSmartRest = (exercise, userRestFactor = 1.0) => {
     } else if (exercise.baseRestSeconds) {
         baseRest = exercise.baseRestSeconds;
     }
-    
+
     return Math.max(10, Math.round(baseRest * userRestFactor));
 };
 
-// --- SINGLE SOURCE OF TRUTH FIX ---
+// --- FIX: POPRAWIONA LOGIKA OBLICZANIA CZASU (ZGODNOŚĆ Z BACKENDEM) ---
 export const calculateSmartDuration = (dayPlan) => {
+    // Jeśli backend już policzył (nowy generator), używamy tej wartości (ale tylko jeśli > 0)
     if (dayPlan.estimatedDurationMin && dayPlan.estimatedDurationMin > 0) {
-        return dayPlan.estimatedDurationMin;
+        // Opcjonalnie: można to zakomentować, jeśli chcemy zawsze przeliczać dynamicznie na froncie (np. po zmianie suwaków)
+        // return dayPlan.estimatedDurationMin; 
     }
 
     if (!dayPlan) return 0;
@@ -186,12 +189,17 @@ export const calculateSmartDuration = (dayPlan) => {
         }
 
         let workTimePerSet = 0;
-        const valStr = String(ex.reps_or_time).toLowerCase();
+        
+        // --- FIX: SANITYZACJA PRZED SPRAWDZENIEM TYPU ---
+        const rawStr = String(ex.reps_or_time).toLowerCase();
+        const cleanStr = rawStr.replace(/\/str\.?|stron.*/g, '').trim();
 
-        if (valStr.includes('s') || valStr.includes('min')) {
-            workTimePerSet = parseRepsOrTime(ex.reps_or_time) * multiplier;
+        if (cleanStr.includes('s') || cleanStr.includes('min') || cleanStr.includes(':')) {
+            // Czasówka
+            workTimePerSet = parseRepsOrTime(cleanStr) * multiplier;
         } else {
-            const reps = parseRepsOrTime(ex.reps_or_time);
+            // Powtórzenia
+            const reps = parseRepsOrTime(cleanStr);
             workTimePerSet = reps * tempoToUse * multiplier;
         }
 
@@ -208,7 +216,7 @@ export const calculateSmartDuration = (dayPlan) => {
         if (isUnilateral) {
              transitionTime = ex.transitionTime || (ex.calculated_timing ? ex.calculated_timing.transition_sec : 12);
         }
-        
+
         const transitionsTotal = sets * transitionTime;
         exDuration += transitionsTotal;
 
@@ -223,6 +231,7 @@ export const calculateSmartDuration = (dayPlan) => {
     return Math.round(totalSeconds / 60);
 };
 
+// --- FIX: POPRAWIONA LOGIKA OBLICZANIA OBCIĄŻENIA ---
 export const calculateSystemLoad = (inputData, fromHistory = false) => {
     if (!inputData) return 0;
 
@@ -262,12 +271,15 @@ export const calculateSystemLoad = (inputData, fromHistory = false) => {
         }
 
         let singleSetWorkTime = 0;
-        const valStr = String(ex.reps_or_time).toLowerCase();
+        
+        // --- FIX: SANITYZACJA ---
+        const rawStr = String(ex.reps_or_time).toLowerCase();
+        const cleanStr = rawStr.replace(/\/str\.?|stron.*/g, '').trim();
 
-        if (valStr.includes('s') || valStr.includes('min')) {
-            singleSetWorkTime = parseRepsOrTime(ex.reps_or_time);
+        if (cleanStr.includes('s') || cleanStr.includes('min') || cleanStr.includes(':')) {
+            singleSetWorkTime = parseRepsOrTime(cleanStr);
         } else {
-            singleSetWorkTime = parseRepsOrTime(ex.reps_or_time) * globalSpr;
+            singleSetWorkTime = parseRepsOrTime(cleanStr) * globalSpr;
         }
 
         const totalExWorkTime = singleSetWorkTime * sets * multiplier;
@@ -279,7 +291,8 @@ export const calculateSystemLoad = (inputData, fromHistory = false) => {
     if (totalWorkSeconds === 0) return 0;
 
     const avgDifficulty = weightedDifficultySum / totalWorkSeconds;
-    const maxScoreRef = 7200;
+    // Referencja: 60 minut pracy (3600s) przy średniej trudności 2.0 = 7200 punktów
+    const maxScoreRef = 7200; 
     const rawScore = (avgDifficulty * totalWorkSeconds);
 
     let score = Math.round((rawScore / maxScoreRef) * 100);

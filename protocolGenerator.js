@@ -15,9 +15,13 @@ const calculateLocalTiming = (ex, mode) => {
     else if (load >= 4) baseRest = 60;
     else if (cat.includes('mobility')) baseRest = 20;
 
+    // TASK 6: Update Local Timing Logic
+    const requiresSideSwitch = !!ex.requiresSideSwitch;
+    const transitionSec = requiresSideSwitch ? 12 : 5;
+
     return {
         rest_sec: baseRest,
-        transition_sec: (ex.isUnilateral || String(ex.reps_or_time).includes('/str')) ? 12 : 5
+        transition_sec: transitionSec
     };
 };
 
@@ -101,6 +105,8 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext,
 
     // Wzbogacamy kandydatów o lokalny timing
     candidates.forEach(c => {
+        // Hydration of requiresSideSwitch logic needed here
+        if (c.requiresSideSwitch === undefined) c.requiresSideSwitch = !!c.requires_side_switch;
         c.calculated_timing = calculateLocalTiming(c, actualMode);
     });
 
@@ -286,6 +292,7 @@ function buildSteps(exercises, config, mode, timeFactor, globalRestFactor) {
         driftCompensation += (totalDurationCreated - baseWork);
 
         const isUnilateral = ex.isUnilateral || String(ex.reps_or_time).includes('/str');
+        const requiresSideSwitch = !!ex.requiresSideSwitch; // TASK 6
         const tempoDisplay = config.tempo;
 
         const createCompactStep = (suffix) => ({
@@ -308,8 +315,13 @@ function buildSteps(exercises, config, mode, timeFactor, globalRestFactor) {
 
         if (isUnilateral) {
             steps.push(createCompactStep(' (Lewa)'));
-            const transitionTime = Math.max(5, Math.round(5 * globalRestFactor));
-            steps.push({ name: "Zmiana Strony", isWork: false, isRest: true, duration: transitionTime, sectionName: "Przejście", description: "Druga strona" });
+            
+            // TASK 6: Conditional Side Switch Step
+            if (requiresSideSwitch) {
+                const transitionTime = Math.max(5, Math.round(5 * globalRestFactor));
+                steps.push({ name: "Zmiana Strony", isWork: false, isRest: true, duration: transitionTime, sectionName: "Przejście", description: "Druga strona" });
+            }
+            
             steps.push(createCompactStep(' (Prawa)'));
         } else {
             steps.push(createCompactStep(''));

@@ -98,12 +98,23 @@ function normalizeEquipmentList(raw) {
 }
 
 function normalizeExerciseRow(row) {
+  const isUnilateral = !!row.is_unilateral;
+  // TASK 1: Normalizacja requires_side_switch z fallbackiem do false
+  let requiresSideSwitch = !!row.requires_side_switch;
+
+  // Data Consistency Rule: Jeśli unilateral=false, switch musi być false.
+  if (!isUnilateral && requiresSideSwitch) {
+      console.warn(`[DataIntegrity] Exercise ${row.id} has is_unilateral=false but requires_side_switch=true. Forcing switch to false.`);
+      requiresSideSwitch = false;
+  }
+
   const ex = {
     id: row.id,
     name: row.name,
     description: row.description,
     equipment: normalizeStringArray(row.equipment).map(cleanString).filter(Boolean),
-    is_unilateral: !!row.is_unilateral,
+    is_unilateral: isUnilateral,
+    requires_side_switch: requiresSideSwitch, // Add to object
     is_foot_loading: row.is_foot_loading,
     category_id: row.category_id ? String(row.category_id) : 'uncategorized',
     difficulty_level: clamp(toNumber(row.difficulty_level, 1), 1, 5),
@@ -120,7 +131,6 @@ function normalizeExerciseRow(row) {
     conditioning_style: row.conditioning_style ? String(row.conditioning_style).toLowerCase() : 'none',
     recommended_interval_sec: row.recommended_interval_sec,
 
-    // Explicit Tempo Map from DB (M1)
     default_tempo: row.default_tempo || "2-0-2",
     tempos: {
         control: row.tempo_control,
@@ -133,6 +143,7 @@ function normalizeExerciseRow(row) {
     }
   };
 
+  // calculateTiming używa teraz requires_side_switch
   ex.calculated_timing = calculateTiming(ex);
   return ex;
 }
@@ -143,6 +154,11 @@ function validateExerciseRecord(ex) {
     if (!ex.position) return { valid: false, error: 'missing_position' };
     if (ex.is_foot_loading === null || ex.is_foot_loading === undefined) return { valid: false, error: 'missing_foot_loading' };
 
+    // TASK 1: Walidacja spójności unilateral/switch
+    if (ex.is_unilateral === false && ex.requires_side_switch === true) {
+        return { valid: false, error: 'inconsistent_unilateral_switch_flags' };
+    }
+
     if (ex.conditioning_style === 'interval') {
         const i = ex.recommended_interval_sec;
         if (!i || typeof i !== 'object') return { valid: false, error: 'invalid_interval_object' };
@@ -152,32 +168,27 @@ function validateExerciseRecord(ex) {
     return { valid: true };
 }
 
-// --- CATEGORY MAPPING HELPERS (Refined for DB IDs) ---
-// IDs: 18 (breathing), 10 (muscle_relaxation)
+// --- CATEGORY MAPPING HELPERS ---
 function isBreathingCategory(cat) {
     const s = String(cat || '').toLowerCase();
     return s.includes('breathing') || s.includes('breath') || s.includes('relax') || s.includes('parasymp');
 }
 
-// IDs: 1, 4, 7, 8 (mobility), 16 (stretch)
 function isMobilityCategory(cat) {
     const s = String(cat || '').toLowerCase();
     return s.includes('mobility') || s.includes('stretch') || s.includes('flexor') || s.includes('decompression');
 }
 
-// IDs: 20 (conditioning_low_impact)
 function isConditioningCategory(cat) {
     const s = String(cat || '').toLowerCase();
     return s.includes('conditioning') || s.includes('cardio') || s.includes('aerobic');
 }
 
-// IDs: 2, 5, 6, 13 (core_anti...), 19 (core_stability)
 function isCoreCategory(cat) {
     const s = String(cat || '').toLowerCase();
     return s.startsWith('core_') || s === 'core' || s.includes('core_stability') || s.includes('anti_');
 }
 
-// IDs: 3 (glute), 9 (terminal_knee), 11 (calves), 12 (vmo), 17 (knee_stability), 15 (eccentric - usually lower limb), 14 (flossing - sciatic/femoral)
 function isLowerLimbCategory(cat) {
     const s = String(cat || '').toLowerCase();
     return (
@@ -729,7 +740,10 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatig
 
       // EXPLICIT PARAMETERS FOR FRONTEND (Single Source of Truth)
       restAfterExercise: baseRest,
-      transitionTime: baseTransition
+      transitionTime: baseTransition,
+      
+      // TASK: Przekazujemy flagę do planu
+      requiresSideSwitch: ex.requires_side_switch
   };
 }
 
@@ -788,16 +802,16 @@ function estimateExerciseDurationSeconds(exEntry, userData, paceMap) {
       totalSeconds += (sets - 1) * restTimePerSet;
   }
 
-  // --- POPRAWKA: Transition naliczamy tylko dla unilateralnych ---
-  let transitionTime = 0; // Domyślnie 0 dla obustronnych
-  if (isUnilateral) {
-      if (exEntry.transitionTime) {
-          transitionTime = exEntry.transitionTime;
-      } else if (exEntry.calculated_timing && exEntry.calculated_timing.transition_sec) {
-          transitionTime = exEntry.calculated_timing.transition_sec;
-      } else {
-          transitionTime = 12; // Domyślna wartość dla jednostronnych
-      }
+  // --- TASK 4: TRANSITION TIME LOGIC UPDATE (MATCH FRONTEND) ---
+  let transitionTime = 0;
+  if (exEntry.transitionTime) {
+      transitionTime = exEntry.transitionTime;
+  } else if (exEntry.calculated_timing && exEntry.calculated_timing.transition_sec) {
+      transitionTime = exEntry.calculated_timing.transition_sec;
+  } else {
+      // Explicit fallback to 12s only if requires_side_switch is true
+      const requiresSideSwitch = !!exEntry.requires_side_switch;
+      transitionTime = requiresSideSwitch ? 12 : 5;
   }
 
   const totalTransition = sets * transitionTime;
@@ -1030,16 +1044,15 @@ function logFinalSessionBreakdown(session, userData, paceMap) {
 
         const intraSetRest = (sets > 1) ? getRestAfterExercise(ex, restFactor) : 0;
 
-        // --- POPRAWKA: Transition tylko dla Unilateral
+        // --- TASK 4: TRANSITION TIME LOGIC UPDATE (MATCH FRONTEND) ---
         let transitionTime = 0;
-        if (isUnilateral) {
-            if (ex.transitionTime) {
-                transitionTime = ex.transitionTime;
-            } else if (ex.calculated_timing && ex.calculated_timing.transition_sec) {
-                transitionTime = ex.calculated_timing.transition_sec;
-            } else {
-                transitionTime = 12;
-            }
+        if (ex.transitionTime) {
+            transitionTime = ex.transitionTime;
+        } else if (ex.calculated_timing && ex.calculated_timing.transition_sec) {
+            transitionTime = ex.calculated_timing.transition_sec;
+        } else {
+            const requiresSideSwitch = !!ex.requires_side_switch;
+            transitionTime = requiresSideSwitch ? 12 : 5;
         }
 
         const totalTransition = sets * transitionTime;

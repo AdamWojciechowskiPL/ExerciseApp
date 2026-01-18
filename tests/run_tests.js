@@ -11,6 +11,7 @@ const assert = require('assert');
 // Teraz możemy bezpiecznie importować moduły
 const { validateExerciseRecord, prescribeForExercise, normalizeExerciseRow } = require('../netlify/functions/generate-plan.js');
 const { checkExerciseAvailability, checkEquipment, buildUserContext } = require('../netlify/functions/_clinical-rule-engine.js');
+const { calculateTiming } = require('../netlify/functions/_pacing-engine.js');
 
 console.log("🚀 Starting Clinical Safety Regression Tests...\n");
 
@@ -29,7 +30,45 @@ function runTest(name, testFn) {
     }
 }
 
-// --- P0: SAFETY & LOGIC ---
+// --- NEW AUDIT TESTS (REQUIREMENTS) ---
+
+runTest('R1: Data Normalization (Switch Mapping)', () => {
+    // Case 1: requires_side_switch missing -> default false
+    const row1 = { id: 'ex1', is_unilateral: true };
+    const norm1 = normalizeExerciseRow(row1);
+    assert.strictEqual(norm1.requires_side_switch, false, 'Should default missing switch to false');
+
+    // Case 2: requires_side_switch true -> mapped true
+    const row2 = { id: 'ex2', is_unilateral: true, requires_side_switch: true };
+    const norm2 = normalizeExerciseRow(row2);
+    assert.strictEqual(norm2.requires_side_switch, true, 'Should map true switch');
+});
+
+runTest('R1: Data Integrity Rule (Unilateral False => Switch False)', () => {
+    // If DB has error (unilateral false, switch true) -> force switch false
+    const rowError = { id: 'ex3', is_unilateral: false, requires_side_switch: true };
+    const normError = normalizeExerciseRow(rowError);
+    assert.strictEqual(normError.requires_side_switch, false, 'Should force switch false if not unilateral');
+});
+
+runTest('R2: Pacing Logic (Switch Dependent)', () => {
+    // Case 1: Switch True -> 12s
+    const exSwitch = { is_unilateral: true, requires_side_switch: true };
+    const time1 = calculateTiming(exSwitch);
+    assert.strictEqual(time1.transition_sec, 12, 'Switch required -> 12s transition');
+
+    // Case 2: Switch False -> 5s (even if unilateral)
+    const exNoSwitch = { is_unilateral: true, requires_side_switch: false };
+    const time2 = calculateTiming(exNoSwitch);
+    assert.strictEqual(time2.transition_sec, 5, 'Switch NOT required -> 5s transition');
+
+    // Case 3: Bilateral -> 5s
+    const exBi = { is_unilateral: false };
+    const time3 = calculateTiming(exBi);
+    assert.strictEqual(time3.transition_sec, 5, 'Bilateral -> 5s transition');
+});
+
+// --- EXISTING REGRESSION TESTS ---
 
 runTest('P0.1 Foot Injury blocks High Impact', () => {
     const ex = { id: 'test1', is_foot_loading: true, impact_level: 'high', position: 'standing' };

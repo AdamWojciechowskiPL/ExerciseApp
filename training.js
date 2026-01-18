@@ -435,6 +435,9 @@ export function generateFlatExercises(dayData) {
                                  String(exercise.reps_or_time).includes('/str') ||
                                  String(exercise.reps_or_time).includes('stron');
 
+            // TASK 5: Generowanie kroku "Zmiana Strony" tylko gdy requiresSideSwitch jest true
+            const requiresSideSwitch = !!exercise.requiresSideSwitch;
+
             const smartRestTime = calculateSmartRest(exercise, restFactor);
 
             let transitionTime = 12;
@@ -488,6 +491,7 @@ export function generateFlatExercises(dayData) {
 
             for (let i = 1; i <= loopLimit; i++) {
                 if (isUnilateral) {
+                    // Krok 1: Pierwsza strona
                     plan.push({
                         ...exercise,
                         isWork: true,
@@ -500,16 +504,21 @@ export function generateFlatExercises(dayData) {
                         uniqueId: `${exercise.id || exercise.exerciseId}_step${globalStepCounter++}`
                     });
 
-                    plan.push({
-                        name: "Zmiana Strony",
-                        isRest: true,
-                        isWork: false,
-                        duration: finalTransitionTime,
-                        sectionName: "Przejście",
-                        description: `Przygotuj stronę: ${secondSide}`,
-                        uniqueId: `rest_transition_${globalStepCounter++}`
-                    });
+                    // Krok 2: Opcjonalne Przejście (Switch)
+                    // TASK 5: Dodajemy krok zmiany strony TYLKO jeśli requiresSideSwitch=true
+                    if (requiresSideSwitch) {
+                        plan.push({
+                            name: "Zmiana Strony",
+                            isRest: true,
+                            isWork: false,
+                            duration: finalTransitionTime,
+                            sectionName: "Przejście",
+                            description: `Przygotuj stronę: ${secondSide}`,
+                            uniqueId: `rest_transition_${globalStepCounter++}`
+                        });
+                    }
 
+                    // Krok 3: Druga strona
                     plan.push({
                         ...exercise,
                         isWork: true,
@@ -523,6 +532,7 @@ export function generateFlatExercises(dayData) {
                     });
 
                 } else {
+                    // Standardowe (obustronne)
                     plan.push({
                         ...exercise,
                         isWork: true,

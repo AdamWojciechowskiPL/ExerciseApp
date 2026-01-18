@@ -1,7 +1,7 @@
 // netlify/functions/_pacing-engine.js
 
 /**
- * PACING ENGINE v1.0
+ * PACING ENGINE v1.1
  * Centralny moduł "Medyczny" do wyliczania bazowych czasów przerw i przejść.
  *
  * Zasada: Backend określa fizjologiczną potrzebę regeneracji (Base Rest).
@@ -11,7 +11,8 @@
 const calculateTiming = (exercise) => {
     const cat = String(exercise.category_id || '').toLowerCase();
     const load = parseInt(exercise.difficulty_level || 1, 10);
-    const isUnilateral = !!exercise.is_unilateral;
+    // TASK 2: Use requires_side_switch for transition logic
+    const requiresSideSwitch = !!exercise.requires_side_switch;
 
     let baseRest = 30; // Domyślna wartość (Standard)
 
@@ -43,9 +44,8 @@ const calculateTiming = (exercise) => {
     }
 
     // --- 2. LOGIKA PRZEJŚĆ (LOGISTYKA) ---
-
-    // Czas na zmianę strony (Unilateral) lub przyjęcie pozycji (Bilateral)
-    const baseTransition = isUnilateral ? 12 : 5;
+    // TASK 2: 12s only if side switch is explicit
+    const baseTransition = requiresSideSwitch ? 12 : 5;
 
     return {
         rest_sec: baseRest,
@@ -54,5 +54,3 @@ const calculateTiming = (exercise) => {
 };
 
 module.exports = { calculateTiming };
-
-

@@ -1,5 +1,3 @@
-// ExerciseApp/utils.js
-
 import { state } from './state.js';
 
 // --- SVG SANITIZER ---
@@ -97,6 +95,11 @@ export const getHydratedDay = (dayData) => {
                 };
                 if (!mergedExercise.tempo_or_iso) mergedExercise.tempo_or_iso = libraryDetails.defaultTempo || "Kontrolowane";
                 if (mergedExercise.is_unilateral === undefined) mergedExercise.is_unilateral = libraryDetails.isUnilateral || false;
+                
+                // TASK 3: Propagate requiresSideSwitch
+                if (mergedExercise.requiresSideSwitch === undefined) {
+                    mergedExercise.requiresSideSwitch = !!libraryDetails.requiresSideSwitch;
+                }
 
                 // --- PRIORYTET DLA DANYCH Z PLANU (BACKEND) ---
                 if (!mergedExercise.restAfterExercise) {
@@ -106,7 +109,7 @@ export const getHydratedDay = (dayData) => {
                         mergedExercise.transitionTime = mergedExercise.calculated_timing.transition_sec;
                     } else if (libraryDetails.baseRestSeconds) {
                         mergedExercise.restAfterExercise = libraryDetails.baseRestSeconds;
-                        mergedExercise.transitionTime = libraryDetails.baseTransitionSeconds || (mergedExercise.is_unilateral ? 12 : 5);
+                        mergedExercise.transitionTime = libraryDetails.baseTransitionSeconds || (mergedExercise.requiresSideSwitch ? 12 : 5);
                     } else {
                         mergedExercise.restAfterExercise = 30; // Absolutny fallback
                         mergedExercise.transitionTime = 5;
@@ -154,18 +157,17 @@ export const calculateSmartRest = (exercise, userRestFactor = 1.0) => {
     return Math.max(10, Math.round(baseRest * userRestFactor));
 };
 
-// --- FIX: POPRAWIONA LOGIKA OBLICZANIA CZASU (ZGODNOŚĆ Z BACKENDEM) ---
+// --- FIX: POPRAWIONA LOGIKA OBLICZANIA CZASU (ZGODNOŚĆ Z BACKENDEM + LOGI) ---
 export const calculateSmartDuration = (dayPlan) => {
-    // Jeśli backend już policzył (nowy generator), używamy tej wartości (ale tylko jeśli > 0)
-    if (dayPlan.estimatedDurationMin && dayPlan.estimatedDurationMin > 0) {
-        // Opcjonalnie: można to zakomentować, jeśli chcemy zawsze przeliczać dynamicznie na froncie (np. po zmianie suwaków)
-        // return dayPlan.estimatedDurationMin; 
-    }
-
     if (!dayPlan) return 0;
 
     const globalSpr = state.settings.secondsPerRep || 6;
     const restFactor = state.settings.restTimeFactor || 1.0;
+
+    // --- LOG START ---
+    console.groupCollapsed(`⏱️ FRONTEND TIMING AUDIT (RestFactor: ${restFactor}, SPR: ${globalSpr})`);
+    console.log(`   + Global Session Start Buffer: 5s`);
+    // --- LOG END ---
 
     const allExercises = [
         ...(dayPlan.warmup || []),
@@ -189,7 +191,8 @@ export const calculateSmartDuration = (dayPlan) => {
         }
 
         let workTimePerSet = 0;
-        
+        let typeLabel = "Time"; // Do logów
+
         // --- FIX: SANITYZACJA PRZED SPRAWDZENIEM TYPU ---
         const rawStr = String(ex.reps_or_time).toLowerCase();
         const cleanStr = rawStr.replace(/\/str\.?|stron.*/g, '').trim();
@@ -201,6 +204,7 @@ export const calculateSmartDuration = (dayPlan) => {
             // Powtórzenia
             const reps = parseRepsOrTime(cleanStr);
             workTimePerSet = reps * tempoToUse * multiplier;
+            typeLabel = "Reps";
         }
 
         let exDuration = sets * workTimePerSet;
@@ -208,27 +212,49 @@ export const calculateSmartDuration = (dayPlan) => {
         const restBase = ex.restAfterExercise || 30;
         const smartRestTime = Math.round(restBase * restFactor);
 
+        let intraSetRestLog = 0; // Do logów
+
         if (sets > 1) {
             exDuration += (sets - 1) * smartRestTime;
+            intraSetRestLog = smartRestTime;
         }
 
+        // TASK 3: Use requiresSideSwitch for transition logic
         let transitionTime = 0;
-        if (isUnilateral) {
-             transitionTime = ex.transitionTime || (ex.calculated_timing ? ex.calculated_timing.transition_sec : 12);
+        if (ex.transitionTime) {
+            transitionTime = ex.transitionTime;
+        } else if (ex.calculated_timing && ex.calculated_timing.transition_sec) {
+            transitionTime = ex.calculated_timing.transition_sec;
+        } else {
+            // Frontend fallback based on data (requiresSideSwitch overrides explicit unilateral)
+            transitionTime = (ex.requiresSideSwitch || (ex.calculated_timing && ex.calculated_timing.transition_sec === 12)) ? 12 : 5;
         }
 
         const transitionsTotal = sets * transitionTime;
         exDuration += transitionsTotal;
+
+        // --- LOG EXERCISE ---
+        console.log(`[Ex] ${ex.name} [${typeLabel}]: ${sets}x(${Math.round(workTimePerSet)}s work + ${intraSetRestLog}s rest) + ${transitionsTotal}s transition = ${Math.round(exDuration)}s`);
+        // --- LOG END ---
 
         totalSeconds += exDuration;
 
         // Rest after exercise (zanim zacznie się następne)
         if (index < allExercises.length - 1) {
             totalSeconds += smartRestTime;
+            // --- LOG REST AFTER ---
+            console.log(`   + Rest After Exercise: ${smartRestTime}s`);
+            // --- LOG END ---
         }
     });
 
-    return Math.round(totalSeconds / 60);
+    // --- LOG TOTAL ---
+    const totalMinutes = Math.round(totalSeconds / 60);
+    console.log(`%c=== TOTAL: ${totalSeconds}s (${totalMinutes} min) ===`, 'color: #0ea5e9; font-weight: bold;');
+    console.groupEnd();
+    // --- LOG END ---
+
+    return totalMinutes;
 };
 
 // --- FIX: POPRAWIONA LOGIKA OBLICZANIA OBCIĄŻENIA ---
@@ -271,7 +297,7 @@ export const calculateSystemLoad = (inputData, fromHistory = false) => {
         }
 
         let singleSetWorkTime = 0;
-        
+
         // --- FIX: SANITYZACJA ---
         const rawStr = String(ex.reps_or_time).toLowerCase();
         const cleanStr = rawStr.replace(/\/str\.?|stron.*/g, '').trim();
@@ -292,7 +318,7 @@ export const calculateSystemLoad = (inputData, fromHistory = false) => {
 
     const avgDifficulty = weightedDifficultySum / totalWorkSeconds;
     // Referencja: 60 minut pracy (3600s) przy średniej trudności 2.0 = 7200 punktów
-    const maxScoreRef = 7200; 
+    const maxScoreRef = 7200;
     const rawScore = (avgDifficulty * totalWorkSeconds);
 
     let score = Math.round((rawScore / maxScoreRef) * 100);

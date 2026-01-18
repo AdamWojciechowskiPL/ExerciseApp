@@ -36,13 +36,19 @@ const tests = [
         input: { category_id: 'unknown_category' },
         expect: { rest: 30 }
     },
+    // --- UPDATED TESTS FOR NEW LOGIC (requires_side_switch) ---
     {
-        name: 'Should return 12s transition for Unilateral',
-        input: { is_unilateral: true },
+        name: 'Should return 12s transition ONLY if requires_side_switch is true',
+        input: { is_unilateral: true, requires_side_switch: true },
         expect: { trans: 12 }
     },
     {
-        name: 'Should return 5s transition for Bilateral',
+        name: 'Should return 5s transition if requires_side_switch is false (even if unilateral)',
+        input: { is_unilateral: true, requires_side_switch: false },
+        expect: { trans: 5 }
+    },
+    {
+        name: 'Should return 5s transition for Bilateral (implicit switch false)',
         input: { is_unilateral: false },
         expect: { trans: 5 }
     }

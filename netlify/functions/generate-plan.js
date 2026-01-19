@@ -741,7 +741,7 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatig
       // EXPLICIT PARAMETERS FOR FRONTEND (Single Source of Truth)
       restAfterExercise: baseRest,
       transitionTime: baseTransition,
-      
+
       // TASK: Przekazujemy flagę do planu
       requiresSideSwitch: ex.requires_side_switch
   };
@@ -769,55 +769,53 @@ function getRestAfterExercise(exEntry, restFactor) {
     return Math.round(baseRest * restFactor);
 }
 
+// --- FIX 3.0: ZGODNOŚĆ Z UTILS.JS ---
 function estimateExerciseDurationSeconds(exEntry, userData, paceMap) {
   const globalSpr = clamp(toNumber(userData?.secondsPerRep, DEFAULT_SECONDS_PER_REP), 2, 12);
   const restFactor = toNumber(userData?.restTimeFactor, 1.0);
   let tempoToUse = paceMap && paceMap[exEntry.id] ? paceMap[exEntry.id] : globalSpr;
 
-  const sets = parseInt(exEntry.sets, 10) || 1;
+  const rawSets = parseInt(exEntry.sets, 10) || 1;
   const isUnilateral = exEntry.is_unilateral || String(exEntry.reps_or_time || '').includes('/str');
+
+  // KLUCZOWE: Dzielimy serie dla unilateral, aby pasowało do wykonania (L+P = 1 seria)
+  const sets = isUnilateral ? Math.ceil(rawSets / 2) : rawSets;
+
   const multiplier = isUnilateral ? 2 : 1;
 
   let workTimePerSet = 0;
-  // FIX: Usuwamy '/str' przed sprawdzaniem czy to czas ('s'), aby uniknąć false positive
+  // FIX: Usuwamy '/str' przed sprawdzaniem czy to czas ('s')
   const rawStr = String(exEntry.reps_or_time).toLowerCase();
   const cleanStr = rawStr.replace(/\/str\.?|stron.*/g, '').trim();
 
-  // Teraz sprawdzamy czy zostały jednostki czasu
+  // 1. Obliczanie czasu pracy (Work Time)
   if (cleanStr.includes('s') || cleanStr.includes('min') || cleanStr.includes(':')) {
       workTimePerSet = parseRepsOrTimeToSeconds(cleanStr) * multiplier;
   } else {
-      // To są powtórzenia
       const reps = parseInt(cleanStr, 10) || 10;
       workTimePerSet = reps * tempoToUse * multiplier;
   }
 
-  let totalSeconds = (sets * workTimePerSet);
-
-  // Intra-set rest (pomiędzy seriami TEGO SAMEGO ćwiczenia)
-  let restTimePerSet = 0;
-  if (sets > 1) {
-      // Używamy tej samej wartości co "po ćwiczeniu" jako bazy
-      restTimePerSet = getRestAfterExercise(exEntry, restFactor);
-      totalSeconds += (sets - 1) * restTimePerSet;
-  }
-
-  // --- TASK 4: TRANSITION TIME LOGIC UPDATE (MATCH FRONTEND) ---
-  let transitionTime = 0;
-  if (exEntry.transitionTime) {
-      transitionTime = exEntry.transitionTime;
-  } else if (exEntry.calculated_timing && exEntry.calculated_timing.transition_sec) {
-      transitionTime = exEntry.calculated_timing.transition_sec;
+  // 2. Obliczanie czasu przejść (Transition)
+  // TransitionTime: Unilateral -> Switch Time (np. 12s), Bilateral -> Setup Time (0s - User Request)
+  let transitionPerSet = 0;
+  if (isUnilateral) {
+      transitionPerSet = (exEntry.requires_side_switch || (exEntry.calculated_timing && exEntry.calculated_timing.transition_sec === 12)) ? 12 : 5;
   } else {
-      // Explicit fallback to 12s only if requires_side_switch is true
-      const requiresSideSwitch = !!exEntry.requires_side_switch;
-      transitionTime = requiresSideSwitch ? 12 : 5;
+      transitionPerSet = 0; // Bilateral Transition = 0
+  }
+  const totalTransition = sets * transitionPerSet;
+
+  // 3. Obliczanie przerw wewnątrz (Rest)
+  // Przerwa tylko pomiędzy pełnymi seriami. Jeśli sets=1 -> rest=0.
+  let totalRest = 0;
+  if (sets > 1) {
+      const restTimePerSet = getRestAfterExercise(exEntry, restFactor);
+      totalRest = (sets - 1) * restTimePerSet;
   }
 
-  const totalTransition = sets * transitionTime;
-  totalSeconds += totalTransition;
-
-  return totalSeconds;
+  // SUMA: Total Work + Total Transition + Total Rest
+  return (sets * workTimePerSet) + totalTransition + totalRest;
 }
 
 function estimateSessionDurationSeconds(session, userData, paceMap) {
@@ -828,7 +826,7 @@ function estimateSessionDurationSeconds(session, userData, paceMap) {
 
   const all = [...session.warmup, ...session.main, ...session.cooldown];
   for (let i = 0; i < all.length; i++) {
-    // 1. Czas samego ćwiczenia (praca + przerwy między seriami + przejścia)
+    // 1. Czas samego ćwiczenia (praca + przejścia + przerwy między seriami)
     total += estimateExerciseDurationSeconds(all[i], userData, paceMap);
 
     // 2. Czas przerwy PO ćwiczeniu (przed następnym)
@@ -1022,8 +1020,12 @@ function logFinalSessionBreakdown(session, userData, paceMap) {
     all.forEach((ex, i) => {
         // Recalculate components manually for log transparency
         let tempoToUse = paceMap && paceMap[ex.id] ? paceMap[ex.id] : globalSpr;
-        const sets = parseInt(ex.sets, 10) || 1;
+
+        const rawSets = parseInt(ex.sets, 10) || 1;
         const isUnilateral = ex.is_unilateral || String(ex.reps_or_time || '').includes('/str');
+        // FIX: Effective Sets Logic
+        const sets = isUnilateral ? Math.ceil(rawSets / 2) : rawSets;
+
         const multiplier = isUnilateral ? 2 : 1;
 
         // --- POPRAWKA LOGOWANIA (IDENTYCZNA Z ESTIMATE) ---
@@ -1042,25 +1044,26 @@ function logFinalSessionBreakdown(session, userData, paceMap) {
             workTimePerSet = reps * tempoToUse * multiplier;
         }
 
-        const intraSetRest = (sets > 1) ? getRestAfterExercise(ex, restFactor) : 0;
-
-        // --- TASK 4: TRANSITION TIME LOGIC UPDATE (MATCH FRONTEND) ---
+        // --- FIX LOGIC: Transition & Rest ---
         let transitionTime = 0;
-        if (ex.transitionTime) {
-            transitionTime = ex.transitionTime;
-        } else if (ex.calculated_timing && ex.calculated_timing.transition_sec) {
-            transitionTime = ex.calculated_timing.transition_sec;
+        if (isUnilateral) {
+            transitionTime = (ex.requires_side_switch || (ex.calculated_timing && ex.calculated_timing.transition_sec === 12)) ? 12 : 5;
         } else {
-            const requiresSideSwitch = !!ex.requires_side_switch;
-            transitionTime = requiresSideSwitch ? 12 : 5;
+            transitionTime = 0; // Bilateral Transition = 0
         }
-
         const totalTransition = sets * transitionTime;
 
-        // Exercise Total Duration
-        const dur = (sets * workTimePerSet) + ((sets - 1) * intraSetRest) + totalTransition;
+        // Intra-set rest ONLY if sets > 1
+        let intraSetRest = 0;
+        if (sets > 1) {
+            intraSetRest = getRestAfterExercise(ex, restFactor);
+        }
+        const totalRest = (sets > 1) ? (sets - 1) * intraSetRest : 0;
 
-        console.log(`[Ex] ${ex.name} [${typeLabel}]: ${sets}x(${Math.round(workTimePerSet)}s work + ${intraSetRest}s rest) + ${totalTransition}s transition = ${Math.round(dur)}s`);
+        // Exercise Total Duration
+        const dur = (sets * workTimePerSet) + totalTransition + totalRest;
+
+        console.log(`[Ex] ${ex.name} [${typeLabel}]: ${sets} eff.sets x (${Math.round(workTimePerSet)}s work) + ${totalTransition}s trans + ${totalRest}s rest = ${Math.round(dur)}s`);
         runningTotal += dur;
 
         if (i < all.length - 1) {

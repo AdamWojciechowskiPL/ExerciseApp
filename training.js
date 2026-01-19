@@ -446,6 +446,13 @@ export function generateFlatExercises(dayData) {
             } else if (exercise.calculated_timing && exercise.calculated_timing.transition_sec) {
                 transitionTime = exercise.calculated_timing.transition_sec;
             }
+
+            // FIX: Enforce minimum 12s if side switch is explicitly required,
+            // regardless of what data hydration might have set (e.g. 5s default fallback)
+            if (requiresSideSwitch && transitionTime < 10) {
+                transitionTime = 12;
+            }
+
             const finalTransitionTime = Math.max(5, Math.round(transitionTime * restFactor));
 
             let loopLimit = totalSetsDeclared;

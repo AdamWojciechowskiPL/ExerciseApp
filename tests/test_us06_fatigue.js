@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * FATIGUE CALCULATOR v2.0 (Adaptive Thresholds - US-06)
+ * FATIGUE CALCULATOR v2.1 (UTC Fix)
  *
  * Zastępuje sztywne progi (80/60) modelem indywidualnym opartym o:
  * 1. Banister Impulse-Response (Bucket 0-120) - kompatybilność wsteczna.
@@ -107,7 +107,6 @@ async function calculateFatigueProfile(client, userId) {
               AND completed_at > NOW() - INTERVAL '56 days'
             ORDER BY completed_at ASC
         `;
-        // FIX: Renamed 'result' to 'dbResult' to avoid collision
         const dbResult = await client.query(query, [userId]);
         const sessions = dbResult.rows;
 
@@ -115,25 +114,23 @@ async function calculateFatigueProfile(client, userId) {
         const dailyLoadsMap = new Map();
 
         sessions.forEach(row => {
-            // Normalizacja daty do lokalnego dnia (uproszczone ISO date part)
+            // Normalizacja daty do UTC ISO Date (ignorujemy czas)
+            // Używamy daty z bazy, która jest w UTC
             const dateStr = new Date(row.completed_at).toISOString().split('T')[0];
             const data = row.session_data || {};
-            // Hydracja brakujących dat w JSON
             if (!data.completedAt) data.completedAt = row.completed_at;
 
             const loadAU = calculateSessionLoadAU(data);
 
-            // Sumowanie sesji z tego samego dnia (np. rano + wieczór)
             const current = dailyLoadsMap.get(dateStr) || 0;
             dailyLoadsMap.set(dateStr, current + loadAU);
         });
 
         // 3. Symulacja dzienna (od -56 dni do dzisiaj)
+        // FIX: Używamy UTC Midnight, aby zgrać się z datami z bazy danych
         const now = new Date();
-        now.setHours(0, 0, 0, 0); // Północ
-        const todayStr = now.toISOString().split('T')[0];
+        now.setUTCHours(0, 0, 0, 0); // UTC Midnight!
 
-        // Tablice do percentyli
         const historyFatigueScores = [];
         const historyStrainScores = [];
 
@@ -147,12 +144,11 @@ async function calculateFatigueProfile(client, userId) {
         // Pętla po dniach (od najdawniejszego do dzisiaj)
         for (let d = HISTORY_WINDOW_DAYS; d >= 0; d--) {
             const dateIter = new Date(now);
-            dateIter.setDate(dateIter.getDate() - d);
+            // Odejmujemy dni w UTC
+            dateIter.setUTCDate(dateIter.getUTCDate() - d);
             const dateKey = dateIter.toISOString().split('T')[0];
 
             // A. Decay (Upływ czasu - 24h)
-            // Model Banistera: najpierw upływ czasu, potem impuls
-            // Half-life 24h => mnożnik 0.5 co dobę
             currentBucketScore *= 0.5;
 
             // B. Add Load (jeśli w tym dniu był trening)
@@ -160,21 +156,19 @@ async function calculateFatigueProfile(client, userId) {
             const scaledLoad = dayLoadAU * LOAD_SCALE;
             currentBucketScore += scaledLoad;
 
-            // Zbieramy historię stanu wiadra (do percentyli)
             historyFatigueScores.push(currentBucketScore);
 
             // C. Obliczanie Foster's Monotony & Strain (okno kroczące 7 dni wstecz)
             const weeklyLoads = [];
             for (let w = 6; w >= 0; w--) {
                 const wDate = new Date(dateIter);
-                wDate.setDate(wDate.getDate() - w);
+                wDate.setUTCDate(wDate.getUTCDate() - w);
                 const wKey = wDate.toISOString().split('T')[0];
                 weeklyLoads.push(dailyLoadsMap.get(wKey) || 0);
             }
 
             const weekTotal = weeklyLoads.reduce((a, b) => a + b, 0);
             const weekMean = getMean(weeklyLoads);
-            // Zabezpieczenie SD przed zerem (min 1.0), aby monotonia nie była Infinity
             const weekSD = Math.max(1.0, getStandardDeviation(weeklyLoads, weekMean));
 
             const dailyMonotony = weekMean / weekSD;
@@ -182,7 +176,6 @@ async function calculateFatigueProfile(client, userId) {
 
             historyStrainScores.push(dailyStrain);
 
-            // Zapisz stan bieżący (ostatnia iteracja pętli)
             if (d === 0) {
                 todayMonotony = dailyMonotony;
                 todayStrain = dailyStrain;
@@ -194,7 +187,7 @@ async function calculateFatigueProfile(client, userId) {
         historyFatigueScores.sort((a, b) => a - b);
         historyStrainScores.sort((a, b) => a - b);
 
-        // 5. Wyliczanie Percentyli (indywidualna tolerancja)
+        // 5. Wyliczanie Percentyli
         const p85_fatigue = getPercentile(historyFatigueScores, 85);
         const p75_fatigue = getPercentile(historyFatigueScores, 75);
         const p60_fatigue = getPercentile(historyFatigueScores, 60);
@@ -204,51 +197,32 @@ async function calculateFatigueProfile(client, userId) {
         const sessionCount = sessions.length;
         const isCalibrated = sessionCount >= MIN_SESSIONS_FOR_CALIBRATION;
 
-        // Domyślne progi (Fallback dla nowych userów)
+        // Domyślne progi
         let thEnter = 80;
         let thExit = 60;
         let thFilter = 70;
 
         if (isCalibrated) {
-            // Adaptive Logic (US-06):
-            // Próg wejścia w Deload (Enter):
-            // Nie chcemy karać za wcześnie (min 80), ale jeśli user "wytrzymuje" więcej (p85 > 80), podnosimy poprzeczkę.
             thEnter = Math.max(80, p85_fatigue);
-
-            // Próg wyjścia z Deload (Exit):
-            // Histereza - musisz zejść do p60 lub 60, cokolwiek niższe (bezpieczeństwo).
             thExit = Math.min(60, p60_fatigue);
-
-            // Próg Filtra (Ostrzeżenie/Redukcja w planie):
-            // Zaczynamy filtrować trudne ćwiczenia przy p75 lub 70.
             thFilter = Math.max(70, p75_fatigue);
         }
 
-        // Clamp wyniku końcowego wiadra (żeby nie wybuchło przy błędnych danych)
         const finalScore = Math.min(MAX_BUCKET_CAPACITY, Math.round(currentBucketScore));
 
         const result = {
-            // --- CORE METRICS ---
             fatigueScoreNow: finalScore,
-
-            // --- ADAPTIVE THRESHOLDS ---
             fatigueThresholdEnter: Math.round(thEnter),
             fatigueThresholdExit: Math.round(thExit),
             fatigueThresholdFilter: Math.round(thFilter),
-
-            // --- MONOTONY & STRAIN (Current) ---
             weekLoad7d: Math.round(todayWeekLoad),
             monotony7d: parseFloat(todayMonotony.toFixed(2)),
             strain7d: Math.round(todayStrain),
-
-            // --- HISTORICAL CONTEXT ---
             p85_strain_56d: Math.round(p85_strain),
             p85_fatigue_56d: Math.round(p85_fatigue),
-
-            // --- METADATA ---
             dataQuality: {
                 sessions56d: sessionCount,
-                sessions7d: dailyLoadsMap.size, // Uproszczenie: liczba dni z treningiem
+                sessions7d: dailyLoadsMap.size,
                 calibrated: isCalibrated
             }
         };
@@ -258,7 +232,6 @@ async function calculateFatigueProfile(client, userId) {
 
     } catch (error) {
         console.error("[FatigueCalc] Critical Error:", error);
-        // Fail-safe Return (Fallback to static logic)
         return {
             fatigueScoreNow: 0,
             fatigueThresholdEnter: 80,
@@ -271,11 +244,6 @@ async function calculateFatigueProfile(client, userId) {
     }
 }
 
-/**
- * Wrapper dla kompatybilności wstecznej.
- * Zwraca tylko liczbę (fatigueScoreNow), używany w endpointach statystyk,
- * które nie potrzebują pełnego profilu.
- */
 async function calculateAcuteFatigue(client, userId) {
     const profile = await calculateFatigueProfile(client, userId);
     return profile.fatigueScoreNow;

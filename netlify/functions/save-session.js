@@ -41,7 +41,7 @@ async function updatePreferences(client, userId, ratings) {
     for (const [exerciseId, difficulty] of difficultyFlags.entries()) {
         const sql = `
             INSERT INTO user_exercise_preferences (user_id, exercise_id, affinity_score, difficulty_rating, updated_at)
-            VALUES ($1, $2, 0, $3::INTEGER, updated_at)
+            VALUES ($1, $2, 0, $3::INTEGER, CURRENT_TIMESTAMP)
             ON CONFLICT (user_id, exercise_id) DO UPDATE SET
                 difficulty_rating = $3::INTEGER,
                 updated_at = CURRENT_TIMESTAMP

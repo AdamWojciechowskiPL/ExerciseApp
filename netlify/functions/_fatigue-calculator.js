@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * FATIGUE CALCULATOR v2.0 (Adaptive Thresholds - US-06)
+ * FATIGUE CALCULATOR v2.1 (UTC Fix & Robustness)
  *
  * Zastępuje sztywne progi (80/60) modelem indywidualnym opartym o:
  * 1. Banister Impulse-Response (Bucket 0-120) - kompatybilność wsteczna.
@@ -54,7 +54,7 @@ function getNetDurationMinutes(session) {
     // 2. Różnica timestampów (jeśli brak pauz)
     if (session.startedAt && session.completedAt) {
         const diffMs = new Date(session.completedAt) - new Date(session.startedAt);
-        // Sanity check: < 6h
+        // Sanity check: < 6h (odsiewamy sesje "wiszące" przez noc)
         if (diffMs > 0 && diffMs < 6 * 3600000) return Math.round(diffMs / 60000);
     }
 
@@ -65,7 +65,7 @@ function getNetDurationMinutes(session) {
 }
 
 function estimateSessionRPE(session) {
-    // 1. Explicit RPE (przyszłościowo)
+    // 1. Explicit RPE (przyszłościowo - jeśli dodamy suwak RPE)
     if (session.rpe) return Math.max(1, Math.min(10, session.rpe));
 
     // 2. Feedback mapping (CR10 scale approximation)
@@ -107,7 +107,6 @@ async function calculateFatigueProfile(client, userId) {
               AND completed_at > NOW() - INTERVAL '56 days'
             ORDER BY completed_at ASC
         `;
-        // FIX: Renamed 'result' to 'dbResult' to avoid collision
         const dbResult = await client.query(query, [userId]);
         const sessions = dbResult.rows;
 
@@ -115,10 +114,10 @@ async function calculateFatigueProfile(client, userId) {
         const dailyLoadsMap = new Map();
 
         sessions.forEach(row => {
-            // Normalizacja daty do lokalnego dnia (uproszczone ISO date part)
+            // Normalizacja daty do UTC ISO Date (ignorujemy czas)
+            // Używamy daty z bazy, która jest w UTC
             const dateStr = new Date(row.completed_at).toISOString().split('T')[0];
             const data = row.session_data || {};
-            // Hydracja brakujących dat w JSON
             if (!data.completedAt) data.completedAt = row.completed_at;
 
             const loadAU = calculateSessionLoadAU(data);
@@ -129,9 +128,9 @@ async function calculateFatigueProfile(client, userId) {
         });
 
         // 3. Symulacja dzienna (od -56 dni do dzisiaj)
+        // FIX: Używamy UTC Midnight, aby zgrać się z datami z bazy danych
         const now = new Date();
-        now.setHours(0, 0, 0, 0); // Północ
-        const todayStr = now.toISOString().split('T')[0];
+        now.setUTCHours(0, 0, 0, 0); // UTC Midnight!
 
         // Tablice do percentyli
         const historyFatigueScores = [];
@@ -147,7 +146,8 @@ async function calculateFatigueProfile(client, userId) {
         // Pętla po dniach (od najdawniejszego do dzisiaj)
         for (let d = HISTORY_WINDOW_DAYS; d >= 0; d--) {
             const dateIter = new Date(now);
-            dateIter.setDate(dateIter.getDate() - d);
+            // Odejmujemy dni w UTC
+            dateIter.setUTCDate(dateIter.getUTCDate() - d);
             const dateKey = dateIter.toISOString().split('T')[0];
 
             // A. Decay (Upływ czasu - 24h)
@@ -167,7 +167,7 @@ async function calculateFatigueProfile(client, userId) {
             const weeklyLoads = [];
             for (let w = 6; w >= 0; w--) {
                 const wDate = new Date(dateIter);
-                wDate.setDate(wDate.getDate() - w);
+                wDate.setUTCDate(wDate.getUTCDate() - w);
                 const wKey = wDate.toISOString().split('T')[0];
                 weeklyLoads.push(dailyLoadsMap.get(wKey) || 0);
             }

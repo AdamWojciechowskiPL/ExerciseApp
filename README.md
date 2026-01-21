@@ -1,4 +1,4 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v23.3.0
+# Aplikacja Treningowa (Smart Rehab PWA) v24.0.0
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
@@ -182,6 +182,11 @@ Projekt posiada zestaw testów regresyjnych w katalogu `/tests`:
 │   │   ├── _clinical-rule-engine.js # Backendowy walidator medyczny
 │   │   ├── _crypto-helper.js        # Szyfrowanie tokenów (AES-256-GCM)
 │   │   ├── _stats-helper.js         # Logika statystyk (Streak, Resilience, Pacing)
+│   │   ├── _pain-taxonomy.js        # Ujednolicony słownik stref bólu
+│   │   ├── _tempo-validator.js      # Walidacja i egzekwowanie tempa fazy
+│   │   ├── _fatigue-calculator.js   # Profil zmęczenia, Monotonia, Strain
+│   │   ├── _data-contract.js        # Schematy walidacji JSON (Pain Monitoring)
+│   │   ├── patch-session-feedback.js # Aktualizacja sesji po 24h
 │   │   ├── generate-plan.js         # Generator planów dynamicznych (Rolling Window + Fluid Progression)
 │   │   ├── _phase-manager.js        # Zarządzanie stanem faz i licznikami
 │   │   ├── phase-catalog.js         # Konfiguracja blueprintów i reguł

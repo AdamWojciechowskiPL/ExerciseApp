@@ -66,8 +66,8 @@ function initializePhaseState(primaryGoal, userCtx) {
 }
 
 /**
- * 2. RESOLVE ACTIVE PHASE (US-06 Updated)
- * Obsługuje dynamiczne progi zmęczenia i detekcję monotonii.
+ * 2. RESOLVE ACTIVE PHASE (US-08 Updated)
+ * Obsługuje painStatus (Red/Amber) oraz fatigue/monotony triggers.
  */
 function resolveActivePhase(state, safetyCtx) {
     if (!state || !state.enabled) {
@@ -77,25 +77,29 @@ function resolveActivePhase(state, safetyCtx) {
     // Default thresholds (fallback)
     const thresholdEnter = safetyCtx.fatigueThresholdEnter || 80;
     const thresholdExit = safetyCtx.fatigueThresholdExit || 60;
-    
-    // Monotony triggers (US-06)
+
+    // Monotony triggers
     const isMonotonySpike = (safetyCtx.monotony7d >= 2.0 && safetyCtx.strain7d >= (safetyCtx.p85_strain_56d || 9999));
 
     // A. Czy wchodzimy w nowy Override?
     let newOverrideMode = null;
     let overrideReason = null;
 
-    // 1. Severe Pain -> Rehab
+    // US-08: Red Pain Logic (Flare-up / Severe)
     if (safetyCtx.isSeverePain) {
         newOverrideMode = PHASE_IDS.REHAB;
-        overrideReason = 'severe_pain';
+        overrideReason = 'severe_pain_reported';
     }
-    // 2. Feedback -1 (Symptom Worse) -> Rehab
-    else if (safetyCtx.lastFeedbackValue === -1 && safetyCtx.lastFeedbackType === 'symptom') {
+    else if (safetyCtx.painStatus === 'red') {
         newOverrideMode = PHASE_IDS.REHAB;
-        overrideReason = 'symptom_flare_up';
+        overrideReason = 'pain_flare_up_detected';
     }
-    // 3. High Fatigue OR Monotony Spike -> Deload (US-06)
+    // US-08: Amber Pain -> Deload (Warning)
+    else if (safetyCtx.painStatus === 'amber') {
+        newOverrideMode = PHASE_IDS.DELOAD;
+        overrideReason = 'pain_warning_amber';
+    }
+    // High Fatigue OR Monotony Spike -> Deload
     else if (safetyCtx.fatigueScore >= thresholdEnter) {
         newOverrideMode = PHASE_IDS.DELOAD;
         overrideReason = 'high_fatigue_load';
@@ -105,6 +109,7 @@ function resolveActivePhase(state, safetyCtx) {
         overrideReason = 'monotony_strain_spike';
     }
 
+    // Jeśli wykryto potrzebę wejścia w override
     if (newOverrideMode && state.override.mode !== newOverrideMode) {
         return {
             activePhaseId: newOverrideMode,
@@ -118,13 +123,18 @@ function resolveActivePhase(state, safetyCtx) {
         let shouldExit = false;
 
         if (state.override.mode === PHASE_IDS.REHAB) {
-            if (!safetyCtx.isSeverePain && state.override.stats.sessions_completed >= 1) {
+            // US-08: Exit Rehab if no severe pain AND pain status is NOT red AND min 1 session done
+            const isPainClear = !safetyCtx.isSeverePain && safetyCtx.painStatus !== 'red';
+            if (isPainClear && state.override.stats.sessions_completed >= 1) {
                 shouldExit = true;
             }
         }
         else if (state.override.mode === PHASE_IDS.DELOAD) {
-            // US-06: Use personalized exit threshold
-            if (safetyCtx.fatigueScore < thresholdExit && state.override.stats.sessions_completed >= 1) {
+            // Exit Deload: pain is green (not amber/red) AND fatigue OK
+            const isPainGreen = safetyCtx.painStatus === 'green';
+            const isFatigueOk = safetyCtx.fatigueScore < thresholdExit;
+            
+            if (isPainGreen && isFatigueOk && state.override.stats.sessions_completed >= 1) {
                 shouldExit = true;
             }
         }
@@ -141,6 +151,34 @@ function resolveActivePhase(state, safetyCtx) {
     }
 
     return { activePhaseId: state.current_phase_stats.phase_id, isOverride: false };
+}
+
+function applySuggestedUpdate(state, suggestedUpdate) {
+    const newState = JSON.parse(JSON.stringify(state));
+    const now = getTodayISO();
+
+    if (suggestedUpdate.mode) {
+        console.log(`[PhaseManager] Entering Override: ${suggestedUpdate.mode} (${suggestedUpdate.reason})`);
+        newState.override.mode = suggestedUpdate.mode;
+        newState.override.reason = suggestedUpdate.reason;
+        newState.override.triggered_at = now;
+        newState.override.exit_conditions = null; 
+        newState.override.stats = {
+            sessions_completed: 0,
+            start_date: now
+        };
+    } else {
+        console.log(`[PhaseManager] Exiting Override (${suggestedUpdate.reason})`);
+        newState.override = {
+            mode: null,
+            reason: null,
+            triggered_at: null,
+            exit_conditions: null,
+            stats: { sessions_completed: 0, start_date: null }
+        };
+    }
+
+    return newState;
 }
 
 function updatePhaseStateAfterSession(state, completedPhaseId, userCtx) {
@@ -251,6 +289,7 @@ function applyGoalChangePolicy(state, newGoal, userCtx) {
 module.exports = {
     initializePhaseState,
     resolveActivePhase,
+    applySuggestedUpdate,
     updatePhaseStateAfterSession,
     checkDetraining,
     applyGoalChangePolicy

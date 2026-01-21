@@ -3,21 +3,15 @@
 
 const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
 const { calculateStreak, calculateResilience, calculateAndUpsertPace } = require('./_stats-helper.js');
-
-// --- TASK B3: PHASE MANAGER IMPORTS ---
-const { 
-    updatePhaseStateAfterSession, 
-    checkDetraining 
-} = require('./_phase-manager.js');
+const { updatePhaseStateAfterSession, checkDetraining } = require('./_phase-manager.js');
+// US-09: Import walidatora kontraktu
+const { validatePainMonitoring } = require('./_data-contract.js');
 
 const SCORE_LIKE_INCREMENT = 15;
 const SCORE_DISLIKE_DECREMENT = 30;
 const SCORE_MAX = 100;
 const SCORE_MIN = -100;
 
-// ============================================================================
-// HELPER: UPDATE PREFERENCES (Score & Difficulty)
-// ============================================================================
 async function updatePreferences(client, userId, ratings) {
     if (!ratings || !Array.isArray(ratings) || ratings.length === 0) return;
 
@@ -47,7 +41,7 @@ async function updatePreferences(client, userId, ratings) {
     for (const [exerciseId, difficulty] of difficultyFlags.entries()) {
         const sql = `
             INSERT INTO user_exercise_preferences (user_id, exercise_id, affinity_score, difficulty_rating, updated_at)
-            VALUES ($1, $2, 0, $3::INTEGER, CURRENT_TIMESTAMP)
+            VALUES ($1, $2, 0, $3::INTEGER, updated_at)
             ON CONFLICT (user_id, exercise_id) DO UPDATE SET
                 difficulty_rating = $3::INTEGER,
                 updated_at = CURRENT_TIMESTAMP
@@ -56,20 +50,15 @@ async function updatePreferences(client, userId, ratings) {
     }
 }
 
-// ============================================================================
-// HELPER: ANALYZE HARD EVOLUTION (Too Easy/Hard)
-// ============================================================================
 async function analyzeAndAdjustPlan(client, userId, sessionLog, feedback, ratings) {
     if (!ratings || !ratings.length) return null;
 
-    // Hard Override
     const hardRating = ratings.find(r => r.action === 'hard');
     if (hardRating) {
         const currentId = hardRating.exerciseId;
         const currentNameRes = await client.query('SELECT name FROM exercises WHERE id = $1', [currentId]);
         const currentName = currentNameRes.rows[0]?.name || 'Ćwiczenie';
 
-        // Check for Ping-Pong
         const historyCheck = await client.query(`SELECT original_exercise_id FROM user_plan_overrides WHERE user_id = $1 AND replacement_exercise_id = $2 AND adjustment_type = 'evolution'`, [userId, currentId]);
         if (historyCheck.rows.length > 0) {
             await client.query(`
@@ -81,7 +70,6 @@ async function analyzeAndAdjustPlan(client, userId, sessionLog, feedback, rating
             return { original: currentName, type: 'micro_dose', newName: `${currentName} (Mikro-Serie)` };
         }
 
-        // Dewolucja (powrót do łatwiejszego)
         const parentRes = await client.query(`SELECT id, name FROM exercises WHERE next_progression_id = $1 ORDER BY difficulty_level DESC LIMIT 1`, [currentId]);
         if (parentRes.rows.length > 0) {
             const parentEx = parentRes.rows[0];
@@ -94,7 +82,6 @@ async function analyzeAndAdjustPlan(client, userId, sessionLog, feedback, rating
         }
     }
 
-    // Easy Override (Ewolucja)
     const easyRating = ratings.find(r => r.action === 'easy');
     if (easyRating) {
         const currentExRes = await client.query('SELECT id, name, next_progression_id FROM exercises WHERE id = $1', [easyRating.exerciseId]);
@@ -115,13 +102,6 @@ async function analyzeAndAdjustPlan(client, userId, sessionLog, feedback, rating
     return null;
 }
 
-// ============================================================================
-// HELPER: SOFT ADJUSTMENTS (Like/Dislike) - Refactored for In-Memory Update
-// ============================================================================
-/**
- * Modyfikuje obiekt `settings.dynamicPlanData` w pamięci (in-place).
- * Nie wykonuje zapytań SQL UPDATE (bo to robimy raz na końcu).
- */
 async function applyImmediatePlanAdjustmentsInMemory(client, ratings, sessionLog, settings) {
     const likes = ratings.filter(r => r.action === 'like');
     const dislikes = ratings.filter(r => r.action === 'dislike');
@@ -134,7 +114,6 @@ async function applyImmediatePlanAdjustmentsInMemory(client, ratings, sessionLog
     let planModified = false;
     const today = new Date().toISOString().split('T')[0];
 
-    // --- LOGIKA LIKE (INJECTION) ---
     if (likes.length > 0) {
         const likedIds = likes.map(l => l.exerciseId);
         const exRes = await client.query('SELECT id, name, category_id, equipment FROM exercises WHERE id = ANY($1)', [likedIds]);
@@ -175,12 +154,11 @@ async function applyImmediatePlanAdjustmentsInMemory(client, ratings, sessionLog
         }
     }
 
-    // --- LOGIKA DISLIKE (EJECTION) ---
     if (dislikes.length > 0) {
         for (const dislike of dislikes) {
             const dislikedId = dislike.exerciseId;
             let existsInFuture = false;
-            
+
             for (const day of plan.days) {
                 if (day.date <= today || day.type === 'rest') continue;
                 if (day.main && day.main.some(ex => ex.id === dislikedId || ex.exerciseId === dislikedId)) {
@@ -230,10 +208,6 @@ async function applyImmediatePlanAdjustmentsInMemory(client, ratings, sessionLog
     return planModified;
 }
 
-// ============================================================================
-// MAIN HANDLER
-// ============================================================================
-
 exports.handler = async (event) => {
     if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method Not Allowed' };
 
@@ -246,6 +220,14 @@ exports.handler = async (event) => {
             return { statusCode: 400, body: JSON.stringify({ error: 'Bad Request: Missing required fields' }) };
         }
 
+        // US-09: Walidacja feedbacku (Fail-Closed dla nowego formatu)
+        if (feedback) {
+            const validation = validatePainMonitoring(feedback);
+            if (!validation.valid) {
+                return { statusCode: 400, body: JSON.stringify({ error: `Feedback Validation Error: ${validation.error}` }) };
+            }
+        }
+
         const client = await pool.connect();
         let adaptationResult = null;
         let newStats = null;
@@ -254,48 +236,33 @@ exports.handler = async (event) => {
         try {
             await client.query('BEGIN');
 
-            // 1. FETCH CURRENT SETTINGS WITH LOCK (Prevent race conditions)
             const settingsRes = await client.query('SELECT settings FROM user_settings WHERE user_id = $1 FOR UPDATE', [userId]);
             let settings = settingsRes.rows[0]?.settings || {};
             let phaseState = settings.phase_manager;
 
-            // --- TASK B3 START: PHASE MANAGER UPDATE ---
             if (phaseState) {
-                // A. Check for Detraining (czy user nie miał długiej przerwy?)
                 phaseState = checkDetraining(phaseState);
-
-                // B. Update Phase State (Increment Counters & Check Transitions)
-                // Determine active phase based on Override or Current Base
                 const activePhaseId = phaseState.override.mode || phaseState.current_phase_stats.phase_id;
-                
-                // Uruchamiamy aktualizację
                 const updateResult = updatePhaseStateAfterSession(phaseState, activePhaseId, settings.wizardData);
                 phaseState = updateResult.newState;
-                phaseTransition = updateResult.transition; // 'target_reached', 'time_cap', or null
-
-                // Aktualizujemy obiekt settings z nowym stanem fazy
+                phaseTransition = updateResult.transition;
                 settings.phase_manager = phaseState;
             }
-            // --- TASK B3 END ---
 
-            // 2. INSERT SESSION LOG
             await client.query(`
                 INSERT INTO training_sessions (user_id, plan_id, started_at, completed_at, session_data)
                 VALUES ($1, $2, $3, $4, $5)
             `, [userId, planId, startedAt, completedAt, JSON.stringify({ ...session_data, feedback, exerciseRatings })]);
 
-            // 3. UPDATE PREFERENCES & HARD EVOLUTIONS
             if (exerciseRatings && exerciseRatings.length > 0) {
                 await updatePreferences(client, userId, exerciseRatings);
                 adaptationResult = await analyzeAndAdjustPlan(client, userId, session_data.sessionLog, feedback, exerciseRatings);
-                
-                // 4. SOFT ADJUSTMENTS (Like/Dislike) -> Modify 'settings' in memory
+
                 if (!adaptationResult) {
                     await applyImmediatePlanAdjustmentsInMemory(client, exerciseRatings, session_data.sessionLog, settings);
                 }
             }
 
-            // 5. CALCULATE GENERAL STATS
             const historyResult = await client.query('SELECT completed_at FROM training_sessions WHERE user_id = $1 ORDER BY completed_at DESC', [userId]);
             const allDates = historyResult.rows.map(r => new Date(r.completed_at));
             newStats = {
@@ -304,7 +271,6 @@ exports.handler = async (event) => {
                 resilience: calculateResilience(allDates)
             };
 
-            // 6. SAVE ALL SETTINGS (Phase Manager + Plan Adjustments) IN ONE GO
             await client.query(
                 `UPDATE user_settings SET settings = $1 WHERE user_id = $2`,
                 [JSON.stringify(settings), userId]
@@ -312,7 +278,6 @@ exports.handler = async (event) => {
 
             await client.query('COMMIT');
 
-            // 7. BACKGROUND STATS RECALC (Fire & Forget logic)
             try {
                 if (session_data.sessionLog && Array.isArray(session_data.sessionLog)) {
                     const exerciseIds = new Set();
@@ -326,20 +291,18 @@ exports.handler = async (event) => {
                 }
             } catch (e) { console.error("Pace update failed:", e); }
 
-            // 8. RETURN RESPONSE
-            return { 
-                statusCode: 201, 
-                body: JSON.stringify({ 
-                    message: "Saved", 
-                    adaptation: adaptationResult, 
+            return {
+                statusCode: 201,
+                body: JSON.stringify({
+                    message: "Saved",
+                    adaptation: adaptationResult,
                     newStats,
-                    // Return phase transition info to UI
                     phaseUpdate: phaseTransition ? {
                         transition: phaseTransition,
                         newPhaseId: phaseState.current_phase_stats.phase_id,
                         isSoft: phaseState.current_phase_stats.is_soft_progression
                     } : null
-                }) 
+                })
             };
 
         } catch (dbError) {

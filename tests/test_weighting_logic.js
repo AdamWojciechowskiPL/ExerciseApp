@@ -154,6 +154,12 @@ const mockExercises = mkExercises([
   'ankle_mobility',
   'balance_proprioception',
   'hip_extension',
+  'conditioning_low_impact',
+  'thoracic_mobility',
+  'hip_flexor_stretch',
+  // 3A buckets
+  'cervical_motor_control',
+  'scapular_stability',
 
   // Drift sentinels (must remain 1.0)
   'balance',
@@ -187,13 +193,13 @@ runTest('Ankle pain boosts: ankle_mobility (+0.8), balance_proprioception (+0.5)
   approxEqual(weights.balance, 1.0, 1e-9, 'balance (sentinel)');
 });
 
-runTest('Running boosts core_stability (+1.0) and vmo_activation (+1.0), and does NOT boost unilateral_leg category', () => {
+runTest('Running boosts core_stability (+1.0) and vmo_activation (+0.4), and does NOT boost unilateral_leg category', () => {
   const userData = { hobby: 'running', pain_intensity: 0, daily_impact: 0 };
   const ctx = safeBuildUserContext(userData);
   const weights = buildDynamicCategoryWeights(mockExercises, userData, ctx);
 
   approxEqual(weights.core_stability, 1.0 + 1.0, 1e-9, 'core_stability');
-  approxEqual(weights.vmo_activation, 1.0 + 1.0, 1e-9, 'vmo_activation');
+  approxEqual(weights.vmo_activation, 1.0 + 0.4, 1e-9, 'vmo_activation');
 
   // Drift sentinel
   approxEqual(weights.unilateral_leg, 1.0, 1e-9, 'unilateral_leg (sentinel)');
@@ -209,7 +215,7 @@ runTest('Focus glutes boosts glute_activation (+1.5) and hip_extension (+1.5)', 
 });
 
 // --- 2) RETUNING LOGIC (MILD vs SEVERE) ---
-runTest('Retuning knee pain: glute_activation=+1.5, hip_mobility=+0.2, TKE severe=+1.2 vs mild=+1.5', () => {
+runTest('Retuning knee pain (weight tuning v1): vmo=2.0, knee_stability=3.2, glute=2.8, TKE severe=2.1 vs mild=2.3; conditioning mild=0.90 vs severe=0.75', () => {
   const mild = { pain_locations: ['knee'], pain_intensity: 3, daily_impact: 3 };
   const severe = { pain_locations: ['knee'], pain_intensity: 9, daily_impact: 9 };
 
@@ -222,19 +228,25 @@ runTest('Retuning knee pain: glute_activation=+1.5, hip_mobility=+0.2, TKE sever
   const wMild = buildDynamicCategoryWeights(mockExercises, mild, ctxMild);
   const wSev = buildDynamicCategoryWeights(mockExercises, severe, ctxSevere);
 
-  approxEqual(wMild.glute_activation, 2.5, 1e-9, 'glute_activation');
+  // Retuned boosts
+  approxEqual(wMild.glute_activation, 2.8, 1e-9, 'glute_activation');
+  approxEqual(wMild.vmo_activation, 2.0, 1e-9, 'vmo_activation');
+  approxEqual(wMild.knee_stability, 3.2, 1e-9, 'knee_stability');
+
+  // NOTE: hip_mobility knee-boost was NOT part of weight tuning v1; keep as a drift guard only if your implementation still applies it.
+  // If you removed the knee→hip_mobility boost, update this expected value accordingly.
   approxEqual(wMild.hip_mobility, 1.2, 1e-9, 'hip_mobility');
 
-  // Sanity: boosts that are present in code
-  approxEqual(wMild.vmo_activation, 3.0, 1e-9, 'vmo_activation');
-  approxEqual(wMild.knee_stability, 3.0, 1e-9, 'knee_stability');
+  // Conditional TKE (mild vs severe)
+  approxEqual(wMild.terminal_knee_extension, 2.3, 1e-9, 'TKE mild');
+  approxEqual(wSev.terminal_knee_extension, 2.1, 1e-9, 'TKE severe');
 
-  // Conditional TKE
-  approxEqual(wMild.terminal_knee_extension, 2.5, 1e-9, 'TKE mild');
-  approxEqual(wSev.terminal_knee_extension, 2.2, 1e-9, 'TKE severe');
+  // Conditioning gating for knee pain
+  approxEqual(wMild.conditioning_low_impact, 0.90, 1e-9, 'conditioning mild');
+  approxEqual(wSev.conditioning_low_impact, 0.75, 1e-9, 'conditioning severe');
 });
 
-runTest('Retuning sciatica + low_back: nerve_flossing severe=+1.2 vs mild=+2.0 and core_anti_extension severe=+1.7 vs mild=+2.0', () => {
+runTest('Retuning sciatica + low_back (weight tuning v1): spine_mobility=1.6; core_anti_extension severe=2.5 vs mild=2.8; nerve_flossing unchanged', () => {
   const mild = { pain_locations: ['sciatica', 'low_back'], pain_intensity: 3, daily_impact: 3 };
   const severe = { pain_locations: ['sciatica', 'low_back'], pain_intensity: 9, daily_impact: 9 };
 
@@ -247,8 +259,47 @@ runTest('Retuning sciatica + low_back: nerve_flossing severe=+1.2 vs mild=+2.0 a
   approxEqual(wMild.nerve_flossing, 3.0, 1e-9, 'nerve_flossing mild');
   approxEqual(wSev.nerve_flossing, 2.2, 1e-9, 'nerve_flossing severe');
 
-  approxEqual(wMild.core_anti_extension, 3.0, 1e-9, 'core_anti_extension mild');
-  approxEqual(wSev.core_anti_extension, 2.7, 1e-9, 'core_anti_extension severe');
+  approxEqual(wMild.spine_mobility, 1.6, 1e-9, 'spine_mobility');
+
+  approxEqual(wMild.core_anti_extension, 2.8, 1e-9, 'core_anti_extension mild');
+  approxEqual(wSev.core_anti_extension, 2.5, 1e-9, 'core_anti_extension severe');
+});
+
+runTest('Diagnosis: chondromalacia adds vmo_activation (+0.3) and applies mild conditioning multiplier (0.90)', () => {
+  const userData = { medical_diagnosis: ['chondromalacia'], pain_intensity: 0, daily_impact: 0 };
+  const ctx = safeBuildUserContext(userData);
+  const w = buildDynamicCategoryWeights(mockExercises, userData, ctx);
+
+  approxEqual(w.vmo_activation, 1.0 + 0.3, 1e-9, 'vmo_activation');
+  approxEqual(w.conditioning_low_impact, 0.90, 1e-9, 'conditioning_low_impact');
+});
+
+runTest('3A: neck pain boosts cervical_motor_control (+1.2) and scapular_stability (+0.8); keeps thoracic_mobility (+0.8)', () => {
+  const userData = { pain_locations: ['neck'], pain_intensity: 4, daily_impact: 3 };
+  const ctx = safeBuildUserContext(userData);
+  const w = buildDynamicCategoryWeights(mockExercises, userData, ctx);
+
+  approxEqual(w.cervical_motor_control, 1.0 + 1.2, 1e-9, 'cervical_motor_control');
+  approxEqual(w.scapular_stability, 1.0 + 0.8, 1e-9, 'scapular_stability');
+  approxEqual(w.thoracic_mobility, 1.0 + 0.8, 1e-9, 'thoracic_mobility');
+});
+
+runTest('Work type retune: sedentary thoracic_mobility (+0.7) and hip_flexor_stretch (+0.5)', () => {
+  const userData = { work_type: 'sedentary', pain_intensity: 0, daily_impact: 0 };
+  const ctx = safeBuildUserContext(userData);
+  const w = buildDynamicCategoryWeights(mockExercises, userData, ctx);
+
+  approxEqual(w.thoracic_mobility, 1.0 + 0.7, 1e-9, 'thoracic_mobility');
+  approxEqual(w.hip_flexor_stretch, 1.0 + 0.5, 1e-9, 'hip_flexor_stretch');
+});
+
+runTest('Work type retune: standing spine_mobility (+0.4) and calves (+0.4)', () => {
+  const userData = { work_type: 'standing', pain_intensity: 0, daily_impact: 0 };
+  const ctx = safeBuildUserContext(userData);
+  const w = buildDynamicCategoryWeights(mockExercises, userData, ctx);
+
+  approxEqual(w.spine_mobility, 1.0 + 0.4, 1e-9, 'spine_mobility');
+  approxEqual(w.calves, 1.0 + 0.4, 1e-9, 'calves');
 });
 
 // --- 3) ATTRIBUTE-BASED SCORING ---

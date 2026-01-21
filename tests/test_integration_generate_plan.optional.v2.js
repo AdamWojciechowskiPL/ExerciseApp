@@ -11,90 +11,93 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { requireApp } = require('./_test_helpers.v2');
 
-// Require the handler wrapper logic
+// 1. Import _auth-helper explicitly to patch the pool
+const authHelper = requireApp('netlify/functions/_auth-helper.js');
+
+// 2. Mock Data
+const MOCK_EXERCISES = [
+    { id: 'ex1', name: 'Squat', category_id: 'strength', difficulty_level: 1, impact_level: 'low', position: 'standing', is_foot_loading: true, is_unilateral: false },
+    { id: 'ex2', name: 'Plank', category_id: 'core_stability', difficulty_level: 1, impact_level: 'low', position: 'prone', is_foot_loading: false, is_unilateral: false },
+    { id: 'ex3', name: 'Lunge', category_id: 'strength', difficulty_level: 1, impact_level: 'low', position: 'standing', is_foot_loading: true, is_unilateral: true },
+    { id: 'ex4', name: 'Bird Dog', category_id: 'core_stability', difficulty_level: 1, impact_level: 'low', position: 'quadruped', is_foot_loading: false, is_unilateral: true },
+    { id: 'ex5', name: 'Glute Bridge', category_id: 'glute_activation', difficulty_level: 1, impact_level: 'low', position: 'supine', is_foot_loading: true, is_unilateral: false },
+    { id: 'ex6', name: 'Cat Cow', category_id: 'spine_mobility', difficulty_level: 1, impact_level: 'low', position: 'quadruped', is_foot_loading: false, is_unilateral: false }
+];
+
+// 3. Patch pool.connect to return our Mock Client
+authHelper.pool.connect = async () => {
+    return {
+        query: async (sql, params) => {
+            const sqlLower = sql.toLowerCase();
+            
+            // A. Exercises (Essential for generation)
+            if (sqlLower.includes('from exercises')) {
+                return { rows: MOCK_EXERCISES };
+            }
+            
+            // B. User Settings (Return empty or valid structure)
+            if (sqlLower.includes('from user_settings')) {
+                // Return default settings if reading
+                if (sqlLower.includes('select')) {
+                    return { rows: [{ settings: { phase_manager: null } }] };
+                }
+                // Return success if writing (INSERT/UPDATE)
+                return { rowCount: 1, rows: [] };
+            }
+
+            // C. Stats / History / Blacklist / Overrides (Return empty arrays)
+            if (sqlLower.includes('training_sessions') || 
+                sqlLower.includes('user_exercise_blacklist') || 
+                sqlLower.includes('user_exercise_preferences') ||
+                sqlLower.includes('user_exercise_stats') ||
+                sqlLower.includes('user_plan_overrides')) {
+                return { rows: [] };
+            }
+
+            // Fallback
+            return { rows: [] };
+        },
+        release: () => {}
+    };
+};
+
+// 4. Import the handler AFTER patching
 const handlerModule = requireApp('netlify/functions/generate-plan.js');
 
-// Mock PG Client to prevent actual DB connection attempts during integration check
-// (We assume the unit tests covered the logic, this just checks the handler wiring)
-const mockClient = {
-  query: async (sql) => {
-    // Return minimal valid structures for any query
-    return { rows: [] }; 
-  },
-  release: () => {}
-};
-
-// Mock Pool to return our mock client
-const mockPool = {
-  connect: async () => mockClient,
-  end: async () => {}
-};
-
-// Monkey-patch the pool in the module if possible, or just rely on the fact 
-// that `_auth-helper.js` uses `pg` which we can't easily mock without proxyquire.
-// Instead, we will catch the connection error if it tries to connect to real DB,
-// OR (better) we just test that it parses input and tries to authorize.
-
 test('integration: handler returns plan-like payload for minimal request', async () => {
-  // Override pool in the require cache if needed, but for now let's assume
-  // valid inputs. 
-  
-  // NOTE: Without a real DB mock, this test might fail on DB connection.
-  // However, the error report showed statusCode 401, which is BEFORE DB connection.
-  // So fixing 401 is the priority.
-
-  // Mock Request Body
   const body = {
     primary_goal: 'strength',
     pain_intensity: 2,
-    schedule_pattern: [1, 3, 5]
+    schedule_pattern: [1, 3, 5],
+    exercise_experience: 'beginner'
   };
 
   const event = {
     httpMethod: 'POST',
     headers: {
       'content-type': 'application/json',
-      'x-dev-user-id': 'integration-test-user' // FIX: Bypass Auth0
+      'x-dev-user-id': 'integration-test-user' // Auth Bypass
     },
     body: JSON.stringify(body)
   };
 
-  // We need to stub the DB connection to avoid connection errors after auth passes
-  // Since we can't easily inject into the module without a DI container or proxyquire,
-  // we accept that it might fail with 500 (DB Error) instead of 401. 
-  // If it fails with 500, it means Auth passed!
-  
-  // Ideally, we use a mocking library, but here is a simple checks:
-  
   try {
     const res = await handlerModule.handler(event);
-    
-    // If it returns 200, great.
-    // If it returns 500 due to DB, that's also "better" than 401 for this specific fix.
-    
-    if (res.statusCode === 500) {
-       // If message contains "connect", we passed auth.
-       // We'll mark as pass because we fixed the 401.
-       assert.ok(true, "Auth passed, hit DB error (expected without DB mock)");
-       return;
+
+    if (res.statusCode !== 200) {
+        console.error("Handler Error Response:", res.body);
     }
 
-    if (res.statusCode === 200) {
-        const json = JSON.parse(res.body);
-        assert.ok(json.plan, 'Response should contain plan');
-        assert.ok(json.phaseContext, 'Response should contain phaseContext');
-    } else {
-        // Fail if it's still 401 or 400
-        assert.notEqual(res.statusCode, 401, 'Should be authorized');
-        assert.notEqual(res.statusCode, 400, 'Should accept valid body');
-    }
+    assert.equal(res.statusCode, 200, 'Should return 200 OK');
+    
+    const json = JSON.parse(res.body);
+    assert.ok(json.plan, 'Response should contain plan object');
+    assert.ok(json.plan.days.length > 0, 'Plan should have days');
+    assert.ok(json.phaseContext, 'Response should contain phaseContext');
+    assert.equal(json.phaseContext.phaseId, 'control', 'Default phase should be control');
 
   } catch (e) {
-    // If logic throws, check if it's not auth related
-    if (e.message.includes('connect')) {
-        assert.ok(true, 'Auth passed, DB connection failed (expected)');
-    } else {
-        throw e;
-    }
+    console.error(e);
+    assert.fail(`Integration test threw error: ${e.message}`);
   }
 });

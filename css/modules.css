@@ -72,7 +72,21 @@
     display: flex; align-items: center; justify-content: center; min-width: 32px;
 }
 .rate-btn-hist:hover { opacity: 0.8; filter: grayscale(50%); transform: scale(1.1); background: #f9f9f9; }
+
+/* Affinity (Kciuki) - Active State */
 .rate-btn-hist.active { opacity: 1; filter: grayscale(0%); border-color: var(--primary-color); background: #e0f2fe; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+
+/* Difficulty (Easy/Hard) - Selected State (FIX: Dodano style) */
+.rate-btn-hist.diff-btn.selected[data-action="easy"] {
+    opacity: 1; filter: grayscale(0%);
+    background: #f0f9ff; color: #0284c7; border-color: #0ea5e9;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.rate-btn-hist.diff-btn.selected[data-action="hard"] {
+    opacity: 1; filter: grayscale(0%);
+    background: #fef2f2; color: #dc2626; border-color: #ef4444;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
 
 /* Przyciski resetu trudności w historii */
 .reset-diff-btn { background: none; border: none; cursor: pointer; padding: 0; display: inline-flex; }

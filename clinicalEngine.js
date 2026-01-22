@@ -149,7 +149,7 @@ export function violatesRestrictions(ex, ctx) {
     // 5. Uraz stopy (Non-weight bearing) - P0.1, P0.6
     if (restrictions.includes('foot_injury')) {
         if (ex.isFootLoading === true) return true;
-        if (impact === 'moderate' || impact === 'high') return true;
+        if (impact === 'medium' || impact === 'high') return true;
         
         const blockedPositions = ['standing', 'lunge', 'squat', 'half_kneeling']; // P1.2 updated
         if (blockedPositions.includes(pos)) return true;

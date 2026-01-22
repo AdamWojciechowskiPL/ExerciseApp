@@ -127,7 +127,7 @@ function violatesRestrictions(ex, ctx) {
     // 5. Uraz stopy
     if (restrictions.includes('foot_injury')) {
         if (ex.is_foot_loading === true) return true;
-        if (impact === 'moderate' || impact === 'high') return true;
+        if (impact === 'medium' || impact === 'high') return true;
         const blockedPositions = ['standing', 'lunge', 'squat', 'half_kneeling'];
         if (blockedPositions.includes(pos)) return true;
     }

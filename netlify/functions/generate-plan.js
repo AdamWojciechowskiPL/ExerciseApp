@@ -29,10 +29,9 @@ const DEFAULT_SECONDS_PER_REP = 6;
 const DEFAULT_TARGET_MIN = 30;
 const DEFAULT_SCHEDULE_PATTERN = [1, 3, 5];
 
-const MIN_MAIN_EXERCISES = 1;
+const MIN_MAIN_EXERCISES = 2;
 const MAX_SETS_MAIN = 6;
 const MAX_SETS_MOBILITY = 3;
-const MAX_BREATHING_SEC = 240;
 const GLOBAL_MAX_REPS = 25;
 const MAX_BUCKET_CAPACITY = 120;
 
@@ -104,7 +103,6 @@ function resolveValidTempo(rawTempo, fallbackTempo = null) {
     return fallbackTempo;
 }
 
-// US-11: Normalizacja nowych pól (NULL Handling)
 function normalizeExerciseRow(row) {
   const isUnilateral = !!row.is_unilateral;
   let requiresSideSwitch = !!row.requires_side_switch;
@@ -117,22 +115,15 @@ function normalizeExerciseRow(row) {
   const defCheck = validateTempoString(row.default_tempo);
   if (defCheck.ok) {
       validDefaultTempo = defCheck.sanitized;
-  } else {
-      if (row.default_tempo) {
-          console.warn(`[DataQuality] Invalid default_tempo for exercise ${row.id}: "${row.default_tempo}". Using safe fallback.`);
-      }
   }
 
   const validControl = resolveValidTempo(row.tempo_control);
   const validRehab = resolveValidTempo(row.tempo_rehab);
   const validDeload = validControl || validRehab || validDefaultTempo;
 
-  // --- US-11 Logic Start ---
-  
-  // 1. Knee Flexion
   let kneeFlexionMaxDeg = null;
   let kneeFlexionApplicability = false;
-  
+
   const rawKneeDeg = row.knee_flexion_max_deg;
   const kneeLoad = row.knee_load_level ? String(row.knee_load_level).toLowerCase() : 'none';
   const isFootLoading = !!row.is_foot_loading;
@@ -144,13 +135,11 @@ function normalizeExerciseRow(row) {
           kneeFlexionApplicability = true;
       }
   } else {
-      // Heurystyka przy NULL: Dotyczy kolana jeśli jest obciążenie lub stopa na ziemi
       if (kneeLoad !== 'none' || isFootLoading) {
           kneeFlexionApplicability = true;
       }
   }
 
-  // 2. Spine Motion Profile
   let spineMotionProfile = 'neutral';
   const allowedSpineProfiles = [
       'neutral', 'lumbar_flexion_loaded', 'lumbar_extension_loaded',
@@ -160,10 +149,7 @@ function normalizeExerciseRow(row) {
       spineMotionProfile = row.spine_motion_profile;
   }
 
-  // 3. Overhead Required
   const overheadRequired = (row.overhead_required === true);
-
-  // --- US-11 Logic End ---
 
   const ex = {
     id: row.id,
@@ -188,7 +174,6 @@ function normalizeExerciseRow(row) {
     conditioning_style: row.conditioning_style ? String(row.conditioning_style).toLowerCase() : 'none',
     recommended_interval_sec: row.recommended_interval_sec,
 
-    // US-11 New Fields
     kneeFlexionMaxDeg,
     kneeFlexionApplicability,
     spineMotionProfile,
@@ -230,7 +215,6 @@ function validateExerciseRecord(ex) {
     return { valid: true };
 }
 
-// ... helpery kategorii (isBreathingCategory etc.) bez zmian ...
 function isBreathingCategory(cat) { const s = String(cat || '').toLowerCase(); return s.includes('breathing') || s.includes('breath') || s.includes('relax') || s.includes('parasymp'); }
 function isMobilityCategory(cat) { const s = String(cat || '').toLowerCase(); return s.includes('mobility') || s.includes('stretch') || s.includes('flexor') || s.includes('decompression'); }
 function isConditioningCategory(cat) { const s = String(cat || '').toLowerCase(); return s.includes('conditioning') || s.includes('cardio') || s.includes('aerobic'); }
@@ -404,34 +388,27 @@ function violatesPhysicalRestrictions(ex, restrictionsSet) {
   return false;
 }
 
-// US-11: Zaktualizowana funkcja sprawdzająca twarde przeciwwskazania (context-aware)
 function violatesDiagnosisHardContraindications(ex, diagnosisSet, ctx) {
   const kneeLoad = (ex.knee_load_level || 'low').toLowerCase();
   const spineLoad = (ex.spine_load_level || 'low').toLowerCase();
   const impact = (ex.impact_level || 'low').toLowerCase();
 
-  // Istniejące reguły
   if (kneeLoad === 'high') { for (const d of diagnosisSet) { if (HARD_EXCLUDED_KNEE_LOAD_FOR_DIAGNOSES.has(d)) return true; } }
   if (spineLoad === 'high') { for (const d of diagnosisSet) { if (HARD_EXCLUDED_SPINE_LOAD_FOR_DIAGNOSES.has(d)) return true; } }
   if (impact === 'high' && diagnosisSet.has('disc_herniation')) return true;
 
-  // --- US-11 KNEE FLEXION GATE ---
-  // Jeśli mamy diagnozę kolana (PFP, chondro, OA)
   const hasKneeDiagnosis = [...diagnosisSet].some(d => HARD_EXCLUDED_KNEE_LOAD_FOR_DIAGNOSES.has(d));
-  // Lub ogólny ból kolana
   const hasKneePain = ctx.painFilters && (ctx.painFilters.has('knee') || ctx.painFilters.has('knee_anterior') || ctx.painFilters.has('patella'));
 
   if (hasKneeDiagnosis || hasKneePain) {
       if (ex.kneeFlexionApplicability) {
-          // Jeśli Severe -> Hard Block dla głębokiego zgięcia lub braku danych
           if (ctx.isSevere) {
-              if (ex.kneeFlexionMaxDeg === null) return true; // Brak danych -> blokada bezpieczeństwa
-              if (ex.kneeFlexionMaxDeg > KNEE_FLEXION_SAFETY_LIMIT) return true; // Za głęboko na start
+              if (ex.kneeFlexionMaxDeg === null) return true;
+              if (ex.kneeFlexionMaxDeg > KNEE_FLEXION_SAFETY_LIMIT) return true;
           }
       }
   }
 
-  // --- US-11 OVERHEAD GATE ---
   const hasNeckOrShoulderPain = ctx.painFilters && (
       ctx.painFilters.has('cervical') || ctx.painFilters.has('neck') || ctx.painFilters.has('shoulder')
   );
@@ -510,10 +487,9 @@ function filterExerciseCandidates(exercises, userData, ctx, fatigueProfile, rpeD
 
       if (!isExerciseCompatibleWithEquipment(ex, userEquipment)) return false;
       if (violatesPhysicalRestrictions(ex, restrictionsSet)) return false;
-      
-      // US-11: Updated filtering with ctx support
+
       if (violatesDiagnosisHardContraindications(ex, diagnosisSet, ctx)) return false;
-      
+
       if (violatesSeverePainRules(ex, ctx)) return false;
       return true;
   };
@@ -579,7 +555,6 @@ function goalMultiplierForExercise(ex, userData, ctx) {
   return m;
 }
 
-// US-11: Rozbudowana funkcja kar bezpieczeństwa (Soft Penalties)
 function painSafetyPenalty(ex, userData, ctx) {
   const painLocs = normalizeLowerSet(userData?.pain_locations);
   const diagnosisSet = normalizeLowerSet(userData?.medical_diagnosis);
@@ -588,33 +563,28 @@ function painSafetyPenalty(ex, userData, ctx) {
 
   let p = 1.0;
 
-  // 1. Istniejąca reguła: High Load Knee Penalty
   const kneeLoad = (ex.knee_load_level || 'low').toLowerCase();
   if (painLocs.has('knee') && kneeLoad === 'high') p *= 0.10;
 
-  // --- US-11 KNEE FLEXION SOFT PENALTY (Mild/Moderate) ---
-  // Dla severe jest hard-filter w violatesDiagnosisHardContraindications
-  const hasKneeIssue = painLocs.has('knee') || painLocs.has('knee_anterior') || 
+  const hasKneeIssue = painLocs.has('knee') || painLocs.has('knee_anterior') ||
                        diagnosisSet.has('chondromalacia') || diagnosisSet.has('knee_oa');
 
   if (hasKneeIssue && ex.kneeFlexionApplicability && !ctx.isSevere) {
       if (ex.kneeFlexionMaxDeg === null) {
-          p *= 0.75; // Nieznany kąt - ostrożnie
+          p *= 0.75;
       } else if (ex.kneeFlexionMaxDeg > KNEE_FLEXION_SAFETY_LIMIT) {
-          p *= 0.65; // Głębokie zgięcie - unikamy w fazie bólu
+          p *= 0.65;
       } else {
-          p *= 1.10; // Bezpieczny zakres - promujemy
+          p *= 1.10;
       }
   }
 
-  // --- US-11 SPINE ROTATION PENALTY ---
   if (diagnosisSet.has('disc_herniation') && isRadiating) {
       if (ex.spineMotionProfile === 'lumbar_rotation_loaded') {
           p *= 0.60;
       }
   }
 
-  // --- US-11 OVERHEAD PENALTY (Mild/Moderate) ---
   const hasNeckIssue = painLocs.has('cervical') || painLocs.has('neck') || painLocs.has('shoulder');
   if (hasNeckIssue && ex.overheadRequired && !ctx.isSevere) {
       p *= 0.75;
@@ -706,10 +676,9 @@ function scoreExercise(ex, section, userData, ctx, categoryWeights, state, painZ
   let score = base;
   score *= sectionCategoryFitMultiplier(section, cat);
   score *= painReliefFitMultiplier(ex, section, painZoneSet);
-  
-  // US-11: Updated scoring function call
+
   score *= painSafetyPenalty(ex, userData, ctx);
-  
+
   score *= goalMultiplierForExercise(ex, userData, ctx);
   score *= varietyPenalty(ex, state, section);
 
@@ -909,7 +878,58 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatig
       return { sets: String(calculatedSets), reps_or_time: `${work} s`, restBetweenSets: rest, tempo_or_iso: selectedTempo };
   }
 
-  if (ex.max_recommended_duration > 0) {
+  // NOWA OBSŁUGA STEADY STATE
+  if (ex.conditioning_style === 'steady') {
+      let durationMin = 10;
+      if (experience === 'regular') durationMin = 15;
+      if (experience === 'advanced') durationMin = 20;
+      if (targetMin <= 20) durationMin = 10;
+
+      return {
+          sets: "1",
+          reps_or_time: `${durationMin} min`,
+          tempo_or_iso: "Umiarkowane",
+          restFactor: 1.0,
+          restAfterExercise: 60,
+          transitionTime: 5,
+          requiresSideSwitch: false
+      };
+  }
+
+  if (ex.conditioning_style === 'amrap') {
+       return {
+          sets: "3",
+          reps_or_time: "MAX",
+          tempo_or_iso: "Dynamiczne",
+          restFactor: 1.5,
+          restAfterExercise: 90,
+          transitionTime: 5,
+          requiresSideSwitch: ex.requires_side_switch
+      };
+  }
+
+  // --- BREATHING EXERCISE OVERRIDE ---
+  // Must be after interval/steady logic to catch standard path but before final return
+  if (isBreathingCategory(ex.category_id)) {
+      sets = 1; // Always 1 set
+
+      // Minimum duration 90s, scaled by experience
+      let breathDur = 90;
+      if (experience === 'regular') breathDur = 120;
+      if (experience === 'advanced') breathDur = 180;
+
+      if (ex.max_recommended_duration > 0) {
+          breathDur = Math.min(breathDur, ex.max_recommended_duration);
+          breathDur = Math.max(90, breathDur); // Ensure min 90s constraint
+      } else {
+          breathDur = Math.max(90, breathDur);
+      }
+
+      repsOrTime = `${breathDur} s`;
+  }
+  // --- END OVERRIDE ---
+
+  else if (ex.max_recommended_duration > 0) {
       const phaseRepsStr = prescriptionConfig.reps || "10";
       if (phaseRepsStr.includes('s')) {
           const rangeStr = phaseRepsStr.replace('s', '');
@@ -959,7 +979,8 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatig
 
 function parseRepsOrTimeToSeconds(repsOrTime) {
   const t = String(repsOrTime || '').trim().toLowerCase();
-  if (t.includes('s')) return Math.max(5, parseInt(t, 10) || 30);
+  if (t.includes('s') && !t.includes('/str')) return Math.max(5, parseInt(t, 10) || 30);
+  if (t.includes('min')) return Math.max(10, (parseInt(t, 10) || 1) * 60);
   return parseInt(t, 10) || 10;
 }
 
@@ -973,28 +994,48 @@ function getRestAfterExercise(exEntry, effectiveRestFactor) {
 function estimateExerciseDurationSeconds(exEntry, userData, paceMap, effectiveRestFactor) {
   const globalSpr = clamp(toNumber(userData?.secondsPerRep, DEFAULT_SECONDS_PER_REP), 2, 12);
   let tempoToUse = paceMap && paceMap[exEntry.id] ? paceMap[exEntry.id] : globalSpr;
-  const sets = parseInt(exEntry.sets, 10) || 1;
+
+  // 1. Sets Logic (Matching Frontend: Unilateral sets are divided by 2)
+  const rawSets = parseInt(exEntry.sets, 10) || 1;
   const isUnilateral = exEntry.is_unilateral || String(exEntry.reps_or_time || '').includes('/str');
-  const multiplier = isUnilateral ? 2 : 1;
-  let workTimePerSet = 0;
+  const sets = isUnilateral ? Math.ceil(rawSets / 2) : rawSets;
+
+  // 2. Work Time Calculation
+  let singleSideWorkTime = 0;
   const rawStr = String(exEntry.reps_or_time).toLowerCase();
   const cleanStr = rawStr.replace(/\/str\.?|stron.*/g, '').trim();
 
-  if (cleanStr.includes('s') || cleanStr.includes('min') || cleanStr.includes(':')) { workTimePerSet = parseRepsOrTimeToSeconds(cleanStr) * multiplier; }
-  else { const reps = parseInt(cleanStr, 10) || 10; workTimePerSet = reps * tempoToUse * multiplier; }
+  if (cleanStr.includes('s') || cleanStr.includes('min') || cleanStr.includes(':')) {
+      // Time-based
+      singleSideWorkTime = parseRepsOrTimeToSeconds(cleanStr);
+  } else {
+      // Rep-based
+      const reps = parseInt(cleanStr, 10) || 10;
+      singleSideWorkTime = reps * tempoToUse;
+  }
 
-  let totalSeconds = (sets * workTimePerSet);
-  let restTimePerSet = 0;
-  if (sets > 1) { restTimePerSet = getRestAfterExercise(exEntry, effectiveRestFactor); totalSeconds += (sets - 1) * restTimePerSet; }
+  const sidesMultiplier = isUnilateral ? 2 : 1;
+  const totalWorkTime = sets * singleSideWorkTime * sidesMultiplier;
 
-  let transitionTime = 0;
-  if (exEntry.transitionTime) { transitionTime = exEntry.transitionTime; }
-  else if (exEntry.calculated_timing && exEntry.calculated_timing.transition_sec) { transitionTime = exEntry.calculated_timing.transition_sec; }
-  else { const requiresSideSwitch = !!exEntry.requires_side_switch; transitionTime = requiresSideSwitch ? 12 : 5; }
+  // 3. Transition Logic (Matching Frontend: Bilateral = 0, Uni = 12 or 5)
+  let transitionPerSet = 0;
+  if (isUnilateral) {
+      if (exEntry.transitionTime) {
+          transitionPerSet = exEntry.transitionTime;
+      } else if (exEntry.calculated_timing && exEntry.calculated_timing.transition_sec) {
+          transitionPerSet = (exEntry.requires_side_switch || exEntry.calculated_timing.transition_sec === 12) ? 12 : 5;
+      } else {
+          transitionPerSet = exEntry.requires_side_switch ? 12 : 5;
+      }
+  }
+  const totalTransition = sets * transitionPerSet;
 
-  const totalTransition = sets * transitionTime;
-  totalSeconds += totalTransition;
-  return totalSeconds;
+  // 4. Rest Logic (Intra-set)
+  const restBase = getRestAfterExercise(exEntry, 1.0); // Pass 1.0 to get base rest
+  const smartRestTime = Math.round(restBase * effectiveRestFactor);
+  const totalRest = (sets > 1) ? (sets - 1) * smartRestTime : 0;
+
+  return totalWorkTime + totalTransition + totalRest;
 }
 
 function estimateSessionDurationSeconds(session, userData, paceMap, phaseContext) {
@@ -1079,21 +1120,57 @@ function shrinkSessionToTarget(session, userData, paceMap, targetMin, phaseConte
     }
 }
 
-function expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, sState, pZones, paceMap, fatigueProfile, targetMin, rpeModifier, phaseContext) {
+/**
+ * ZMODYFIKOWANA FUNKCJA "DOPYCHANIA" (DEPTH FIRST EXPANSION)
+ * Najpierw dodaje serie do istniejących ćwiczeń, potem dodaje nowe ćwiczenia.
+ */
+function expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, sState, pZones, paceMap, fatigueProfile, fatigueState, targetMin, rpeModifier, phaseContext) {
   const targetSec = targetMin * 60;
   let guard = 0;
-  while (guard < 20) {
+  const MAX_SETS_SAFE = 5;
+
+  while (guard < 30) {
     const estimated = estimateSessionDurationSeconds(session, userData, paceMap, phaseContext);
     if (estimated >= targetSec * 0.95) break;
     guard++;
-    let changed = false;
+
+    // STRATEGIA 1: Zwiększ objętość (serie) w sekcji MAIN
+    let volumeIncreased = false;
+    if (session.main && session.main.length > 0) {
+        // Sortujemy po najmniejszej liczbie serii, aby równomiernie dokładać
+        const candidatesForMoreSets = session.main
+            .filter(ex => {
+                const currentSets = parseInt(ex.sets, 10) || 1;
+                // Unikamy dodawania serii do ćwiczeń interwałowych (tam to działa inaczej)
+                if (ex.conditioning_style === 'interval') return false;
+                // Unikamy dodawania serii do ćwiczeń oddechowych (ZMIANA)
+                if (isBreathingCategory(ex.category_id)) return false;
+                // Unilateral cap at 3 sets usually, but maybe 4 if needed
+                if (ex.is_unilateral && currentSets >= 3) return false;
+                return currentSets < MAX_SETS_SAFE;
+            })
+            .sort((a, b) => parseInt(a.sets) - parseInt(b.sets));
+
+        if (candidatesForMoreSets.length > 0) {
+            const targetEx = candidatesForMoreSets[0];
+            const currentSets = parseInt(targetEx.sets, 10);
+            targetEx.sets = String(currentSets + 1);
+            volumeIncreased = true;
+        }
+    }
+
+    if (volumeIncreased) continue;
+
+    // STRATEGIA 2: Jeśli nie da się dodać serii, dodaj nowe ćwiczenie
+    let newExerciseAdded = false;
     const ex = pickExerciseForSection('main', candidates, userData, ctx, categoryWeights, sState, pZones, (c) => !isBreathingCategory(c.category_id), phaseContext, fatigueProfile);
     if (ex) {
       const rx = prescribeForExercise(ex, 'main', userData, ctx, categoryWeights, fatigueState, targetMin, rpeModifier, phaseContext);
       session.main.push({ ...ex, ...rx });
-      changed = true;
+      newExerciseAdded = true;
     }
-    if (!changed) break;
+
+    if (!newExerciseAdded && !volumeIncreased) break; // Nie możemy nic więcej zrobić
   }
 }
 
@@ -1262,6 +1339,8 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
                 anchorFamilies, anchorTargetExposure: targetExposure
             };
 
+            const currentLoopFatigueState = fatigueScore >= fatigueProfile.fatigueThresholdFilter ? 'fatigued' : 'fresh';
+
             ['warmup', 'main', 'cooldown'].forEach(sec => {
                 const counts = deriveSessionCounts(userData, ctx, targetMin);
                 for (let i = 0; i < counts[sec]; i++) {
@@ -1271,7 +1350,6 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
                     };
                     const ex = pickExerciseForSection(sec, candidates, userData, ctx, categoryWeights, sState, pZones, sectionFilter, phaseContext, fatigueProfile);
                     if (ex) {
-                        const currentLoopFatigueState = fatigueScore >= fatigueProfile.fatigueThresholdFilter ? 'fatigued' : 'fresh';
                         const rx = prescribeForExercise(ex, sec, userData, ctx, categoryWeights, currentLoopFatigueState, targetMin, rpeData.volumeModifier, phaseContext);
                         session[sec].push({ ...ex, ...rx });
                     }
@@ -1297,7 +1375,7 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
                 });
             }
 
-            expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, sState, pZones, paceMap, fatigueProfile, targetMin, rpeData.volumeModifier, phaseContext);
+            expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, sState, pZones, paceMap, fatigueProfile, currentLoopFatigueState, targetMin, rpeData.volumeModifier, phaseContext);
             shrinkSessionToTarget(session, userData, paceMap, targetMin, phaseContext);
             const finalDur = Math.round(estimateSessionDurationSeconds(session, userData, paceMap, phaseContext) / 60);
             session.estimatedDurationMin = finalDur;

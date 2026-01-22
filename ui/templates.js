@@ -483,8 +483,12 @@ export function generateSessionCardHTML(session) {
 
         const isLikeActive = sessionAction === 'like' ? 'active' : '';
         const isDislikeActive = sessionAction === 'dislike' ? 'active' : '';
-        const isEasySelected = currentDiff === -1 ? 'selected' : '';
-        const isHardSelected = currentDiff === 1 ? 'selected' : '';
+
+        // --- ZMIANA: Stan przycisków w Historii oparty WYŁĄCZNIE na aktualnym stanie (currentDiff) ---
+        // Pozwala to na odznaczenie (reset) przycisku, nawet jeśli w sesji historycznej był on zaznaczony.
+        // Jeśli currentDiff wynosi 0, żaden przycisk nie będzie 'selected'.
+        const isEasySelected = (currentDiff === -1) ? 'selected' : '';
+        const isHardSelected = (currentDiff === 1) ? 'selected' : '';
 
         return `
         <div class="rating-card history-mode" data-id="${id}" style="padding: 10px; border-bottom: 1px solid #f0f0f0;">

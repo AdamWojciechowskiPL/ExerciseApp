@@ -139,7 +139,7 @@ export const renderSummaryScreen = () => {
         });
     });
 
-    // NOWA LOGIKA KCIUKÓW (INTERAKTYWNA)
+    // NOWA LOGIKA KCIUKÓW (INTERAKTYWNA) - POPRAWIONY TOGGLE
     const formContainer = summaryScreen.querySelector('#summary-form');
 
     formContainer.querySelectorAll('.rating-card').forEach(card => {
@@ -175,20 +175,30 @@ export const renderSummaryScreen = () => {
 
                 // Toggle logic
                 if (action === 'like') {
+                    // Jeśli już było Like (+15), to zerujemy. Jeśli nie, ustawiamy +15
                     sessionAffinityDeltas[id] = (currentDelta === SCORE_LIKE) ? 0 : SCORE_LIKE;
                 } else if (action === 'dislike') {
+                    // Jeśli już było Dislike (-30), to zerujemy. Jeśli nie, ustawiamy -30
                     sessionAffinityDeltas[id] = (currentDelta === SCORE_DISLIKE) ? 0 : SCORE_DISLIKE;
                 }
                 updateVisuals();
             });
         });
 
-        // Difficulty buttons (bez zmian logicznych, tylko styl)
+        // Difficulty buttons - FIX TOGGLE OFF
         const diffBtns = card.querySelectorAll('.diff-btn');
         diffBtns.forEach(btn => {
             btn.addEventListener('click', () => {
+                const wasSelected = btn.classList.contains('selected');
+
+                // 1. Zawsze czyścimy zaznaczenie wszystkich w grupie
                 diffBtns.forEach(b => b.classList.remove('selected'));
-                btn.classList.add('selected');
+
+                // 2. Jeśli kliknięty przycisk NIE BYŁ zaznaczony, zaznaczamy go teraz.
+                // Jeśli był, zostawiamy odznaczony (czyli stan "neutralny/0").
+                if (!wasSelected) {
+                    btn.classList.add('selected');
+                }
             });
         });
     });
@@ -259,13 +269,10 @@ export async function handleSummarySubmit(e) {
         if (state.todaysDynamicPlan?.type === 'protocol') state.todaysDynamicPlan = null;
 
         if (response?.newStats) state.userStats = { ...state.userStats, ...response.newStats };
-        
+
         // --- FIX: MANUALNA INKREMENTACJA LICZNIKA FAZY ---
-        // Dzięki temu widżet Hero na dashboardzie odświeży się natychmiast,
-        // bez konieczności ponownego pobierania całego obiektu settings.
         const pm = state.settings.phase_manager;
         if (pm && !response?.phaseUpdate) {
-            // Jeśli backend nie zwrócił zmiany fazy (czyli kontynuujemy obecną), inkrementujemy ręcznie.
             if (pm.override && pm.override.mode) {
                 pm.override.stats.sessions_completed++;
             } else if (pm.current_phase_stats) {
@@ -280,11 +287,24 @@ export async function handleSummarySubmit(e) {
         state.sessionLog = [];
         state.isPaused = false;
 
+        // --- AKTUALIZACJA LOKALNEGO STANU PREFERENCJI ---
+        
+        // 1. Aktualizacja punktów Affinity
         Object.entries(sessionAffinityDeltas).forEach(([id, delta]) => {
             if (state.userPreferences[id]) {
                 let s = state.userPreferences[id].score || 0;
                 s = Math.max(-100, Math.min(100, s + delta));
                 state.userPreferences[id].score = s;
+            }
+        });
+
+        // 2. Aktualizacja flagi trudności (Difficulty)
+        ratingsArray.forEach(r => {
+            if (['easy', 'hard'].includes(r.action)) {
+                if (!state.userPreferences[r.exerciseId]) state.userPreferences[r.exerciseId] = {};
+                
+                if (r.action === 'easy') state.userPreferences[r.exerciseId].difficulty = -1;
+                else if (r.action === 'hard') state.userPreferences[r.exerciseId].difficulty = 1;
             }
         });
 
@@ -309,7 +329,7 @@ export async function handleSummarySubmit(e) {
                     try {
                         console.log("[AutoReg] Triggering plan regeneration based on RPE...");
                         await dataStore.generateDynamicPlan(state.settings.wizardData);
-                        clearPlanFromStorage(); 
+                        clearPlanFromStorage();
                         alert("Plan został pomyślnie zaktualizowany przez Asystenta.");
                     } catch (e) {
                         console.error("[AutoReg] Failed:", e);
@@ -322,14 +342,9 @@ export async function handleSummarySubmit(e) {
 
         const checkPhaseTransition = () => {
             if (response && response.phaseUpdate) {
-                // Jeśli backend zwrócił update fazy, nadpisujemy lokalne dane (ważniejsze niż manualna inkrementacja)
                 if (state.settings.phase_manager) {
-                    // Update ID
                     state.settings.phase_manager.current_phase_stats.phase_id = response.phaseUpdate.newPhaseId;
-                    // Reset licznika dla nowej fazy
                     state.settings.phase_manager.current_phase_stats.sessions_completed = 0;
-                    
-                    // Reset override jeśli był
                     if (state.settings.phase_manager.override) {
                         state.settings.phase_manager.override.mode = null;
                     }

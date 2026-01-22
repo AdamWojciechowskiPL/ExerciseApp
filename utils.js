@@ -248,20 +248,23 @@ export const calculateSmartDuration = (dayPlan) => {
     return totalMinutes;
 };
 
-// --- FIX 3.0: ZGODNOŚĆ LOAD CALC ---
+/**
+ * SCIENCE-BASED LOAD CALCULATOR (Modified Foster Method)
+ * Źródło: Foster et al. (2001), McGuigan et al. (2004)
+ * Jednostka: Arbitrary Units (AU) = Czas (min) * RPE (1-10)
+ */
 export const calculateSystemLoad = (inputData, fromHistory = false) => {
     if (!inputData) return 0;
 
+    // 1. Ekstrakcja listy ćwiczeń
     let exercises = [];
-
     if (!fromHistory && (inputData.warmup || inputData.main || inputData.cooldown)) {
         exercises = [
             ...(inputData.warmup || []),
             ...(inputData.main || []),
             ...(inputData.cooldown || [])
         ];
-    }
-    else if (Array.isArray(inputData)) {
+    } else if (Array.isArray(inputData)) {
         exercises = inputData.filter(ex => {
             if (fromHistory) return ex.status === 'completed' && !ex.isRest;
             return true;
@@ -270,52 +273,102 @@ export const calculateSystemLoad = (inputData, fromHistory = false) => {
 
     if (exercises.length === 0) return 0;
 
+    let totalLoadAU = 0;
+
+    // 2. Pobranie globalnego tempa (jeśli brak specyficznego)
     const globalSpr = state.settings.secondsPerRep || 6;
-    let totalWorkSeconds = 0;
-    let weightedDifficultySum = 0;
 
     exercises.forEach(ex => {
+        // --- A. Mapowanie Difficulty (1-5) na RPE (1-10) ---
+        // Zgodnie ze skalą Borga CR10, wzrost nie jest liniowy.
         const difficulty = parseInt(ex.difficultyLevel || 1, 10);
-        let multiplier = 1;
+        // Mapowanie: Lvl 1->2, Lvl 2->4, Lvl 3->6, Lvl 4->8, Lvl 5->10
+        let rpe = difficulty * 2; 
+
+        // --- B. Korekta Metaboliczna (Badanie: Senna et al.) ---
+        // Ćwiczenia o wysokiej intensywności metabolicznej (krótkie przerwy) są bardziej obciążające.
+        const metabolicIntensity = parseInt(ex.metabolicIntensity || 1, 10);
+        if (metabolicIntensity >= 3) {
+            rpe += 1.5; // Bonus za "zadyszkę"
+        }
+        
+        // Clamp RPE do logicznych ram (max 10)
+        rpe = Math.min(10, Math.max(1, rpe));
+
+        // --- C. Obliczanie Czasu Pracy (Time Under Tension) ---
+        // To jest nasz "Czas Trwania" do wzoru Fostera.
+        
         let sets = 1;
+        let multiplier = 1; // Mnożnik dla Unilateral
 
         if (!fromHistory) {
-            const isUnilateral = ex.isUnilateral || ex.is_unilateral || String(ex.reps_or_time).includes('/str');
-            if (isUnilateral) multiplier = 2;
-
-            const rawSets = parseSetCount(ex.sets);
-            // Stosujemy tę samą logikę "Effective Sets"
-            sets = isUnilateral ? Math.ceil(rawSets / 2) : rawSets;
+            const isUnilateral = ex.isUnilateral || String(ex.reps_or_time).includes('/str');
+            if (isUnilateral) multiplier = 2; // Lewa + Prawa to 2x więcej czasu pracy
+            sets = parseSetCount(ex.sets);
+            
+            // Korekta zgodna z Twoją logiką w training.js (jeśli sets obejmuje obie strony, dzielimy)
+            // Ale dla Load interesuje nas CAŁKOWITA liczba wykonanych serii (work bouts).
+            // Jeśli w planie jest "3 serie" (oznaczające 3xL + 3xP), to realnie mamy 6 okresów pracy.
+            // W training.js pętla jest do `sets`, więc tutaj `sets` to liczba powtórzeń pętli.
+            // Jeśli unilateral: sets = "3" oznacza 3 pętle (L+P). Czyli 3 * 2 * czas.
+            // Zostawiamy multiplier = 2.
         } else {
-            // W historii mamy już rozbite wpisy, więc sets=1 (chyba że logowanie jest inne)
-            // Zakładamy, że history entry to 1 wykonana seria/strona.
-            sets = parseSetCount(ex.sets); // Tutaj zazwyczaj 1
+            sets = 1; // W historii każdy wpis to osobna wykonana seria
         }
 
-        let singleSetWorkTime = 0;
+        let durationSeconds = 0;
         const rawStr = String(ex.reps_or_time).toLowerCase();
         const cleanStr = rawStr.replace(/\/str\.?|stron.*/g, '').trim();
 
-        if (cleanStr.includes('s') || cleanStr.includes('min') || cleanStr.includes(':')) {
-            singleSetWorkTime = parseRepsOrTime(cleanStr);
+        if (cleanStr.includes('s') || cleanStr.includes('min')) {
+            // Czasówka
+            if (cleanStr.includes('min')) durationSeconds = parseFloat(cleanStr) * 60;
+            else durationSeconds = parseInt(cleanStr) || 30;
         } else {
-            singleSetWorkTime = parseRepsOrTime(cleanStr) * globalSpr;
+            // Powtórzenia -> Estymacja czasu (TUT)
+            let pace = globalSpr;
+            // Adaptive Pacing (Personalizacja)
+            const exId = ex.id || ex.exerciseId;
+            if (state.exercisePace && state.exercisePace[exId]) {
+                pace = state.exercisePace[exId];
+            } else if (ex.tempo_or_iso) {
+                // Próba parsowania tempa "3-0-1"
+                const tempoMatch = ex.tempo_or_iso.match(/(\d+)-(\d+)-(\d+)/);
+                if (tempoMatch) {
+                    pace = parseInt(tempoMatch[1]) + parseInt(tempoMatch[2]) + parseInt(tempoMatch[3]);
+                }
+            }
+            
+            const reps = parseInt(cleanStr) || 10;
+            durationSeconds = reps * pace;
         }
 
-        const totalExWorkTime = singleSetWorkTime * sets * multiplier;
+        // Całkowity czas pracy w minutach dla tego ćwiczenia
+        const totalWorkMinutes = (durationSeconds * sets * multiplier) / 60;
 
-        totalWorkSeconds += totalExWorkTime;
-        weightedDifficultySum += (difficulty * totalExWorkTime);
+        // Wzór Fostera: Load = Minutes * RPE
+        totalLoadAU += (totalWorkMinutes * rpe);
     });
 
-    if (totalWorkSeconds === 0) return 0;
+    // 3. Ustalenie Pojemności Użytkownika (Capacity)
+    // Aby wyliczyć %, musimy wiedzieć, ile AU to "100% możliwości" danego usera.
+    const experience = state.settings.wizardData?.exercise_experience || 'regular';
+    
+    // Referencyjne wartości AU dla 100% obciążenia sesji (tzw. Maximum Recoverable Volume na sesję)
+    const capacityTable = {
+        'none': 250,       // np. 50 min lekkiej pracy (RPE 5)
+        'occasional': 400, // np. 60 min średniej pracy (RPE 6-7)
+        'regular': 600,    // np. 75 min ciężkiej pracy (RPE 8)
+        'advanced': 850    // np. 90+ min ciężkiej pracy
+    };
 
-    const avgDifficulty = weightedDifficultySum / totalWorkSeconds;
-    const maxScoreRef = 7200;
-    const rawScore = (avgDifficulty * totalWorkSeconds);
+    const userCapacity = capacityTable[experience] || 500;
 
-    let score = Math.round((rawScore / maxScoreRef) * 100);
-    return Math.min(100, Math.max(1, score));
+    // 4. Wynik procentowy
+    let loadPercent = Math.round((totalLoadAU / userCapacity) * 100);
+
+    // Safety clamp (aby nie straszyć usera wynikami > 120%)
+    return Math.min(120, Math.max(1, loadPercent));
 };
 
 export const calculateClinicalProfile = (dayPlan) => {
@@ -324,11 +377,11 @@ export const calculateClinicalProfile = (dayPlan) => {
     const mainEx = dayPlan.main || [];
     mainEx.forEach(ex => {
         const spine = (ex.spineLoadLevel || 'low').toLowerCase();
-        if (spine === 'high') maxSpine = Math.max(maxSpine, 2); else if (spine === 'medium' || spine === 'moderate') maxSpine = Math.max(maxSpine, 1);
+        if (spine === 'high') maxSpine = Math.max(maxSpine, 2); else if (spine === 'medium') maxSpine = Math.max(maxSpine, 1);
         const knee = (ex.kneeLoadLevel || 'low').toLowerCase();
         if (knee === 'high') maxKnee = Math.max(maxKnee, 2); else if (knee === 'medium') maxKnee = Math.max(maxKnee, 1);
         const imp = (ex.impactLevel || 'low').toLowerCase();
-        if (imp === 'high') maxImpact = Math.max(maxImpact, 2); else if (imp === 'moderate') maxImpact = Math.max(maxImpact, 1);
+        if (imp === 'high') maxImpact = Math.max(maxImpact, 2); else if (imp === 'medium') maxImpact = Math.max(maxImpact, 1);
     });
     const tags = [];
     if (maxImpact === 2) tags.push({ label: 'High Impact', color: 'red' }); else if (maxImpact === 0 && mainEx.length > 0) tags.push({ label: 'Low Impact', color: 'green' });

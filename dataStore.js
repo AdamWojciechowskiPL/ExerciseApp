@@ -175,7 +175,7 @@ const dataStore = {
 
     saveSettings: async () => { await callAPI('save-settings', { method: 'PUT', body: state.settings }); },
     deleteAccount: async () => { await callAPI('delete-user-data', { method: 'DELETE' }); },
-    
+
     addToBlacklist: async (eid, rid) => { await callAPI('manage-blacklist', { method: 'POST', body: { exerciseId: eid, replacementId: rid } }); if (!state.blacklist.includes(eid)) state.blacklist.push(eid); },
     removeFromBlacklist: async (eid) => { await callAPI('manage-blacklist', { method: 'DELETE', body: { exerciseId: eid } }); state.blacklist = state.blacklist.filter(id => id !== eid); },
 
@@ -210,8 +210,15 @@ const dataStore = {
     saveSession: async (sessionData) => {
         const result = await callAPI('save-session', { method: 'POST', body: sessionData });
         state.loadedMonths.clear();
-        // Removed masteryStats invalidation as functionality is removed
         return result;
+    },
+
+    // NOWA FUNKCJA: Aktualizacja pojedynczego logu ćwiczenia
+    updateExerciseLog: async (sessionId, exerciseId, tech, rir) => {
+        return await callAPI('update-exercise-log', {
+            method: 'POST',
+            body: { sessionId, exerciseId, tech, rir }
+        });
     },
 
     recalculateStats: async () => {

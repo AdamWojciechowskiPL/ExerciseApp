@@ -3,17 +3,15 @@ import { state } from '../../state.js';
 import { screens } from '../../dom.js';
 import { navigateTo, showLoader, hideLoader } from '../core.js';
 import dataStore from '../../dataStore.js';
-import { renderEvolutionModal, renderPhaseTransitionModal } from '../modals.js';
+import { renderEvolutionModal, renderPhaseTransitionModal, renderDetailAssessmentModal } from '../modals.js'; // Dodano renderDetailAssessmentModal
 import { getIsCasting, sendShowIdle } from '../../cast.js';
 import { clearSessionBackup } from '../../sessionRecovery.js';
 import { clearPlanFromStorage } from './dashboard.js';
+import { assistant } from '../../assistantEngine.js';
+import { workoutMixer } from '../../workoutMixer.js';
 
 let selectedFeedback = { type: null, value: 0 };
-
-// Tymczasowy stan zmian punktów dla tej sesji
-// Struktura: { "exerciseId": delta } np. { "ex1": 15, "ex2": -30 }
 let sessionAffinityDeltas = {};
-
 const SCORE_LIKE = 15;
 const SCORE_DISLIKE = -30;
 
@@ -35,7 +33,7 @@ export const renderSummaryScreen = () => {
     }
 
     selectedFeedback = { type: isSafetyMode ? 'symptom' : 'tension', value: 0 };
-    sessionAffinityDeltas = {}; // Resetujemy zmiany sesyjne
+    sessionAffinityDeltas = {};
 
     const summaryScreen = screens.summary;
 
@@ -49,55 +47,96 @@ export const renderSummaryScreen = () => {
         <div class="feedback-option" data-type="tension" data-value="-1"><div class="fb-icon">🥵</div><div class="fb-text"><h4>Za mocno</h4></div></div>
     `;
 
-    const processedIds = new Set();
-    const uniqueExercises = (state.sessionLog || []).filter(entry => {
-        if (entry.isRest || entry.status === 'skipped') return false;
-        const exId = entry.exerciseId || entry.id;
-        if (!exId || processedIds.has(exId)) return false;
-        processedIds.add(exId);
-        return true;
-    });
+    // AMPS PHASE 3: CLASSIFICATION
+    const groups = assistant.classifySessionPerformance(state.sessionLog || []);
+    const hasData = groups.good.length > 0 || groups.moderate.length > 0 || groups.difficult.length > 0;
 
-    let exercisesListHtml = '';
-    if (uniqueExercises.length > 0) {
-        exercisesListHtml = uniqueExercises.map(ex => {
+    const renderGroup = (label, cssClass, logs, isDifficult = false) => {
+        if (!logs || logs.length === 0) return '';
+
+        const cardsHtml = logs.map(ex => {
             const id = ex.exerciseId || ex.id;
             const pref = state.userPreferences[id] || { score: 0 };
             const baseScore = pref.score || 0;
-
             let displayName = ex.name.replace(/\s*\((Lewa|Prawa)\)/gi, '').trim();
 
-            // Stylizacja wyniku
             let scoreColor = '#666';
             let scorePrefix = '';
             if (baseScore >= 75) { scoreColor = 'var(--gold-color)'; scorePrefix = '👑 '; }
             else if (baseScore > 0) { scoreColor = 'var(--success-color)'; scorePrefix = '+'; }
             else if (baseScore < 0) { scoreColor = 'var(--danger-color)'; }
 
+            // AMPS Details Badge (TERAZ EDYTOWALNE)
+            // Jeśli brak danych, wyświetlamy przycisk "Dodaj ocenę"
+            let ampsDetails = '';
+            const hasAmps = ex.tech !== null || ex.rir !== null;
+            
+            if (hasAmps) {
+                ampsDetails = `
+                <div class="amps-details editable js-edit-amps" title="Kliknij, aby edytować ocenę">
+                    ${ex.tech !== null ? `<span>Technika: <strong>${ex.tech}/10</strong></span>` : ''}
+                    ${ex.rir !== null ? `<span>RIR: <strong>${ex.rir}</strong></span>` : ''}
+                    <span style="opacity:0.5; font-size:0.8em; margin-left:4px;">✎</span>
+                </div>`;
+            } else {
+                ampsDetails = `
+                <div class="amps-details editable js-edit-amps empty" style="opacity:0.6; border:1px dashed #ccc;">
+                    <span>+ Dodaj ocenę Tech/RIR</span>
+                </div>`;
+            }
+
+            // Devolution Action (For Difficult Items)
+            let devolutionHtml = '';
+            if (isDifficult) {
+                const easierVariant = workoutMixer.getEasierVariant(id);
+                if (easierVariant) {
+                    devolutionHtml = `
+                    <div class="devolution-action">
+                        <span style="font-size:0.75rem; color:var(--danger-color);">Zbyt trudne?</span>
+                        <button type="button" class="devolution-btn" data-ex-id="${id}" data-target-id="${easierVariant.id}" data-target-name="${easierVariant.name}">
+                            ⬇ Zmień na: ${easierVariant.name}
+                        </button>
+                    </div>`;
+                }
+            }
+
             return `
-            <div class="rating-card" data-id="${id}" data-base-score="${baseScore}">
-                <div class="rating-info" style="flex:1;">
-                    <div class="rating-name">${displayName}</div>
-                    <div class="rating-score-display" style="font-size:0.75rem; font-weight:700; color:${scoreColor}; transition:color 0.2s;">
-                        Wynik: <span class="current-score-val">${scorePrefix}${baseScore}</span>
+            <div class="rating-card" data-id="${id}" data-unique-id="${ex.uniqueId}" data-base-score="${baseScore}">
+                <div class="rating-card-main">
+                    <div class="rating-info" style="flex:1;">
+                        <div class="rating-name">${displayName}</div>
+                        <div class="rating-score-display" style="font-size:0.75rem; font-weight:700; color:${scoreColor}; transition:color 0.2s;">
+                            Wynik: <span class="current-score-val">${scorePrefix}${baseScore}</span>
+                        </div>
+                        ${ampsDetails}
+                    </div>
+                    <div class="rating-actions-group">
+                        <div class="btn-group-affinity">
+                            <button type="button" class="rate-btn affinity-btn" data-action="like" title="Super (+15)">👍</button>
+                            <button type="button" class="rate-btn affinity-btn" data-action="dislike" title="Słabo (-30)">👎</button>
+                        </div>
                     </div>
                 </div>
-                <div class="rating-actions-group">
-                    <div class="btn-group-affinity">
-                        <button type="button" class="rate-btn affinity-btn" data-action="like" title="Super (+15)">👍</button>
-                        <button type="button" class="rate-btn affinity-btn" data-action="dislike" title="Słabo (-30)">👎</button>
-                    </div>
-                    <div class="sep"></div>
-                    <div class="btn-group-difficulty">
-                        <button type="button" class="rate-btn diff-btn" data-action="easy" title="Za łatwe - Awansuj mnie">💤</button>
-                        <button type="button" class="rate-btn diff-btn" data-action="hard" title="Za trudne - Ratuj mnie">🔥</button>
-                    </div>
-                </div>
+                ${devolutionHtml}
+            </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="summary-section">
+                <div class="summary-section-header ${cssClass}">${label}</div>
+                <div class="ratings-list">${cardsHtml}</div>
             </div>
         `;
-        }).join('');
+    };
+
+    let contentHtml = '';
+    if (hasData) {
+        contentHtml += renderGroup('✅ Poszło Gładko', 'good', groups.good);
+        contentHtml += renderGroup('🟡 Wymagało Wysiłku', 'moderate', groups.moderate);
+        contentHtml += renderGroup('🔴 Było Trudno', 'difficult', groups.difficult, true);
     } else {
-        exercisesListHtml = '<p class="empty-state">Brak wykonanych ćwiczeń do oceny.</p>';
+        contentHtml = '<p class="empty-state">Brak wykonanych ćwiczeń do oceny.</p>';
     }
 
     let stravaHtml = state.stravaIntegration.isConnected ? `
@@ -117,8 +156,9 @@ export const renderSummaryScreen = () => {
                 <div class="feedback-container compact">${globalOptionsHtml}</div>
             </div>
             <div class="form-group" style="margin-top:1.5rem;">
-                <label style="display:block; margin-bottom:5px; font-weight:700;">Twoja Opinia</label>
-                <div class="ratings-list">${exercisesListHtml}</div>
+                <label style="display:block; margin-bottom:5px; font-weight:700;">Analiza Wykonania</label>
+                <p style="font-size:0.8rem; color:#666; margin-bottom:10px;">Kliknij ocenę (Tech/RIR), aby ją zmienić przed zapisem.</p>
+                ${contentHtml}
             </div>
             <div class="form-group" style="margin-top:2rem;">
                 <label for="general-notes">Notatki:</label>
@@ -129,7 +169,9 @@ export const renderSummaryScreen = () => {
         </form>
     `;
 
-    // Listenery
+    // --- EVENT LISTENERS ---
+
+    // 1. Feedback Global
     summaryScreen.querySelectorAll('.feedback-option').forEach(opt => {
         opt.addEventListener('click', () => {
             summaryScreen.querySelectorAll('.feedback-option').forEach(o => o.classList.remove('selected'));
@@ -139,9 +181,59 @@ export const renderSummaryScreen = () => {
         });
     });
 
-    // NOWA LOGIKA KCIUKÓW (INTERAKTYWNA) - POPRAWIONY TOGGLE
     const formContainer = summaryScreen.querySelector('#summary-form');
 
+    // 2. EDYCJA AMPS (Kliknięcie w badge Tech/RIR)
+    // To jest kluczowa poprawka umożliwiająca edycję przed zapisem.
+    formContainer.addEventListener('click', (e) => {
+        const badge = e.target.closest('.js-edit-amps');
+        if (badge) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const card = badge.closest('.rating-card');
+            const uniqueId = card.dataset.uniqueId;
+            const exerciseName = card.querySelector('.rating-name').textContent;
+
+            // Znajdź wpis w lokalnym logu
+            const logEntry = state.sessionLog.find(l => l.uniqueId === uniqueId);
+            if (!logEntry) return;
+
+            // Otwórz modal (zainicjowany obecnymi wartościami lub domyślnymi)
+            renderDetailAssessmentModal(exerciseName, (newTech, newRir) => {
+                // A. Aktualizacja Stanu (Local Memory)
+                logEntry.tech = newTech;
+                logEntry.rir = newRir;
+                logEntry.inferred = false; // User nadpisał ręcznie
+                
+                // Opcjonalnie: Aktualizacja Ratingu dla spójności
+                if (newRir === 0) logEntry.rating = 'hard';
+                else if (newRir >= 3) logEntry.rating = 'good';
+                else logEntry.rating = 'ok';
+
+                // B. Aktualizacja Widoku (DOM Manipulation)
+                // Nie przerysowujemy całego ekranu, aby nie zgubić stanu (np. scrolla)
+                badge.innerHTML = `
+                    <span>Technika: <strong>${newTech}/10</strong></span>
+                    <span>RIR: <strong>${newRir}</strong></span>
+                    <span style="opacity:0.5; font-size:0.8em; margin-left:4px;">✎</span>
+                `;
+                badge.classList.remove('empty');
+                badge.style.border = "none";
+                badge.style.opacity = "1";
+                
+                // Efekt wizualny (flash)
+                badge.style.backgroundColor = "#dcfce7";
+                badge.style.borderColor = "#bbf7d0";
+                setTimeout(() => {
+                    badge.style.backgroundColor = ""; 
+                    badge.style.borderColor = "";
+                }, 500);
+            });
+        }
+    });
+
+    // 3. Affinity Buttons (Kciuki)
     formContainer.querySelectorAll('.rating-card').forEach(card => {
         const id = card.dataset.id;
         const baseScore = parseInt(card.dataset.baseScore, 10);
@@ -151,59 +243,47 @@ export const renderSummaryScreen = () => {
         const updateVisuals = () => {
             const delta = sessionAffinityDeltas[id] || 0;
             const newScore = Math.max(-100, Math.min(100, baseScore + delta));
-
-            let color = '#666';
-            let prefix = '';
+            let color = '#666'; let prefix = '';
             if (newScore >= 75) { color = 'var(--gold-color)'; prefix = '👑 '; }
             else if (newScore > 0) { color = 'var(--success-color)'; prefix = '+'; }
             else if (newScore < 0) { color = 'var(--danger-color)'; }
-
             scoreDisplay.textContent = `${prefix}${newScore}`;
             scoreContainer.style.color = color;
-
-            // Highlight buttons
             card.querySelectorAll('.affinity-btn').forEach(btn => btn.classList.remove('active'));
             if (delta === SCORE_LIKE) card.querySelector('[data-action="like"]').classList.add('active');
             if (delta === SCORE_DISLIKE) card.querySelector('[data-action="dislike"]').classList.add('active');
         };
 
-        const affinityBtns = card.querySelectorAll('.affinity-btn');
-        affinityBtns.forEach(btn => {
+        card.querySelectorAll('.affinity-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const action = btn.dataset.action;
                 const currentDelta = sessionAffinityDeltas[id] || 0;
-
-                // Toggle logic
-                if (action === 'like') {
-                    // Jeśli już było Like (+15), to zerujemy. Jeśli nie, ustawiamy +15
-                    sessionAffinityDeltas[id] = (currentDelta === SCORE_LIKE) ? 0 : SCORE_LIKE;
-                } else if (action === 'dislike') {
-                    // Jeśli już było Dislike (-30), to zerujemy. Jeśli nie, ustawiamy -30
-                    sessionAffinityDeltas[id] = (currentDelta === SCORE_DISLIKE) ? 0 : SCORE_DISLIKE;
-                }
+                if (action === 'like') sessionAffinityDeltas[id] = (currentDelta === SCORE_LIKE) ? 0 : SCORE_LIKE;
+                else if (action === 'dislike') sessionAffinityDeltas[id] = (currentDelta === SCORE_DISLIKE) ? 0 : SCORE_DISLIKE;
                 updateVisuals();
-            });
-        });
-
-        // Difficulty buttons - FIX TOGGLE OFF
-        const diffBtns = card.querySelectorAll('.diff-btn');
-        diffBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                const wasSelected = btn.classList.contains('selected');
-
-                // 1. Zawsze czyścimy zaznaczenie wszystkich w grupie
-                diffBtns.forEach(b => b.classList.remove('selected'));
-
-                // 2. Jeśli kliknięty przycisk NIE BYŁ zaznaczony, zaznaczamy go teraz.
-                // Jeśli był, zostawiamy odznaczony (czyli stan "neutralny/0").
-                if (!wasSelected) {
-                    btn.classList.add('selected');
-                }
             });
         });
     });
 
-    // Usuwamy stare listenery i dodajemy nowy
+    // 4. Devolution Buttons
+    formContainer.querySelectorAll('.devolution-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.preventDefault(); 
+            if (btn.disabled) return;
+
+            const targetName = btn.dataset.targetName;
+
+            if (confirm(`Czy na pewno chcesz na stałe zamienić to ćwiczenie na łatwiejsze: "${targetName}"?`)) {
+                btn.classList.add('pending-devolution');
+                btn.textContent = `✅ Zmieniono na: ${targetName}`;
+                btn.style.backgroundColor = "#f0fdf4";
+                btn.style.borderColor = "#bbf7d0";
+                btn.style.color = "#166534";
+                btn.disabled = true;
+            }
+        });
+    });
+
     formContainer.removeEventListener('submit', handleSummarySubmit);
     formContainer.addEventListener('submit', handleSummarySubmit);
 
@@ -213,7 +293,7 @@ export const renderSummaryScreen = () => {
 export async function handleSummarySubmit(e) {
     e.preventDefault();
     const submitBtn = e.target.querySelector('button[type="submit"]');
-    if (submitBtn.disabled) return; // Zapobieganie podwójnemu kliknięciu
+    if (submitBtn.disabled) return;
 
     submitBtn.disabled = true;
     submitBtn.textContent = "Zapisywanie...";
@@ -229,9 +309,11 @@ export async function handleSummarySubmit(e) {
             const action = delta === SCORE_LIKE ? 'like' : 'dislike';
             ratingsArray.push({ exerciseId: id, action: action });
         }
-        const activeDiff = card.querySelector('.diff-btn.selected');
-        if (activeDiff) {
-            ratingsArray.push({ exerciseId: id, action: activeDiff.dataset.action });
+
+        // AMPS Devolution Logic
+        const devBtn = card.querySelector('.devolution-btn.pending-devolution');
+        if (devBtn) {
+            ratingsArray.push({ exerciseId: id, action: 'hard' });
         }
     });
 
@@ -258,7 +340,7 @@ export async function handleSummarySubmit(e) {
         notes: document.getElementById('general-notes').value,
         startedAt: state.sessionStartTime.toISOString(),
         completedAt: now.toISOString(),
-        sessionLog: state.sessionLog,
+        sessionLog: state.sessionLog, // To teraz zawiera zaktualizowane dane AMPS
         netDurationSeconds: durationSeconds
     };
 
@@ -270,7 +352,6 @@ export async function handleSummarySubmit(e) {
 
         if (response?.newStats) state.userStats = { ...state.userStats, ...response.newStats };
 
-        // --- FIX: MANUALNA INKREMENTACJA LICZNIKA FAZY ---
         const pm = state.settings.phase_manager;
         if (pm && !response?.phaseUpdate) {
             if (pm.override && pm.override.mode) {
@@ -279,7 +360,6 @@ export async function handleSummarySubmit(e) {
                 pm.current_phase_stats.sessions_completed++;
             }
         }
-        // --- KONIEC FIX ---
 
         if (document.getElementById('strava-sync-checkbox')?.checked) dataStore.uploadToStrava(sessionPayload);
 
@@ -287,9 +367,6 @@ export async function handleSummarySubmit(e) {
         state.sessionLog = [];
         state.isPaused = false;
 
-        // --- AKTUALIZACJA LOKALNEGO STANU PREFERENCJI ---
-        
-        // 1. Aktualizacja punktów Affinity
         Object.entries(sessionAffinityDeltas).forEach(([id, delta]) => {
             if (state.userPreferences[id]) {
                 let s = state.userPreferences[id].score || 0;
@@ -298,13 +375,11 @@ export async function handleSummarySubmit(e) {
             }
         });
 
-        // 2. Aktualizacja flagi trudności (Difficulty)
+        // Obsługa dewolucji w lokalnym stanie (dla natychmiastowego efektu)
         ratingsArray.forEach(r => {
-            if (['easy', 'hard'].includes(r.action)) {
+            if (r.action === 'hard') {
                 if (!state.userPreferences[r.exerciseId]) state.userPreferences[r.exerciseId] = {};
-                
-                if (r.action === 'easy') state.userPreferences[r.exerciseId].difficulty = -1;
-                else if (r.action === 'hard') state.userPreferences[r.exerciseId].difficulty = 1;
+                state.userPreferences[r.exerciseId].difficulty = 1;
             }
         });
 
@@ -318,23 +393,16 @@ export async function handleSummarySubmit(e) {
         const checkRpeAndNavigate = async () => {
             if (selectedFeedback.value !== 0) {
                 let msg = '';
-                if (selectedFeedback.value === -1) {
-                    msg = "Zgłosiłeś, że trening był za ciężki/bolesny.\n\nCzy chcesz, aby Asystent przeliczył plan i zmniejszył obciążenie na kolejne dni?";
-                } else if (selectedFeedback.value === 1) {
-                    msg = "Zgłosiłeś, że trening był za lekki/nudny.\n\nCzy chcesz, aby Asystent zwiększył intensywność planu?";
-                }
+                if (selectedFeedback.value === -1) msg = "Zgłosiłeś, że trening był za ciężki/bolesny.\n\nCzy chcesz, aby Asystent przeliczył plan i zmniejszył obciążenie na kolejne dni?";
+                else if (selectedFeedback.value === 1) msg = "Zgłosiłeś, że trening był za lekki/nudny.\n\nCzy chcesz, aby Asystent zwiększył intensywność planu?";
 
                 if (msg && confirm(msg)) {
                     showLoader();
                     try {
-                        console.log("[AutoReg] Triggering plan regeneration based on RPE...");
                         await dataStore.generateDynamicPlan(state.settings.wizardData);
                         clearPlanFromStorage();
                         alert("Plan został pomyślnie zaktualizowany przez Asystenta.");
-                    } catch (e) {
-                        console.error("[AutoReg] Failed:", e);
-                        alert("Nie udało się przeliczyć planu automatycznie.");
-                    }
+                    } catch (e) { console.error("[AutoReg] Failed:", e); }
                 }
             }
             await finalizeProcess();
@@ -345,15 +413,10 @@ export async function handleSummarySubmit(e) {
                 if (state.settings.phase_manager) {
                     state.settings.phase_manager.current_phase_stats.phase_id = response.phaseUpdate.newPhaseId;
                     state.settings.phase_manager.current_phase_stats.sessions_completed = 0;
-                    if (state.settings.phase_manager.override) {
-                        state.settings.phase_manager.override.mode = null;
-                    }
+                    if (state.settings.phase_manager.override) state.settings.phase_manager.override.mode = null;
                 }
-
                 hideLoader();
-                renderPhaseTransitionModal(response.phaseUpdate, () => {
-                    checkRpeAndNavigate();
-                });
+                renderPhaseTransitionModal(response.phaseUpdate, () => checkRpeAndNavigate());
             } else {
                 checkRpeAndNavigate();
             }
@@ -361,9 +424,7 @@ export async function handleSummarySubmit(e) {
 
         if (response && response.adaptation) {
             hideLoader();
-            renderEvolutionModal(response.adaptation, () => {
-                checkPhaseTransition();
-            });
+            renderEvolutionModal(response.adaptation, () => checkPhaseTransition());
         } else {
             checkPhaseTransition();
         }

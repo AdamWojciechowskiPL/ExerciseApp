@@ -1,5 +1,4 @@
-// dom.js
-
+// ExerciseApp/dom.js
 export const screens = {
     main: document.getElementById('main-screen'),
     history: document.getElementById('history-screen'),
@@ -10,7 +9,7 @@ export const screens = {
     training: document.getElementById('training-screen'),
     summary: document.getElementById('summary-screen'),
     help: document.getElementById('help-screen'),
-    analytics: document.getElementById('analytics-screen'), // NOWY EKRAN
+    analytics: document.getElementById('analytics-screen'),
 };
 
 export const containers = {
@@ -21,25 +20,20 @@ export const containers = {
 
 export const mainNav = document.getElementById('main-nav');
 
-// ZMIANA: focus jest stałą referencją (obiektem), do którego będziemy wstrzykiwać elementy
 export const focus = {};
 
 export function initializeFocusElements() {
-    // UWAGA: sectionName usunięty z HTML, więc usuwamy też stąd
-    // focus.sectionName = document.getElementById('focus-section-name');
-
-    // ZMIANA: Zastąpiono focus.progress nowym elementem paska
-    focus.progressContainer = document.getElementById('focus-progress-bar'); // NOWY
-
-    // NOWOŚĆ: Licznik czasu całkowitego
+    focus.progressContainer = document.getElementById('focus-progress-bar');
     focus.sessionElapsedTime = document.getElementById('focus-total-time');
 
     focus.timerDisplay = document.getElementById('focus-timer-display');
     focus.exerciseName = document.getElementById('focus-exercise-name');
     focus.exerciseDetails = document.getElementById('focus-exercise-details');
-    focus.tempo = document.getElementById('focus-tempo'); // NOWE: Referencja do tempa
+    focus.tempo = document.getElementById('focus-tempo');
     focus.exerciseInfoContainer = document.querySelector('.focus-exercise-info');
     focus.focusDescription = document.getElementById('focus-description');
+
+    focus.ratingContainer = document.getElementById('focus-rating-container'); // NEW AMPS
 
     focus.ttsToggleBtn = document.getElementById('tts-toggle-btn');
     focus.ttsIcon = document.getElementById('tts-icon');

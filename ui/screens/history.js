@@ -6,6 +6,7 @@ import { showLoader, hideLoader, navigateTo } from '../core.js';
 import { generateSessionCardHTML } from '../templates.js';
 import dataStore from '../../dataStore.js';
 import { getAffinityBadge } from '../templates.js';
+import { renderDetailAssessmentModal } from '../modals.js'; // Import Modala
 
 export const renderHistoryScreen = async (forceRefresh = false) => {
     navigateTo('history');
@@ -89,21 +90,15 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
 
     contentContainer.addEventListener('click', async (e) => {
 
-        // 1. USUWANIE SESJI (POPRAWIONE)
+        // 1. USUWANIE SESJI
         const delBtn = e.target.closest('.delete-session-btn');
         if (delBtn) {
             const sessionId = delBtn.dataset.sessionId;
             if (!confirm('Czy na pewno chcesz trwale usunąć ten trening?')) return;
             showLoader();
             try {
-                // Wywołanie backendu (on sam zadba o liczniki)
                 await dataStore.deleteSession(sessionId);
-
-                // Aktualizacja lokalnego stanu historii (UI)
                 state.userProgress[isoDate] = state.userProgress[isoDate].filter(s => String(s.sessionId) !== String(sessionId));
-
-                // Pobranie świeżych statystyk, aby zaktualizować licznik fazy/poziom w pamięci aplikacji
-                // Dzięki temu po powrocie na Dashboard licznik będzie poprawny
                 await dataStore.initialize();
 
                 if (state.userProgress[isoDate].length > 0) {
@@ -121,14 +116,54 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
             return;
         }
 
-        // 2. PRZYCISKI OCEN (RATE BTN) - Bez zmian
+        // 2. EDYCJA PARAMETRÓW AMPS (TECH/RIR) - ZAPIS DO BAZY
+        const ampsBadge = e.target.closest('.amps-inline-badge');
+        if (ampsBadge) {
+            e.stopPropagation();
+            
+            // Pobieramy ID sesji z kontekstu (z DELETE button w tej samej karcie)
+            const sessionCard = ampsBadge.closest('.workout-context-card');
+            const deleteBtn = sessionCard ? sessionCard.querySelector('.delete-session-btn') : null;
+            const sessionId = deleteBtn ? deleteBtn.dataset.sessionId : null;
+
+            const row = ampsBadge.closest('.rating-card');
+            const exerciseId = row ? row.dataset.id : null;
+            const ratingNameEl = row ? row.querySelector('.rating-name') : null;
+            const exerciseName = ratingNameEl ? ratingNameEl.innerText : "Ćwiczenie";
+
+            if (sessionId && exerciseId) {
+                renderDetailAssessmentModal(exerciseName, async (newTech, newRir) => {
+                    // Optymistyczna aktualizacja UI
+                    const icon = (newRir === 0) ? '👎' : ((newRir >= 3) ? '👍' : '👌');
+                    const originalContent = ampsBadge.innerHTML;
+                    ampsBadge.innerHTML = `<span class="pulsate-slow">⏳ Zapisuję...</span>`;
+
+                    try {
+                        const res = await dataStore.updateExerciseLog(sessionId, exerciseId, newTech, newRir);
+                        if (res) {
+                            ampsBadge.innerHTML = `${icon} T:${newTech} RIR:${newRir}`;
+                            ampsBadge.style.backgroundColor = "#dcfce7"; // Zielonkawy sukces
+                            setTimeout(() => ampsBadge.style.backgroundColor = "", 1000);
+                        } else {
+                            throw new Error("Brak odpowiedzi");
+                        }
+                    } catch (err) {
+                        console.error("AMPS Update Failed:", err);
+                        alert("Nie udało się zapisać oceny.");
+                        ampsBadge.innerHTML = originalContent;
+                    }
+                });
+            }
+            return;
+        }
+
+        // 3. PRZYCISKI OCEN (KCIUKI/TRUDNOŚĆ) - ISTNIEJĄCA LOGIKA + FIX UI
         const rateBtn = e.target.closest('.rate-btn-hist');
         if (rateBtn) {
             e.stopPropagation();
             const exerciseId = rateBtn.dataset.id;
             const action = rateBtn.dataset.action;
             const isAffinity = rateBtn.classList.contains('affinity-btn');
-            const isDifficulty = rateBtn.classList.contains('diff-btn');
             const allRowsForExercise = contentContainer.querySelectorAll(`.rating-card[data-id="${exerciseId}"]`);
 
             if (isAffinity) {
@@ -162,40 +197,19 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
                         if (action === 'like') likeBtn.classList.add('active');
                         if (action === 'dislike') dislikeBtn.classList.add('active');
                     }
-                    const headerDiv = row.querySelector('div[style*="display:flex; align-items:center; gap:6px"]');
-                    if (headerDiv) {
-                        const oldBadge = headerDiv.querySelector('.affinity-badge');
-                        const oldRawScore = headerDiv.querySelector('span[style*="font-weight:800"]');
-                        if(oldBadge) oldBadge.remove();
-                        if(oldRawScore) oldRawScore.remove();
-                        const newBadgeHtml = getAffinityBadge(exerciseId);
-                        let scoreText = newScore > 0 ? `+${newScore}` : `${newScore}`;
-                        let scoreColor = newScore > 0 ? '#10b981' : (newScore < 0 ? '#ef4444' : '#6b7280');
-                        headerDiv.insertAdjacentHTML('beforeend', newBadgeHtml + `<span style="font-size:0.75rem; font-weight:800; color:${scoreColor}; margin-left:4px;">[${scoreText}]</span>`);
+
+                    // FIX: Aktualizacja spanu z wynikiem
+                    const scoreSpan = row.querySelector('.dynamic-score-val');
+                    let scoreText = newScore > 0 ? `+${newScore}` : `${newScore}`;
+                    let scoreColor = newScore > 0 ? '#10b981' : (newScore < 0 ? '#ef4444' : '#6b7280');
+
+                    if (scoreSpan) {
+                        scoreSpan.textContent = newScore !== 0 ? `[${scoreText}]` : '';
+                        scoreSpan.style.color = scoreColor;
                     }
                 });
 
                 try { await dataStore.updatePreference(exerciseId, 'set', newScore); } catch (err) { console.error("Błąd zapisu punktów:", err); }
-
-            } else if (isDifficulty) {
-                const isTurningOff = rateBtn.classList.contains('selected');
-                let newValue = isTurningOff ? 0 : (action === 'easy' ? -1 : 1);
-                if (!state.userPreferences[exerciseId]) state.userPreferences[exerciseId] = {};
-                state.userPreferences[exerciseId].difficulty = newValue;
-
-                allRowsForExercise.forEach(row => {
-                    const easyBtn = row.querySelector('[data-action="easy"]');
-                    const hardBtn = row.querySelector('[data-action="hard"]');
-                    easyBtn.classList.remove('selected');
-                    hardBtn.classList.remove('selected');
-                    if (newValue === -1) easyBtn.classList.add('selected');
-                    if (newValue === 1) hardBtn.classList.add('selected');
-                });
-
-                try {
-                    const backendAction = (newValue === 0) ? 'reset_difficulty' : 'set_difficulty';
-                    await dataStore.updatePreference(exerciseId, backendAction, newValue);
-                } catch (err) { console.error("Błąd zapisu trudności:", err); }
             }
         }
     });

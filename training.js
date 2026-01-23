@@ -11,6 +11,7 @@ import { renderSummaryScreen } from './ui/screens/summary.js';
 import { getIsCasting, sendTrainingStateUpdate } from './cast.js';
 import { saveSessionBackup } from './sessionRecovery.js';
 import { getAffinityBadge } from './ui/templates.js';
+import { renderDetailAssessmentModal } from './ui/modals.js'; // AMPS PHASE 2 IMPORT
 import dataStore from './dataStore.js';
 
 let backupInterval = null;
@@ -126,12 +127,22 @@ function logCurrentStep(status) {
         reps_or_time: exercise.reps_or_time,
         tempo_or_iso: exercise.tempo_or_iso,
         status: status,
-        duration: netDuration > 0 ? netDuration : 0
+        duration: netDuration > 0 ? netDuration : 0,
+        // AMPS Fields init
+        rating: null,
+        rir: null,
+        tech: null,
+        promptType: "none"
     };
 
     const existingEntryIndex = state.sessionLog.findIndex(entry => entry.uniqueId === newLogEntry.uniqueId);
 
     if (existingEntryIndex > -1) {
+        // Zachowaj ocenę, jeśli już była
+        newLogEntry.rating = state.sessionLog[existingEntryIndex].rating;
+        newLogEntry.rir = state.sessionLog[existingEntryIndex].rir;
+        newLogEntry.tech = state.sessionLog[existingEntryIndex].tech;
+        newLogEntry.promptType = state.sessionLog[existingEntryIndex].promptType;
         state.sessionLog[existingEntryIndex] = newLogEntry;
     } else {
         state.sessionLog.push(newLogEntry);
@@ -162,6 +173,7 @@ function triggerSessionBackup() {
         stopwatchSeconds: state.stopwatch.seconds,
         timerTimeLeft: state.timer.timeLeft,
         timerInitialDuration: state.timer.initialDuration,
+        sessionDetailPromptCount: state.sessionDetailPromptCount, // AMPS
         sessionParams: state.sessionParams
     });
 }
@@ -251,6 +263,101 @@ export function moveToPreviousExercise() {
     }
 }
 
+// --- AMPS PHASE 1 & 2: LOGIKA OCEN ---
+
+// Global handler for Quick Rating (Thumbs)
+window.handleSetRating = (uniqueId, rating) => {
+    const logEntry = state.sessionLog.find(l => l.uniqueId === uniqueId);
+    if (logEntry) {
+        logEntry.rating = rating;
+        logEntry.promptType = "quick";
+        console.log(`[AMPS] Quick Rating saved for ${uniqueId}: ${rating}`);
+    }
+    triggerSessionBackup();
+    if (focus.ratingContainer) {
+        const labels = { 'good': '👍 Dobrze', 'ok': '👌 OK', 'hard': '👎 Trudne' };
+        focus.ratingContainer.innerHTML = `<div class="saved-feedback">Zapisano: ${labels[rating] || rating}</div>`;
+        setTimeout(() => { if (focus.ratingContainer) focus.ratingContainer.classList.add('hidden'); }, 1000);
+    }
+};
+
+// Global handler for Detail Rating (Tech + RIR)
+window.handleSetDetailRating = (uniqueId, tech, rir) => {
+    const logEntry = state.sessionLog.find(l => l.uniqueId === uniqueId);
+    if (logEntry) {
+        logEntry.tech = tech;
+        logEntry.rir = rir;
+        logEntry.rating = 'good'; // Implicitly good if user bothered to fill detail
+        logEntry.promptType = "detail";
+        console.log(`[AMPS] Detail Rating saved for ${uniqueId}: Tech=${tech}, RIR=${rir}`);
+    }
+    triggerSessionBackup();
+};
+
+function shouldTriggerDetailPrompt(exercise) {
+    // 1. Sprawdź limit na sesję
+    if (!state.sessionDetailPromptCount) state.sessionDetailPromptCount = 0;
+    if (state.sessionDetailPromptCount >= 2) return false;
+
+    // 2. Sprawdź, czy to ćwiczenie zostało już ocenione w tej sesji (unikalność)
+    // Nie chcemy pytać o to samo ćwiczenie w 2. i 3. serii
+    const alreadyPrompted = state.sessionLog.some(l => 
+        l.exerciseId === exercise.exerciseId && l.promptType === 'detail'
+    );
+    if (alreadyPrompted) return false;
+
+    // 3. Kryterium: "Trudne" w historii (Difficulty Flag)
+    // Sprawdzamy preferencje użytkownika (difficulty = 1 oznacza flagę trudności)
+    const exId = exercise.exerciseId || exercise.id;
+    const pref = state.userPreferences[exId];
+    if (pref && pref.difficulty === 1) {
+        state.sessionDetailPromptCount++;
+        return true;
+    }
+
+    // 4. Kryterium: Losowość (15% szans)
+    // Tylko dla sekcji 'main'
+    if (exercise.sectionName === 'Część główna' && Math.random() < 0.15) {
+        state.sessionDetailPromptCount++;
+        return true;
+    }
+
+    return false;
+}
+
+function renderQuickRating(exercise) {
+    if (!focus.ratingContainer) return;
+
+    // Nie pokazuj jeśli już oceniono
+    const logEntry = state.sessionLog.find(l => l.uniqueId === exercise.uniqueId);
+    if (logEntry && (logEntry.rating || logEntry.promptType === 'detail')) return;
+
+    // AMPS PHASE 2: DECYZJA (Quick vs Detail)
+    if (shouldTriggerDetailPrompt(exercise)) {
+        renderDetailAssessmentModal(exercise.name, (tech, rir) => {
+            window.handleSetDetailRating(exercise.uniqueId, tech, rir);
+        });
+        return; // Modal handles UI, no inline buttons needed
+    }
+
+    focus.ratingContainer.innerHTML = `
+        <div class="quick-rate-label">${exercise.name}</div>
+        <div class="quick-rate-buttons">
+            <button class="quick-rate-btn positive" onclick="handleSetRating('${exercise.uniqueId}', 'good')">👍</button>
+            <button class="quick-rate-btn ok" onclick="handleSetRating('${exercise.uniqueId}', 'ok')">👌</button>
+            <button class="quick-rate-btn difficult" onclick="handleSetRating('${exercise.uniqueId}', 'hard')">👎</button>
+        </div>
+    `;
+    focus.ratingContainer.classList.remove('hidden');
+}
+
+function hideQuickRating() {
+    if (focus.ratingContainer) {
+        focus.ratingContainer.classList.add('hidden');
+        focus.ratingContainer.innerHTML = '';
+    }
+}
+
 export async function startExercise(index, isResuming = false) {
     state.currentExerciseIndex = index;
     const exercise = state.flatExercises[index];
@@ -309,6 +416,8 @@ export async function startExercise(index, isResuming = false) {
 
     if (exercise.isWork) {
         // --- TRYB PRACY (ĆWICZENIE) ---
+        hideQuickRating(); // Ukryj ocenę jeśli przypadkiem została
+
         focus.exerciseName.textContent = exercise.name;
         fitText(focus.exerciseName);
         focus.exerciseDetails.textContent = `Seria ${exercise.currentSet}/${exercise.totalSets} | Cel: ${exercise.reps_or_time}`;
@@ -358,6 +467,14 @@ export async function startExercise(index, isResuming = false) {
         if (descContainer) descContainer.classList.remove('hidden');
         if (flipIndicator) flipIndicator.classList.add('hidden');
         if (focus.affinityBadge) focus.affinityBadge.innerHTML = '';
+
+        // AMPS: POKAŻ OCENĘ DLA POPRZEDNIEGO ĆWICZENIA
+        const prevIndex = index - 1;
+        if (prevIndex >= 0 && state.flatExercises[prevIndex].isWork) {
+            renderQuickRating(state.flatExercises[prevIndex]);
+        } else {
+            hideQuickRating();
+        }
 
         const upcomingExercise = state.flatExercises[index + 1];
         if (!upcomingExercise) { moveToNextExercise({ skipped: false }); return; }
@@ -601,6 +718,7 @@ export async function startModifiedTraining() {
     state.totalPausedTime = 0;
     state.isPaused = false;
     state.lastPauseStartTime = null;
+    state.sessionDetailPromptCount = 0; // RESET AMPS COUNTER
 
     let sourcePlan;
 
@@ -673,6 +791,7 @@ export function resumeFromBackup(backup, timeGapMs) {
     state.flatExercises = backup.flatExercises;
     state.sessionLog = backup.sessionLog || [];
     state.sessionParams = backup.sessionParams || { initialPainLevel: 0, timeFactor: 1.0 };
+    state.sessionDetailPromptCount = backup.sessionDetailPromptCount || 0; // Restore AMPS counter
 
     state.stopwatch.seconds = backup.stopwatchSeconds || 0;
     state.timer.timeLeft = backup.timerTimeLeft || 0;

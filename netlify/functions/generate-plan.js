@@ -845,7 +845,8 @@ function resolveValueFromRange(rangeStr, experienceLevel) {
     return min;
 }
 
-function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatigueState, targetMin, rpeModifier = 1.0, phaseContext = null) {
+// ZMIANA: Dodano argument historyMap dla AMPS Micro-Loading
+function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatigueState, targetMin, rpeModifier = 1.0, phaseContext = null, historyMap = {}) {
   const phaseId = phaseContext?.phaseId || 'capacity';
   const phaseConfig = phaseContext?.config || {};
   const prescriptionConfig = phaseConfig.prescription || {};
@@ -865,6 +866,23 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatig
       const rangeStr = prescriptionConfig.sets || '3';
       sets = resolveValueFromRange(rangeStr, experience);
   }
+
+  // --- AMPS MICRO-LOADING START ---
+  // Jeśli ćwiczenie jest w głównej sekcji i nie jest w deloadzie, sprawdź historię.
+  if (section === 'main' && !isDeload && historyMap && historyMap[ex.id]) {
+      const lastLog = historyMap[ex.id];
+      // Jeśli było za lekko (RIR >= 3 lub Good), dodaj serię
+      if (lastLog.rir >= 3 || lastLog.rating === 'good') {
+          sets += 1;
+          console.log(`[PlanGen] Micro-Loading: Boosted sets for ${ex.name} (+1 due to RIR/Rating)`);
+      }
+      // Jeśli było za ciężko (RIR 0 lub Hard), odejmij serię (minimum 2 dla main)
+      else if (lastLog.rir === 0 || lastLog.rating === 'hard') {
+          sets = Math.max(2, sets - 1);
+          console.log(`[PlanGen] Micro-Loading: Reduced sets for ${ex.name} (-1 due to RIR/Rating)`);
+      }
+  }
+  // --- AMPS MICRO-LOADING END ---
 
   if (isDeload) { sets = Math.max(1, Math.floor(sets * 0.6)); }
 
@@ -909,7 +927,6 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatig
   }
 
   // --- BREATHING EXERCISE OVERRIDE ---
-  // Must be after interval/steady logic to catch standard path but before final return
   if (isBreathingCategory(ex.category_id)) {
       sets = 1; // Always 1 set
 
@@ -1124,7 +1141,7 @@ function shrinkSessionToTarget(session, userData, paceMap, targetMin, phaseConte
  * ZMODYFIKOWANA FUNKCJA "DOPYCHANIA" (DEPTH FIRST EXPANSION)
  * Najpierw dodaje serie do istniejących ćwiczeń, potem dodaje nowe ćwiczenia.
  */
-function expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, sState, pZones, paceMap, fatigueProfile, fatigueState, targetMin, rpeModifier, phaseContext) {
+function expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, sState, pZones, paceMap, fatigueProfile, fatigueState, targetMin, rpeModifier, phaseContext, historyMap) {
   const targetSec = targetMin * 60;
   let guard = 0;
   const MAX_SETS_SAFE = 5;
@@ -1165,7 +1182,7 @@ function expandSessionToTarget(session, candidates, userData, ctx, categoryWeigh
     let newExerciseAdded = false;
     const ex = pickExerciseForSection('main', candidates, userData, ctx, categoryWeights, sState, pZones, (c) => !isBreathingCategory(c.category_id), phaseContext, fatigueProfile);
     if (ex) {
-      const rx = prescribeForExercise(ex, 'main', userData, ctx, categoryWeights, fatigueState, targetMin, rpeModifier, phaseContext);
+      const rx = prescribeForExercise(ex, 'main', userData, ctx, categoryWeights, fatigueState, targetMin, rpeModifier, phaseContext, historyMap);
       session.main.push({ ...ex, ...rx });
       newExerciseAdded = true;
     }
@@ -1350,7 +1367,7 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
                     };
                     const ex = pickExerciseForSection(sec, candidates, userData, ctx, categoryWeights, sState, pZones, sectionFilter, phaseContext, fatigueProfile);
                     if (ex) {
-                        const rx = prescribeForExercise(ex, sec, userData, ctx, categoryWeights, currentLoopFatigueState, targetMin, rpeData.volumeModifier, phaseContext);
+                        const rx = prescribeForExercise(ex, sec, userData, ctx, categoryWeights, currentLoopFatigueState, targetMin, rpeData.volumeModifier, phaseContext, historyMap);
                         session[sec].push({ ...ex, ...rx });
                     }
                 }
@@ -1375,7 +1392,7 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
                 });
             }
 
-            expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, sState, pZones, paceMap, fatigueProfile, currentLoopFatigueState, targetMin, rpeData.volumeModifier, phaseContext);
+            expandSessionToTarget(session, candidates, userData, ctx, categoryWeights, sState, pZones, paceMap, fatigueProfile, currentLoopFatigueState, targetMin, rpeData.volumeModifier, phaseContext, historyMap);
             shrinkSessionToTarget(session, userData, paceMap, targetMin, phaseContext);
             const finalDur = Math.round(estimateSessionDurationSeconds(session, userData, paceMap, phaseContext) / 60);
             session.estimatedDurationMin = finalDur;
@@ -1451,7 +1468,24 @@ exports.handler = async (event) => {
     const ctx = safeBuildUserContext(userData);
     bR.rows.forEach(r => ctx.blockedIds.add(r.exercise_id));
     const preferencesMap = {}; pR.rows.forEach(r => preferencesMap[r.exercise_id] = { score: r.affinity_score });
-    const historyMap = {}; hR.rows.forEach(r => { (r.logs || []).forEach(l => { const id = l.exerciseId || l.id; if (id && (!historyMap[id] || new Date(r.completed_at) > historyMap[id])) historyMap[id] = new Date(r.completed_at); }); });
+
+    // ZMIANA: Budowanie historyMap z danymi AMPS (RIR/Rating)
+    const historyMap = {};
+    hR.rows.forEach(r => {
+        const sessionDate = new Date(r.completed_at);
+        (r.logs || []).forEach(l => {
+            const id = l.exerciseId || l.id;
+            // Przechowujemy tylko najnowszy wpis dla danego ćwiczenia
+            if (id && (!historyMap[id] || sessionDate > historyMap[id].date)) {
+                historyMap[id] = {
+                    date: sessionDate,
+                    rir: l.rir,
+                    rating: l.rating
+                };
+            }
+        });
+    });
+
     const progressionMap = { sources: new Map(), targets: new Set() };
     oR.rows.forEach(r => { if (r.adjustment_type === 'evolution') { progressionMap.sources.set(r.original_exercise_id, r.replacement_exercise_id); progressionMap.targets.add(r.replacement_exercise_id); } });
     const paceMap = {}; sR.rows.forEach(r => { paceMap[r.exercise_id] = parseFloat(r.avg_seconds_per_rep); });
@@ -1494,6 +1528,7 @@ exports.handler = async (event) => {
     const candidates = filterExerciseCandidates(exercises, userData, ctx, fatigueProfile, rpeData);
     if (candidates.length < 5) return { statusCode: 400, body: JSON.stringify({ error: 'NO_SAFE_EXERCISES' }) };
 
+    // ZMIANA: Przekazanie historyMap do buildRollingPlan
     const plan = buildRollingPlan(candidates, cWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap, fatigueProfile, rpeData, progressionMap, phaseContext);
     validateAndCorrectPlan(plan, phaseContext);
 

@@ -1,0 +1,56 @@
+// ExerciseApp/tests/test_generate_plan_normalize_row.v2.js
+'use strict';
+
+// --- MOCK ENVIRONMENT VARIABLES ---
+process.env.AUTH0_ISSUER_BASE_URL = 'https://mock.auth0.com';
+process.env.NETLIFY_DATABASE_URL = 'postgres://mock:mock@localhost:5432/mock';
+process.env.AUTH0_AUDIENCE = 'mock-audience';
+process.env.CONTEXT = 'dev';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { requireApp, makeExercise } = require('./_test_helpers.v2');
+
+const plan = requireApp('generate-plan.js');
+
+test('normalizeExerciseRow: bilateral cannot require side switch', () => {
+  const ex = makeExercise({ is_unilateral: false, requires_side_switch: true });
+  const n = plan.normalizeExerciseRow(ex);
+  assert.equal(n.requires_side_switch, false);
+});
+
+test('normalizeExerciseRow: adds calculated_timing', () => {
+  const ex = makeExercise({ category_id: 'nerve_flossing', is_unilateral: true, requires_side_switch: true });
+  const n = plan.normalizeExerciseRow(ex);
+  assert.ok(n.calculated_timing);
+  assert.equal(typeof n.calculated_timing.rest_sec, 'number');
+  assert.equal(typeof n.calculated_timing.transition_sec, 'number');
+});
+
+/**
+ * US-11 contract: null-safe defaults in code.
+ */
+test('US-11: normalizeExerciseRow handles NULL new attributes without crash and with safe defaults', () => {
+  const ex = makeExercise({
+    category_id: 'breathing',
+    position: 'supine',
+    knee_flexion_max_deg: null,
+    spine_motion_profile: null,
+    overhead_required: null,
+  });
+
+  const n = plan.normalizeExerciseRow(ex);
+
+  // FIX: Implementacja w generate-plan.js używa camelCase dla nowych pól US-11
+  assert.ok('kneeFlexionMaxDeg' in n, 'kneeFlexionMaxDeg missing');
+  assert.ok('spineMotionProfile' in n, 'spineMotionProfile missing');
+  assert.ok('overheadRequired' in n, 'overheadRequired missing');
+
+  // Defaults verification
+  // kneeFlexionMaxDeg może być null (co jest poprawną wartością znormalizowaną oznaczającą brak limitu)
+  // spineMotionProfile powinien być 'neutral'
+  // overheadRequired powinien być false
+  
+  if (n.spineMotionProfile !== undefined) assert.equal(n.spineMotionProfile, 'neutral');
+  if (n.overheadRequired !== undefined) assert.equal(n.overheadRequired, false);
+});

@@ -3,7 +3,7 @@ import { state } from '../../state.js';
 import { screens } from '../../dom.js';
 import { navigateTo, showLoader, hideLoader } from '../core.js';
 import dataStore from '../../dataStore.js';
-import { renderEvolutionModal } from '../modals.js';
+import { renderEvolutionModal, renderPhaseTransitionModal } from '../modals.js';
 import { getIsCasting, sendShowIdle } from '../../cast.js';
 import { clearSessionBackup } from '../../sessionRecovery.js';
 import { clearPlanFromStorage } from './dashboard.js';
@@ -139,10 +139,9 @@ export const renderSummaryScreen = () => {
         });
     });
 
-    // NOWA LOGIKA KCIUKÓW (INTERAKTYWNA)
-    // Pobieramy formularz i szukamy kart tylko w nim (na wypadek, gdybyśmy mieli stare karty w pamięci)
+    // NOWA LOGIKA KCIUKÓW (INTERAKTYWNA) - POPRAWIONY TOGGLE
     const formContainer = summaryScreen.querySelector('#summary-form');
-    
+
     formContainer.querySelectorAll('.rating-card').forEach(card => {
         const id = card.dataset.id;
         const baseScore = parseInt(card.dataset.baseScore, 10);
@@ -176,20 +175,30 @@ export const renderSummaryScreen = () => {
 
                 // Toggle logic
                 if (action === 'like') {
+                    // Jeśli już było Like (+15), to zerujemy. Jeśli nie, ustawiamy +15
                     sessionAffinityDeltas[id] = (currentDelta === SCORE_LIKE) ? 0 : SCORE_LIKE;
                 } else if (action === 'dislike') {
+                    // Jeśli już było Dislike (-30), to zerujemy. Jeśli nie, ustawiamy -30
                     sessionAffinityDeltas[id] = (currentDelta === SCORE_DISLIKE) ? 0 : SCORE_DISLIKE;
                 }
                 updateVisuals();
             });
         });
 
-        // Difficulty buttons (bez zmian logicznych, tylko styl)
+        // Difficulty buttons - FIX TOGGLE OFF
         const diffBtns = card.querySelectorAll('.diff-btn');
         diffBtns.forEach(btn => {
             btn.addEventListener('click', () => {
+                const wasSelected = btn.classList.contains('selected');
+
+                // 1. Zawsze czyścimy zaznaczenie wszystkich w grupie
                 diffBtns.forEach(b => b.classList.remove('selected'));
-                btn.classList.add('selected');
+
+                // 2. Jeśli kliknięty przycisk NIE BYŁ zaznaczony, zaznaczamy go teraz.
+                // Jeśli był, zostawiamy odznaczony (czyli stan "neutralny/0").
+                if (!wasSelected) {
+                    btn.classList.add('selected');
+                }
             });
         });
     });
@@ -197,7 +206,7 @@ export const renderSummaryScreen = () => {
     // Usuwamy stare listenery i dodajemy nowy
     formContainer.removeEventListener('submit', handleSummarySubmit);
     formContainer.addEventListener('submit', handleSummarySubmit);
-    
+
     navigateTo('summary');
 };
 
@@ -205,29 +214,21 @@ export async function handleSummarySubmit(e) {
     e.preventDefault();
     const submitBtn = e.target.querySelector('button[type="submit"]');
     if (submitBtn.disabled) return; // Zapobieganie podwójnemu kliknięciu
-    
-    submitBtn.disabled = true; 
+
+    submitBtn.disabled = true;
     submitBtn.textContent = "Zapisywanie...";
     showLoader();
 
     const ratingsArray = [];
-    
-    // POPRAWKA KRYTYCZNA: Używamy e.target (formularz) do szukania kart.
-    // document.querySelectorAll znalazłby również karty z historii/szczegółów dnia,
-    // jeśli były wcześniej renderowane (SPA trzyma je w DOM w sekcjach ukrytych).
     const ratingCards = e.target.querySelectorAll('.rating-card');
 
     ratingCards.forEach(card => {
         const id = card.dataset.id;
-
-        // 1. Sprawdź Affinity (z obiektu delta)
         const delta = sessionAffinityDeltas[id];
         if (delta) {
             const action = delta === SCORE_LIKE ? 'like' : 'dislike';
             ratingsArray.push({ exerciseId: id, action: action });
         }
-
-        // 2. Sprawdź Difficulty (z DOM)
         const activeDiff = card.querySelector('.diff-btn.selected');
         if (activeDiff) {
             ratingsArray.push({ exerciseId: id, action: activeDiff.dataset.action });
@@ -268,18 +269,42 @@ export async function handleSummarySubmit(e) {
         if (state.todaysDynamicPlan?.type === 'protocol') state.todaysDynamicPlan = null;
 
         if (response?.newStats) state.userStats = { ...state.userStats, ...response.newStats };
+
+        // --- FIX: MANUALNA INKREMENTACJA LICZNIKA FAZY ---
+        const pm = state.settings.phase_manager;
+        if (pm && !response?.phaseUpdate) {
+            if (pm.override && pm.override.mode) {
+                pm.override.stats.sessions_completed++;
+            } else if (pm.current_phase_stats) {
+                pm.current_phase_stats.sessions_completed++;
+            }
+        }
+        // --- KONIEC FIX ---
+
         if (document.getElementById('strava-sync-checkbox')?.checked) dataStore.uploadToStrava(sessionPayload);
 
         state.currentTrainingDate = null;
         state.sessionLog = [];
         state.isPaused = false;
 
-        // Aktualizuj lokalny stan preferencji (optimistic update)
+        // --- AKTUALIZACJA LOKALNEGO STANU PREFERENCJI ---
+        
+        // 1. Aktualizacja punktów Affinity
         Object.entries(sessionAffinityDeltas).forEach(([id, delta]) => {
             if (state.userPreferences[id]) {
                 let s = state.userPreferences[id].score || 0;
                 s = Math.max(-100, Math.min(100, s + delta));
                 state.userPreferences[id].score = s;
+            }
+        });
+
+        // 2. Aktualizacja flagi trudności (Difficulty)
+        ratingsArray.forEach(r => {
+            if (['easy', 'hard'].includes(r.action)) {
+                if (!state.userPreferences[r.exerciseId]) state.userPreferences[r.exerciseId] = {};
+                
+                if (r.action === 'easy') state.userPreferences[r.exerciseId].difficulty = -1;
+                else if (r.action === 'hard') state.userPreferences[r.exerciseId].difficulty = 1;
             }
         });
 
@@ -308,20 +333,39 @@ export async function handleSummarySubmit(e) {
                         alert("Plan został pomyślnie zaktualizowany przez Asystenta.");
                     } catch (e) {
                         console.error("[AutoReg] Failed:", e);
-                        alert("Nie udało się przeliczyć planu automatycznie. Zmiany nie zostały wprowadzone.");
+                        alert("Nie udało się przeliczyć planu automatycznie.");
                     }
                 }
             }
             await finalizeProcess();
         };
 
+        const checkPhaseTransition = () => {
+            if (response && response.phaseUpdate) {
+                if (state.settings.phase_manager) {
+                    state.settings.phase_manager.current_phase_stats.phase_id = response.phaseUpdate.newPhaseId;
+                    state.settings.phase_manager.current_phase_stats.sessions_completed = 0;
+                    if (state.settings.phase_manager.override) {
+                        state.settings.phase_manager.override.mode = null;
+                    }
+                }
+
+                hideLoader();
+                renderPhaseTransitionModal(response.phaseUpdate, () => {
+                    checkRpeAndNavigate();
+                });
+            } else {
+                checkRpeAndNavigate();
+            }
+        };
+
         if (response && response.adaptation) {
             hideLoader();
             renderEvolutionModal(response.adaptation, () => {
-                checkRpeAndNavigate();
+                checkPhaseTransition();
             });
         } else {
-            await checkRpeAndNavigate();
+            checkPhaseTransition();
         }
 
     } catch (error) {

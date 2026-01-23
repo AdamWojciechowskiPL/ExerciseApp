@@ -4,21 +4,9 @@ const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
 const { calculateAndUpsertPace } = require('./_stats-helper.js');
 
 /**
- * Bezpiecznie usuwa określoną sesję treningową należącą do zalogowanego użytkownika.
- * Oraz przelicza statystyki tempa (Adaptive Pacing) po usunięciu.
+ * Bezpiecznie usuwa sesję i aktualizuje Phase Manager TYLKO JEŚLI sesja należy do obecnej fazy.
  */
 exports.handler = async (event) => {
-  if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'DELETE',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      },
-    };
-  }
-
   if (event.httpMethod !== 'DELETE') {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
@@ -27,81 +15,116 @@ exports.handler = async (event) => {
     const userId = await getUserIdFromEvent(event);
     const { sessionId } = event.queryStringParameters;
 
-    if (!sessionId || isNaN(parseInt(sessionId, 10))) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ error: 'A valid Session ID is required.' })
-      };
-    }
+    if (!sessionId) return { statusCode: 400, body: 'Session ID required' };
 
     const client = await pool.connect();
+
     try {
-      // 1. POBIERAMY DANE SESJI PRZED USUNIĘCIEM
-      // Musimy wiedzieć, jakie ćwiczenia były w tej sesji, aby przeliczyć ich statystyki.
-      const getSessionQuery = `
-        SELECT session_data
-        FROM training_sessions
-        WHERE session_id = $1 AND user_id = $2
-      `;
-      const sessionResult = await client.query(getSessionQuery, [sessionId, userId]);
+      await client.query('BEGIN');
 
-      if (sessionResult.rowCount === 0) {
-        return {
-          statusCode: 404,
-          body: JSON.stringify({ error: 'Session not found or you do not have permission to delete it.' })
-        };
+      // 1. POBIERZ DANE SESJI (Data i Logi)
+      const sessionRes = await client.query(
+        `SELECT completed_at, session_data FROM training_sessions WHERE session_id = $1 AND user_id = $2`,
+        [sessionId, userId]
+      );
+
+      if (sessionRes.rowCount === 0) {
+        await client.query('ROLLBACK');
+        return { statusCode: 404, body: JSON.stringify({ error: 'Session not found' }) };
       }
 
-      const sessionData = sessionResult.rows[0].session_data;
-      const exerciseIdsToRecalculate = new Set();
+      const session = sessionRes.rows[0];
+      const sessionDate = new Date(session.completed_at);
+      const isCompleted = session.session_data?.status === 'completed';
 
-      // Wyciągamy ID ćwiczeń wykonanych na powtórzenia (z logu)
-      if (sessionData && sessionData.sessionLog && Array.isArray(sessionData.sessionLog)) {
-          sessionData.sessionLog.forEach(log => {
-              // Interesują nas tylko zakończone ćwiczenia
-              if (log.status === 'completed') {
-                  const valStr = String(log.reps_or_time || "").toLowerCase();
-                  // Tylko rep-based (bez 's', 'min', ':')
-                  if (!valStr.includes('s') && !valStr.includes('min') && !valStr.includes(':')) {
-                      exerciseIdsToRecalculate.add(log.exerciseId || log.id);
-                  }
-              }
-          });
+      // 2. POBIERZ PHASE MANAGER (Ustawienia)
+      const settingsRes = await client.query(
+        `SELECT settings FROM user_settings WHERE user_id = $1 FOR UPDATE`,
+        [userId]
+      );
+
+      let settingsChanged = false;
+      if (settingsRes.rows.length > 0 && isCompleted) {
+        const settings = settingsRes.rows[0].settings;
+        const pm = settings.phase_manager;
+
+        if (pm) {
+            // A. SPRAWDŹ FAZĘ BAZOWĄ
+            if (pm.current_phase_stats) {
+                const phaseStart = new Date(pm.current_phase_stats.start_date);
+                // Logika: Jeśli sesja odbyła się PO rozpoczęciu tej fazy, to znaczy, że nabiła licznik.
+                // Odejmujemy tylko wtedy, gdy licznik > 0.
+                if (sessionDate >= phaseStart && pm.current_phase_stats.sessions_completed > 0) {
+                    console.log(`[DeleteSession] Decrementing Base Phase counter for user ${userId}`);
+                    pm.current_phase_stats.sessions_completed--;
+                    settingsChanged = true;
+                } else {
+                    console.log(`[DeleteSession] Session is older than current phase start (${phaseStart.toISOString()}). Ignoring counter.`);
+                }
+            }
+
+            // B. SPRAWDŹ OVERRIDE (np. Rehab/Deload)
+            if (pm.override && pm.override.mode && pm.override.stats) {
+                // Jeśli override ma datę startu (powinien mieć, ale dla bezpieczeństwa sprawdzamy)
+                // Jeśli nie ma daty startu w stats, używamy 'triggered_at'
+                const overrideStartStr = pm.override.stats.start_date || pm.override.triggered_at;
+                if (overrideStartStr) {
+                    const overrideStart = new Date(overrideStartStr);
+                    if (sessionDate >= overrideStart && pm.override.stats.sessions_completed > 0) {
+                        console.log(`[DeleteSession] Decrementing Override counter.`);
+                        pm.override.stats.sessions_completed--;
+                        settingsChanged = true;
+                    }
+                }
+            }
+        }
+
+        // ZAPISZ ZMIANY W USTAWIENIACH
+        if (settingsChanged) {
+            await client.query(
+                `UPDATE user_settings SET settings = $1 WHERE user_id = $2`,
+                [JSON.stringify(settings), userId]
+            );
+        }
       }
 
-      // 2. USUWANIE SESJI
+      // 3. USUŃ SESJĘ
       await client.query(
         'DELETE FROM training_sessions WHERE session_id = $1 AND user_id = $2',
         [sessionId, userId]
       );
 
-      // 3. PRZELICZANIE STATYSTYK (PO USUNIĘCIU)
-      // Robimy to w try-catch, aby błąd statystyk nie maskował sukcesu usunięcia sesji.
-      if (exerciseIdsToRecalculate.size > 0) {
-          try {
-              console.log(`[DeleteSession] Recalculating stats for ${exerciseIdsToRecalculate.size} exercises...`);
-              await calculateAndUpsertPace(client, userId, Array.from(exerciseIdsToRecalculate));
-          } catch (statError) {
-              console.error("[DeleteSession] Warning: Failed to recalculate stats after deletion:", statError);
+      await client.query('COMMIT');
+
+      // 4. PRZELICZ STATYSTYKI TEMPA (Fire & Forget, poza transakcją)
+      // (Nie musimy czekać na to, żeby zwrócić sukces userowi)
+      if (session.session_data?.sessionLog) {
+          const idsToRecalc = new Set();
+          session.session_data.sessionLog.forEach(l => {
+              if (l.status === 'completed' && !String(l.reps_or_time).includes('s')) {
+                  idsToRecalc.add(l.exerciseId || l.id);
+              }
+          });
+          if (idsToRecalc.size > 0) {
+              calculateAndUpsertPace(client, userId, Array.from(idsToRecalc))
+                  .catch(err => console.error("Stats recalc failed:", err));
           }
       }
 
       return {
         statusCode: 200,
-        body: JSON.stringify({ message: 'Training session deleted successfully.' })
+        body: JSON.stringify({ message: 'Deleted and counters updated if necessary.' })
       };
 
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('Delete Error:', err);
+      return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
     } finally {
       client.release();
     }
+
   } catch (error) {
-    console.error('Error deleting session:', error.message);
-    if (error.message.includes('Unauthorized')) {
-      return { statusCode: 401, body: JSON.stringify({ error: 'Unauthorized.' }) };
-    }
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: 'An internal server error occurred.' })
-    };
+    return { statusCode: 500, body: 'Server Error' };
   }
 };

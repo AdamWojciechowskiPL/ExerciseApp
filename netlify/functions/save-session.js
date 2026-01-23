@@ -1,7 +1,11 @@
-// netlify/functions/save-session.js
+// ExerciseApp/netlify/functions/save-session.js
+'use strict';
 
 const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
 const { calculateStreak, calculateResilience, calculateAndUpsertPace } = require('./_stats-helper.js');
+const { updatePhaseStateAfterSession, checkDetraining } = require('./_phase-manager.js');
+// US-09: Import walidatora kontraktu
+const { validatePainMonitoring } = require('./_data-contract.js');
 
 const SCORE_LIKE_INCREMENT = 15;
 const SCORE_DISLIKE_DECREMENT = 30;
@@ -98,29 +102,18 @@ async function analyzeAndAdjustPlan(client, userId, sessionLog, feedback, rating
     return null;
 }
 
-/**
- * NOWA UNIWERSALNA FUNKCJA: INJECTION (Like) & EJECTION (Dislike)
- */
-async function applyImmediatePlanAdjustments(client, userId, ratings, sessionLog) {
+async function applyImmediatePlanAdjustmentsInMemory(client, ratings, sessionLog, settings) {
     const likes = ratings.filter(r => r.action === 'like');
     const dislikes = ratings.filter(r => r.action === 'dislike');
 
     if (likes.length === 0 && dislikes.length === 0) return false;
 
-    // 1. Pobierz plan
-    const settingsRes = await client.query('SELECT settings FROM user_settings WHERE user_id = $1', [userId]);
-    if (settingsRes.rows.length === 0) return false;
-    
-    const settings = settingsRes.rows[0].settings || {};
     const plan = settings.dynamicPlanData;
-    
     if (!plan || !plan.days) return false;
 
     let planModified = false;
     const today = new Date().toISOString().split('T')[0];
 
-    // --- LOGIKA LIKE (INJECTION) ---
-    // Wstawiamy polubione ćwiczenie zamiast innych z tej samej kategorii
     if (likes.length > 0) {
         const likedIds = likes.map(l => l.exerciseId);
         const exRes = await client.query('SELECT id, name, category_id, equipment FROM exercises WHERE id = ANY($1)', [likedIds]);
@@ -128,7 +121,6 @@ async function applyImmediatePlanAdjustments(client, userId, ratings, sessionLog
 
         for (const likedEx of likedExercises) {
             let replacementCount = 0;
-            // Parametry z logu
             const logEntry = sessionLog.find(l => (l.exerciseId === likedEx.id || l.id === likedEx.id) && l.status === 'completed');
             const templateReps = logEntry ? logEntry.reps_or_time : '10';
             const templateSets = logEntry ? logEntry.totalSets || '3' : '3';
@@ -154,7 +146,7 @@ async function applyImmediatePlanAdjustments(client, userId, ratings, sessionLog
                             };
                             planModified = true;
                             replacementCount++;
-                            break; 
+                            break;
                         }
                     }
                 }
@@ -162,15 +154,11 @@ async function applyImmediatePlanAdjustments(client, userId, ratings, sessionLog
         }
     }
 
-    // --- LOGIKA DISLIKE (EJECTION) ---
-    // Szukamy w planie znienawidzonego ćwiczenia i wymieniamy na INNE z tej samej kategorii
     if (dislikes.length > 0) {
         for (const dislike of dislikes) {
             const dislikedId = dislike.exerciseId;
-            let replacementFound = null;
-
-            // Sprawdzamy czy to ćwiczenie w ogóle występuje w przyszłości
             let existsInFuture = false;
+
             for (const day of plan.days) {
                 if (day.date <= today || day.type === 'rest') continue;
                 if (day.main && day.main.some(ex => ex.id === dislikedId || ex.exerciseId === dislikedId)) {
@@ -180,8 +168,6 @@ async function applyImmediatePlanAdjustments(client, userId, ratings, sessionLog
             }
 
             if (existsInFuture) {
-                // Szukamy zamiennika w bazie (bezpiecznego: ta sama kategoria, ten sam lub niższy poziom trudności)
-                // Nie chcemy zamienić na coś jeszcze gorszego (trudniejszego)
                 const replacementQuery = `
                     SELECT e.* FROM exercises e
                     JOIN exercises bad ON bad.id = $1
@@ -191,29 +177,21 @@ async function applyImmediatePlanAdjustments(client, userId, ratings, sessionLog
                     LIMIT 1
                 `;
                 const repRes = await client.query(replacementQuery, [dislikedId]);
-                
+
                 if (repRes.rows.length > 0) {
                     const newEx = repRes.rows[0];
-                    replacementFound = newEx;
-
-                    // Aplikujemy zamianę we wszystkich przyszłych dniach
                     for (const day of plan.days) {
                         if (day.date <= today || day.type === 'rest') continue;
                         if (day.main) {
                             for (let i = 0; i < day.main.length; i++) {
                                 const target = day.main[i];
                                 if (target.id === dislikedId || target.exerciseId === dislikedId) {
-                                    console.log(`[Ejection] Removing ${dislikedId} -> ${newEx.id} on ${day.date}`);
                                     day.main[i] = {
                                         ...target,
                                         id: newEx.id,
                                         exerciseId: newEx.id,
                                         name: newEx.name,
                                         description: newEx.description,
-                                        // Zachowujemy parametry starego ćwiczenia (bezpieczniej przy degradacji)
-                                        // lub bierzemy domyślne, jeśli są puste
-                                        reps_or_time: target.reps_or_time,
-                                        sets: target.sets,
                                         isSwapped: true,
                                         description: newEx.description + "\n\n🛡️ ASYSTENT: Poprzednie ćwiczenie zostało usunięte z planu."
                                     };
@@ -227,14 +205,7 @@ async function applyImmediatePlanAdjustments(client, userId, ratings, sessionLog
         }
     }
 
-    if (planModified) {
-        await client.query(
-            `UPDATE user_settings SET settings = jsonb_set(settings, '{dynamicPlanData}', $1) WHERE user_id = $2`,
-            [JSON.stringify(plan), userId]
-        );
-        return true;
-    }
-    return false;
+    return planModified;
 }
 
 exports.handler = async (event) => {
@@ -249,12 +220,34 @@ exports.handler = async (event) => {
             return { statusCode: 400, body: JSON.stringify({ error: 'Bad Request: Missing required fields' }) };
         }
 
+        // US-09: Walidacja feedbacku (Fail-Closed dla nowego formatu)
+        if (feedback) {
+            const validation = validatePainMonitoring(feedback);
+            if (!validation.valid) {
+                return { statusCode: 400, body: JSON.stringify({ error: `Feedback Validation Error: ${validation.error}` }) };
+            }
+        }
+
         const client = await pool.connect();
         let adaptationResult = null;
         let newStats = null;
+        let phaseTransition = null;
 
         try {
             await client.query('BEGIN');
+
+            const settingsRes = await client.query('SELECT settings FROM user_settings WHERE user_id = $1 FOR UPDATE', [userId]);
+            let settings = settingsRes.rows[0]?.settings || {};
+            let phaseState = settings.phase_manager;
+
+            if (phaseState) {
+                phaseState = checkDetraining(phaseState);
+                const activePhaseId = phaseState.override.mode || phaseState.current_phase_stats.phase_id;
+                const updateResult = updatePhaseStateAfterSession(phaseState, activePhaseId, settings.wizardData);
+                phaseState = updateResult.newState;
+                phaseTransition = updateResult.transition;
+                settings.phase_manager = phaseState;
+            }
 
             await client.query(`
                 INSERT INTO training_sessions (user_id, plan_id, started_at, completed_at, session_data)
@@ -263,13 +256,10 @@ exports.handler = async (event) => {
 
             if (exerciseRatings && exerciseRatings.length > 0) {
                 await updatePreferences(client, userId, exerciseRatings);
-                
-                // 1. Sprawdź twarde ewolucje (Too Easy/Hard)
                 adaptationResult = await analyzeAndAdjustPlan(client, userId, session_data.sessionLog, feedback, exerciseRatings);
-                
-                // 2. Jeśli nie było ewolucji, wykonaj miękką adaptację (Like/Dislike)
+
                 if (!adaptationResult) {
-                    await applyImmediatePlanAdjustments(client, userId, exerciseRatings, session_data.sessionLog);
+                    await applyImmediatePlanAdjustmentsInMemory(client, exerciseRatings, session_data.sessionLog, settings);
                 }
             }
 
@@ -280,6 +270,11 @@ exports.handler = async (event) => {
                 streak: calculateStreak(allDates),
                 resilience: calculateResilience(allDates)
             };
+
+            await client.query(
+                `UPDATE user_settings SET settings = $1 WHERE user_id = $2`,
+                [JSON.stringify(settings), userId]
+            );
 
             await client.query('COMMIT');
 
@@ -294,9 +289,21 @@ exports.handler = async (event) => {
                     });
                     if (exerciseIds.size > 0) await calculateAndUpsertPace(client, userId, Array.from(exerciseIds));
                 }
-            } catch (e) { console.error(e); }
+            } catch (e) { console.error("Pace update failed:", e); }
 
-            return { statusCode: 201, body: JSON.stringify({ message: "Saved", adaptation: adaptationResult, newStats }) };
+            return {
+                statusCode: 201,
+                body: JSON.stringify({
+                    message: "Saved",
+                    adaptation: adaptationResult,
+                    newStats,
+                    phaseUpdate: phaseTransition ? {
+                        transition: phaseTransition,
+                        newPhaseId: phaseState.current_phase_stats.phase_id,
+                        isSoft: phaseState.current_phase_stats.is_soft_progression
+                    } : null
+                })
+            };
 
         } catch (dbError) {
             await client.query('ROLLBACK');

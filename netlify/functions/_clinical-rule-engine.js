@@ -1,10 +1,12 @@
+// ExerciseApp/netlify/functions/_clinical-rule-engine.js
 // netlify/functions/_clinical-rule-engine.js
+
+const { derivePainZoneSet } = require('./_pain-taxonomy.js');
 
 const DIFFICULTY_MAP = {
     'none': 1, 'occasional': 2, 'regular': 3, 'advanced': 4
 };
 
-// P1.2: Dodano half_kneeling
 const KNOWN_POSITIONS = [
     'standing', 'sitting', 'kneeling', 'half_kneeling', 'quadruped', 'supine', 'prone', 'side_lying'
 ];
@@ -46,6 +48,8 @@ function buildUserContext(userData) {
 
     const painLocs = userData.pain_locations || [];
     const painFilters = new Set();
+
+    // Legacy fallback
     if (painLocs.length > 0) {
         painLocs.forEach(loc => painFilters.add(loc));
         if (painLocs.includes('si_joint') || painLocs.includes('hip')) painFilters.add('lumbar_general');
@@ -54,6 +58,8 @@ function buildUserContext(userData) {
         painFilters.add('lumbar_general');
         painFilters.add('thoracic');
     }
+
+    const painZoneSet = derivePainZoneSet(painLocs);
 
     const userEquipment = new Set(
         (userData.equipment_available || []).map(e => String(e).trim().toLowerCase()).filter(Boolean)
@@ -68,6 +74,7 @@ function buildUserContext(userData) {
         severityScore,
         difficultyCap,
         painFilters,
+        painZoneSet,
         userEquipment,
         physicalRestrictions,
         medicalDiagnosis,
@@ -77,23 +84,14 @@ function buildUserContext(userData) {
 
 function checkEquipment(ex, userEquipmentSet) {
     if (!userEquipmentSet) return true;
-
     const exEquipRaw = Array.isArray(ex.equipment) ? ex.equipment : (ex.equipment ? ex.equipment.split(',') : []);
     const requirements = exEquipRaw.map(e => String(e).trim().toLowerCase()).filter(Boolean);
-
     if (requirements.length === 0) return true;
-
     const ignorable = new Set(['none', 'brak', '', 'brak sprzętu', 'masa własna', 'bodyweight']);
-
-    // FIX: Zmieniono 'req' na 'requirements'
     const required = requirements.filter(x => !ignorable.has(x));
-    
     if (required.length === 0) return true;
     if (!userEquipmentSet || userEquipmentSet.size === 0) return false;
-
-    for (const item of required) {
-        if (!userEquipmentSet.has(item)) return false;
-    }
+    for (const item of required) { if (!userEquipmentSet.has(item)) return false; }
     return true;
 }
 
@@ -103,11 +101,10 @@ function violatesRestrictions(ex, ctx) {
 
     const plane = String(ex.primary_plane || 'multi').toLowerCase();
     const pos = String(ex.position || '').toLowerCase();
-
     const impact = String(ex.impact_level || 'low').toLowerCase();
     const kneeLoad = String(ex.knee_load_level || 'low').toLowerCase();
 
-    // 1. Klękanie - P1.2 (+ half_kneeling)
+    // 1. Klękanie
     if (restrictions.includes('no_kneeling')) {
         if (pos === 'kneeling' || pos === 'quadruped' || pos === 'half_kneeling') return true;
     }
@@ -130,9 +127,8 @@ function violatesRestrictions(ex, ctx) {
     // 5. Uraz stopy
     if (restrictions.includes('foot_injury')) {
         if (ex.is_foot_loading === true) return true;
-        if (impact === 'moderate' || impact === 'high') return true;
-
-        const blockedPositions = ['standing', 'lunge', 'squat', 'half_kneeling']; // P1.2 updated
+        if (impact === 'medium' || impact === 'high') return true;
+        const blockedPositions = ['standing', 'lunge', 'squat', 'half_kneeling'];
         if (blockedPositions.includes(pos)) return true;
     }
 
@@ -144,6 +140,12 @@ function violatesRestrictions(ex, ctx) {
     if (isChondromalacia && kneeLoad === 'high') return true;
     if (restrictions.includes('no_deep_squat') && kneeLoad === 'high') return true;
 
+    // --- US-11: Overhead Restriction in Severe Neck Pain ---
+    const hasNeckIssue = ctx.painFilters.has('cervical') || ctx.painFilters.has('neck') || ctx.painFilters.has('shoulder');
+    if (hasNeckIssue && ctx.isSevere && ex.overheadRequired) {
+        return true;
+    }
+
     return false;
 }
 
@@ -151,11 +153,16 @@ function passesTolerancePattern(ex, tolerancePattern) {
     const plane = String(ex.primary_plane || 'multi').toLowerCase();
     const tags = Array.isArray(ex.tolerance_tags) ? ex.tolerance_tags : [];
 
+    // US-11: Użycie spineMotionProfile (jeśli dostępny)
+    const profile = ex.spineMotionProfile || 'neutral';
+
     if (tolerancePattern === 'flexion_intolerant') {
         if (plane === 'flexion' && !tags.includes('ok_for_flexion_intolerant')) return false;
+        if (profile === 'lumbar_flexion_loaded') return false;
     }
     else if (tolerancePattern === 'extension_intolerant') {
         if (plane === 'extension' && !tags.includes('ok_for_extension_intolerant')) return false;
+        if (profile === 'lumbar_extension_loaded') return false;
     }
 
     return true;
@@ -183,8 +190,11 @@ function checkExerciseAvailability(ex, ctx, options = {}) {
         }
 
         const zones = Array.isArray(ex.pain_relief_zones) ? ex.pain_relief_zones : [];
-        const helpsZone = zones.some(z => ctx.painFilters.has(z));
-        if (!helpsZone) return { allowed: false, reason: 'severity_filter' };
+        const helpsZone = zones.some(z => ctx.painZoneSet.has(z));
+
+        if (!helpsZone) {
+            return { allowed: false, reason: 'severity_filter' };
+        }
     }
 
     return { allowed: true, reason: null };
@@ -196,5 +206,6 @@ module.exports = {
     checkEquipment,
     detectTolerancePattern,
     KNOWN_POSITIONS,
-    isRotationalPlane
+    isRotationalPlane,
+    passesTolerancePattern // Export for testing
 };

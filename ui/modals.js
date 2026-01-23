@@ -357,3 +357,86 @@ export function renderTunerModal(exerciseId, onUpdate) {
         overlay.remove();
     });
 }
+
+const PHASE_LABELS = {
+    'control': 'Kontrola & Stabilizacja',
+    'mobility': 'Mobilność',
+    'capacity': 'Budowa Pojemności',
+    'strength': 'Siła Maksymalna',
+    'metabolic': 'Kondycja',
+    'deload': 'Roztrenowanie',
+    'rehab': 'Regeneracja'
+};
+
+const PHASE_DESCRIPTIONS = {
+    'control': 'Skupimy się na poprawności ruchu i wolnym tempie.',
+    'mobility': 'Zwiększymy zakresy ruchu i zdrowie stawów.',
+    'capacity': 'Zwiększymy objętość, aby zbudować wytrzymałość mięśniową.',
+    'strength': 'Mniej powtórzeń, większy opór. Budujemy siłę.',
+    'metabolic': 'Szybsze tempo i krótsze przerwy dla spalania.',
+    'deload': 'Krótki okres lżejszych treningów dla regeneracji CUN.',
+    'rehab': 'Priorytet to bezpieczeństwo i redukcja bólu.'
+};
+
+export function renderPhaseTransitionModal(updateData, onConfirm) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+
+    const isSoft = updateData.isSoft; // True = Time Cap, False = Target Reached
+    const newPhaseId = updateData.newPhaseId;
+    const newPhaseName = PHASE_LABELS[newPhaseId] || newPhaseId.toUpperCase();
+    const description = PHASE_DESCRIPTIONS[newPhaseId] || 'Nowy cykl treningowy.';
+
+    // Konfiguracja wizualna
+    const config = isSoft
+        ? {
+            title: "Zmiana Bodźca",
+            icon: "⏱️",
+            color: "var(--secondary-color)", // Cyan/Teal
+            msg: "Minął czas przewidziany na obecną fazę. Przechodzimy dalej, aby uniknąć stagnacji.",
+            btn: "Rozumiem"
+        }
+        : {
+            title: "FAZA UKOŃCZONA!",
+            icon: "🏆",
+            color: "var(--gold-color)", // Gold
+            msg: "Gratulacje! Wykonałeś wszystkie założone sesje w tej fazie.",
+            btn: "Lecimy Dalej!"
+        };
+
+    // Dźwięk sukcesu
+    if (!isSoft && state.completionSound) state.finalCompletionSound();
+
+    overlay.innerHTML = `
+        <div class="evolution-modal" style="--glow-color: ${config.color}">
+            <div class="evo-icon-wrapper" style="border-color:${config.color}">
+                <span style="font-size: 3rem;">${config.icon}</span>
+            </div>
+            
+            <h2 class="evo-title" style="color:${config.color}">${config.title}</h2>
+            <p class="evo-desc" style="margin-bottom: 1.5rem;">${config.msg}</p>
+
+            <div class="change-box" style="border-color:${config.color}">
+                <div style="font-size:0.75rem; text-transform:uppercase; color:#aaa; margin-bottom:5px;">NOWY CEL</div>
+                <div class="ex-name" style="color:#fff; font-size:1.3rem;">${newPhaseName}</div>
+                <div style="font-size:0.9rem; opacity:0.8; margin-top:5px;">${description}</div>
+            </div>
+
+            <button id="close-phase-modal" class="action-btn" style="background: ${config.color}; color: #000; border: none; font-weight:800;">
+                ${config.btn}
+            </button>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    overlay.querySelector('#close-phase-modal').onclick = () => {
+        const modalContent = overlay.querySelector('.evolution-modal');
+        modalContent.style.transform = 'scale(0.8)';
+        modalContent.style.opacity = '0';
+        setTimeout(() => {
+            overlay.remove();
+            if (onConfirm) onConfirm();
+        }, 200);
+    };
+}

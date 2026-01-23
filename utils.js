@@ -1,5 +1,4 @@
-// ExerciseApp/utils.js
-
+// utils.js
 import { state } from './state.js';
 
 // --- SVG SANITIZER ---
@@ -98,19 +97,22 @@ export const getHydratedDay = (dayData) => {
                 if (!mergedExercise.tempo_or_iso) mergedExercise.tempo_or_iso = libraryDetails.defaultTempo || "Kontrolowane";
                 if (mergedExercise.is_unilateral === undefined) mergedExercise.is_unilateral = libraryDetails.isUnilateral || false;
 
-                // --- TASK M1: HYDRATION (LEGACY SUPPORT) ---
-                // Upewnij się, że obiekt ma `calculated_timing` lub `baseRestSeconds`.
-                // Jeśli backend w planie nie zapisał (stary plan), weź z biblioteki.
-                if (!mergedExercise.calculated_timing) {
-                    // Sprawdzamy czy biblioteka ma dane (z Tasku B3)
-                    if (libraryDetails.baseRestSeconds) {
-                        mergedExercise.calculated_timing = {
-                            rest_sec: libraryDetails.baseRestSeconds,
-                            transition_sec: libraryDetails.baseTransitionSeconds || 5
-                        };
+                // Propagate requiresSideSwitch
+                if (mergedExercise.requiresSideSwitch === undefined) {
+                    mergedExercise.requiresSideSwitch = !!libraryDetails.requiresSideSwitch;
+                }
+
+                // --- PRIORYTET DLA DANYCH Z PLANU (BACKEND) ---
+                if (!mergedExercise.restAfterExercise) {
+                    if (mergedExercise.calculated_timing) {
+                        mergedExercise.restAfterExercise = mergedExercise.calculated_timing.rest_sec;
+                        mergedExercise.transitionTime = mergedExercise.calculated_timing.transition_sec;
+                    } else if (libraryDetails.baseRestSeconds) {
+                        mergedExercise.restAfterExercise = libraryDetails.baseRestSeconds;
+                        mergedExercise.transitionTime = libraryDetails.baseTransitionSeconds || (mergedExercise.requiresSideSwitch ? 12 : 5);
                     } else {
-                        // Ostateczny fallback
-                        mergedExercise.calculated_timing = { rest_sec: 30, transition_sec: 5 };
+                        mergedExercise.restAfterExercise = 30; // Fallback
+                        mergedExercise.transitionTime = 5;
                     }
                 }
 
@@ -127,44 +129,41 @@ export const parseSetCount = (setsString) => {
     return parseInt(parts[parts.length - 1].trim(), 10) || 1;
 };
 
-// --- CALCULATE SMART DURATION & LOAD METRICS ---
-
 const parseRepsOrTime = (val) => {
     const t = String(val || '').trim().toLowerCase();
-    if (t.includes('s')) return Math.max(5, parseInt(t, 10) || 30);
+    if (t.includes('s') && !t.includes('/str')) return Math.max(5, parseInt(t, 10) || 30);
     if (t.includes('min')) return Math.max(10, (parseInt(t, 10) || 1) * 60);
     return parseInt(t, 10) || 10;
 };
 
-/**
- * CENTRALNA LOGIKA PRZERW (Explicit Base Rest Architecture - Task F1)
- * Zamiast zgadywać kategorię, używamy wartości z backendu.
- */
 export const calculateSmartRest = (exercise, userRestFactor = 1.0) => {
-    // 1. Priorytet: Jawne nadpisanie (np. z protokołu Tabata)
     if (exercise.restBetweenSets) {
         return Math.round(parseInt(exercise.restBetweenSets, 10) * userRestFactor);
     }
 
-    // 2. Pobranie bazy z obiektu (z backendu)
-    let baseRest = 30; // Fallback
-
-    if (exercise.calculated_timing && exercise.calculated_timing.rest_sec) {
+    let baseRest = 30;
+    if (exercise.restAfterExercise) {
+        baseRest = exercise.restAfterExercise;
+    } else if (exercise.calculated_timing && exercise.calculated_timing.rest_sec) {
         baseRest = exercise.calculated_timing.rest_sec;
     } else if (exercise.baseRestSeconds) {
-        // Fallback dla obiektów z Atlasu
         baseRest = exercise.baseRestSeconds;
     }
 
-    // 3. Aplikacja Globalnego Faktora Użytkownika
     return Math.max(10, Math.round(baseRest * userRestFactor));
 };
 
+// --- FIX 3.0: LOGIKA UNILATERAL ZGODNA Z TRAINING.JS ---
 export const calculateSmartDuration = (dayPlan) => {
     if (!dayPlan) return 0;
 
     const globalSpr = state.settings.secondsPerRep || 6;
     const restFactor = state.settings.restTimeFactor || 1.0;
+
+    // --- LOG START ---
+    console.groupCollapsed(`⏱️ FRONTEND TIMING AUDIT (RestFactor: ${restFactor}, SPR: ${globalSpr})`);
+    console.log(`   + Global Session Start Buffer: 5s`);
+    // --- LOG END ---
 
     const allExercises = [
         ...(dayPlan.warmup || []),
@@ -172,12 +171,16 @@ export const calculateSmartDuration = (dayPlan) => {
         ...(dayPlan.cooldown || [])
     ];
 
-    let totalSeconds = 0;
+    let totalSeconds = 5;
 
     allExercises.forEach((ex, index) => {
-        const sets = parseSetCount(ex.sets);
+        const rawSets = parseSetCount(ex.sets);
         const isUnilateral = ex.isUnilateral || ex.is_unilateral || String(ex.reps_or_time).includes('/str');
-        const multiplier = isUnilateral ? 2 : 1;
+
+        // --- KLUCZOWA POPRAWKA ---
+        // Synchronizacja z training.js: Jeśli unilateral, dzielimy liczbę serii przez 2 (zaokrąglając w górę).
+        // Np. sets="2" oznacza 1 serię L+P. sets="1" oznacza 1 serię L+P.
+        const sets = isUnilateral ? Math.ceil(rawSets / 2) : rawSets;
 
         const exId = ex.id || ex.exerciseId;
         let tempoToUse = globalSpr;
@@ -186,62 +189,83 @@ export const calculateSmartDuration = (dayPlan) => {
             tempoToUse = state.exercisePace[exId];
         }
 
-        // Czas pracy
-        let workTimePerSet = 0;
-        const valStr = String(ex.reps_or_time).toLowerCase();
+        // 1. Obliczanie Czasu Pracy (Work Time)
+        let singleSideWorkTime = 0;
+        let typeLabel = "Time";
 
-        if (valStr.includes('s') || valStr.includes('min')) {
-            workTimePerSet = parseRepsOrTime(ex.reps_or_time) * multiplier;
+        const rawStr = String(ex.reps_or_time).toLowerCase();
+        const cleanStr = rawStr.replace(/\/str\.?|stron.*/g, '').trim();
+
+        if (cleanStr.includes('s') || cleanStr.includes('min') || cleanStr.includes(':')) {
+            singleSideWorkTime = parseRepsOrTime(cleanStr);
         } else {
-            const reps = parseRepsOrTime(ex.reps_or_time);
-            workTimePerSet = reps * tempoToUse * multiplier;
+            const reps = parseRepsOrTime(cleanStr);
+            singleSideWorkTime = reps * tempoToUse;
+            typeLabel = "Reps";
         }
 
-        let exDuration = sets * workTimePerSet;
+        // Jeśli unilateral, mnożymy czas pracy x2 (L + P)
+        const sidesMultiplier = isUnilateral ? 2 : 1;
+        const totalWorkTime = sets * singleSideWorkTime * sidesMultiplier;
 
-        // Czas przerw między seriami
-        if (sets > 1) {
-            const restTime = calculateSmartRest(ex, restFactor);
-            exDuration += (sets - 1) * restTime;
+        // 2. Obliczanie Czasu Przejść (Transition)
+        let transitionPerSet = 0;
+        if (isUnilateral) {
+            // Unilateral: 12s na zmianę strony (wewnątrz serii L+P)
+            transitionPerSet = (ex.requiresSideSwitch || (ex.calculated_timing && ex.calculated_timing.transition_sec === 12)) ? 12 : 5;
+        } else {
+            // Bilateral: 0s (User Request)
+            transitionPerSet = 0;
         }
+        const totalTransition = sets * transitionPerSet;
 
-        // Czas zmiany strony / przejścia (Task F1: używamy danych z backendu jeśli są)
-        let transitionTime = Math.max(12, Math.round(12 * restFactor));
-        if (ex.calculated_timing && ex.calculated_timing.transition_sec) {
-             transitionTime = Math.max(5, Math.round(ex.calculated_timing.transition_sec * restFactor));
-        }
+        // 3. Obliczanie Przerw (Rest)
+        // Przerwa tylko pomiędzy pełnymi seriami (effective sets).
+        const restBase = ex.restAfterExercise || 30;
+        const smartRestTime = Math.round(restBase * restFactor);
 
-        const transitionsTotal = sets * (isUnilateral ? transitionTime : 5);
-        exDuration += transitionsTotal;
+        const totalRest = (sets > 1) ? (sets - 1) * smartRestTime : 0;
+
+        // SUMA
+        const exDuration = totalWorkTime + totalTransition + totalRest;
+
+        // --- LOG EXERCISE ---
+        console.log(`[Ex] ${ex.name} [${typeLabel}]: ${sets} eff.sets x (${Math.round(singleSideWorkTime * sidesMultiplier)}s work + ${transitionPerSet}s trans) + ${totalRest}s rest = ${Math.round(exDuration)}s`);
+        // --- LOG END ---
 
         totalSeconds += exDuration;
 
-        // Przerwa między ćwiczeniami (też skalowana)
         if (index < allExercises.length - 1) {
-            totalSeconds += Math.round(30 * restFactor);
+            totalSeconds += smartRestTime;
+            console.log(`   + Rest After Exercise: ${smartRestTime}s`);
         }
     });
 
-    return Math.round(totalSeconds / 60);
+    const totalMinutes = Math.round(totalSeconds / 60);
+    console.log(`%c=== TOTAL: ${totalSeconds}s (${totalMinutes} min) ===`, 'color: #0ea5e9; font-weight: bold;');
+    console.groupEnd();
+
+    return totalMinutes;
 };
 
+/**
+ * SCIENCE-BASED LOAD CALCULATOR (Modified Foster Method)
+ * Źródło: Foster et al. (2001), McGuigan et al. (2004)
+ * Jednostka: Arbitrary Units (AU) = Czas (min) * RPE (1-10)
+ */
 export const calculateSystemLoad = (inputData, fromHistory = false) => {
     if (!inputData) return 0;
 
+    // 1. Ekstrakcja listy ćwiczeń
     let exercises = [];
-
-    // Case A: Plan (Dashboard) - Struktura z sekcjami
     if (!fromHistory && (inputData.warmup || inputData.main || inputData.cooldown)) {
         exercises = [
             ...(inputData.warmup || []),
             ...(inputData.main || []),
             ...(inputData.cooldown || [])
         ];
-    }
-    // Case B: Lista (Historia/Log) - Płaska tablica
-    else if (Array.isArray(inputData)) {
+    } else if (Array.isArray(inputData)) {
         exercises = inputData.filter(ex => {
-            // W historii bierzemy tylko zakończone i nie będące przerwami
             if (fromHistory) return ex.status === 'completed' && !ex.isRest;
             return true;
         });
@@ -249,57 +273,102 @@ export const calculateSystemLoad = (inputData, fromHistory = false) => {
 
     if (exercises.length === 0) return 0;
 
+    let totalLoadAU = 0;
+
+    // 2. Pobranie globalnego tempa (jeśli brak specyficznego)
     const globalSpr = state.settings.secondsPerRep || 6;
-    let totalWorkSeconds = 0;
-    let weightedDifficultySum = 0;
 
     exercises.forEach(ex => {
-        // --- DIFFICULTY LEVEL ---
-        // Plan: z bazy. Historia: zapisane w logu (lub fallback 1)
+        // --- A. Mapowanie Difficulty (1-5) na RPE (1-10) ---
+        // Zgodnie ze skalą Borga CR10, wzrost nie jest liniowy.
         const difficulty = parseInt(ex.difficultyLevel || 1, 10);
+        // Mapowanie: Lvl 1->2, Lvl 2->4, Lvl 3->6, Lvl 4->8, Lvl 5->10
+        let rpe = difficulty * 2; 
 
-        // --- UNILATERAL LOGIC ---
-        // Plan: Agregowany ("3 serie po 10 powtórzeń na stronę") -> Mnożymy x2
-        // Historia: Rozwinięty ("Seria 1 Lewa", "Seria 1 Prawa") -> Nie mnożymy, bo są osobne wpisy
-        let multiplier = 1;
-        if (!fromHistory) {
-            const isUnilateral = ex.isUnilateral || ex.is_unilateral || String(ex.reps_or_time).includes('/str');
-            if (isUnilateral) multiplier = 2;
+        // --- B. Korekta Metaboliczna (Badanie: Senna et al.) ---
+        // Ćwiczenia o wysokiej intensywności metabolicznej (krótkie przerwy) są bardziej obciążające.
+        const metabolicIntensity = parseInt(ex.metabolicIntensity || 1, 10);
+        if (metabolicIntensity >= 3) {
+            rpe += 1.5; // Bonus za "zadyszkę"
         }
+        
+        // Clamp RPE do logicznych ram (max 10)
+        rpe = Math.min(10, Math.max(1, rpe));
 
-        // --- SETS COUNT ---
-        // Plan: "3" lub "1-3" -> parsujemy
-        // Historia: Każdy wpis w logu to jedna wykonana "seria" (lub krok) -> zawsze 1
+        // --- C. Obliczanie Czasu Pracy (Time Under Tension) ---
+        // To jest nasz "Czas Trwania" do wzoru Fostera.
+        
         let sets = 1;
+        let multiplier = 1; // Mnożnik dla Unilateral
+
         if (!fromHistory) {
+            const isUnilateral = ex.isUnilateral || String(ex.reps_or_time).includes('/str');
+            if (isUnilateral) multiplier = 2; // Lewa + Prawa to 2x więcej czasu pracy
             sets = parseSetCount(ex.sets);
-        }
-
-        // --- WORK TIME CALCULATION ---
-        let singleSetWorkTime = 0;
-        const valStr = String(ex.reps_or_time).toLowerCase();
-
-        if (valStr.includes('s') || valStr.includes('min')) {
-            singleSetWorkTime = parseRepsOrTime(ex.reps_or_time);
+            
+            // Korekta zgodna z Twoją logiką w training.js (jeśli sets obejmuje obie strony, dzielimy)
+            // Ale dla Load interesuje nas CAŁKOWITA liczba wykonanych serii (work bouts).
+            // Jeśli w planie jest "3 serie" (oznaczające 3xL + 3xP), to realnie mamy 6 okresów pracy.
+            // W training.js pętla jest do `sets`, więc tutaj `sets` to liczba powtórzeń pętli.
+            // Jeśli unilateral: sets = "3" oznacza 3 pętle (L+P). Czyli 3 * 2 * czas.
+            // Zostawiamy multiplier = 2.
         } else {
-            singleSetWorkTime = parseRepsOrTime(ex.reps_or_time) * globalSpr;
+            sets = 1; // W historii każdy wpis to osobna wykonana seria
         }
 
-        const totalExWorkTime = singleSetWorkTime * sets * multiplier;
+        let durationSeconds = 0;
+        const rawStr = String(ex.reps_or_time).toLowerCase();
+        const cleanStr = rawStr.replace(/\/str\.?|stron.*/g, '').trim();
 
-        totalWorkSeconds += totalExWorkTime;
-        weightedDifficultySum += (difficulty * totalExWorkTime);
+        if (cleanStr.includes('s') || cleanStr.includes('min')) {
+            // Czasówka
+            if (cleanStr.includes('min')) durationSeconds = parseFloat(cleanStr) * 60;
+            else durationSeconds = parseInt(cleanStr) || 30;
+        } else {
+            // Powtórzenia -> Estymacja czasu (TUT)
+            let pace = globalSpr;
+            // Adaptive Pacing (Personalizacja)
+            const exId = ex.id || ex.exerciseId;
+            if (state.exercisePace && state.exercisePace[exId]) {
+                pace = state.exercisePace[exId];
+            } else if (ex.tempo_or_iso) {
+                // Próba parsowania tempa "3-0-1"
+                const tempoMatch = ex.tempo_or_iso.match(/(\d+)-(\d+)-(\d+)/);
+                if (tempoMatch) {
+                    pace = parseInt(tempoMatch[1]) + parseInt(tempoMatch[2]) + parseInt(tempoMatch[3]);
+                }
+            }
+            
+            const reps = parseInt(cleanStr) || 10;
+            durationSeconds = reps * pace;
+        }
+
+        // Całkowity czas pracy w minutach dla tego ćwiczenia
+        const totalWorkMinutes = (durationSeconds * sets * multiplier) / 60;
+
+        // Wzór Fostera: Load = Minutes * RPE
+        totalLoadAU += (totalWorkMinutes * rpe);
     });
 
-    if (totalWorkSeconds === 0) return 0;
+    // 3. Ustalenie Pojemności Użytkownika (Capacity)
+    // Aby wyliczyć %, musimy wiedzieć, ile AU to "100% możliwości" danego usera.
+    const experience = state.settings.wizardData?.exercise_experience || 'regular';
+    
+    // Referencyjne wartości AU dla 100% obciążenia sesji (tzw. Maximum Recoverable Volume na sesję)
+    const capacityTable = {
+        'none': 250,       // np. 50 min lekkiej pracy (RPE 5)
+        'occasional': 400, // np. 60 min średniej pracy (RPE 6-7)
+        'regular': 600,    // np. 75 min ciężkiej pracy (RPE 8)
+        'advanced': 850    // np. 90+ min ciężkiej pracy
+    };
 
-    const avgDifficulty = weightedDifficultySum / totalWorkSeconds;
-    // 7200 = Arbitralny punkt odniesienia (np. 60 min ciągłej pracy o trudności 2)
-    const maxScoreRef = 7200;
-    const rawScore = (avgDifficulty * totalWorkSeconds);
+    const userCapacity = capacityTable[experience] || 500;
 
-    let score = Math.round((rawScore / maxScoreRef) * 100);
-    return Math.min(100, Math.max(1, score));
+    // 4. Wynik procentowy
+    let loadPercent = Math.round((totalLoadAU / userCapacity) * 100);
+
+    // Safety clamp (aby nie straszyć usera wynikami > 120%)
+    return Math.min(120, Math.max(1, loadPercent));
 };
 
 export const calculateClinicalProfile = (dayPlan) => {
@@ -308,11 +377,11 @@ export const calculateClinicalProfile = (dayPlan) => {
     const mainEx = dayPlan.main || [];
     mainEx.forEach(ex => {
         const spine = (ex.spineLoadLevel || 'low').toLowerCase();
-        if (spine === 'high') maxSpine = Math.max(maxSpine, 2); else if (spine === 'medium' || spine === 'moderate') maxSpine = Math.max(maxSpine, 1);
+        if (spine === 'high') maxSpine = Math.max(maxSpine, 2); else if (spine === 'medium') maxSpine = Math.max(maxSpine, 1);
         const knee = (ex.kneeLoadLevel || 'low').toLowerCase();
         if (knee === 'high') maxKnee = Math.max(maxKnee, 2); else if (knee === 'medium') maxKnee = Math.max(maxKnee, 1);
         const imp = (ex.impactLevel || 'low').toLowerCase();
-        if (imp === 'high') maxImpact = Math.max(maxImpact, 2); else if (imp === 'moderate') maxImpact = Math.max(maxImpact, 1);
+        if (imp === 'high') maxImpact = Math.max(maxImpact, 2); else if (imp === 'medium') maxImpact = Math.max(maxImpact, 1);
     });
     const tags = [];
     if (maxImpact === 2) tags.push({ label: 'High Impact', color: 'red' }); else if (maxImpact === 0 && mainEx.length > 0) tags.push({ label: 'Low Impact', color: 'green' });

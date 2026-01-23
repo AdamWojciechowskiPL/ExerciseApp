@@ -44,7 +44,6 @@ export function initWizard(forceStart = false) {
         daily_impact: saved.daily_impact !== undefined ? saved.daily_impact : 0,
         work_type: saved.work_type || '',
         hobby: saved.hobby || [],
-        // FIX 7: Czysta inicjalizacja pustą tablicą zamiast ['']
         equipment_available: saved.equipment_available || [],
         exercise_experience: saved.exercise_experience || '',
         schedule_pattern: saved.schedule_pattern || [1, 3, 5],
@@ -142,6 +141,8 @@ async function renderStep() {
 
     const content = document.createElement('div');
     content.className = 'wizard-content wizard-content-layout';
+    content.style.height = '100%';
+    content.style.overflow = 'hidden';
 
     const isIntro = step.id === 'start';
     const isProcessing = step.id === 'generating';
@@ -149,7 +150,7 @@ async function renderStep() {
 
     if (!isProcessing) {
         navHTML = `
-        <div class="wizard-nav wizard-nav-container ${isIntro ? 'single-btn' : ''}">
+        <div class="wizard-nav wizard-nav-container ${isIntro ? 'single-btn' : ''}" style="flex-shrink: 0; padding-top: 10px;">
             ${!isIntro ? '<button id="wiz-prev" class="nav-btn">Wstecz</button>' : ''}
             <button id="wiz-next" class="action-btn">${step.id === 'summary' ? 'Generuj Plan' : 'Dalej'}</button>
         </div>`;
@@ -160,7 +161,7 @@ async function renderStep() {
             <div class="wizard-progress-fill" style="width: ${progressPct}%;"></div>
         </div>
         <h2 class="wizard-step-title" style="flex-shrink: 0; font-size: 1.5rem; margin-bottom: 5px;">${step.title}</h2>
-        <div id="step-body" class="wizard-body-layout"></div>
+        <div id="step-body" class="wizard-body-layout" style="flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column;"></div>
         ${navHTML}
     `;
 
@@ -216,42 +217,54 @@ async function renderP1(c) {
     const isInitialPain = initialMode === 'pain';
 
     c.className = "p1-container wizard-body-layout";
+    c.style.display = "flex";
+    c.style.flexDirection = "column";
+    c.style.height = "100%";
+    c.style.overflow = "hidden";
     c.style.justifyContent = "space-between";
 
     c.innerHTML = `
-        <div class="p1-container">
-            <div id="svg-placeholder" class="p1-svg-placeholder">Ładowanie...</div>
+        <div class="p1-svg-wrapper" style="flex: 1; min-height: 0; position: relative; display: flex; justify-content: center; align-items: center; padding-bottom: 10px;">
+            <div id="svg-placeholder" style="height: 100%; width: 100%; display: flex; justify-content: center;">
+                Ładowanie...
+            </div>
         </div>
 
-        <div class="p1-controls">
-            <div class="p1-legend">
-                <div class="p1-legend-item"><span class="p1-dot" style="background:var(--danger-color);"></span> Ból / Uraz</div>
-                <div class="p1-legend-item"><span class="p1-dot" style="background:#3b82f6;"></span> Cel / Focus</div>
+        <div class="p1-controls-panel" style="flex-shrink: 0; background: rgba(255,255,255,0.08); border-top: 1px solid rgba(255,255,255,0.1); padding: 12px; border-radius: 16px; margin-bottom: 5px;">
+            <div class="p1-legend" style="display: flex; gap: 20px; justify-content: center; margin-bottom: 12px; font-size: 0.85rem; font-weight: 600;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="width: 10px; height: 10px; background: var(--danger-color); border-radius: 50%; display: inline-block;"></span> 
+                    Ból / Uraz
+                </div>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="width: 10px; height: 10px; background: #3b82f6; border-radius: 50%; display: inline-block;"></span> 
+                    Cel / Focus
+                </div>
             </div>
 
-            <label class="switch-container">
-                <div style="text-align: left;">
-                    <div id="tool-label" class="tool-label-text">
-                        ${isInitialPain ? '🖊️ Zaznaczam: BÓL' : '🖊️ Zaznaczam: CEL'}
+            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2); padding: 8px 15px; border-radius: 12px;">
+                <div id="tool-label" style="font-weight: 700; font-size: 0.95rem; color: #fff;">
+                    ${isInitialPain ? '🖊️ Zaznaczam: BÓL' : '🖊️ Zaznaczam: CEL'}
+                </div>
+                
+                <label class="switch-container" style="margin: 0;">
+                    <div class="switch-wrapper">
+                        <input type="checkbox" id="paint-tool-toggle" ${isInitialPain ? 'checked' : ''} class="switch-input">
+                        <span class="slider-round"></span>
+                        <span class="slider-knob"></span>
                     </div>
-                    <div class="tool-desc-text">Przełącz, aby zmienić tryb zaznaczania</div>
-                </div>
-                <div class="switch-wrapper">
-                    <input type="checkbox" id="paint-tool-toggle" ${isInitialPain ? 'checked' : ''} class="switch-input">
-                    <span class="slider-round"></span>
-                    <span class="slider-knob"></span>
-                </div>
-            </label>
+                </label>
+            </div>
+            
+            <p style="text-align: center; font-size: 0.8rem; opacity: 0.6; margin: 8px 0 0 0;">
+                Dotknij obszarów na modelu.
+            </p>
         </div>
-
-        <p class="wizard-step-hint">
-            Dotknij miejsc na ciele.
-        </p>
     `;
 
     const svgContent = `
     <svg viewBox="0 0 200 400" xmlns="http://www.w3.org/2000/svg"
-         style="height: 100%; width: auto; max-width: 100%; max-height: 100%; display: block;" preserveAspectRatio="xMidYMid meet">
+         style="height: 100%; width: auto; max-width: 100%; display: block;" preserveAspectRatio="xMidYMid meet">
       <defs>
         <style>
           .zone {
@@ -309,7 +322,10 @@ async function renderP1(c) {
 
     toggle.addEventListener('change', (e) => {
         label.textContent = e.target.checked ? '🖊️ Zaznaczam: BÓL' : '🖊️ Zaznaczam: CEL';
+        label.style.color = e.target.checked ? 'var(--danger-color)' : '#3b82f6';
     });
+    
+    label.style.color = toggle.checked ? 'var(--danger-color)' : '#3b82f6';
 
     c.querySelectorAll('.zone').forEach(el => {
         el.addEventListener('click', () => {
@@ -343,7 +359,10 @@ function renderP2(c) {
             <div id="pain-val-display" class="pain-value-large">${wizardAnswers.pain_intensity}</div>
             <div class="pain-slider-wrapper">
                 <input type="range" min="0" max="10" value="${wizardAnswers.pain_intensity}" style="width:100%;" id="pain-slider">
-                <div class="pain-labels"><span>Brak</span><span>Ekstremalny</span></div>
+                <div class="pain-labels" style="display: flex; justify-content: space-between; width: 100%; margin-top: 5px; font-size: 0.8rem; opacity: 0.8; font-weight: 500;">
+                    <span>🙂 Brak</span>
+                    <span style="color: #ef4444;">😫 Ekstremalny</span>
+                </div>
             </div>
         </div>`;
     c.querySelector('#pain-slider').addEventListener('input', (e) => {
@@ -402,6 +421,10 @@ function renderP7(c) {
             <div id="impact-val-display" class="pain-value-large" style="color:var(--primary-color)">${wizardAnswers.daily_impact}</div>
             <div class="pain-slider-wrapper">
                 <input type="range" min="0" max="10" value="${wizardAnswers.daily_impact}" style="width:100%;" id="impact-slider">
+                <div class="pain-labels" style="display: flex; justify-content: space-between; width: 100%; margin-top: 5px; font-size: 0.8rem; opacity: 0.8; font-weight: 500;">
+                    <span>Brak wpływu</span>
+                    <span>Paraliżujący</span>
+                </div>
             </div>
         </div>`;
     c.querySelector('#impact-slider').addEventListener('input', (e) => {
@@ -578,6 +601,28 @@ function renderSummary(c) {
     const pattern = wizardAnswers.schedule_pattern || [];
     const formattedDays = pattern.map(d => dayLabels[d]).join(', ');
 
+    const oldGoal = state.settings.wizardData?.primary_goal;
+    const newGoal = wizardAnswers.primary_goal;
+    const isGoalChanged = state.settings.onboardingCompleted && oldGoal && oldGoal !== newGoal;
+
+    let warningHTML = '';
+    if (isGoalChanged) {
+        const translateGoal = (g) => {
+            const map = { 'pain_relief': 'Redukcja Bólu', 'fat_loss': 'Redukcja Tłuszczu', 'strength': 'Siła', 'mobility': 'Mobilność', 'prevention': 'Prewencja' };
+            return map[g] || g;
+        };
+
+        warningHTML = `
+        <div class="wizard-warning-box">
+            <div class="warning-icon">⚠️</div>
+            <div class="warning-content">
+                <strong>Zmiana Celu Głównego</strong>
+                <p>Zmieniasz cel z <span class="old-goal">${translateGoal(oldGoal)}</span> na <span class="new-goal">${translateGoal(newGoal)}</span>.</p>
+                <p class="warning-sub">Twój obecny cykl treningowy (Faza i Liczniki) zostanie zresetowany, aby zbudować nową, bezpieczną progresję.</p>
+            </div>
+        </div>`;
+    }
+
     c.innerHTML = `
     <div class="summary-box">
         <h3 class="summary-title">Twój Profil</h3>
@@ -589,6 +634,9 @@ function renderSummary(c) {
             <li>📅 <strong>Dni:</strong> ${formattedDays || 'Brak'}</li>
             <li>⏱️ <strong>Czas:</strong> ${wizardAnswers.target_session_duration_min} min</li>
         </ul>
+
+        ${warningHTML}
+
         <p class="summary-footer">Asystent AI przeanalizuje Twój kalendarz i ułoży spersonalizowany plan.</p>
     </div>`;
 }
@@ -599,19 +647,30 @@ async function renderProcessing(c) {
             <div class="processing-spinner"></div>
             <div id="console-output" class="processing-log">Analiza danych...</div>
         </div>`;
+    
+    // ZMIANA: Usunięcie "Gotowe!" z fałszywej pętli
+    const logs = [
+        "Analiza profilu biometrycznego...",
+        "Weryfikacja wykluczeń medycznych...",
+        "Dobór optymalnej objętości...",
+        "Wysyłanie zapytania..."
+    ];
+    
     const consoleDiv = c.querySelector('#console-output');
-    const logs = ["Mapowanie stref...", "Analiza sprzętu...", "Wybór ćwiczeń...", "Optymalizacja...", "Gotowe!"];
     let delay = 0;
+    
     logs.forEach((log, index) => {
         setTimeout(() => {
             consoleDiv.textContent = log;
-            if (index === logs.length - 1) { setTimeout(finalizeGeneration, 500); }
+            if (index === logs.length - 1) { 
+                setTimeout(() => finalizeGeneration(consoleDiv), 500); 
+            }
         }, delay);
         delay += 800;
     });
 }
 
-async function finalizeGeneration() {
+async function finalizeGeneration(consoleDiv) {
     try {
         const payload = {
             ...wizardAnswers,
@@ -620,8 +679,22 @@ async function finalizeGeneration() {
             restBetweenExercises: state.settings.restBetweenExercises || 30
         };
 
+        // ZMIANA: Aktualizacja UI w trakcie czekania na serwer
+        if(consoleDiv) consoleDiv.textContent = "Generowanie planu (AI)...";
+
         await dataStore.generateDynamicPlan(payload);
-        closeWizardWithoutSaving();
+        
+        // ZMIANA: Sukces wyświetlany dopiero po zakończeniu requestu
+        if(consoleDiv) {
+            consoleDiv.textContent = "✅ Plan utworzony pomyślnie!";
+            consoleDiv.style.color = "var(--success-color)";
+        }
+
+        // Opóźnienie zamknięcia, aby user zobaczył sukces
+        setTimeout(() => {
+            closeWizardWithoutSaving();
+        }, 1500);
+
     } catch (e) {
         alert("Błąd generowania planu: " + e.message);
         currentStep--;

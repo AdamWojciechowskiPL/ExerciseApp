@@ -30,7 +30,6 @@ function fitText(element) {
     });
 }
 
-// --- NOWOŚĆ: LOGIKA LICZNIKA CAŁKOWITEGO CZASU SESJI ---
 function updateSessionClockDisplay() {
     if (!focus.sessionElapsedTime) return;
     if (!state.sessionStartTime) {
@@ -38,7 +37,7 @@ function updateSessionClockDisplay() {
         return;
     }
 
-    if (state.isPaused) return; // Nie aktualizujemy wizualnie w pauzie
+    if (state.isPaused) return;
 
     const now = Date.now();
     const durationMs = Math.max(0, now - state.sessionStartTime.getTime() - (state.totalPausedTime || 0));
@@ -63,7 +62,6 @@ function startSessionClock() {
     stopSessionClock();
     updateSessionClockDisplay();
     sessionClockInterval = setInterval(() => {
-        // Samoczyszczenie w razie nieoczekiwanego wyjścia
         if (!screens.training.classList.contains('active')) {
             stopSessionClock();
             return;
@@ -78,7 +76,6 @@ function stopSessionClock() {
         sessionClockInterval = null;
     }
 }
-// -------------------------------------------------------
 
 function syncStateToChromecast() {
     if (!getIsCasting()) return;
@@ -118,13 +115,12 @@ function logCurrentStep(status) {
 
     const entryUniqueId = exercise.uniqueId || `${exercise.id}_${Date.now()}`;
 
-    // --- ZMIANA: Zapisujemy difficultyLevel do logu dla precyzyjnych statystyk ---
     const newLogEntry = {
         uniqueId: entryUniqueId,
         name: exercise.name,
         exerciseId: exercise.id || exercise.exerciseId,
-        categoryId: exercise.categoryId, // Dodatkowe dane
-        difficultyLevel: parseInt(exercise.difficultyLevel || 1, 10), // KLUCZOWE DLA STATYSTYK
+        categoryId: exercise.categoryId,
+        difficultyLevel: parseInt(exercise.difficultyLevel || 1, 10),
         currentSet: exercise.currentSet,
         totalSets: exercise.totalSets,
         reps_or_time: exercise.reps_or_time,
@@ -239,7 +235,7 @@ export function moveToNextExercise(options = { skipped: false }) {
         startExercise(state.currentExerciseIndex + 1);
     } else {
         stopBackupInterval();
-        stopSessionClock(); // STOP LICZNIKA SESJI
+        stopSessionClock();
         state.finalCompletionSound();
         if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
         renderSummaryScreen();
@@ -312,6 +308,7 @@ export async function startExercise(index, isResuming = false) {
     }
 
     if (exercise.isWork) {
+        // --- TRYB PRACY (ĆWICZENIE) ---
         focus.exerciseName.textContent = exercise.name;
         fitText(focus.exerciseName);
         focus.exerciseDetails.textContent = `Seria ${exercise.currentSet}/${exercise.totalSets} | Cel: ${exercise.reps_or_time}`;
@@ -330,17 +327,18 @@ export async function startExercise(index, isResuming = false) {
         focus.nextExerciseName.textContent = nextWorkExercise ? nextWorkExercise.name : "Koniec treningu";
 
         if (!isResuming) {
-            stopTimer();
-            state.stopwatch.seconds = 0;
+            stopTimer(); // Upewniamy się, że timer przerwy jest zatrzymany
+            state.stopwatch.seconds = 0; // Resetujemy stoper do 0:00
         }
 
-        updateStopwatchDisplay();
+        updateStopwatchDisplay(); // Pokaż 0:00 lub aktualny czas wznowienia
 
         focus.repBasedDoneBtn.classList.remove('hidden');
         focus.pauseResumeBtn.classList.remove('hidden');
         focus.timerDisplay.classList.remove('rep-based-text');
 
         if (!state.isPaused) {
+            // ZAWSZE URUCHAMIAMY STOPER (LICZENIE W GÓRĘ)
             startStopwatch();
 
             if (!isResuming && state.tts.isSoundOn) {
@@ -355,7 +353,7 @@ export async function startExercise(index, isResuming = false) {
         }
     }
     else {
-        // --- PRZERWA / REST ---
+        // --- PRZERWA (REST) ---
         if (animContainer) animContainer.classList.add('hidden');
         if (descContainer) descContainer.classList.remove('hidden');
         if (flipIndicator) flipIndicator.classList.add('hidden');
@@ -364,9 +362,7 @@ export async function startExercise(index, isResuming = false) {
         const upcomingExercise = state.flatExercises[index + 1];
         if (!upcomingExercise) { moveToNextExercise({ skipped: false }); return; }
 
-        // --- ZMIANA: Wyświetlanie tempa również w przerwie ---
         if (focus.tempo) {
-            // Pobieramy tempo nadchodzącego ćwiczenia
             const nextTempo = upcomingExercise.tempo_or_iso || "Kontrolowane";
             focus.tempo.textContent = `Tempo: ${nextTempo}`;
             focus.tempo.classList.remove('hidden');
@@ -389,6 +385,9 @@ export async function startExercise(index, isResuming = false) {
         focus.nextExerciseName.textContent = afterUpcomingExercise ? afterUpcomingExercise.name : "Koniec treningu";
         focus.timerDisplay.classList.remove('rep-based-text');
 
+        // Czyścimy klasy stopera
+        focus.timerDisplay.classList.remove('target-reached');
+
         const startNextExercise = () => moveToNextExercise({ skipped: false });
 
         if (!isResuming) {
@@ -399,6 +398,7 @@ export async function startExercise(index, isResuming = false) {
         updateTimerDisplay();
 
         if (!state.isPaused) {
+            // TIMER (ODLICZANIE W DÓŁ)
             if (!isResuming && state.tts.isSoundOn) {
                 let announcement = `Odpocznij. Następnie: ${upcomingExercise.name}.`;
                 speak(announcement, true);
@@ -416,9 +416,7 @@ export function generateFlatExercises(dayData) {
     const plan = [];
 
     const restFactor = state.settings.restTimeFactor || 1.0;
-    const GLOBAL_REST_EXERCISE = Math.round((state.settings.restBetweenExercises || 30) * restFactor);
     const REST_BETWEEN_SECTIONS = Math.round(60 * restFactor);
-    const TRANSITION_DURATION = Math.max(12, Math.round(12 * restFactor));
 
     let unilateralGlobalIndex = 0;
     let globalStepCounter = 0;
@@ -437,7 +435,25 @@ export function generateFlatExercises(dayData) {
                                  String(exercise.reps_or_time).includes('/str') ||
                                  String(exercise.reps_or_time).includes('stron');
 
+            // TASK 5: Generowanie kroku "Zmiana Strony" tylko gdy requiresSideSwitch jest true
+            const requiresSideSwitch = !!exercise.requiresSideSwitch;
+
             const smartRestTime = calculateSmartRest(exercise, restFactor);
+
+            let transitionTime = 12;
+            if (exercise.transitionTime) {
+                transitionTime = exercise.transitionTime;
+            } else if (exercise.calculated_timing && exercise.calculated_timing.transition_sec) {
+                transitionTime = exercise.calculated_timing.transition_sec;
+            }
+
+            // FIX: Enforce minimum 12s if side switch is explicitly required,
+            // regardless of what data hydration might have set (e.g. 5s default fallback)
+            if (requiresSideSwitch && transitionTime < 10) {
+                transitionTime = 12;
+            }
+
+            const finalTransitionTime = Math.max(5, Math.round(transitionTime * restFactor));
 
             let loopLimit = totalSetsDeclared;
             let displayTotalSets = totalSetsDeclared;
@@ -482,6 +498,7 @@ export function generateFlatExercises(dayData) {
 
             for (let i = 1; i <= loopLimit; i++) {
                 if (isUnilateral) {
+                    // Krok 1: Pierwsza strona
                     plan.push({
                         ...exercise,
                         isWork: true,
@@ -494,16 +511,21 @@ export function generateFlatExercises(dayData) {
                         uniqueId: `${exercise.id || exercise.exerciseId}_step${globalStepCounter++}`
                     });
 
-                    plan.push({
-                        name: "Zmiana Strony",
-                        isRest: true,
-                        isWork: false,
-                        duration: TRANSITION_DURATION,
-                        sectionName: "Przejście",
-                        description: `Przygotuj stronę: ${secondSide}`,
-                        uniqueId: `rest_transition_${globalStepCounter++}`
-                    });
+                    // Krok 2: Opcjonalne Przejście (Switch)
+                    // TASK 5: Dodajemy krok zmiany strony TYLKO jeśli requiresSideSwitch=true
+                    if (requiresSideSwitch) {
+                        plan.push({
+                            name: "Zmiana Strony",
+                            isRest: true,
+                            isWork: false,
+                            duration: finalTransitionTime,
+                            sectionName: "Przejście",
+                            description: `Przygotuj stronę: ${secondSide}`,
+                            uniqueId: `rest_transition_${globalStepCounter++}`
+                        });
+                    }
 
+                    // Krok 3: Druga strona
                     plan.push({
                         ...exercise,
                         isWork: true,
@@ -517,6 +539,7 @@ export function generateFlatExercises(dayData) {
                     });
 
                 } else {
+                    // Standardowe (obustronne)
                     plan.push({
                         ...exercise,
                         isWork: true,
@@ -547,7 +570,7 @@ export function generateFlatExercises(dayData) {
                     name: 'Przerwa',
                     isRest: true,
                     isWork: false,
-                    duration: GLOBAL_REST_EXERCISE,
+                    duration: smartRestTime,
                     sectionName: 'Przerwa',
                     uniqueId: `rest_exercise_${globalStepCounter++}`
                 });
@@ -588,7 +611,7 @@ export async function startModifiedTraining() {
         initializeFocusElements();
         initProgressBar();
         startBackupInterval();
-        startSessionClock(); // START LICZNIKA SESJI
+        startSessionClock();
         startExercise(0);
         triggerSessionBackup();
         return;
@@ -633,7 +656,7 @@ export async function startModifiedTraining() {
     initializeFocusElements();
     initProgressBar();
     startBackupInterval();
-    startSessionClock(); // START LICZNIKA SESJI
+    startSessionClock();
     startExercise(0);
     triggerSessionBackup();
 }
@@ -659,7 +682,7 @@ export function resumeFromBackup(backup, timeGapMs) {
     initializeFocusElements();
     initProgressBar();
     startBackupInterval();
-    startSessionClock(); // WZNOWIENIE LICZNIKA SESJI
+    startSessionClock();
 
     startExercise(backup.currentExerciseIndex, true);
 }

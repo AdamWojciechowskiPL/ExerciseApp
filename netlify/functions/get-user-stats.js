@@ -1,7 +1,7 @@
 // netlify/functions/get-user-stats.js
 const { pool, getUserIdFromEvent } = require('./_auth-helper.js');
 const { calculateStreak, calculateResilience } = require('./_stats-helper.js');
-const { calculateAcuteFatigue } = require('./_fatigue-calculator.js'); // NOWOŚĆ: Import kalkulatora
+const { calculateAcuteFatigue } = require('./_fatigue-calculator.js'); // Updated import
 
 const LEVEL_THRESHOLDS = [
   0, 1, 3, 6, 10, 15, 21, 28, 36, 45,
@@ -17,7 +17,6 @@ exports.handler = async (event) => {
     const client = await pool.connect();
 
     try {
-      // 1. Pobieramy historię sesji
       const historyResult = await client.query(
         `SELECT started_at, completed_at, session_data->>'netDurationSeconds' as recorded_duration
          FROM training_sessions
@@ -69,7 +68,7 @@ exports.handler = async (event) => {
         else break;
       }
 
-      // 2. NOWOŚĆ: Obliczamy aktualne zmęczenie (Acute Fatigue)
+      // US-06: New Calculation Logic (uses 56 days internally but returns score)
       const fatigueScore = await calculateAcuteFatigue(client, userId);
 
       return {
@@ -85,7 +84,7 @@ exports.handler = async (event) => {
             level,
             resilience,
             totalMinutes,
-            fatigueScore // Zwracamy wynik (0-120)
+            fatigueScore
         })
       };
     } finally {

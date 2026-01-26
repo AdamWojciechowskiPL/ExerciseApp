@@ -281,7 +281,7 @@
 .btn-tune { color: var(--gold-color); border-color: #fcd34d; background: #fffbeb; }
 @media (max-width: 480px) { .ex-col-clinical { display: none; } }
 
-/* --- PODSUMOWANIE (Summary Screen) --- */
+/* --- PODSUMOWANIE (Summary Screen) - AMPS PHASE 3 UPDATE --- */
 .feedback-container { display: flex; gap: 10px; justify-content: space-between; }
 .feedback-option {
     flex: 1; border: 1px solid #ddd; border-radius: 8px; text-align: center; padding: 10px; cursor: pointer;
@@ -291,12 +291,157 @@
 .feedback-option.selected { border-color: var(--primary-color); background-color: #e0f2fe; box-shadow: 0 2px 5px rgba(0, 95, 115, 0.2); }
 .fb-icon { font-size: 1.5rem; }
 .fb-text h4 { margin: 0; font-size: 0.85rem; font-weight: 600; }
-.ratings-list { display: flex; flex-direction: column; gap: 8px; }
-.rating-card { background: #fff; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-.rating-name { flex: 1; max-width: unset; padding-right: 5px; font-size: 0.9rem; font-weight: 600; line-height: 1.2; }
-.rating-actions-group { display: flex; align-items: center; gap: 8px; justify-content: flex-end; width: auto; flex-shrink: 0; }
-.btn-group-affinity { display: flex; gap: 4px; background: #f0fdfa; padding: 3px; border-radius: 8px; width: 82px; justify-content: center; }
-.btn-group-difficulty { display: flex; gap: 4px; background: #fff7ed; padding: 3px; border-radius: 8px; width: 82px; justify-content: center; }
+
+/* Sekcje Podsumowania */
+.summary-section { margin-bottom: 1.5rem; animation: slideUp 0.3s ease-out; }
+.summary-section-header {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+    font-size: 0.9rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+    padding-bottom: 5px; border-bottom: 1px solid rgba(0,0,0,0.05);
+}
+.summary-section-header.good { color: var(--success-color); border-color: var(--success-color); }
+.summary-section-header.moderate { color: #b45309; border-color: #fcd34d; }
+.summary-section-header.difficult { color: var(--danger-color); border-color: var(--danger-color); }
+
+.ratings-list { display: flex; flex-direction: column; gap: 6px; } /* Zmniejszony gap z 8px */
+
+/* Karta oceny */
+.rating-card {
+    background: #fff;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 8px 10px; /* Zmniejszony padding (było 10px) */
+    display: flex;
+    flex-direction: column;
+    gap: 4px; /* Zmniejszony gap (było 10px) - kluczowe dla wysokości! */
+}
+
+/* Główny wiersz (Tekst vs Przyciski) */
+.rating-card-main {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start; /* Zmieniono z center na flex-start, aby przyciski nie rozciągały wiersza */
+    gap: 8px;
+    width: 100%;
+}
+
+/* Kolumna tekstowa */
+.rating-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px; /* Bardzo mały odstęp między nazwą a detalami */
+    justify-content: center;
+}
+
+.rating-name {
+    padding-right: 2px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    line-height: 1.1; /* Zwarta linia tekstu */
+    color: var(--text-color);
+    margin-bottom: 2px;
+}
+
+.rating-score-display {
+    font-size: 0.7rem !important; /* Mniejsza czcionka wyniku */
+    line-height: 1;
+}
+
+/* Detale (Czas, Serie) */
+.history-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 2px;
+}
+
+/* Grupa Przycisków */
+.rating-actions-group {
+    display: flex;
+    align-items: center;
+    gap: 4px; /* Zmniejszony odstęp między grupami */
+    justify-content: flex-end;
+    width: auto;
+    flex-shrink: 0;
+    margin-top: 2px; /* Lekka korekta w pionie */
+}
+
+.btn-group-affinity, .btn-group-difficulty {
+    display: flex;
+    gap: 2px; /* Mniejszy odstęp między przyciskami */
+    background: #f8fafc; /* Jaśniejsze tło */
+    padding: 2px; /* Mniejszy padding wewnętrzny */
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+    justify-content: center;
+}
+
+/* Przyciski (Rate Btn) */
+.rate-btn, .rate-btn-hist {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    width: 28px; /* ZMNIEJSZONO z 36px */
+    height: 28px; /* ZMNIEJSZONO z 36px */
+    font-size: 1rem; /* Mniejsza ikona */
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    filter: grayscale(100%);
+    opacity: 0.4; /* Bardziej dyskretne nieaktywne */
+    padding: 0;
+}
+
+/* Aktywne stany */
+.rate-btn:hover, .rate-btn-hist:hover { opacity: 0.8; background: rgba(0,0,0,0.03); }
+.rate-btn.active, .rate-btn-hist.active, .affinity-btn.active {
+    opacity: 1; filter: grayscale(0%);
+    background: #fff; border-color: #2dd4bf;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+.rate-btn-hist.diff-btn.selected {
+    opacity: 1; filter: grayscale(0%);
+    transform: scale(1); /* Reset scale effect */
+}
+
+/* Badge AMPS (wewnątrz historii) */
+.amps-inline-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.65rem;
+    color: #475569;
+    background: #f1f5f9;
+    padding: 1px 5px;
+    border-radius: 4px;
+    border: 1px solid #e2e8f0;
+    line-height: 1.2;
+    vertical-align: middle;
+    margin-left: 4px;
+}
+
+/* Akcja Dewolucji */
+.devolution-action {
+    border-top: 1px dashed #fecaca;
+    padding-top: 8px;
+    margin-top: 5px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.devolution-btn {
+    background: #fff1f2; color: #be123c; border: 1px solid #fda4af;
+    padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; font-weight: 600;
+    cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 5px;
+}
+.devolution-btn:hover { background: #ffe4e6; }
+.devolution-btn:disabled { opacity: 0.6; cursor: not-allowed; filter: grayscale(1); }
+
 .rate-btn {
     background: transparent; border: 1px solid transparent; border-radius: 6px; width: 36px; height: 36px;
     font-size: 1.2rem; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; filter: grayscale(100%); opacity: 0.5;
@@ -304,8 +449,9 @@
 .rate-btn:hover { opacity: 1; filter: grayscale(0%); background: rgba(0,0,0,0.05); }
 .rate-btn.active, .affinity-btn.active { opacity: 1; filter: grayscale(0%); background: #fff; border-color: #2dd4bf; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
 .rate-btn.diff-btn.selected { opacity: 1; filter: grayscale(0%); background: #ea580c; color: white; border-color: #ea580c; cursor: default; transform: scale(0.95); }
-.sep { width: 1px; height: 24px; background: #e5e7eb; }
+.sep { width: 1px; height: 18px; background: #e5e7eb; margin: 0 2px; }
 .empty-state { text-align: center; color: var(--muted-text-color); font-style: italic; padding: 1rem; background: rgba(0,0,0,0.02); border-radius: 8px; }
+
 
 /* --- USTAWIENIA (Settings Screen) --- */
 .settings-card { background: #fff; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border: 1px solid var(--border-color); position: relative; overflow: hidden; }
@@ -506,4 +652,136 @@ input:checked + .slider:before { transform: translateX(24px); }
 .new-goal {
     color: var(--gold-color);
     font-weight: 700;
+}
+
+/* --- AMPS PHASE 2: DETAIL PROMPT MODAL --- */
+.amps-detail-modal {
+    background: #fff;
+    width: 90%;
+    max-width: 400px;
+    border-radius: 16px;
+    padding: 1.5rem;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+    animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    display: flex;
+    flex-direction: column;
+}
+
+.amps-modal-header {
+    border-bottom: 1px solid #f0f0f0;
+    padding-bottom: 1rem;
+    margin-bottom: 1rem;
+    text-align: center;
+}
+
+.amps-modal-title {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.2rem;
+    color: var(--primary-color);
+    line-height: 1.2;
+}
+
+.amps-modal-subtitle {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #64748b;
+}
+
+.amps-section {
+    margin-bottom: 1.5rem;
+}
+
+.amps-label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #475569;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    letter-spacing: 0.5px;
+}
+
+/* Technique Slider */
+.tech-slider-wrapper {
+    position: relative;
+    padding: 0 10px;
+}
+
+.tech-slider {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 8px;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #ef4444 0%, #f59e0b 50%, #22c55e 100%);
+    outline: none;
+    margin: 15px 0;
+}
+
+.tech-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid #ccc;
+    cursor: pointer;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+
+.tech-value-display {
+    text-align: center;
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--primary-color);
+    margin-bottom: 5px;
+}
+
+.tech-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    color: #94a3b8;
+}
+
+/* RIR Buttons */
+.rir-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+}
+
+.rir-btn {
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 10px 5px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #475569;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+}
+
+.rir-btn span {
+    font-size: 0.65rem;
+    font-weight: 400;
+    opacity: 0.8;
+}
+
+.rir-btn.selected {
+    background: #e0f2fe;
+    border-color: #0284c7;
+    color: #0284c7;
+    box-shadow: 0 2px 5px rgba(2, 132, 199, 0.2);
+}
+
+.rir-btn:hover:not(.selected) {
+    background: #f1f5f9;
+    border-color: #94a3b8;
 }

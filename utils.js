@@ -67,8 +67,8 @@ export const shouldSynchronizePlan = (plan) => {
     const lastDate = new Date(lastDayEntry.date);
     const bufferThresholdDate = new Date();
     bufferThresholdDate.setDate(bufferThresholdDate.getDate() + 3);
-    lastDate.setHours(0,0,0,0);
-    bufferThresholdDate.setHours(0,0,0,0);
+    lastDate.setHours(0, 0, 0, 0);
+    bufferThresholdDate.setHours(0, 0, 0, 0);
     if (lastDate < bufferThresholdDate) {
         return { needed: true, reason: 'buffer_low' };
     }
@@ -283,7 +283,7 @@ export const calculateSystemLoad = (inputData, fromHistory = false) => {
         // Zgodnie ze skalą Borga CR10, wzrost nie jest liniowy.
         const difficulty = parseInt(ex.difficultyLevel || 1, 10);
         // Mapowanie: Lvl 1->2, Lvl 2->4, Lvl 3->6, Lvl 4->8, Lvl 5->10
-        let rpe = difficulty * 2; 
+        let rpe = difficulty * 2;
 
         // --- B. Korekta Metaboliczna (Badanie: Senna et al.) ---
         // Ćwiczenia o wysokiej intensywności metabolicznej (krótkie przerwy) są bardziej obciążające.
@@ -291,13 +291,13 @@ export const calculateSystemLoad = (inputData, fromHistory = false) => {
         if (metabolicIntensity >= 3) {
             rpe += 1.5; // Bonus za "zadyszkę"
         }
-        
+
         // Clamp RPE do logicznych ram (max 10)
         rpe = Math.min(10, Math.max(1, rpe));
 
         // --- C. Obliczanie Czasu Pracy (Time Under Tension) ---
         // To jest nasz "Czas Trwania" do wzoru Fostera.
-        
+
         let sets = 1;
         let multiplier = 1; // Mnożnik dla Unilateral
 
@@ -305,7 +305,7 @@ export const calculateSystemLoad = (inputData, fromHistory = false) => {
             const isUnilateral = ex.isUnilateral || String(ex.reps_or_time).includes('/str');
             if (isUnilateral) multiplier = 2; // Lewa + Prawa to 2x więcej czasu pracy
             sets = parseSetCount(ex.sets);
-            
+
             // Korekta zgodna z Twoją logiką w training.js (jeśli sets obejmuje obie strony, dzielimy)
             // Ale dla Load interesuje nas CAŁKOWITA liczba wykonanych serii (work bouts).
             // Jeśli w planie jest "3 serie" (oznaczające 3xL + 3xP), to realnie mamy 6 okresów pracy.
@@ -338,7 +338,7 @@ export const calculateSystemLoad = (inputData, fromHistory = false) => {
                     pace = parseInt(tempoMatch[1]) + parseInt(tempoMatch[2]) + parseInt(tempoMatch[3]);
                 }
             }
-            
+
             const reps = parseInt(cleanStr) || 10;
             durationSeconds = reps * pace;
         }
@@ -353,7 +353,7 @@ export const calculateSystemLoad = (inputData, fromHistory = false) => {
     // 3. Ustalenie Pojemności Użytkownika (Capacity)
     // Aby wyliczyć %, musimy wiedzieć, ile AU to "100% możliwości" danego usera.
     const experience = state.settings.wizardData?.exercise_experience || 'regular';
-    
+
     // Referencyjne wartości AU dla 100% obciążenia sesji (tzw. Maximum Recoverable Volume na sesję)
     const capacityTable = {
         'none': 250,       // np. 50 min lekkiej pracy (RPE 5)
@@ -446,4 +446,15 @@ export const formatForTTS = (text) => {
         }
     }
     return formattedText;
+};
+
+// --- CONSOLIDATED STORAGE HELPER ---
+export const savePlanToStorage = (plan, date = null) => {
+    try {
+        const dateKey = date || getISODate(new Date());
+        const storageKey = `todays_plan_cache_${dateKey}`;
+        localStorage.setItem(storageKey, JSON.stringify(plan));
+    } catch (e) {
+        console.error("Błąd zapisu planu:", e);
+    }
 };

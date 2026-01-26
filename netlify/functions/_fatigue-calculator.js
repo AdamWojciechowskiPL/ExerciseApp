@@ -2,12 +2,12 @@
 'use strict';
 
 /**
- * FATIGUE CALCULATOR v3.0 (Science-Based Load)
+ * FATIGUE CALCULATOR v4.0 (AMPS Integrated)
  *
  * Wykorzystuje model Banistera (Impulse-Response) zasilany danymi obliczanymi
- * metodą zmodyfikowanego RPE wg Fostera (2001) oraz McGuigana (2004).
+ * metodą zmodyfikowanego RPE wg Fostera (2001).
  *
- * Jednostka: Arbitrary Units (AU) = Czas (min) * RPE (1-10).
+ * NOWOŚĆ v4.0: Uwzględnia RIR i Quick Rating (AMPS) dla precyzyjnego RPE.
  */
 
 // Stałe fizjologiczne i konfiguracyjne
@@ -18,9 +18,6 @@ const MIN_SESSIONS_FOR_CALIBRATION = 10;
 const DEFAULT_SECONDS_PER_REP = 6; // Średnie tempo jeśli brak danych
 
 // Stałe kalibracyjne (Session-RPE -> Bucket Point)
-// Założenie: 60 min @ RPE 5 (Średnio) = 300 AU.
-// 300 AU powinno odpowiadać ok. 40 punktom w wiadrze zmęczenia (skala 0-120).
-// Skala: 40 / 300 = 0.1333
 const LOAD_SCALE = 0.1333;
 
 // --- HELPERS STATYSTYCZNE ---
@@ -46,7 +43,7 @@ function getPercentile(sortedArray, p) {
     return sortedArray[lower] * (1 - weight) + sortedArray[upper] * weight;
 }
 
-// --- HELPERS PARSOWANIA (Backend Version) ---
+// --- HELPERS PARSOWANIA ---
 
 function parseSetCount(setsString) {
     if (!setsString) return 1;
@@ -74,20 +71,42 @@ function parseReps(valStr) {
     return match ? parseInt(match[0], 10) : 10;
 }
 
-// --- LOGIKA BIZNESOWA: SCIENCE-BASED LOAD ---
+// --- LOGIKA BIZNESOWA: SCIENCE-BASED LOAD (AMPS ENHANCED) ---
 
 /**
  * Oblicza RPE (Rate of Perceived Exertion 1-10) dla pojedynczego ćwiczenia.
- * Bazuje na Difficulty Level (1-5) z korektą metaboliczną.
+ * Priorytety danych (od najdokładniejszych):
+ * 1. RIR (Reps In Reserve) -> RPE = 10 - RIR
+ * 2. Quick Rating (Thumbs) -> Mapowanie na RPE
+ * 3. Difficulty Level -> Estymacja (Legacy Fallback)
  */
-function calculateExerciseRPE(difficultyLevel, metabolicIntensity) {
-    // 1. Bazowe mapowanie Lvl 1-5 -> RPE 2-10 (Liniowe dla uproszczenia, fizjologicznie wykładnicze)
-    // Lvl 1->2 (Easy), Lvl 3->6 (Hard), Lvl 5->10 (Max)
-    let rpe = (difficultyLevel || 1) * 2;
+function calculateExerciseRPE(logEntry) {
+    // 1. RIR (Złoty standard)
+    if (logEntry.rir !== undefined && logEntry.rir !== null) {
+        // RIR 0 = RPE 10, RIR 3 = RPE 7. Clamp 1-10.
+        return Math.min(10, Math.max(1, 10 - logEntry.rir));
+    }
 
-    // 2. Korekta metaboliczna (Senna et al. 2011)
-    // Krótkie przerwy/wysokie tętno zwiększają odczuwalny wysiłek
-    if ((metabolicIntensity || 1) >= 3) {
+    // 2. Quick Rating (Szybka ocena)
+    if (logEntry.rating) {
+        switch (logEntry.rating) {
+            case 'hard': return 9;      // Bardzo ciężko
+            case 'ok': return 7;        // Średnio-ciężko (optimum)
+            case 'good': return 6;      // Dobrze/Lekko
+            case 'skipped': return 5;   // Pomiń = neutral
+            default: break;
+        }
+    }
+
+    // 3. Fallback: Difficulty Level (Legacy logic)
+    const difficultyLevel = logEntry.difficultyLevel || 1;
+    const metabolicIntensity = logEntry.metabolicIntensity || 1;
+
+    // Lvl 1->2, Lvl 3->6, Lvl 5->10
+    let rpe = difficultyLevel * 2;
+
+    // Korekta metaboliczna (krótkie przerwy podbijają RPE)
+    if (metabolicIntensity >= 3) {
         rpe += 1.5;
     }
 
@@ -96,36 +115,27 @@ function calculateExerciseRPE(difficultyLevel, metabolicIntensity) {
 
 /**
  * Oblicza obciążenie (AU) dla całej sesji.
- * Priorytet: Suma (Czas ćwiczenia * RPE ćwiczenia).
- * Fallback: Czas sesji * RPE sesji.
  */
 function calculateSessionLoadAU(session) {
-    // A. BOTTOM-UP: Jeśli mamy logi, liczymy dokładnie (Micro-Load)
+    // A. BOTTOM-UP: Sumowanie obciążenia per ćwiczenie
     if (session.sessionLog && Array.isArray(session.sessionLog) && session.sessionLog.length > 0) {
         let totalLoad = 0;
         let hasValidLogs = false;
 
         session.sessionLog.forEach(log => {
-            // Ignoruj pominięte i przerwy
             if (log.status === 'skipped' || log.isRest) return;
 
             hasValidLogs = true;
 
-            // 1. Parametry
-            const rpe = calculateExerciseRPE(log.difficultyLevel, log.metabolicIntensity);
-            const sets = parseSetCount(log.sets) || log.totalSets || 1; // Zazwyczaj w logu jest wpis per ćwiczenie (agregat) lub per seria
-            
-            // Logika Unilateral: jeśli w logu jest "x/str", to sets zazwyczaj oznacza sumę lub jedną stronę.
-            // Przyjmujemy bezpiecznie: jeśli log.duration > 0 to ufamy logowi.
-            
+            // AMPS: Przekazujemy cały obiekt logu do kalkulacji RPE
+            const rpe = calculateExerciseRPE(log);
+            const sets = parseSetCount(log.sets) || log.totalSets || 1;
+
             let workSeconds = 0;
 
-            // 2. Czas Pracy (Time Under Tension)
             if (log.duration && log.duration > 0) {
-                // Jeśli mamy zmierzony czas z frontendu (najdokładniejsze)
                 workSeconds = log.duration;
             } else {
-                // Estymacja z planu
                 const timeBasedSec = parseDurationSeconds(log.reps_or_time);
                 if (timeBasedSec > 0) {
                     workSeconds = timeBasedSec * sets;
@@ -133,13 +143,11 @@ function calculateSessionLoadAU(session) {
                     const reps = parseReps(log.reps_or_time);
                     workSeconds = reps * DEFAULT_SECONDS_PER_REP * sets;
                 }
-
-                // Korekta Unilateral dla estymacji
                 const isUnilateral = String(log.reps_or_time || '').includes('/str');
                 if (isUnilateral) workSeconds *= 2;
             }
 
-            // 3. Wzór Fostera: Minuty * RPE
+            // Wzór Fostera: Minuty * RPE
             const load = (workSeconds / 60) * rpe;
             totalLoad += load;
         });
@@ -149,7 +157,7 @@ function calculateSessionLoadAU(session) {
         }
     }
 
-    // B. TOP-DOWN (Fallback): Jeśli brak logów, użyj ogólnego czasu i RPE
+    // B. TOP-DOWN: Fallback (Czas sesji * RPE sesji)
     let durationMinutes = 0;
     if (session.netDurationSeconds) {
         durationMinutes = session.netDurationSeconds / 60;
@@ -157,7 +165,7 @@ function calculateSessionLoadAU(session) {
         const ms = new Date(session.completedAt) - new Date(session.startedAt);
         if (ms > 0 && ms < 6 * 3600000) durationMinutes = ms / 60000;
     } else {
-        durationMinutes = 30; // Ostateczny fallback
+        durationMinutes = 30;
     }
 
     const globalRPE = estimateSessionRPE(session);
@@ -165,29 +173,21 @@ function calculateSessionLoadAU(session) {
 }
 
 function estimateSessionRPE(session) {
-    // Mapping feedbacku usera na skalę 1-10
     if (session.feedback) {
         const val = parseInt(session.feedback.value, 10);
         if (val === -1) return 7; // Hard
         if (val === 1) return 3;  // Easy
     }
-    // Domyślnie "Somewhat Hard"
     return 5;
 }
 
 /**
  * Główna funkcja obliczająca profil zmęczenia.
- * Pobiera historię z DB, symuluje przebieg zmęczenia i wylicza dynamiczne progi.
- *
- * @param {Object} client - Klient bazy danych
- * @param {string} userId - ID użytkownika
- * @returns {Promise<Object>} Profil zmęczenia
  */
 async function calculateFatigueProfile(client, userId) {
-    console.log(`[FatigueCalc v3] 🏁 Starting profile calculation for: ${userId}`);
+    console.log(`[FatigueCalc v4] 🏁 Starting profile calculation for: ${userId}`);
 
     try {
-        // 1. Pobierz historię (56 dni - okno kalibracyjne)
         const query = `
             SELECT completed_at, session_data
             FROM training_sessions
@@ -198,55 +198,42 @@ async function calculateFatigueProfile(client, userId) {
         const dbResult = await client.query(query, [userId]);
         const sessions = dbResult.rows;
 
-        // 2. Mapowanie sesji na dni (YYYY-MM-DD) -> Load AU
         const dailyLoadsMap = new Map();
 
         sessions.forEach(row => {
             const dateStr = new Date(row.completed_at).toISOString().split('T')[0];
             const data = row.session_data || {};
-            
-            // Wstrzykujemy brakujące metadane, jeśli ich nie ma w JSON
             if (!data.completedAt) data.completedAt = row.completed_at;
 
             const loadAU = calculateSessionLoadAU(data);
-
             const current = dailyLoadsMap.get(dateStr) || 0;
             dailyLoadsMap.set(dateStr, current + loadAU);
         });
 
-        // 3. Symulacja dzienna (od -56 dni do dzisiaj)
         const now = new Date();
-        now.setUTCHours(0, 0, 0, 0); // UTC Midnight!
+        now.setUTCHours(0, 0, 0, 0);
 
         const historyFatigueScores = [];
         const historyStrainScores = [];
+        let currentBucketScore = 0;
 
-        let currentBucketScore = 0; // Stan wiadra (Acute Fatigue)
-
-        // Zmienne do przechowywania wyników "na dzisiaj"
         let todayMonotony = 0;
         let todayStrain = 0;
         let todayWeekLoad = 0;
 
-        // Pętla po dniach (od najdawniejszego do dzisiaj)
         for (let d = HISTORY_WINDOW_DAYS; d >= 0; d--) {
             const dateIter = new Date(now);
             dateIter.setUTCDate(dateIter.getUTCDate() - d);
             const dateKey = dateIter.toISOString().split('T')[0];
 
-            // A. Decay (Upływ czasu - 24h)
-            currentBucketScore *= 0.5;
+            currentBucketScore *= 0.5; // Decay
 
-            // B. Add Load (jeśli w tym dniu był trening)
             const dayLoadAU = dailyLoadsMap.get(dateKey) || 0;
-            
-            // Skalowanie AU do punktów wiadra (aby zachować kompatybilność z limitem 120)
             const scaledLoad = dayLoadAU * LOAD_SCALE;
             currentBucketScore += scaledLoad;
 
             historyFatigueScores.push(currentBucketScore);
 
-            // C. Obliczanie Foster's Monotony & Strain (okno kroczące 7 dni wstecz)
             const weeklyLoads = [];
             for (let w = 6; w >= 0; w--) {
                 const wDate = new Date(dateIter);
@@ -271,24 +258,18 @@ async function calculateFatigueProfile(client, userId) {
             }
         }
 
-        // 4. Sortowanie danych historycznych
         historyFatigueScores.sort((a, b) => a - b);
         historyStrainScores.sort((a, b) => a - b);
 
-        // 5. Wyliczanie Percentyli (indywidualna tolerancja)
         const p85_fatigue = getPercentile(historyFatigueScores, 85);
         const p75_fatigue = getPercentile(historyFatigueScores, 75);
         const p60_fatigue = getPercentile(historyFatigueScores, 60);
         const p85_strain = getPercentile(historyStrainScores, 85);
 
-        // 6. Kalibracja Progów
         const sessionCount = sessions.length;
         const isCalibrated = sessionCount >= MIN_SESSIONS_FOR_CALIBRATION;
 
-        // Domyślne progi (Fallback dla nowych userów)
-        let thEnter = 80;
-        let thExit = 60;
-        let thFilter = 70;
+        let thEnter = 80, thExit = 60, thFilter = 70;
 
         if (isCalibrated) {
             thEnter = Math.max(80, p85_fatigue);
@@ -308,11 +289,7 @@ async function calculateFatigueProfile(client, userId) {
             strain7d: Math.round(todayStrain),
             p85_strain_56d: Math.round(p85_strain),
             p85_fatigue_56d: Math.round(p85_fatigue),
-            dataQuality: {
-                sessions56d: sessionCount,
-                sessions7d: dailyLoadsMap.size,
-                calibrated: isCalibrated
-            }
+            dataQuality: { sessions56d: sessionCount, calibrated: isCalibrated }
         };
 
         console.log(`[FatigueCalc] Profile Calculated: Score=${finalScore}, Enter=${result.fatigueThresholdEnter}, Monotony=${result.monotony7d.toFixed(2)}`);
@@ -321,12 +298,8 @@ async function calculateFatigueProfile(client, userId) {
     } catch (error) {
         console.error("[FatigueCalc] Critical Error:", error);
         return {
-            fatigueScoreNow: 0,
-            fatigueThresholdEnter: 80,
-            fatigueThresholdExit: 60,
-            fatigueThresholdFilter: 70,
-            weekLoad7d: 0, monotony7d: 0, strain7d: 0,
-            p85_strain_56d: 9999, p85_fatigue_56d: 80,
+            fatigueScoreNow: 0, fatigueThresholdEnter: 80, fatigueThresholdExit: 60, fatigueThresholdFilter: 70,
+            weekLoad7d: 0, monotony7d: 0, strain7d: 0, p85_strain_56d: 9999, p85_fatigue_56d: 80,
             dataQuality: { sessions56d: 0, calibrated: false, error: error.message }
         };
     }

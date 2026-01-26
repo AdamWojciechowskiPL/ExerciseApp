@@ -1,6 +1,7 @@
+// ExerciseApp/ui/screens/training.js
 import { state } from '/state.js';
 import { screens, initializeFocusElements, focus } from '/dom.js';
-import { getActiveTrainingPlan, getHydratedDay, getISODate, calculateSmartDuration, calculateSystemLoad, calculateClinicalProfile, getSessionFocus } from '/utils.js';
+import { getActiveTrainingPlan, getHydratedDay, getISODate, calculateSmartDuration, calculateSystemLoad, calculateClinicalProfile, getSessionFocus, savePlanToStorage } from '/utils.js';
 import { assistant } from '/assistantEngine.js';
 import { navigateTo, showLoader, hideLoader } from '/ui/core.js';
 import { generatePreTrainingCardHTML, getAffinityBadge } from '/ui/templates.js';
@@ -12,14 +13,7 @@ import { workoutMixer } from '/workoutMixer.js';
 import { getUserPayload } from '/auth.js';
 import { generateBioProtocol } from '/protocolGenerator.js';
 
-const savePlanToStorage = (plan) => {
-    try {
-        const user = getUserPayload();
-        const userId = user ? user.sub : 'anon';
-        const date = getISODate(new Date());
-        localStorage.setItem(`dynamic_plan_${userId}_${date}`, JSON.stringify(plan));
-    } catch (e) { console.error("Błąd zapisu planu:", e); }
-};
+// savePlanToStorage is now imported from utils.js
 
 // --- RENDEROWANIE PROTOKOŁU (Z SUWAKIEM) ---
 export const renderProtocolStart = (protocol) => {
@@ -159,9 +153,9 @@ export const renderProtocolStart = (protocol) => {
                 });
 
                 if (swapType === 'blacklist') {
-                     if (confirm(`Dodać poprzednie ćwiczenie do czarnej listy?`)) {
-                         dataStore.addToBlacklist(oldId, newExerciseDef.id);
-                     }
+                    if (confirm(`Dodać poprzednie ćwiczenie do czarnej listy?`)) {
+                        dataStore.addToBlacklist(oldId, newExerciseDef.id);
+                    }
                 }
 
                 // Odśwież widok z zachowaniem aktualnego timeFactor
@@ -311,10 +305,10 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
 
                 <div class="pre-training-actions" style="display:flex; gap:8px;">
                     ${isCurrentDynamicDay ?
-                        `<button id="reset-workout-btn" class="reset-workout-btn" title="Przywróć Plan Bazowy" style="width:32px; height:32px;">
+                `<button id="reset-workout-btn" class="reset-workout-btn" title="Przywróć Plan Bazowy" style="width:32px; height:32px;">
                             <svg width="16" height="16"><use href="#icon-reset-ccw"/></svg>
                         </button>` : ''
-                    }
+            }
                     <div class="time-badge-pill" style="background-color:#f0f9ff; color:#0284c7; border:1px solid #bae6fd; padding:4px 10px; border-radius:20px; font-size:0.8rem; font-weight:700; display:flex; align-items:center; gap:5px; white-space:nowrap;">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
                         <span id="header-duration-display">${estimatedMinutes} min</span>
@@ -402,8 +396,8 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
                     const cleanReps = ex.reps_or_time.replace(/\/str\.?|\s*stron.*/gi, '').trim();
                     const setsPerSide = Math.ceil(parseInt(ex.sets.split('-').pop()) / 2);
 
-                    listContainer.innerHTML += generatePreTrainingCardHTML({...ex, name: `${ex.name} (${startSide})`, reps_or_time: cleanReps, sets: setsPerSide.toString()}, currentDataIndex);
-                    listContainer.innerHTML += generatePreTrainingCardHTML({...ex, name: `${ex.name} (${secondSide})`, reps_or_time: cleanReps, sets: setsPerSide.toString()}, currentDataIndex);
+                    listContainer.innerHTML += generatePreTrainingCardHTML({ ...ex, name: `${ex.name} (${startSide})`, reps_or_time: cleanReps, sets: setsPerSide.toString() }, currentDataIndex);
+                    listContainer.innerHTML += generatePreTrainingCardHTML({ ...ex, name: `${ex.name} (${secondSide})`, reps_or_time: cleanReps, sets: setsPerSide.toString() }, currentDataIndex);
                 } else {
                     listContainer.innerHTML += generatePreTrainingCardHTML(ex, currentDataIndex);
                 }
@@ -574,6 +568,7 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
 
 export const renderTrainingScreen = () => {
     // --- NOWOŚĆ: Zaktualizowany HTML z licznikiem czasu ---
+    // --- AMPS (Phase 1): Added focus-rating-container ---
     screens.training.innerHTML = `
     <div class="focus-view">
         <div id="focus-progress-bar" class="focus-progress-container"></div>
@@ -582,6 +577,10 @@ export const renderTrainingScreen = () => {
             <div id="focus-total-time" class="session-elapsed-time">00:00</div>
         </div>
         <div class="focus-timer-container"><p id="focus-timer-display"></p></div>
+        
+        <!-- AMPS: QUICK RATING CONTAINER (Hidden by default) -->
+        <div id="focus-rating-container" class="focus-rating-container hidden"></div>
+
         <div class="focus-exercise-info" style="margin-bottom: 0.5rem;">
             <div class="exercise-title-container">
                 <h2 id="focus-exercise-name"></h2>

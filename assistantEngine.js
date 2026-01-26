@@ -1,23 +1,49 @@
+// ExerciseApp/assistantEngine.js
 // assistantEngine.js
 
 import { state } from './state.js';
-import { parseSetCount, calculateSmartDuration } from './utils.js';
+import { parseSetCount } from './utils.js';
 
 /**
- * MÓZG SYSTEMU (ASSISTANT ENGINE) v4.1 (Added Boost Badge Logic)
+ * MÓZG SYSTEMU (ASSISTANT ENGINE) v4.2 (AMPS Classification)
  */
 
 export const assistant = {
 
-    calculateResilience: () => {
-        if (state.userStats && state.userStats.resilience) {
-            return state.userStats.resilience;
-        }
-        return { score: 0, status: 'Vulnerable', daysSinceLast: 0, sessionCount: 0 };
-    },
+    // AMPS PHASE 3: CLASSIFICATION
+    classifySessionPerformance: (sessionLog) => {
+        const groups = {
+            good: [],
+            moderate: [],
+            difficult: []
+        };
 
-    estimateDuration: (dayPlan) => {
-        return calculateSmartDuration(dayPlan);
+        const uniqueLogs = new Map();
+        // Deduplicate logs (take last status)
+        sessionLog.forEach(log => {
+            if (log.isRest || log.status === 'skipped') return;
+            uniqueLogs.set(log.exerciseId || log.id, log);
+        });
+
+        uniqueLogs.forEach(log => {
+            const rating = log.rating || 'none';
+            const tech = log.tech !== undefined && log.tech !== null ? log.tech : -1;
+            const rir = log.rir !== undefined && log.rir !== null ? log.rir : -1;
+
+            let classification = 'moderate';
+
+            // Rules
+            if (rating === 'hard' || (tech !== -1 && tech <= 4) || rir === 0) {
+                classification = 'difficult';
+            }
+            else if (rating === 'good' || (tech >= 8 && rir >= 2)) {
+                classification = 'good';
+            }
+
+            groups[classification].push(log);
+        });
+
+        return groups;
     },
 
     adjustTrainingVolume: (dayPlan, painLevel, timeFactor = 1.0) => {
@@ -46,19 +72,19 @@ export const assistant = {
             mode = 'eco';
             painMessage = "Tryb Oszczędny (Eco).";
             targetSetsMode = 'minus_step';
-            intensityScale = 0.8; 
+            intensityScale = 0.8;
         }
         else if (painLevel >= 6 && painLevel <= 7) {
             mode = 'care';
             painMessage = "Tryb Ostrożny (Care).";
             targetSetsMode = 'minimum';
-            intensityScale = 0.6; 
+            intensityScale = 0.6;
         }
         else {
             mode = 'sos';
             painMessage = "Zalecany tryb SOS.";
             targetSetsMode = 'minimum';
-            intensityScale = 0.45; 
+            intensityScale = 0.45;
         }
 
         ['warmup', 'main', 'cooldown'].forEach(section => {
@@ -68,9 +94,9 @@ export const assistant = {
                 let currentSets = parseSetCount(exercise.sets);
 
                 const isUnilateral = exercise.isUnilateral ||
-                                     exercise.is_unilateral ||
-                                     String(exercise.reps_or_time).includes('/str') ||
-                                     String(exercise.reps_or_time).includes('stron');
+                    exercise.is_unilateral ||
+                    String(exercise.reps_or_time).includes('/str') ||
+                    String(exercise.reps_or_time).includes('stron');
 
                 const stepSize = isUnilateral ? 2 : 1;
                 const minSetsFloor = isUnilateral ? 2 : 1;
@@ -125,7 +151,7 @@ export const assistant = {
                     if (mode === 'eco') modificationBadge = { type: 'eco', label: `🍃 ECO` };
                     else if (mode === 'care') modificationBadge = { type: 'care', label: `🛡️ CARE` };
                     else if (mode === 'sos') modificationBadge = { type: 'sos', label: `🏥 SOS` };
-                    
+
                     // NOWOŚĆ: Jeśli czujesz się świetnie, ale nie dodano serii (np. rozgrzewka),
                     // i tak pokaż badge "PRO" / "FLOW" / "BOOST"
                     else if (mode === 'boost') modificationBadge = { type: 'boost', label: `🔥 PRO` };

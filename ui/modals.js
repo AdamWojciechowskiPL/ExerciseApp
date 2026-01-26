@@ -4,6 +4,15 @@ import dataStore from '../dataStore.js';
 import { processSVG } from '../utils.js';
 import { buildClinicalContext, checkExerciseAvailability } from '../clinicalEngine.js';
 
+// Helper do zamykania przy kliknięciu w tło
+function attachBackdropClose(overlay) {
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            overlay.remove();
+        }
+    });
+}
+
 export function renderMoveDayModal(availableTargets, onConfirm) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -30,6 +39,7 @@ export function renderMoveDayModal(availableTargets, onConfirm) {
     `;
 
     document.body.appendChild(overlay);
+    attachBackdropClose(overlay);
 
     overlay.querySelectorAll('.target-date-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -112,6 +122,7 @@ export function renderSwapModal(currentExercise, onConfirm) {
     `;
 
     document.body.appendChild(overlay);
+    attachBackdropClose(overlay);
 
     let selectedAltId = null;
     let swapType = 'today';
@@ -158,6 +169,8 @@ export function renderPreviewModal(svgContent, title) {
         </div>
     `;
     document.body.appendChild(overlay);
+    attachBackdropClose(overlay);
+    
     overlay.querySelector('#close-preview').addEventListener('click', () => overlay.remove());
 }
 
@@ -184,6 +197,9 @@ export function renderEvolutionModal(adaptation, onCheck) {
     `;
 
     document.body.appendChild(overlay);
+    // Ewolucja to ważne powiadomienie, nie zamykamy go tłem, chyba że user bardzo chce
+    attachBackdropClose(overlay);
+
     if (state.completionSound && isEvo) state.finalCompletionSound();
 
     overlay.querySelector('#close-evo').onclick = () => {
@@ -236,6 +252,8 @@ export function renderSessionRecoveryModal(backup, timeGapFormatted, onRestore, 
     `;
 
     document.body.appendChild(overlay);
+    // UWAGA: Tutaj NIE dodajemy attachBackdropClose, ponieważ to jest modal krytyczny.
+    // Użytkownik MUSI podjąć decyzję (Porzuć/Przywróć).
 
     overlay.querySelector('#restore-session').addEventListener('click', () => { overlay.remove(); if (onRestore) onRestore(); });
     overlay.querySelector('#discard-session').addEventListener('click', () => { overlay.remove(); if (onDiscard) onDiscard(); });
@@ -292,30 +310,7 @@ export function renderTunerModal(exerciseId, onUpdate) {
     `;
 
     document.body.appendChild(overlay);
-
-    // === FIX STABILNOŚCI ===
-    // 1. Śledzenie mousedown: Zapobiega zamknięciu, gdy ktoś wciśnie klawisz na przycisku otwierającym,
-    //    przesunie mysz i puści ją na overlayu.
-    let isMouseDownOnOverlay = false;
-
-    overlay.addEventListener('mousedown', (e) => {
-        if (e.target === overlay) {
-            isMouseDownOnOverlay = true;
-        } else {
-            isMouseDownOnOverlay = false;
-        }
-    });
-
-    // 2. Opóźnione dodanie listenera kliknięcia
-    // Całkowicie ignoruje jakiekolwiek zdarzenia z "przeszłości" (propagacja).
-    setTimeout(() => {
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay && isMouseDownOnOverlay) {
-                console.log('[ModalDebug] Closing modal (Valid background click)');
-                overlay.remove();
-            }
-        });
-    }, 200);
+    attachBackdropClose(overlay);
 
     const slider = overlay.querySelector('#tuner-slider');
     const valDisplay = overlay.querySelector('#tuner-score-val');
@@ -358,6 +353,85 @@ export function renderTunerModal(exerciseId, onUpdate) {
     });
 }
 
+// --- AMPS PHASE 2: DETAIL ASSESSMENT MODAL ---
+export function renderDetailAssessmentModal(exerciseName, onConfirm) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+
+    overlay.innerHTML = `
+        <div class="amps-detail-modal">
+            <div class="amps-modal-header">
+                <h3 class="amps-modal-title">${exerciseName}</h3>
+                <p class="amps-modal-subtitle">✨ Nowe ćwiczenie - skalibrujmy je!</p>
+            </div>
+
+            <div class="amps-section">
+                <label class="amps-label">Jakość Techniki (1-10)</label>
+                <div class="tech-slider-wrapper">
+                    <input type="range" min="1" max="10" value="5" class="tech-slider" id="tech-slider">
+                    <div class="tech-value-display"><span id="tech-val">5</span>/10</div>
+                    <div class="tech-labels">
+                        <span>Słaba</span>
+                        <span>Perfekcja</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="amps-section">
+                <label class="amps-label">Rezerwa (RIR)</label>
+                <div class="rir-grid">
+                    <button class="rir-btn" data-rir="0">
+                        RIR 0
+                        <span>Max</span>
+                    </button>
+                    <button class="rir-btn" data-rir="1">
+                        RIR 1
+                        <span>1 w zapasie</span>
+                    </button>
+                    <button class="rir-btn" data-rir="2">
+                        RIR 2
+                        <span>2 w zapasie</span>
+                    </button>
+                    <button class="rir-btn selected" data-rir="3">
+                        RIR 3+
+                        <span>Lekko</span>
+                    </button>
+                </div>
+            </div>
+
+            <button id="save-detail" class="action-btn modal-full-btn">Zapisz Ocenę</button>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+    
+    // Obsługa zamknięcia przez kliknięcie w tło
+    attachBackdropClose(overlay);
+
+    const techSlider = overlay.querySelector('#tech-slider');
+    const techVal = overlay.querySelector('#tech-val');
+    let currentRir = 3;
+
+    techSlider.addEventListener('input', (e) => {
+        techVal.textContent = e.target.value;
+    });
+
+    const rirBtns = overlay.querySelectorAll('.rir-btn');
+    rirBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            rirBtns.forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+            currentRir = parseInt(btn.dataset.rir);
+        });
+    });
+
+    overlay.querySelector('#save-detail').addEventListener('click', () => {
+        const tech = parseInt(techSlider.value);
+        if (onConfirm) onConfirm(tech, currentRir);
+        overlay.remove();
+    });
+}
+
 const PHASE_LABELS = {
     'control': 'Kontrola & Stabilizacja',
     'mobility': 'Mobilność',
@@ -387,24 +461,22 @@ export function renderPhaseTransitionModal(updateData, onConfirm) {
     const newPhaseName = PHASE_LABELS[newPhaseId] || newPhaseId.toUpperCase();
     const description = PHASE_DESCRIPTIONS[newPhaseId] || 'Nowy cykl treningowy.';
 
-    // Konfiguracja wizualna
     const config = isSoft
         ? {
             title: "Zmiana Bodźca",
             icon: "⏱️",
-            color: "var(--secondary-color)", // Cyan/Teal
+            color: "var(--secondary-color)",
             msg: "Minął czas przewidziany na obecną fazę. Przechodzimy dalej, aby uniknąć stagnacji.",
             btn: "Rozumiem"
         }
         : {
             title: "FAZA UKOŃCZONA!",
             icon: "🏆",
-            color: "var(--gold-color)", // Gold
+            color: "var(--gold-color)",
             msg: "Gratulacje! Wykonałeś wszystkie założone sesje w tej fazie.",
             btn: "Lecimy Dalej!"
         };
 
-    // Dźwięk sukcesu
     if (!isSoft && state.completionSound) state.finalCompletionSound();
 
     overlay.innerHTML = `
@@ -412,7 +484,7 @@ export function renderPhaseTransitionModal(updateData, onConfirm) {
             <div class="evo-icon-wrapper" style="border-color:${config.color}">
                 <span style="font-size: 3rem;">${config.icon}</span>
             </div>
-            
+
             <h2 class="evo-title" style="color:${config.color}">${config.title}</h2>
             <p class="evo-desc" style="margin-bottom: 1.5rem;">${config.msg}</p>
 
@@ -429,6 +501,7 @@ export function renderPhaseTransitionModal(updateData, onConfirm) {
     `;
 
     document.body.appendChild(overlay);
+    attachBackdropClose(overlay);
 
     overlay.querySelector('#close-phase-modal').onclick = () => {
         const modalContent = overlay.querySelector('.evolution-modal');

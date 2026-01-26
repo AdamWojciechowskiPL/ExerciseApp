@@ -1,4 +1,4 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v24.1.0
+# Aplikacja Treningowa (Smart Rehab PWA) v25.0.0
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
@@ -16,6 +16,22 @@ System nie generuje już "przypadkowych" treningów. Każdy użytkownik znajduje
 *   **Safety Override:** Automatyczne wykrywanie stanów zagrożenia.
     *   **Rehab Mode:** Wymuszany przy wysokim bólu. Skupia się na izometrii i mobilności.
     *   **Deload Mode:** Wymuszany przy wysokim skumulowanym zmęczeniu (Acute Fatigue > 80).
+
+### ⚡ AMPS (Adaptive Multi-Dimensional Progression System)
+Nowy system zbierania i analizy danych w trakcie treningu, mający na celu precyzyjne sterowanie obciążeniem (Autoregulacja).
+
+*   **Real-Time Feedback (Szybka Ocena):**
+    *   **Quick Swipe:** Podczas przerwy użytkownik ocenia poprzednią serię jednym kliknięciem (👍 Dobrze / 👌 OK / 👎 Trudno). Dane są zapisywane lokalnie (State-First).
+    *   **Intelligent Prompt (Deep Dive):** Dla nowych lub problematycznych ćwiczeń system prosi o szczegóły: **RIR** (Rezerwa Powtórzeń) oraz **Jakość Techniki** (1-10).
+    *   **Smart Logic:** System sam decyduje, kiedy zapytać o szczegóły, aby nie męczyć użytkownika (max 2 razy na sesję).
+
+*   **Smart Session Summary:**
+    *   Po treningu ćwiczenia są automatycznie grupowane na: **✅ Poszło Gładko**, **🟡 Wymagało Wysiłku** i **🔴 Było Trudno**.
+    *   **Auto-Devolution:** Dla ćwiczeń oznaczonych jako "Trudne" dostępny jest przycisk szybkiej zamiany na łatwiejszy wariant w przyszłych planach.
+
+*   **Inference Engine (Silnik Wnioskowania):**
+    *   Działa na Backendzie (`save-session.js`).
+    *   Jeśli użytkownik pominie ocenę, system **wnioskuje** ją na podstawie ogólnego zmęczenia, historii i kontekstu sesji. Zapewnia to ciągłość danych analitycznych.
 
 ### ⚙️ Explicit Pacing & Metadata
 Zastąpiono algorytmiczne "zgadywanie" tempa twardymi danymi z bazy.
@@ -150,10 +166,10 @@ Projekt posiada zestaw testów regresyjnych w katalogu `/tests`:
 │
 ├── LOGIKA BIZNESOWA (FRONTEND):
 │   ├── protocolGenerator.js    # Generator Bio-Protokołów (Time-Boxing logic)
-│   ├── workoutMixer.js         # Mixer v3.0 Lite (Manual swap logic)
-│   ├── assistantEngine.js      # Skalowanie objętości (Pain/Time adaptation)
+│   ├── workoutMixer.js         # Mixer v3.0 Lite (Manual swap logic) + Helpery Dewolucji (szukanie łatwiejszych wariantów)
+│   ├── assistantEngine.js      # Skalowanie objętości (Pain/Time adaptation) + Klasyfikacja sesji (Smart Summary logic)
 │   ├── clinicalEngine.js       # Frontendowy walidator reguł medycznych
-│   ├── training.js             # Kontroler przebiegu treningu + pętla backupu
+│   ├── training.js             # Kontroler przebiegu treningu + pętla backupu + Obsługa Quick Rating i Detail Prompt (State-First)
 │   ├── timer.js                # Obsługa stopera (z Audio Pacing) i timera
 │   ├── tts.js                  # Text-to-Speech (Synteza mowy)
 │   ├── cast.js                 # Google Cast Sender SDK
@@ -184,7 +200,7 @@ Projekt posiada zestaw testów regresyjnych w katalogu `/tests`:
 │   │   ├── _stats-helper.js         # Logika statystyk (Streak, Resilience, Pacing)
 │   │   ├── _pain-taxonomy.js        # Ujednolicony słownik stref bólu
 │   │   ├── _tempo-validator.js      # Walidacja i egzekwowanie tempa fazy
-│   │   ├── _fatigue-calculator.js   # Profil zmęczenia, Monotonia, Strain
+│   │   ├── _fatigue-calculator.js   # Oblicza wskaźniki zmęczenia uwzględniając RIR (Reps In Reserve) oraz Quick Ratings (Kciuki). Wykorzystuje model Banistera z precyzyjniejszym wsadem danych (RPE 1-10 wyliczane dynamicznie).
 │   │   ├── _data-contract.js        # Schematy walidacji JSON (Pain Monitoring)
 │   │   ├── patch-session-feedback.js # Aktualizacja sesji po 24h
 │   │   ├── generate-plan.js         # Generator planów dynamicznych (Rolling Window + Fluid Progression)
@@ -198,7 +214,7 @@ Projekt posiada zestaw testów regresyjnych w katalogu `/tests`:
 │   │   ├── get-history-by-month.js  # Historia kalendarzowa
 │   │   ├── get-exercise-animation.js # Pobieranie SVG (Cacheable)
 │   │   ├── get-exercise-mastery.js  # Statystyki objętości per ćwiczenie
-│   │   ├── save-session.js          # Zapis treningu + Ewolucja + Analiza Pacingu
+│   │   ├── save-session.js          # Zapis treningu z uruchomieniem Inference Engine (uzupełnianie brakujących ocen) oraz obsługą natychmiastowej Dewolucji (wymuszanie łatwiejszych wariantów).
 │   │   ├── save-settings.js         # Zapis ustawień i planów
 │   │   ├── update-preference.js     # Pojedyncza aktualizacja oceny
 │   │   ├── recalculate-stats.js     # Wymuszone przeliczenie tempa
@@ -301,7 +317,20 @@ Historia wykonanych treningów.
 *   `plan_id` (VARCHAR).
 *   `started_at` (TIMESTAMP).
 *   `completed_at` (TIMESTAMP).
-*   `session_data` (JSONB): Pełny log (ćwiczenia, serie, feedback, ból, netDurationSeconds).
+*   `session_data` (JSONB): Rozszerzona struktura logów zawierająca dane AMPS:
+    ```json
+    {
+      "sessionLog": [
+        {
+          "exerciseId": "deadBug",
+          "rating": "ok",       // Enum: good/ok/hard/skipped
+          "rir": 2,             // Int: Rezerwa powtórzeń
+          "tech": 8,            // Int: Ocena techniki (1-10)
+          "inferred": true      // Bool: Czy system zgadł ocenę?
+        }
+      ]
+    }
+    ```
 
 ### 5. `user_exercise_blacklist`
 Lista ćwiczeń zablokowanych przez użytkownika.

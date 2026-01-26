@@ -1,9 +1,8 @@
 import { state } from '../state.js';
-import { extractYoutubeId, calculateSystemLoad, calculateClinicalProfile, getSessionFocus } from '../utils.js';
+import { extractYoutubeId, calculateSystemLoad, calculateClinicalProfile, getSessionFocus, getISODate } from '../utils.js';
 
 // --- HELPERY (WEWNĘTRZNE) ---
 
-// Słownik nazw faz (PL)
 const PHASE_NAMES = {
     'control': 'Kontrola',
     'mobility': 'Mobilność',
@@ -14,7 +13,6 @@ const PHASE_NAMES = {
     'rehab': 'Rehab'
 };
 
-// Słownik Celów (do mapowania template_id)
 const GOAL_NAMES = {
     'pain_relief': 'Redukcja Bólu',
     'fat_loss': 'Redukcja Tłuszczu',
@@ -73,12 +71,7 @@ function getCurrentWeekDays() {
     return weekDays;
 }
 
-function getIsoDateKey(date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-}
+// getISODate is now imported from utils.js
 
 export const getAffinityBadge = (exerciseId) => {
     const pref = state.userPreferences[exerciseId] || { score: 0 };
@@ -183,10 +176,10 @@ export function generateHeroDashboardHTML(stats) {
     const progressDegrees = Math.round((progressPercent / 100) * 360);
     const loadingClass = isLoading ? 'skeleton-pulse' : '';
     const weekDays = getCurrentWeekDays();
-    const todayKey = getIsoDateKey(new Date());
+    const todayKey = getISODate(new Date());
 
     const weeklyBarsHTML = weekDays.map(date => {
-        const dateKey = getIsoDateKey(date);
+        const dateKey = getISODate(date);
         const dayName = date.toLocaleDateString('pl-PL', { weekday: 'short' }).charAt(0);
         const isToday = dateKey === todayKey;
         const daySessions = state.userProgress ? state.userProgress[dateKey] : null;
@@ -335,7 +328,7 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
                         <div style="${bottomSlotStyle}">Przewidywany</div>
                     </div>
 
-                    <!-- KAFEL 2: CEL (ZAMIENIONO ASYSTENTA NA CEL) -->
+                    <!-- KAFEL 2: CEL -->
                     <div style="${gridItemStyle}">
                         <div style="${topSlotStyle}">
                             <div style="font-size:1.4rem;">🎯</div>
@@ -346,7 +339,7 @@ export function generateCalendarPageHTML(dayData, estimatedMinutes, dateObj, wiz
                         <div style="${bottomSlotStyle}">Cel Sesji</div>
                     </div>
 
-                    <!-- KAFEL 3: OBCIĄŻENIE (POPRAWIONO: USUNIĘTO KLASĘ Z MARGINESAMI) -->
+                    <!-- KAFEL 3: OBCIĄŻENIE -->
                     <div style="${gridItemStyle}">
                         <div style="${topSlotStyle}">
                              <div style="width:100%; height:6px; background:#e5e7eb; border-radius:3px; overflow:hidden;">
@@ -418,6 +411,75 @@ export function generateRestCalendarPageHTML(dateObj) {
         </div>
     </div>`;
 }
+// --- SHARED HELPER DLA WIERSZY ĆWICZEŃ (POPRAWIONY) ---
+function renderExerciseRow(item, sessionRatings) {
+    const id = item.exerciseId || item.id;
+    const displayName = item.name.replace(/\s*\((Lewa|Prawa)\)/gi, '').trim();
+    const pref = state.userPreferences[id] || { score: 0, difficulty: 0 };
+    const score = pref.score || 0;
+
+    let scoreText = score > 0 ? `+${score}` : `${score}`;
+    let scoreColor = '#6b7280';
+    if (score > 0) scoreColor = '#10b981';
+    if (score < 0) scoreColor = '#ef4444';
+
+    let actualTimeBadge = '';
+    if (item.duration && item.duration > 0) {
+        const dm = Math.floor(item.duration / 60);
+        const ds = item.duration % 60;
+        const dStr = dm > 0 ? `${dm}m ${ds}s` : `${ds}s`;
+        actualTimeBadge = `<span class="time-badge" style="font-size:0.65rem; padding:1px 4px;">⏱ ${dStr}</span>`;
+    }
+
+    let ampsBadge = '';
+    if (item.rating || item.rir !== undefined || item.tech !== undefined) {
+        const ratingMap = { 'good': '👍', 'ok': '👌', 'hard': '👎', 'skipped': '' };
+        const icon = ratingMap[item.rating] || '';
+        const techStr = (item.tech !== undefined && item.tech !== null) ? `T:${item.tech}` : '';
+        const rirStr = (item.rir !== undefined && item.rir !== null) ? `RIR:${item.rir}` : '';
+        let content = [];
+        if (icon) content.push(icon);
+        if (techStr) content.push(techStr);
+        if (rirStr) content.push(rirStr);
+        if (item.inferred) content.push('🤖');
+        if (content.length > 0) {
+            ampsBadge = `<span class="amps-inline-badge">${content.join(' ')}</span>`;
+        }
+    }
+
+    const sessionAction = sessionRatings[id];
+    const isLikeActive = sessionAction === 'like' ? 'active' : '';
+    const isDislikeActive = sessionAction === 'dislike' ? 'active' : '';
+
+    // FIX: Dodano klasę 'dynamic-score-val' i zawsze renderujemy span (nawet pusty), by JS mógł go zaktualizować
+    const scoreContent = score !== 0 ? `[${scoreText}]` : '';
+
+    return `
+    <div class="rating-card history-mode" data-id="${id}">
+        <div class="rating-card-main">
+            <div class="rating-info">
+                <div style="line-height:1.1;">
+                    <span class="rating-name">${displayName}</span>
+                    ${ampsBadge}
+                </div>
+                <div class="history-meta-row">
+                    <span class="time-badge" style="background:#f1f5f9; color:#64748b; border:1px solid #e2e8f0; font-size:0.65rem; padding:1px 4px;">
+                        Cel: ${item.reps_or_time}
+                    </span>
+                    ${actualTimeBadge}
+                    <span style="font-size:0.65rem; color:#94a3b8;">S ${item.currentSet}/${item.totalSets}</span>
+                    <span class="dynamic-score-val" style="font-size:0.65rem; font-weight:700; color:${scoreColor}; transition: color 0.2s;">${scoreContent}</span>
+                </div>
+            </div>
+            <div class="rating-actions-group">
+                <div class="btn-group-affinity">
+                    <button class="rate-btn-hist affinity-btn ${isLikeActive}" data-id="${id}" data-action="like">👍</button>
+                    <button class="rate-btn-hist affinity-btn ${isDislikeActive}" data-id="${id}" data-action="dislike">👎</button>
+                </div>
+            </div>
+        </div>
+    </div>`;
+}
 
 export function generateSessionCardHTML(session) {
     const planId = session.planId || 'l5s1-foundation';
@@ -426,8 +488,8 @@ export function generateSessionCardHTML(session) {
     const title = session.trainingTitle || 'Trening';
 
     let statusBadge = '';
-    if (isProtocol) statusBadge = `<span class="meta-badge" style="background:#e0f2fe; color:#0369a1; border-color:#bae6fd;">🧬 BIO-PROTOKÓŁ</span>`;
-    else if (isDynamic) statusBadge = `<span class="meta-badge" style="background:#f0fdf4; color:#15803d; border-color:#bbf7d0;">🧬 VIRTUAL PHYSIO</span>`;
+    if (isProtocol) statusBadge = `<span class="meta-badge" style="background:#e0f2fe; color:#0369a1; border-color:#bae6fd;">🧬 BIO</span>`;
+    else if (isDynamic) statusBadge = `<span class="meta-badge" style="background:#f0fdf4; color:#15803d; border-color:#bbf7d0;">🧬 VIRTUAL</span>`;
 
     const completedDate = new Date(session.completedAt || new Date());
     const dateStr = completedDate.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -442,9 +504,7 @@ export function generateSessionCardHTML(session) {
     const fb = formatFeedback(session);
 
     let sessionLoad = 0;
-    if (session.sessionLog) {
-        sessionLoad = calculateSystemLoad(session.sessionLog, true);
-    }
+    if (session.sessionLog) sessionLoad = calculateSystemLoad(session.sessionLog, true);
     if (sessionLoad === 0) sessionLoad = 50;
 
     let loadColor = '#facc15';
@@ -456,183 +516,76 @@ export function generateSessionCardHTML(session) {
         session.exerciseRatings.forEach(r => sessionRatings[r.exerciseId] = r.action);
     }
 
-    const exercisesHtml = (session.sessionLog || []).filter(l => l.status === 'completed' && !l.isRest).map(item => {
-        const id = item.exerciseId || item.id;
-        const displayName = item.name.replace(/\s*\((Lewa|Prawa)\)/gi, '').trim();
-
-        const pref = state.userPreferences[id] || { score: 0, difficulty: 0 };
-        const score = pref.score || 0;
-        const affinityBadge = getAffinityBadge(id);
-
-        let scoreText = score > 0 ? `+${score}` : `${score}`;
-        let scoreColor = '#6b7280';
-        if (score > 0) scoreColor = '#10b981';
-        if (score < 0) scoreColor = '#ef4444';
-        const rawScoreDisplay = `<span style="font-size:0.75rem; font-weight:800; color:${scoreColor}; margin-left:4px;">[${scoreText}]</span>`;
-
-        let actualTimeBadge = '';
-        if (item.duration && item.duration > 0) {
-            const dm = Math.floor(item.duration / 60);
-            const ds = item.duration % 60;
-            const dStr = dm > 0 ? `${dm}m ${ds}s` : `${ds}s`;
-            actualTimeBadge = `<span class="time-badge" style="background:#fefce8; color:#b45309; border:1px solid #fde047; font-size:0.7rem;">⏱ ${dStr}</span>`;
-        }
-
-        const sessionAction = sessionRatings[id];
-        const currentDiff = pref.difficulty || 0;
-
-        const isLikeActive = sessionAction === 'like' ? 'active' : '';
-        const isDislikeActive = sessionAction === 'dislike' ? 'active' : '';
-
-        // --- ZMIANA: Stan przycisków w Historii oparty WYŁĄCZNIE na aktualnym stanie (currentDiff) ---
-        // Pozwala to na odznaczenie (reset) przycisku, nawet jeśli w sesji historycznej był on zaznaczony.
-        // Jeśli currentDiff wynosi 0, żaden przycisk nie będzie 'selected'.
-        const isEasySelected = (currentDiff === -1) ? 'selected' : '';
-        const isHardSelected = (currentDiff === 1) ? 'selected' : '';
-
-        return `
-        <div class="rating-card history-mode" data-id="${id}" style="padding: 10px; border-bottom: 1px solid #f0f0f0;">
-            <div style="flex:1; min-width:0;">
-                <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:4px;">
-                    <span style="font-weight:700; font-size:0.95rem; color:#333;">${displayName}</span>
-                    ${affinityBadge}
-                    ${rawScoreDisplay}
-                </div>
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <span class="time-badge" style="background:#f3f4f6; color:#666; border:1px solid #e5e7eb; font-size:0.7rem;">
-                        Cel: ${item.reps_or_time}
-                    </span>
-                    ${actualTimeBadge}
-                    <span style="font-size:0.7rem; color:#999;">Seria ${item.currentSet}/${item.totalSets}</span>
-                </div>
-            </div>
-
-            <div class="rating-actions-group">
-                <div class="btn-group-affinity" style="background:transparent; border:1px solid #e5e7eb;">
-                    <button class="rate-btn-hist affinity-btn ${isLikeActive}"
-                            data-id="${id}" data-action="like" title="Super">👍</button>
-                    <button class="rate-btn-hist affinity-btn ${isDislikeActive}"
-                            data-id="${id}" data-action="dislike" title="Słabo">👎</button>
-                </div>
-                <div class="btn-group-difficulty" style="background:transparent; border:1px solid #e5e7eb;">
-                    <button class="rate-btn-hist diff-btn ${isEasySelected}"
-                            data-id="${id}" data-action="easy" title="Za łatwe">💤</button>
-                    <button class="rate-btn-hist diff-btn ${isHardSelected}"
-                            data-id="${id}" data-action="hard" title="Za trudne">🔥</button>
-                </div>
-            </div>
-        </div>`;
-    }).join('');
+    const exercisesHtml = (session.sessionLog || [])
+        .filter(l => l.status === 'completed' && !l.isRest)
+        .map(item => renderExerciseRow(item, sessionRatings))
+        .join('');
 
     const notesHtml = session.notes ? `
-        <div class="session-notes" style="background:#fefce8; border:1px solid #fde047; padding:10px; border-radius:8px; margin-top:1rem; font-size:0.9rem; color:#854d0e;">
-            <strong>📝 Notatka:</strong> ${session.notes}
+        <div class="session-notes" style="background:#fefce8; border:1px solid #fde047; padding:8px; border-radius:6px; margin-top:0.8rem; font-size:0.85rem; color:#854d0e; line-height:1.3;">
+            📝 ${session.notes}
         </div>
     ` : '';
 
     const gridItemStyle = `
-        background: rgba(255,255,255,0.6);
-        padding: 8px 4px;
-        border-radius: 8px;
-        text-align: center;
-        border: 1px solid rgba(0,0,0,0.05);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: space-between;
-        min-height: 80px;
-    `;
-
-    const topSlotStyle = `
-        height: 28px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 100%;
-    `;
-
-    const middleSlotStyle = `
-        flex-grow: 1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin-bottom: 2px;
-    `;
-
-    const bottomSlotStyle = `
-        font-size: 0.6rem;
-        text-transform: uppercase;
-        color: #888;
-        margin-top: auto;
+        background: rgba(255,255,255,0.6); padding: 4px; border-radius: 6px; text-align: center;
+        border: 1px solid rgba(0,0,0,0.05); display: flex; flex-direction: column;
+        align-items: center; justify-content: center; min-height: 50px;
     `;
 
     return `
-    <div class="calendar-sheet completed-mode" style="border:none; box-shadow: 0 4px 20px rgba(0,0,0,0.08); margin-bottom: 2rem;">
+    <div class="calendar-sheet completed-mode" style="border:none; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 1.5rem;">
         <div class="workout-context-card" style="background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%); border: 1px solid var(--success-color); border-radius: 12px; padding: 0; overflow:hidden;">
-            <div style="padding: 1.2rem; border-bottom: 1px solid rgba(0,0,0,0.05);">
-                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 5px;">
-                    <div style="display:flex; align-items:center; gap:10px;">
-                        <div style="font-size:1.8rem;">🏆</div>
+            <div style="padding: 1rem; border-bottom: 1px solid rgba(0,0,0,0.05);">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <div style="font-size:1.5rem;">🏆</div>
                         <div>
-                            <h3 style="margin:0; font-size:1.1rem; color:#166534; line-height:1.2;">${title}</h3>
-                            <div style="font-size:0.75rem; color:#666; margin-top:2px;">${dateStr}</div>
+                            <h3 style="margin:0; font-size:1rem; color:#166534; line-height:1.2;">${title}</h3>
+                            <div style="font-size:0.7rem; color:#666;">${dateStr}</div>
                         </div>
                     </div>
                     ${statusBadge}
                 </div>
 
-                <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px; margin-top:15px;">
+                <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:6px; margin-top:10px;">
                     <div style="${gridItemStyle}">
-                        <div style="${topSlotStyle}">
-                            <div style="font-size:1.4rem;">⏱️</div>
-                        </div>
-                        <div style="${middleSlotStyle}">
-                            <div style="font-weight:800; font-size:0.9rem; color:#333;">${mins} min</div>
-                        </div>
-                        <div style="${bottomSlotStyle}">Czas Netto</div>
+                        <div style="font-size:1rem; margin-bottom:2px;">⏱️</div>
+                        <div style="font-weight:800; font-size:0.9rem; color:#333;">${mins}m</div>
+                        <div style="font-size:0.6rem; color:#888; text-transform:uppercase;">Czas Netto</div>
                     </div>
-
                     <div style="${gridItemStyle} background:${fb.bg};">
-                        <div style="${topSlotStyle}">
-                            <div style="font-size:1.4rem;">${fb.icon}</div>
-                        </div>
-                        <div style="${middleSlotStyle}">
-                            <div style="font-weight:800; font-size:0.9rem; color:#333;">${fb.label}</div>
-                        </div>
-                        <div style="${bottomSlotStyle}">Odbiór</div>
+                        <div style="font-size:1rem; margin-bottom:2px;">${fb.icon}</div>
+                        <div style="font-weight:800; font-size:0.9rem; color:#333;">${fb.label}</div>
+                        <div style="font-size:0.6rem; color:#888; text-transform:uppercase;">Odczucie</div>
                     </div>
-
                     <div style="${gridItemStyle}">
-                        <div style="${topSlotStyle}">
-                             <div style="width:100%; height:6px; background:#e5e7eb; border-radius:3px; overflow:hidden;">
-                                <div style="width:${sessionLoad}%; height:100%; background:${loadColor}; border-radius:3px;"></div>
-                            </div>
+                        <div style="font-size:1rem; margin-bottom:2px;">📊</div>
+                        <div style="width:80%; height:4px; background:#e5e7eb; border-radius:2px; margin-bottom:2px; overflow:hidden;">
+                            <div style="width:${sessionLoad}%; height:100%; background:${loadColor};"></div>
                         </div>
-                        <div style="${middleSlotStyle}">
-                            <div style="font-weight:800; font-size:0.9rem; color:#333; line-height: 1.2;">${sessionLoad}%</div>
-                        </div>
-                        <div style="${bottomSlotStyle}">Obciążenie</div>
+                        <div style="font-weight:800; font-size:0.9rem; color:#333;">${sessionLoad}%</div>
+                        <div style="font-size:0.6rem; color:#888; text-transform:uppercase;">Obciążenie</div>
                     </div>
                 </div>
-
                 ${notesHtml}
             </div>
-
-            <div class="history-exercise-list" style="background:#fff;">
+            <div class="history-exercise-list" style="background:#fff; padding: 2px 0;">
                 ${exercisesHtml}
             </div>
-
-            <div style="padding: 10px; background:#f9fafb; border-top:1px solid #f3f4f6; display:flex; justify-content:flex-end;">
-                <button class="delete-session-btn" data-session-id="${session.sessionId}" style="background:transparent; border:none; color:#ef4444; font-size:0.8rem; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:5px; opacity:0.7; transition:opacity 0.2s;">
-                    <svg width="16" height="16"><use href="#icon-trash"/></svg> Usuń Sesję
+            <div style="padding: 8px; background:#f9fafb; border-top:1px solid #f3f4f6; display:flex; justify-content:flex-end;">
+                <button class="delete-session-btn" data-session-id="${session.sessionId}" style="background:transparent; border:none; color:#ef4444; font-size:0.75rem; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:4px; opacity:0.6; transition:opacity 0.2s;">
+                    <svg width="14" height="14"><use href="#icon-trash"/></svg> Usuń
                 </button>
             </div>
-
         </div>
     </div>`;
 }
 
+// ... (generatePreTrainingCardHTML i generateCompletedMissionCardHTML - ta druga używa teraz renderExerciseRow, więc jest spójna) ...
 export function generatePreTrainingCardHTML(ex, index) {
+    // Bez zmian, pozostaje jak w poprzedniej odpowiedzi
+    // ...
     const uniqueId = `ex-${index}`;
     const exerciseId = ex.id || ex.exerciseId;
     const lvl = ex.difficultyLevel || 1;
@@ -750,6 +703,16 @@ export function generateCompletedMissionCardHTML(session) {
 
     const title = session.trainingTitle || "Trening";
 
+    const sessionRatings = {};
+    if (session.exerciseRatings && Array.isArray(session.exerciseRatings)) {
+        session.exerciseRatings.forEach(r => sessionRatings[r.exerciseId] = r.action);
+    }
+
+    const exercisesHtml = (session.sessionLog || [])
+        .filter(l => l.status === 'completed' && !l.isRest)
+        .map(item => renderExerciseRow(item, sessionRatings))
+        .join('');
+
     return `
     <div class="calendar-sheet completed-mode shine-effect">
         <div class="calendar-top-binding success-binding"></div>
@@ -781,7 +744,12 @@ export function generateCompletedMissionCardHTML(session) {
                     </div>
                 </div>
 
-                <button class="view-details-btn" data-date="${getIsoDateKey(completionDate)}" style="width: 100%; border-color: var(--success-color); color: var(--success-color); background: transparent;">
+                <!-- Lista ćwiczeń widoczna na dashboardzie po ukończeniu -->
+                <div class="history-exercise-list" style="background:rgba(255,255,255,0.5); padding: 2px 0; border-radius: 8px; margin-bottom: 10px; max-height: 200px; overflow-y: auto;">
+                    ${exercisesHtml}
+                </div>
+
+                <button class="view-details-btn" data-date="${getISODate(completionDate)}" style="width: 100%; border-color: var(--success-color); color: var(--success-color); background: transparent;">
                     Zobacz Szczegóły ➝
                 </button>
             </div>

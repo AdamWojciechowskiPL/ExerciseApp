@@ -1,3 +1,4 @@
+// ExerciseApp/sessionRecovery.js
 // sessionRecovery.js - Moduł do odzyskiwania przerwanej sesji treningowej
 
 const STORAGE_KEY = 'training_session_backup';
@@ -34,6 +35,9 @@ export function saveSessionBackup(data) {
         stopwatchSeconds: data.stopwatchSeconds || 0,
         timerTimeLeft: data.timerTimeLeft || 0,
         timerInitialDuration: data.timerInitialDuration || 0,
+
+        // AMPS Phase 2: Save prompt count
+        sessionDetailPromptCount: data.sessionDetailPromptCount || 0,
 
         // Session params
         sessionParams: data.sessionParams || { initialPainLevel: 0, timeFactor: 1.0 }

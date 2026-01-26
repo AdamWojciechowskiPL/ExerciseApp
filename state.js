@@ -1,4 +1,5 @@
 // ExerciseApp/state.js
+// ExerciseApp/state.js
 
 export const state = {
     isAppInitialized: false,
@@ -9,7 +10,7 @@ export const state = {
     animationCache: new Map(),
 
     // NOWOŚĆ: Przechowywanie mapy nadpisań (Ewolucji/Dewolucji)
-    overrides: {}, 
+    overrides: {},
 
     settings: {
         appStartDate: null,
@@ -42,6 +43,9 @@ export const state = {
     lastPauseStartTime: null,
     breakTimeoutId: null,
     todaysDynamicPlan: null,
+
+    // AMPS PHASE 2: Licznik ankiet w sesji
+    sessionDetailPromptCount: 0,
 
     timer: {
         interval: null,

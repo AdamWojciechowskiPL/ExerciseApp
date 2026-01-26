@@ -1,17 +1,17 @@
 // ExerciseApp/ui/screens/training.js
-import { state } from '/state.js';
-import { screens, initializeFocusElements, focus } from '/dom.js';
-import { getActiveTrainingPlan, getHydratedDay, getISODate, calculateSmartDuration, calculateSystemLoad, calculateClinicalProfile, getSessionFocus, savePlanToStorage } from '/utils.js';
-import { assistant } from '/assistantEngine.js';
-import { navigateTo, showLoader, hideLoader } from '/ui/core.js';
-import { generatePreTrainingCardHTML, getAffinityBadge } from '/ui/templates.js';
-import { renderSwapModal, renderPreviewModal } from '/ui/modals.js';
-import { startModifiedTraining } from '/training.js';
-import { getIsCasting, sendShowIdle } from '/cast.js';
-import dataStore from '/dataStore.js';
-import { workoutMixer } from '/workoutMixer.js';
-import { getUserPayload } from '/auth.js';
-import { generateBioProtocol } from '/protocolGenerator.js';
+import { state } from '../../state.js';
+import { screens, initializeFocusElements, focus } from '../../dom.js';
+import { getActiveTrainingPlan, getHydratedDay, getISODate, calculateSmartDuration, calculateSystemLoad, calculateClinicalProfile, getSessionFocus, savePlanToStorage } from '../../utils.js';
+import { assistant } from '../../assistantEngine.js';
+import { navigateTo, showLoader, hideLoader } from '../core.js';
+import { generatePreTrainingCardHTML, getAffinityBadge } from '../templates.js';
+import { renderSwapModal, renderPreviewModal } from '../modals.js';
+import { startModifiedTraining } from '../../training.js';
+import { getIsCasting, sendShowIdle } from '../../cast.js';
+import dataStore from '../../dataStore.js';
+import { workoutMixer } from '../../workoutMixer.js';
+import { getUserPayload } from '../../auth.js';
+import { generateBioProtocol } from '../../protocolGenerator.js';
 
 // savePlanToStorage is now imported from utils.js
 
@@ -167,7 +167,7 @@ export const renderProtocolStart = (protocol) => {
     });
 
     screen.querySelector('#proto-cancel-btn').addEventListener('click', async () => {
-        const { renderMainScreen } = await import('/ui/screens/dashboard.js');
+        const { renderMainScreen } = await import('./dashboard.js');
         navigateTo('main');
         renderMainScreen();
     });
@@ -537,7 +537,7 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
     });
 
     screen.querySelector('#pre-training-back-btn').addEventListener('click', async () => {
-        const { renderMainScreen } = await import('/ui/screens/dashboard.js');
+        const { renderMainScreen } = await import('./dashboard.js');
         navigateTo('main');
         renderMainScreen();
     });
@@ -573,7 +573,7 @@ export const renderTrainingScreen = () => {
     <div class="focus-view">
         <div id="focus-progress-bar" class="focus-progress-container"></div>
         <div class="focus-header-minimal">
-            <button id="exit-training-btn" class="close-training-btn" title="Zakończ trening"><svg width="18" height="18"><use href="#icon-close"/></svg></button>
+            <button id="exit-training-btn" class="close-training-btn" aria-label="Zakończ trening"><svg width="18" height="18" aria-hidden="true"><use href="#icon-close"/></svg></button>
             <div id="focus-total-time" class="session-elapsed-time">00:00</div>
         </div>
         <div class="focus-timer-container"><p id="focus-timer-display"></p></div>
@@ -583,9 +583,9 @@ export const renderTrainingScreen = () => {
 
         <div class="focus-exercise-info" style="margin-bottom: 0.5rem;">
             <div class="exercise-title-container">
-                <h2 id="focus-exercise-name"></h2>
+                <h2 id="focus-exercise-name">&nbsp;</h2>
                 <span id="focus-affinity-badge"></span>
-                <button id="tts-toggle-btn" class="tts-button"><svg id="tts-icon" width="24" height="24"><use href="#icon-sound-on"/></svg></button>
+                <button id="tts-toggle-btn" class="tts-button" aria-pressed="true" aria-label="Przełącz lektora"><svg id="tts-icon" width="24" height="24" aria-hidden="true"><use href="#icon-sound-on"/></svg></button>
             </div>
             <p id="focus-exercise-details"></p>
         </div>
@@ -598,9 +598,9 @@ export const renderTrainingScreen = () => {
         <div class="focus-controls-wrapper">
              <div class="focus-main-action"><button id="rep-based-done-btn" class="control-btn action-btn hidden">GOTOWE</button></div>
             <div class="focus-secondary-actions">
-                <button id="prev-step-btn" class="control-icon-btn"><svg><use href="#icon-back"/></svg></button>
-                <button id="pause-resume-btn" class="control-icon-btn"><svg><use href="#icon-pause"/></svg></button>
-                <button id="skip-btn" class="control-icon-btn"><svg><use href="#icon-skip"/></svg></button>
+                <button id="prev-step-btn" class="control-icon-btn" aria-label="Poprzednie ćwiczenie"><svg aria-hidden="true"><use href="#icon-back"/></svg></button>
+                <button id="pause-resume-btn" class="control-icon-btn" aria-label="Pauza / Wznów"><svg aria-hidden="true"><use href="#icon-pause"/></svg></button>
+                <button id="skip-btn" class="control-icon-btn" aria-label="Pomiń ćwiczenie"><svg aria-hidden="true"><use href="#icon-skip"/></svg></button>
             </div>
         </div>
         <div class="focus-next-up"><p><strong>Następne:</strong> <span id="next-exercise-name"></span></p></div>

@@ -206,20 +206,20 @@ const openGlobalMenu = (targetElement, dateISO, isRest, dayNumber) => {
     let content = '';
     if (!isRest) {
         content += `<button class="ctx-action" data-action="preview" data-day-id="${dayNumber}">
-            <svg width="18" height="18"><use href="#icon-eye"/></svg>
+            <svg width="18" height="18" aria-hidden="true"><use href="#icon-eye"/></svg>
             <span>👁️ Podgląd</span>
         </button>`;
         content += `<button class="ctx-action" data-action="rest" data-date="${dateISO}">
-            <svg width="18" height="18"><use href="#icon-rest-coffee"/></svg>
+            <svg width="18" height="18" aria-hidden="true"><use href="#icon-rest-coffee"/></svg>
             <span>Zmień na Wolne</span>
         </button>`;
         content += `<button class="ctx-action" data-action="move" data-date="${dateISO}">
-            <svg width="18" height="18"><use href="#icon-calendar-move"/></svg>
+            <svg width="18" height="18" aria-hidden="true"><use href="#icon-calendar-move"/></svg>
             <span>Przenieś...</span>
         </button>`;
     }
     content += `<button class="ctx-action" data-action="reset">
-        <svg width="18" height="18"><use href="#icon-reset-ccw"/></svg>
+        <svg width="18" height="18" aria-hidden="true"><use href="#icon-reset-ccw"/></svg>
         <span>Resetuj Plan</span>
     </button>`;
 
@@ -365,10 +365,11 @@ export const renderMainScreen = async (isLoading = false) => {
     const getMenuBtn = (date, isRest, dayNum) => `
         <div class="ctx-menu-wrapper" style="position: absolute; top: 10px; right: 10px; z-index: 20;">
             <button class="ctx-menu-btn"
+                aria-label="Opcje"
                 data-date="${date}"
                 data-is-rest="${isRest}"
                 data-day-id="${dayNum}">
-                <svg width="24" height="24"><use href="#icon-dots-vertical"/></svg>
+                <svg width="24" height="24" aria-hidden="true"><use href="#icon-dots-vertical"/></svg>
             </button>
         </div>
     `;
@@ -710,10 +711,11 @@ function renderUpcomingQueue(days, todayISO) {
 
         const btnHtml = `
             <button class="strip-menu-btn ctx-menu-btn"
+                aria-label="Opcje dnia"
                 data-date="${dayData.date}"
                 data-is-rest="${isRest}"
                 data-day-id="${dayData.dayNumber}">
-                <svg width="16" height="16" fill="currentColor" style="color: #94a3b8;"><use href="#icon-dots-vertical"/></svg>
+                <svg width="16" height="16" fill="currentColor" style="color: #94a3b8;" aria-hidden="true"><use href="#icon-dots-vertical"/></svg>
             </button>
         `;
 

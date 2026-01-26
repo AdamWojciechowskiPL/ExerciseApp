@@ -21,7 +21,7 @@ export const renderHistoryScreen = async (forceRefresh = false) => {
     try {
         await dataStore.getHistoryForMonth(year, month, forceRefresh);
         const headerContainer = document.getElementById('month-year-header');
-        headerContainer.innerHTML = `<span style="vertical-align: middle;">${date.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' })}</span><button id="refresh-history-btn" style="background:none; border:none; cursor:pointer; margin-left:10px; vertical-align: middle; opacity: 0.6;" title="Odśwież"><svg width="16" height="16"><use href="#icon-refresh-cw"/></svg></button>`;
+        headerContainer.innerHTML = `<span style="vertical-align: middle;">${date.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' })}</span><button id="refresh-history-btn" style="background:none; border:none; cursor:pointer; margin-left:10px; vertical-align: middle; opacity: 0.6;" aria-label="Odśwież historię"><svg width="16" height="16" aria-hidden="true"><use href="#icon-refresh-cw"/></svg></button>`;
         document.getElementById('refresh-history-btn').addEventListener('click', (e) => { e.stopPropagation(); renderHistoryScreen(true); });
 
         const grid = containers.calendarGrid;
@@ -120,7 +120,7 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
         const ampsBadge = e.target.closest('.amps-inline-badge');
         if (ampsBadge) {
             e.stopPropagation();
-            
+
             // Pobieramy ID sesji z kontekstu (z DELETE button w tej samej karcie)
             const sessionCard = ampsBadge.closest('.workout-context-card');
             const deleteBtn = sessionCard ? sessionCard.querySelector('.delete-session-btn') : null;

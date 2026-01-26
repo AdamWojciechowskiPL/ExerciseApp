@@ -666,7 +666,7 @@ export function generatePreTrainingCardHTML(ex, index) {
             </div>
             <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
                 ${previewBtnHTML}
-                <button class="swap-btn" title="Wymień ćwiczenie" data-exercise-index="${index}"><svg width="20" height="20"><use href="#icon-swap"/></svg></button>
+                <button class="swap-btn" aria-label="Wymień ćwiczenie" data-exercise-index="${index}"><svg width="20" height="20" aria-hidden="true"><use href="#icon-swap"/></svg></button>
             </div>
         </div>
         <div class="training-meta">

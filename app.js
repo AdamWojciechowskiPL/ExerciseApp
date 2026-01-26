@@ -327,3 +327,16 @@ if ('serviceWorker' in navigator) {
         });
     });
 }
+
+// SVG Sprite Loader
+(async function loadSprite() {
+    try {
+        const response = await fetch('icons/sprite.svg');
+        if (!response.ok) throw new Error('Sprite load failed');
+        const svgContent = await response.text();
+        const container = document.getElementById('svg-container');
+        if (container) container.innerHTML = svgContent;
+    } catch (e) {
+        console.error('Failed to load icons:', e);
+    }
+})();

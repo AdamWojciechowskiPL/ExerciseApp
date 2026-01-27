@@ -889,7 +889,12 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatig
     const baseRest = ex.calculated_timing.rest_sec || 30;
     const baseTransition = ex.calculated_timing.transition_sec || 5;
     const phaseRestFactor = getPhaseRestFactor(phaseConfig, section);
-    const phaseAdjustedRest = Math.round(baseRest * phaseRestFactor);
+    let phaseAdjustedRest = Math.round(baseRest * phaseRestFactor);
+
+    // --- FIX: ENFORCE REST >= TRANSITION FOR SWITCHING ---
+    if (ex.is_unilateral && ex.requires_side_switch) {
+        phaseAdjustedRest = Math.max(phaseAdjustedRest, baseTransition);
+    }
 
     return {
         sets: String(sets),
@@ -961,7 +966,18 @@ function estimateExerciseDurationSeconds(exEntry, userData, paceMap, effectiveRe
 
     // 4. Rest Logic (Intra-set)
     const restBase = getRestAfterExercise(exEntry, 1.0); // Pass 1.0 to get base rest
-    const smartRestTime = Math.round(restBase * effectiveRestFactor);
+    let smartRestTime = Math.round(restBase * effectiveRestFactor);
+
+    // --- FIX: ESTYMATE CLAMPING (Logic must match utils.js) ---
+    // If we have a required switch, the rest time between sets cannot be shorter than the switch time.
+    if (isUnilateral && exEntry.requires_side_switch) {
+        let transTime = exEntry.transitionTime || 0;
+        if (!transTime && exEntry.calculated_timing) transTime = exEntry.calculated_timing.transition_sec;
+        if (!transTime) transTime = 12; // Safety fallback
+
+        smartRestTime = Math.max(smartRestTime, transTime);
+    }
+
     const totalRest = (sets > 1) ? (sets - 1) * smartRestTime : 0;
 
     return totalWorkTime + totalTransition + totalRest;
@@ -1185,8 +1201,13 @@ function logFinalSessionBreakdown(session, userData, paceMap, phaseContext) {
     console.log(`   + Global Session Start Buffer: 5s`);
     all.forEach((ex, i) => {
         let tempoToUse = paceMap && paceMap[ex.id] ? paceMap[ex.id] : globalSpr;
-        const sets = parseInt(ex.sets, 10) || 1;
+
+        // --- FIX LOGGING: Match Logic with Frontend & Estimator ---
+        const rawSets = parseInt(ex.sets, 10) || 1;
         const isUnilateral = ex.is_unilateral || String(ex.reps_or_time || '').includes('/str');
+        const sets = isUnilateral ? Math.ceil(rawSets / 2) : rawSets;
+        // -----------------------------------------------------------
+
         const multiplier = isUnilateral ? 2 : 1;
         const rawStr = String(ex.reps_or_time).toLowerCase();
         const cleanStr = rawStr.replace(/\/str\.?|stron.*/g, '').trim();

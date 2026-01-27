@@ -301,7 +301,7 @@ function shouldTriggerDetailPrompt(exercise) {
 
     // 2. Sprawdź, czy to ćwiczenie zostało już ocenione w tej sesji (unikalność)
     // Nie chcemy pytać o to samo ćwiczenie w 2. i 3. serii
-    const alreadyPrompted = state.sessionLog.some(l => 
+    const alreadyPrompted = state.sessionLog.some(l =>
         l.exerciseId === exercise.exerciseId && l.promptType === 'detail'
     );
     if (alreadyPrompted) return false;
@@ -668,11 +668,18 @@ export function generateFlatExercises(dayData) {
                 }
 
                 if (i < loopLimit) {
+                    // FIX: Jeśli ćwiczenie wymaga zmiany strony, przerwa między seriami
+                    // nie może być krótsza niż czas na zmianę strony.
+                    let interSetRest = smartRestTime;
+                    if (isUnilateral && requiresSideSwitch) {
+                        interSetRest = Math.max(smartRestTime, finalTransitionTime);
+                    }
+
                     plan.push({
                         name: 'Odpoczynek',
                         isRest: true,
                         isWork: false,
-                        duration: smartRestTime,
+                        duration: interSetRest,
                         sectionName: 'Przerwa między seriami',
                         uniqueId: `rest_set_${globalStepCounter++}`
                     });

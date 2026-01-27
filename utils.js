@@ -1,4 +1,4 @@
-// utils.js
+// ExerciseApp/utils.js
 import { state } from './state.js';
 
 // --- SVG SANITIZER ---
@@ -176,10 +176,10 @@ export const calculateSmartDuration = (dayPlan) => {
     allExercises.forEach((ex, index) => {
         const rawSets = parseSetCount(ex.sets);
         const isUnilateral = ex.isUnilateral || ex.is_unilateral || String(ex.reps_or_time).includes('/str');
+        const requiresSideSwitch = !!ex.requiresSideSwitch;
 
         // --- KLUCZOWA POPRAWKA ---
         // Synchronizacja z training.js: Jeśli unilateral, dzielimy liczbę serii przez 2 (zaokrąglając w górę).
-        // Np. sets="2" oznacza 1 serię L+P. sets="1" oznacza 1 serię L+P.
         const sets = isUnilateral ? Math.ceil(rawSets / 2) : rawSets;
 
         const exId = ex.id || ex.exerciseId;
@@ -211,12 +211,13 @@ export const calculateSmartDuration = (dayPlan) => {
         // 2. Obliczanie Czasu Przejść (Transition)
         let transitionPerSet = 0;
         if (isUnilateral) {
-            // Unilateral: 12s na zmianę strony (wewnątrz serii L+P)
-            transitionPerSet = (ex.requiresSideSwitch || (ex.calculated_timing && ex.calculated_timing.transition_sec === 12)) ? 12 : 5;
+            // Unilateral: 12s na zmianę strony L->P (wewnątrz serii), jeśli wymagane
+            transitionPerSet = (requiresSideSwitch || (ex.calculated_timing && ex.calculated_timing.transition_sec === 12)) ? 12 : 5;
         } else {
-            // Bilateral: 0s (User Request)
+            // Bilateral: 0s
             transitionPerSet = 0;
         }
+        // Uwaga: transitionPerSet jest naliczane raz na pełną serię L+P
         const totalTransition = sets * transitionPerSet;
 
         // 3. Obliczanie Przerw (Rest)
@@ -224,7 +225,15 @@ export const calculateSmartDuration = (dayPlan) => {
         const restBase = ex.restAfterExercise || 30;
         const smartRestTime = Math.round(restBase * restFactor);
 
-        const totalRest = (sets > 1) ? (sets - 1) * smartRestTime : 0;
+        // FIX: Ensure rest time includes transition buffer if switching back to Side A
+        let effectiveRestTime = smartRestTime;
+        if (isUnilateral && requiresSideSwitch) {
+            // Czas przejścia (np. 12s * restFactor), minimum 5s
+            const finalTransitionTime = Math.max(5, Math.round(12 * restFactor));
+            effectiveRestTime = Math.max(smartRestTime, finalTransitionTime);
+        }
+
+        const totalRest = (sets > 1) ? (sets - 1) * effectiveRestTime : 0;
 
         // SUMA
         const exDuration = totalWorkTime + totalTransition + totalRest;

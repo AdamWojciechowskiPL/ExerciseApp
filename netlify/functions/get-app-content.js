@@ -141,7 +141,16 @@ exports.handler = async (event) => {
 
         hasAnimation: !!ex.animation_svg && ex.animation_svg.length > 10,
 
+        // --- ZMIANA: Eksport konkretnych kolumn tempa ---
         defaultTempo: ex.default_tempo || null,
+        tempoControl: ex.tempo_control || null,
+        tempoMobility: ex.tempo_mobility || null,
+        tempoCapacity: ex.tempo_capacity || null,
+        tempoStrength: ex.tempo_strength || null,
+        tempoMetabolic: ex.tempo_metabolic || null,
+        tempoRehab: ex.tempo_rehab || null,
+        // -----------------------------------------------
+
         isUnilateral: ex.is_unilateral || false,
         requiresSideSwitch: requiresSideSwitch, // Explicitly send to frontend
         primaryPlane: ex.primary_plane || 'multi',

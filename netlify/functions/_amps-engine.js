@@ -9,6 +9,7 @@ const SCORE_MIN = -100;
 /**
  * AMPS: INFERENCE ENGINE
  * Uzupełnia brakujące dane w logu sesji.
+ * Supports new difficultyDeviation field from minimal-click rating system.
  */
 function inferMissingSessionData(sessionLog, feedback) {
     if (!Array.isArray(sessionLog)) return sessionLog;
@@ -26,19 +27,41 @@ function inferMissingSessionData(sessionLog, feedback) {
         if (entry.status === 'skipped' || entry.isRest) return entry;
         const newEntry = { ...entry };
 
-        // Jeśli brak danych AMPS -> Wnioskuj
+        // Priority 1: Check for explicit difficultyDeviation from new UI
+        if (newEntry.difficultyDeviation) {
+            if (newEntry.difficultyDeviation === 'easy') {
+                newEntry.rating = 'good';
+                newEntry.rir = newEntry.rir ?? 4;
+                newEntry.tech = newEntry.tech ?? 10;
+            } else if (newEntry.difficultyDeviation === 'hard') {
+                newEntry.rating = 'hard';
+                newEntry.rir = newEntry.rir ?? 0;
+                newEntry.tech = newEntry.tech ?? 6;
+            }
+            return newEntry;
+        }
+
+        // Priority 2: If rating/RIR already set (from explicit user action), keep them
+        if (newEntry.rating && !newEntry.inferred) {
+            return newEntry;
+        }
+
+        // Priority 3: Infer from existing RIR if present
+        if (newEntry.rir !== undefined && newEntry.rir !== null && !newEntry.rating) {
+            if (newEntry.rir <= 1) newEntry.rating = 'hard';
+            else if (newEntry.rir >= 3) newEntry.rating = 'good';
+            else newEntry.rating = 'ok';
+            newEntry.inferred = true;
+            return newEntry;
+        }
+
+        // Priority 4: Fall back to session-level feedback defaults
         if (!newEntry.rating && (newEntry.rir === undefined || newEntry.rir === null)) {
             newEntry.rating = defaultRating;
             newEntry.rir = defaultRir;
             newEntry.inferred = true;
         }
-        // Mapowanie RIR na Rating (dla spójności historycznej)
-        else if (!newEntry.rating && newEntry.rir !== undefined && newEntry.rir !== null) {
-            if (newEntry.rir <= 1) newEntry.rating = 'hard';
-            else if (newEntry.rir >= 3) newEntry.rating = 'good';
-            else newEntry.rating = 'ok';
-            newEntry.inferred = true;
-        }
+
         return newEntry;
     });
 }
@@ -202,21 +225,47 @@ async function applyImmediatePlanAdjustmentsInMemory(client, ratings, sessionLog
 /**
  * AMPS: MICRO-LOADING
  * Dostosowuje liczbę serii na podstawie historii (RIR/Rating).
+ * Enhanced with set-context awareness for smarter volume adjustments.
+ * 
+ * If exercise was hard on last set of multiple sets → reduce volume (set fatigue)
+ * If exercise was hard on single set or early sets → consider exercise too difficult
+ * If exercise was easy → increase volume
  */
 function applyMicroLoading(sets, historyEntry) {
     if (!historyEntry) return sets;
     let newSets = sets;
 
-    // Jeśli było za lekko (RIR >= 3 lub Good), dodaj serię
-    if (historyEntry.rir >= 3 || historyEntry.rating === 'good') {
+    const isHard = historyEntry.rir === 0 || historyEntry.rating === 'hard' || historyEntry.difficultyDeviation === 'hard';
+    const isEasy = historyEntry.rir >= 3 || historyEntry.rating === 'good' || historyEntry.difficultyDeviation === 'easy';
+
+    // Check if this was a set-fatigue issue (hard on later sets of multi-set exercise)
+    const currentSet = historyEntry.currentSet || 1;
+    const totalSets = historyEntry.totalSets || 1;
+    const isLastSetOfMultiple = totalSets > 1 && currentSet === totalSets;
+    const isMultiSetExercise = totalSets > 1;
+
+    if (isEasy) {
+        // Exercise was too easy - increase volume
         newSets += 1;
-        console.log(`[AMPS] Micro-Loading: Boosted sets (+1 due to RIR/Rating)`);
+        console.log(`[AMPS] Micro-Loading: Boosted sets (+1 due to easy rating/RIR >= 3)`);
+    } else if (isHard) {
+        if (isLastSetOfMultiple) {
+            // Hard on last set of multiple = likely set fatigue, not exercise difficulty
+            // Reduce sets for next time but don't flag as "too hard overall"
+            newSets -= 1;
+            console.log(`[AMPS] Micro-Loading: Reduced sets (-1 due to last-set fatigue)`);
+        } else if (!isMultiSetExercise) {
+            // Hard on single set = exercise may be too difficult overall
+            // Still reduce, but this should trigger consideration for devolution
+            newSets -= 1;
+            console.log(`[AMPS] Micro-Loading: Reduced sets (-1 due to single-set struggle)`);
+        } else {
+            // Hard on early/middle set = definitely too difficult
+            newSets -= 1;
+            console.log(`[AMPS] Micro-Loading: Reduced sets (-1 due to early difficulty)`);
+        }
     }
-    // Jeśli było za ciężko (RIR 0 lub Hard), odejmij serię (minimum 2 dla main, handled outside)
-    else if (historyEntry.rir === 0 || historyEntry.rating === 'hard') {
-        newSets -= 1;
-        console.log(`[AMPS] Micro-Loading: Reduced sets (-1 due to RIR/Rating)`);
-    }
+
     return newSets;
 }
 

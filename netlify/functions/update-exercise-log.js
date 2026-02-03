@@ -10,7 +10,7 @@ exports.handler = async (event) => {
 
     try {
         const userId = await getUserIdFromEvent(event);
-        const { sessionId, exerciseId, tech, rir } = JSON.parse(event.body);
+        const { sessionId, exerciseId, tech, rir, difficultyDeviation, rating } = JSON.parse(event.body);
 
         if (!sessionId || !exerciseId) {
             return { statusCode: 400, body: JSON.stringify({ error: 'Missing required fields' }) };
@@ -45,18 +45,26 @@ exports.handler = async (event) => {
                     // Aktualizacja wartości
                     if (tech !== undefined) entry.tech = tech;
                     if (rir !== undefined) entry.rir = rir;
-                    
+                    if (difficultyDeviation !== undefined) entry.difficultyDeviation = difficultyDeviation;
+
                     // Usuwamy flagę 'inferred', bo teraz to jest ocena manualna użytkownika
                     entry.inferred = false;
                     delete entry.inferenceReason;
-                    
-                    // Opcjonalnie: przeliczamy rating na podstawie RIR (dla spójności)
-                    if (rir !== undefined) {
+
+                    // Logic for rating/deviation consistency
+                    // If rating is explicitly provided, use it. Otherwise infer from deviation/RIR.
+                    if (rating !== undefined) {
+                        entry.rating = rating;
+                    } else if (difficultyDeviation === 'easy') {
+                        entry.rating = 'good';
+                    } else if (difficultyDeviation === 'hard') {
+                        entry.rating = 'hard';
+                    } else if (rir !== undefined) {
                         if (rir === 0) entry.rating = 'hard';
                         else if (rir >= 3) entry.rating = 'good';
                         else entry.rating = 'ok';
                     }
-                    
+
                     updated = true;
                 }
             }

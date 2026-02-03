@@ -49,20 +49,25 @@ const logout = () => {
 const getToken = async () => {
   if (!auth0Client) return null;
   try {
-    // Ta funkcja będzie teraz wywoływana tylko wtedy, gdy jesteśmy pewni, że sesja istnieje.
     const token = await auth0Client.getTokenSilently();
-    // Tutaj weryfikujemy i zapisujemy payload
+    
+    // Weryfikacja tokena JWT (opcjonalna, ale dobra dla bezpieczeństwa po stronie klienta)
     const JWKS = jose.createRemoteJWKSet(new URL(`https://${AUTH_CONFIG.domain}/.well-known/jwks.json`));
     const { payload } = await jose.jwtVerify(token, JWKS, {
       issuer: `https://${AUTH_CONFIG.domain}/`,
       audience: AUTH_CONFIG.audience,
     });
     userPayload = payload;
+    
     if (!userProfile) {
       userProfile = await auth0Client.getUser();
     }
     return token;
   } catch (e) {
+    // Ignoruj błędy związane z brakiem sesji/refresh tokena - obsłuży to logika w app.js (wymuszenie logoutu)
+    if (e.error === 'missing_refresh_token' || e.error === 'login_required' || e.message.includes('Missing Refresh Token')) {
+        return null;
+    }
     console.error("Błąd podczas getTokenSilently:", e);
     return null;
   }
@@ -80,7 +85,11 @@ const handleRedirectCallback = async () => {
 };
 const isAuthenticated = async () => {
   if (!auth0Client) return false;
-  return await auth0Client.isAuthenticated();
+  try {
+      return await auth0Client.isAuthenticated();
+  } catch (e) {
+      return false;
+  }
 };
 
 export {

@@ -170,7 +170,7 @@ export function renderPreviewModal(svgContent, title) {
     `;
     document.body.appendChild(overlay);
     attachBackdropClose(overlay);
-    
+
     overlay.querySelector('#close-preview').addEventListener('click', () => overlay.remove());
 }
 
@@ -197,7 +197,6 @@ export function renderEvolutionModal(adaptation, onCheck) {
     `;
 
     document.body.appendChild(overlay);
-    // Ewolucja to ważne powiadomienie, nie zamykamy go tłem, chyba że user bardzo chce
     attachBackdropClose(overlay);
 
     if (state.completionSound && isEvo) state.finalCompletionSound();
@@ -252,16 +251,12 @@ export function renderSessionRecoveryModal(backup, timeGapFormatted, onRestore, 
     `;
 
     document.body.appendChild(overlay);
-    // UWAGA: Tutaj NIE dodajemy attachBackdropClose, ponieważ to jest modal krytyczny.
-    // Użytkownik MUSI podjąć decyzję (Porzuć/Przywróć).
 
     overlay.querySelector('#restore-session').addEventListener('click', () => { overlay.remove(); if (onRestore) onRestore(); });
     overlay.querySelector('#discard-session').addEventListener('click', () => { overlay.remove(); if (onDiscard) onDiscard(); });
 }
 
 export function renderTunerModal(exerciseId, onUpdate) {
-    console.log(`[ModalDebug] 🟢 START renderTunerModal: ${exerciseId}`);
-
     const exercise = state.exerciseLibrary[exerciseId];
     if (!exercise) return;
 
@@ -329,8 +324,6 @@ export function renderTunerModal(exerciseId, onUpdate) {
 
         tierDisplay.textContent = tier;
         tierDisplay.style.color = color;
-
-        if (navigator.vibrate) navigator.vibrate(5);
     };
 
     slider.addEventListener('input', updateUI);
@@ -353,82 +346,104 @@ export function renderTunerModal(exerciseId, onUpdate) {
     });
 }
 
-// --- AMPS PHASE 2: DETAIL ASSESSMENT MODAL ---
+// --- S.A.F.E: PAIN CHECK MODAL ---
+export function renderPainCheckModal(onConfirm) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+
+    overlay.innerHTML = `
+        <div class="swap-modal" style="text-align:center;">
+            <div style="font-size:3rem; margin-bottom:10px;">🛡️</div>
+            <h3>Weryfikacja Bezpieczeństwa</h3>
+            <p style="margin-bottom:1.5rem; opacity:0.8;">
+                Zgłaszasz walkę z ciężarem.<br>
+                <strong>Czy czułeś ból w stawach lub kręgosłupie?</strong>
+            </p>
+
+            <div class="modal-actions-row">
+                <button id="pain-yes" class="action-btn" style="background:#ef4444; border:none;">TAK (Ból)</button>
+                <button id="pain-no" class="action-btn" style="background:#10b981; border:none;">NIE (Tylko Mięśnie)</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+    attachBackdropClose(overlay);
+
+    overlay.querySelector('#pain-yes').addEventListener('click', () => {
+        if (onConfirm) onConfirm(true);
+        overlay.remove();
+    });
+
+    overlay.querySelector('#pain-no').addEventListener('click', () => {
+        if (onConfirm) onConfirm(false);
+        overlay.remove();
+    });
+}
+
+// --- S.A.F.E: DETAIL ASSESSMENT MODAL (ZASTĄPIONO STARY "EXPERT" MODAL) ---
+// Teraz zamiast suwaków są te same przyciski co w treningu, dla spójności.
 export function renderDetailAssessmentModal(exerciseName, onConfirm) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
 
     overlay.innerHTML = `
-        <div class="amps-detail-modal">
+        <div class="swap-modal" style="text-align: center;">
             <div class="amps-modal-header">
                 <h3 class="amps-modal-title">${exerciseName}</h3>
-                <p class="amps-modal-subtitle">✨ Nowe ćwiczenie - skalibrujmy je!</p>
+                <p class="amps-modal-subtitle">Jak poszła ta seria?</p>
             </div>
 
-            <div class="amps-section">
-                <label class="amps-label">Jakość Techniki (1-10)</label>
-                <div class="tech-slider-wrapper">
-                    <input type="range" min="1" max="10" value="5" class="tech-slider" id="tech-slider">
-                    <div class="tech-value-display"><span id="tech-val">5</span>/10</div>
-                    <div class="tech-labels">
-                        <span>Słaba</span>
-                        <span>Perfekcja</span>
-                    </div>
-                </div>
+            <div class="safe-buttons-grid" style="margin-top: 20px;">
+                <button class="safe-btn easy" data-type="easy">
+                    <span class="icon">🟢</span>
+                    Lekko
+                </button>
+                <button class="safe-btn solid" data-type="solid">
+                    <span class="icon">🔵</span>
+                    Kontrola
+                </button>
+                <button class="safe-btn struggle" data-type="struggle">
+                    <span class="icon">🔴</span>
+                    Walka
+                </button>
             </div>
-
-            <div class="amps-section">
-                <label class="amps-label">Rezerwa (RIR)</label>
-                <div class="rir-grid">
-                    <button class="rir-btn" data-rir="0">
-                        RIR 0
-                        <span>Max</span>
-                    </button>
-                    <button class="rir-btn" data-rir="1">
-                        RIR 1
-                        <span>1 w zapasie</span>
-                    </button>
-                    <button class="rir-btn" data-rir="2">
-                        RIR 2
-                        <span>2 w zapasie</span>
-                    </button>
-                    <button class="rir-btn selected" data-rir="3">
-                        RIR 3+
-                        <span>Lekko</span>
-                    </button>
-                </div>
-            </div>
-
-            <button id="save-detail" class="action-btn modal-full-btn">Zapisz Ocenę</button>
+            
+            <button id="cancel-detail" class="nav-btn modal-full-btn">Anuluj</button>
         </div>
     `;
 
     document.body.appendChild(overlay);
-    
-    // Obsługa zamknięcia przez kliknięcie w tło
     attachBackdropClose(overlay);
 
-    const techSlider = overlay.querySelector('#tech-slider');
-    const techVal = overlay.querySelector('#tech-val');
-    let currentRir = 3;
+    overlay.querySelector('#cancel-detail').addEventListener('click', () => overlay.remove());
 
-    techSlider.addEventListener('input', (e) => {
-        techVal.textContent = e.target.value;
-    });
-
-    const rirBtns = overlay.querySelectorAll('.rir-btn');
-    rirBtns.forEach(btn => {
+    const buttons = overlay.querySelectorAll('.safe-btn');
+    buttons.forEach(btn => {
         btn.addEventListener('click', () => {
-            rirBtns.forEach(b => b.classList.remove('selected'));
-            btn.classList.add('selected');
-            currentRir = parseInt(btn.dataset.rir);
-        });
-    });
+            const type = btn.dataset.type;
+            
+            // Mapowanie S.A.F.E -> RIR/Tech
+            let newTech, newRir;
 
-    overlay.querySelector('#save-detail').addEventListener('click', () => {
-        const tech = parseInt(techSlider.value);
-        if (onConfirm) onConfirm(tech, currentRir);
-        overlay.remove();
+            if (type === 'easy') {
+                // Lekko: RIR 4, Tech 10
+                newTech = 10;
+                newRir = 4;
+            } else if (type === 'solid') {
+                // Kontrola: RIR 2, Tech 9
+                newTech = 9;
+                newRir = 2;
+            } else if (type === 'struggle') {
+                // Walka: Domyślnie zakładamy RIR 0 (Upadek mięśniowy), Tech 6
+                // (W edycji post-factum nie pytamy o ból, zakładamy mięśniowy)
+                newTech = 6;
+                newRir = 0;
+            }
+
+            if (onConfirm) onConfirm(newTech, newRir);
+            overlay.remove();
+        });
     });
 }
 
@@ -456,7 +471,7 @@ export function renderPhaseTransitionModal(updateData, onConfirm) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
 
-    const isSoft = updateData.isSoft; // True = Time Cap, False = Target Reached
+    const isSoft = updateData.isSoft; 
     const newPhaseId = updateData.newPhaseId;
     const newPhaseName = PHASE_LABELS[newPhaseId] || newPhaseId.toUpperCase();
     const description = PHASE_DESCRIPTIONS[newPhaseId] || 'Nowy cykl treningowy.';

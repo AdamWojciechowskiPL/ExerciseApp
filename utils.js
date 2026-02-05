@@ -176,8 +176,7 @@ export const calculateSmartDuration = (dayPlan) => {
     allExercises.forEach((ex, index) => {
         const rawSets = parseSetCount(ex.sets);
         const isUnilateral = ex.isUnilateral || ex.is_unilateral || String(ex.reps_or_time).includes('/str');
-        const requiresSideSwitch = !!ex.requiresSideSwitch;
-
+        
         // --- KLUCZOWA POPRAWKA ---
         // Synchronizacja z training.js: Jeśli unilateral, dzielimy liczbę serii przez 2 (zaokrąglając w górę).
         const sets = isUnilateral ? Math.ceil(rawSets / 2) : rawSets;
@@ -211,8 +210,8 @@ export const calculateSmartDuration = (dayPlan) => {
         // 2. Obliczanie Czasu Przejść (Transition)
         let transitionPerSet = 0;
         if (isUnilateral) {
-            // Unilateral: 12s na zmianę strony L->P (wewnątrz serii), jeśli wymagane
-            transitionPerSet = (requiresSideSwitch || (ex.calculated_timing && ex.calculated_timing.transition_sec === 12)) ? 12 : 5;
+            // Unilateral: ZAWSZE 12s na zmianę strony L->P (wewnątrz serii)
+            transitionPerSet = 12;
         } else {
             // Bilateral: 0s
             transitionPerSet = 0;
@@ -227,7 +226,7 @@ export const calculateSmartDuration = (dayPlan) => {
 
         // FIX: Ensure rest time includes transition buffer if switching back to Side A
         let effectiveRestTime = smartRestTime;
-        if (isUnilateral && requiresSideSwitch) {
+        if (isUnilateral) {
             // Czas przejścia (np. 12s * restFactor), minimum 5s
             const finalTransitionTime = Math.max(5, Math.round(12 * restFactor));
             effectiveRestTime = Math.max(smartRestTime, finalTransitionTime);

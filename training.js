@@ -1,6 +1,3 @@
-// ExerciseApp/training.js
-// === WAŻNE: To jest plik LOGIKI w głównym folderze: ExerciseApp/training.js ===
-
 import { state } from './state.js';
 import { focus, screens, initializeFocusElements } from './dom.js';
 import { speak } from './tts.js';
@@ -173,7 +170,7 @@ function triggerSessionBackup() {
         stopwatchSeconds: state.stopwatch.seconds,
         timerTimeLeft: state.timer.timeLeft,
         timerInitialDuration: state.timer.initialDuration,
-        sessionDetailPromptCount: state.sessionDetailPromptCount, 
+        sessionDetailPromptCount: state.sessionDetailPromptCount,
         sessionParams: state.sessionParams
     });
 }
@@ -546,25 +543,13 @@ export function generateFlatExercises(dayData) {
                                  String(exercise.reps_or_time).includes('/str') ||
                                  String(exercise.reps_or_time).includes('stron');
 
-            // TASK 5: Generowanie kroku "Zmiana Strony" tylko gdy requiresSideSwitch jest true
-            const requiresSideSwitch = !!exercise.requiresSideSwitch;
+            // === ZMIANA: WYMUSZENIE 12s NA ZMIANĘ STRONY ===
+            // Ignorujemy flagę requiresSideSwitch i zawsze ustawiamy 12s jako bazę.
+            // Użytkownik nadal może to skrócić swoim suwakiem restFactor.
+            const forcedTransitionBase = 12;
+            const finalTransitionTime = Math.max(5, Math.round(forcedTransitionBase * restFactor));
 
             const smartRestTime = calculateSmartRest(exercise, restFactor);
-
-            let transitionTime = 12;
-            if (exercise.transitionTime) {
-                transitionTime = exercise.transitionTime;
-            } else if (exercise.calculated_timing && exercise.calculated_timing.transition_sec) {
-                transitionTime = exercise.calculated_timing.transition_sec;
-            }
-
-            // FIX: Enforce minimum 12s if side switch is explicitly required,
-            // regardless of what data hydration might have set (e.g. 5s default fallback)
-            if (requiresSideSwitch && transitionTime < 10) {
-                transitionTime = 12;
-            }
-
-            const finalTransitionTime = Math.max(5, Math.round(transitionTime * restFactor));
 
             let loopLimit = totalSetsDeclared;
             let displayTotalSets = totalSetsDeclared;
@@ -622,19 +607,17 @@ export function generateFlatExercises(dayData) {
                         uniqueId: `${exercise.id || exercise.exerciseId}_step${globalStepCounter++}`
                     });
 
-                    // Krok 2: Opcjonalne Przejście (Switch)
-                    // TASK 5: Dodajemy krok zmiany strony TYLKO jeśli requiresSideSwitch=true
-                    if (requiresSideSwitch) {
-                        plan.push({
-                            name: "Zmiana Strony",
-                            isRest: true,
-                            isWork: false,
-                            duration: finalTransitionTime,
-                            sectionName: "Przejście",
-                            description: `Przygotuj stronę: ${secondSide}`,
-                            uniqueId: `rest_transition_${globalStepCounter++}`
-                        });
-                    }
+                    // Krok 2: Zmiana Strony (ZAWSZE OBECNY DLA UNILATERAL)
+                    // Usunięto warunek `if (requiresSideSwitch)`
+                    plan.push({
+                        name: "Zmiana Strony",
+                        isRest: true,
+                        isWork: false,
+                        duration: finalTransitionTime,
+                        sectionName: "Przejście",
+                        description: `Przygotuj stronę: ${secondSide}`,
+                        uniqueId: `rest_transition_${globalStepCounter++}`
+                    });
 
                     // Krok 3: Druga strona
                     plan.push({
@@ -662,10 +645,10 @@ export function generateFlatExercises(dayData) {
                 }
 
                 if (i < loopLimit) {
-                    // FIX: Jeśli ćwiczenie wymaga zmiany strony, przerwa między seriami
-                    // nie może być krótsza niż czas na zmianę strony.
+                    // FIX: Przerwa między seriami musi uwzględniać czas przejścia (12s base)
+                    // jako minimum, jeśli wracamy do pierwszej strony.
                     let interSetRest = smartRestTime;
-                    if (isUnilateral && requiresSideSwitch) {
+                    if (isUnilateral) {
                         interSetRest = Math.max(smartRestTime, finalTransitionTime);
                     }
 

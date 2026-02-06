@@ -96,13 +96,9 @@ exports.handler = async (event) => {
       const normalizedEquipment = normalizeEquipment(ex.equipment);
       const normalizedZones = normalizePainZones(ex.pain_relief_zones);
 
-      // TASK 1: Mapowanie requires_side_switch
-      const requiresSideSwitch = !!ex.requires_side_switch;
-
       const exForCheck = {
           ...ex,
           is_unilateral: !!ex.is_unilateral,
-          requires_side_switch: requiresSideSwitch,
           pain_relief_zones: normalizedZones,
           equipment: normalizedEquipment,
           default_tempo: ex.default_tempo,
@@ -123,8 +119,6 @@ exports.handler = async (event) => {
           rejectionReason = check.reason;
       }
 
-      // --- ZMIANA: Dodanie calculated_timing do Atlasu ---
-      // To pozwoli frontendowi "znać" bazowy czas nawet przy manualnym swapie.
       const timing = calculateTiming(exForCheck);
 
       acc[ex.id] = {
@@ -142,8 +136,14 @@ exports.handler = async (event) => {
         hasAnimation: !!ex.animation_svg && ex.animation_svg.length > 10,
 
         defaultTempo: ex.default_tempo || null,
+        tempoControl: ex.tempo_control || null,
+        tempoMobility: ex.tempo_mobility || null,
+        tempoCapacity: ex.tempo_capacity || null,
+        tempoStrength: ex.tempo_strength || null,
+        tempoMetabolic: ex.tempo_metabolic || null,
+        tempoRehab: ex.tempo_rehab || null,
+
         isUnilateral: ex.is_unilateral || false,
-        requiresSideSwitch: requiresSideSwitch, // Explicitly send to frontend
         primaryPlane: ex.primary_plane || 'multi',
         position: ex.position || null,
         isFootLoading: !!ex.is_foot_loading,

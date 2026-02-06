@@ -214,11 +214,48 @@ const dataStore = {
     },
 
     // NOWA FUNKCJA: Aktualizacja pojedynczego logu ćwiczenia
-    updateExerciseLog: async (sessionId, exerciseId, tech, rir) => {
-        return await callAPI('update-exercise-log', {
+    updateExerciseLog: async (sessionId, exerciseId, tech, rir, difficultyDeviation, rating) => {
+        const body = { sessionId, exerciseId };
+        if (tech !== undefined && tech !== null) body.tech = tech;
+        if (rir !== undefined && rir !== null) body.rir = rir;
+        if (difficultyDeviation !== undefined) body.difficultyDeviation = difficultyDeviation;
+        if (rating !== undefined) body.rating = rating;
+
+        const res = await callAPI('update-exercise-log', {
             method: 'POST',
-            body: { sessionId, exerciseId, tech, rir }
+            body
         });
+
+        if (res) {
+            state.loadedMonths.clear();
+
+            // Sync local state immediately to avoid stale data
+            // We need to find the session and update the log entry
+            for (const dateKey in state.userProgress) {
+                const sessions = state.userProgress[dateKey];
+                const session = sessions.find(s => String(s.sessionId) === String(sessionId));
+                if (session && session.sessionLog) {
+                    const entry = session.sessionLog.find(e => {
+                        const eId = e.exerciseId || e.id;
+                        return String(eId) === String(exerciseId);
+                    });
+
+                    if (entry) {
+                        if (tech !== undefined && tech !== null) entry.tech = tech;
+                        if (rir !== undefined && rir !== null) entry.rir = rir;
+                        if (difficultyDeviation !== undefined) entry.difficultyDeviation = difficultyDeviation;
+                        if (rating !== undefined) entry.rating = rating;
+                        else if (difficultyDeviation === 'easy') entry.rating = 'good';
+                        else if (difficultyDeviation === 'hard') entry.rating = 'hard';
+
+                        entry.inferred = false;
+                        // entry.inferenceReason? usually distinct but good to clear logic if we could
+                    }
+                    break; // Stop searching once found
+                }
+            }
+        }
+        return res;
     },
 
     recalculateStats: async () => {

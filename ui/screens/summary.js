@@ -3,7 +3,7 @@ import { state } from '../../state.js';
 import { screens } from '../../dom.js';
 import { navigateTo, showLoader, hideLoader } from '../core.js';
 import dataStore from '../../dataStore.js';
-import { renderEvolutionModal, renderPhaseTransitionModal, renderDetailAssessmentModal } from '../modals.js'; // Dodano renderDetailAssessmentModal
+import { renderEvolutionModal, renderPhaseTransitionModal } from '../modals.js';
 import { getIsCasting, sendShowIdle } from '../../cast.js';
 import { clearSessionBackup } from '../../sessionRecovery.js';
 import { clearPlanFromStorage } from './dashboard.js';
@@ -66,24 +66,23 @@ export const renderSummaryScreen = () => {
             else if (baseScore > 0) { scoreColor = 'var(--success-color)'; scorePrefix = '+'; }
             else if (baseScore < 0) { scoreColor = 'var(--danger-color)'; }
 
-            // AMPS Details Badge (TERAZ EDYTOWALNE)
-            // Jeśli brak danych, wyświetlamy przycisk "Dodaj ocenę"
-            let ampsDetails = '';
-            const hasAmps = ex.tech !== null || ex.rir !== null;
-            
-            if (hasAmps) {
-                ampsDetails = `
-                <div class="amps-details editable js-edit-amps" title="Kliknij, aby edytować ocenę">
-                    ${ex.tech !== null ? `<span>Technika: <strong>${ex.tech}/10</strong></span>` : ''}
-                    ${ex.rir !== null ? `<span>RIR: <strong>${ex.rir}</strong></span>` : ''}
-                    <span style="opacity:0.5; font-size:0.8em; margin-left:4px;">✎</span>
-                </div>`;
-            } else {
-                ampsDetails = `
-                <div class="amps-details editable js-edit-amps empty" style="opacity:0.6; border:1px dashed #ccc;">
-                    <span>+ Dodaj ocenę Tech/RIR</span>
-                </div>`;
-            }
+            // Deviation Rating System (Minimal Click Design)
+            // Default: Everything is OK (Solid/RIR 2-3) - implicit, no button pre-selected
+            // User only clicks if there's a deviation:
+            // - "Za łatwe" (Easy deviation) → RIR 4+
+            // - "Za trudne" (Hard deviation) → RIR 0-1
+
+            // Show set context for per-set fatigue awareness
+            const setContext = ex.currentSet && ex.totalSets
+                ? `<span class="set-context-badge">S ${ex.currentSet}/${ex.totalSets}</span>`
+                : '';
+
+            const deviationButtonsHtml = `
+            <div class="difficulty-deviation-group">
+                <button type="button" class="deviation-btn easy" data-type="easy" title="Za łatwe (RIR 4+)">⬆️ Łatwe</button>
+                <button type="button" class="deviation-btn hard" data-type="hard" title="Za trudne (RIR 0-1)">⬇️ Trudne</button>
+            </div>`;
+
 
             // Devolution Action (For Difficult Items)
             let devolutionHtml = '';
@@ -103,14 +102,19 @@ export const renderSummaryScreen = () => {
             return `
             <div class="rating-card" data-id="${id}" data-unique-id="${ex.uniqueId}" data-base-score="${baseScore}">
                 <div class="rating-card-main">
-                    <div class="rating-info" style="flex:1;">
+                    <div class="rating-info">
                         <div class="rating-name">${displayName}</div>
-                        <div class="rating-score-display" style="font-size:0.75rem; font-weight:700; color:${scoreColor}; transition:color 0.2s;">
-                            Wynik: <span class="current-score-val">${scorePrefix}${baseScore}</span>
+                        <div class="rating-score-row">
+                            ${setContext}
+                            <span class="rating-score-display" style="font-weight:700; color:${scoreColor}; transition:color 0.2s;">
+                                <span class="current-score-val">${scorePrefix}${baseScore}</span>
+                            </span>
                         </div>
-                        ${ampsDetails}
                     </div>
-                    <div class="rating-actions-group">
+                    
+                    <div class="summary-actions-container">
+                        ${deviationButtonsHtml}
+                        
                         <div class="btn-group-affinity">
                             <button type="button" class="rate-btn affinity-btn" data-action="like" title="Super (+15)">👍</button>
                             <button type="button" class="rate-btn affinity-btn" data-action="dislike" title="Słabo (-30)">👎</button>
@@ -157,7 +161,7 @@ export const renderSummaryScreen = () => {
             </div>
             <div class="form-group" style="margin-top:1.5rem;">
                 <label style="display:block; margin-bottom:5px; font-weight:700;">Analiza Wykonania</label>
-                <p style="font-size:0.8rem; color:#666; margin-bottom:10px;">Kliknij ocenę (Tech/RIR), aby ją zmienić przed zapisem.</p>
+                <p style="font-size:0.8rem; color:#666; margin-bottom:10px;">Dostosuj ocenę, jeśli odczucia były inne niż domyślne.</p>
                 ${contentHtml}
             </div>
             <div class="form-group" style="margin-top:2rem;">
@@ -183,53 +187,56 @@ export const renderSummaryScreen = () => {
 
     const formContainer = summaryScreen.querySelector('#summary-form');
 
-    // 2. EDYCJA AMPS (Kliknięcie w badge Tech/RIR)
-    // To jest kluczowa poprawka umożliwiająca edycję przed zapisem.
+    // 2. DEVIATION BUTTONS (Kliknięcie w przyciski ⬆️ Łatwe / ⬇️ Trudne)
+    // Toggle behavior: click once to select, click again to deselect (reset to OK)
     formContainer.addEventListener('click', (e) => {
-        const badge = e.target.closest('.js-edit-amps');
-        if (badge) {
+        const deviationBtn = e.target.closest('.deviation-btn');
+        if (deviationBtn) {
             e.preventDefault();
             e.stopPropagation();
 
-            const card = badge.closest('.rating-card');
+            const container = deviationBtn.closest('.difficulty-deviation-group');
+            const card = deviationBtn.closest('.rating-card');
             const uniqueId = card.dataset.uniqueId;
-            const exerciseName = card.querySelector('.rating-name').textContent;
+            const type = deviationBtn.dataset.type;
+            const isActive = deviationBtn.classList.contains('active');
 
-            // Znajdź wpis w lokalnym logu
+            // Find log entry
             const logEntry = state.sessionLog.find(l => l.uniqueId === uniqueId);
             if (!logEntry) return;
 
-            // Otwórz modal (zainicjowany obecnymi wartościami lub domyślnymi)
-            renderDetailAssessmentModal(exerciseName, (newTech, newRir) => {
-                // A. Aktualizacja Stanu (Local Memory)
+            // Toggle logic: if already active, reset to default (OK)
+            if (isActive) {
+                // Reset to default "OK" state
+                logEntry.tech = 9;
+                logEntry.rir = 2;
+                logEntry.rating = 'good';
+                logEntry.inferred = true;
+                logEntry.difficultyDeviation = null;
+
+                // Visual update: remove all active states
+                container.querySelectorAll('.deviation-btn').forEach(btn => btn.classList.remove('active'));
+            } else {
+                // Apply deviation
+                let newTech, newRir, newRating;
+
+                if (type === 'easy') {
+                    newTech = 10; newRir = 4; newRating = 'good';
+                } else if (type === 'hard') {
+                    newTech = 6; newRir = 0; newRating = 'hard';
+                }
+
+                // Update log entry
                 logEntry.tech = newTech;
                 logEntry.rir = newRir;
-                logEntry.inferred = false; // User nadpisał ręcznie
-                
-                // Opcjonalnie: Aktualizacja Ratingu dla spójności
-                if (newRir === 0) logEntry.rating = 'hard';
-                else if (newRir >= 3) logEntry.rating = 'good';
-                else logEntry.rating = 'ok';
+                logEntry.rating = newRating;
+                logEntry.inferred = false;
+                logEntry.difficultyDeviation = type; // Track which deviation was selected
 
-                // B. Aktualizacja Widoku (DOM Manipulation)
-                // Nie przerysowujemy całego ekranu, aby nie zgubić stanu (np. scrolla)
-                badge.innerHTML = `
-                    <span>Technika: <strong>${newTech}/10</strong></span>
-                    <span>RIR: <strong>${newRir}</strong></span>
-                    <span style="opacity:0.5; font-size:0.8em; margin-left:4px;">✎</span>
-                `;
-                badge.classList.remove('empty');
-                badge.style.border = "none";
-                badge.style.opacity = "1";
-                
-                // Efekt wizualny (flash)
-                badge.style.backgroundColor = "#dcfce7";
-                badge.style.borderColor = "#bbf7d0";
-                setTimeout(() => {
-                    badge.style.backgroundColor = ""; 
-                    badge.style.borderColor = "";
-                }, 500);
-            });
+                // Visual update: clear all, then activate this one
+                container.querySelectorAll('.deviation-btn').forEach(btn => btn.classList.remove('active'));
+                deviationBtn.classList.add('active');
+            }
         }
     });
 
@@ -268,7 +275,7 @@ export const renderSummaryScreen = () => {
     // 4. Devolution Buttons
     formContainer.querySelectorAll('.devolution-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
-            e.preventDefault(); 
+            e.preventDefault();
             if (btn.disabled) return;
 
             const targetName = btn.dataset.targetName;
@@ -317,6 +324,24 @@ export async function handleSummarySubmit(e) {
         }
     });
 
+    // --- LOGIKA DEFAULTINGU S.A.F.E. ---
+    // Jeśli użytkownik nic nie kliknął (brak RIR w logu), a chce zapisać,
+    // przypisujemy wartości domyślne ("Solid").
+    if (state.sessionLog) {
+        state.sessionLog.forEach(entry => {
+            if (entry.status === 'completed' && !entry.isRest) {
+                // Jeśli brak twardych danych (RIR/Tech) i brak ratingu 'hard' (który mógłby być ustawiony automatycznie),
+                // ustawiamy domyślne wartości dla "Solid" (Niebieski).
+                if (entry.rir === undefined || entry.rir === null) {
+                    entry.rir = 2; // Default solid RIR
+                    entry.tech = 9; // Default solid Tech
+                    entry.rating = 'good'; // Default solid Rating
+                    entry.inferred = true; // Zaznaczamy, że to system uzupełnił
+                }
+            }
+        });
+    }
+
     const now = new Date();
     const durationSeconds = Math.round(Math.max(0, now - state.sessionStartTime - (state.totalPausedTime || 0)) / 1000);
 
@@ -340,7 +365,7 @@ export async function handleSummarySubmit(e) {
         notes: document.getElementById('general-notes').value,
         startedAt: state.sessionStartTime.toISOString(),
         completedAt: now.toISOString(),
-        sessionLog: state.sessionLog, // To teraz zawiera zaktualizowane dane AMPS
+        sessionLog: state.sessionLog, // To teraz zawiera zaktualizowane dane AMPS (z defaultami)
         netDurationSeconds: durationSeconds
     };
 
@@ -375,7 +400,6 @@ export async function handleSummarySubmit(e) {
             }
         });
 
-        // Obsługa dewolucji w lokalnym stanie (dla natychmiastowego efektu)
         ratingsArray.forEach(r => {
             if (r.action === 'hard') {
                 if (!state.userPreferences[r.exerciseId]) state.userPreferences[r.exerciseId] = {};

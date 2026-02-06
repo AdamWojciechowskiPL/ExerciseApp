@@ -213,8 +213,19 @@ export async function main() {
             if (userInfoContainer) userInfoContainer.classList.remove('hidden');
             if (mainNav) mainNav.classList.remove('hidden');
 
-            await getToken();
+            const token = await getToken();
             const profile = getUserProfile();
+
+            // --- FIX: SAFETY GUARD (STRAŻNIK SESJI) ---
+            // Jeśli token wygasł lub profil jest pusty (Missing Refresh Token),
+            // wymuś wylogowanie, aby użytkownik zalogował się ponownie.
+            if (!token || !profile) {
+                console.warn("[App] Refresh Token expired or invalid. Force Logout.");
+                await logout(); 
+                return;
+            }
+            // ------------------------------------------
+
             const nameEl = document.getElementById('user-display-name');
             if (nameEl) nameEl.textContent = profile.name || profile.email || 'Użytkownik';
 
@@ -327,3 +338,16 @@ if ('serviceWorker' in navigator) {
         });
     });
 }
+
+// SVG Sprite Loader
+(async function loadSprite() {
+    try {
+        const response = await fetch('icons/sprite.svg');
+        if (!response.ok) throw new Error('Sprite load failed');
+        const svgContent = await response.text();
+        const container = document.getElementById('svg-container');
+        if (container) container.innerHTML = svgContent;
+    } catch (e) {
+        console.error('Failed to load icons:', e);
+    }
+})();

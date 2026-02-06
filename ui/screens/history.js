@@ -21,7 +21,7 @@ export const renderHistoryScreen = async (forceRefresh = false) => {
     try {
         await dataStore.getHistoryForMonth(year, month, forceRefresh);
         const headerContainer = document.getElementById('month-year-header');
-        headerContainer.innerHTML = `<span style="vertical-align: middle;">${date.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' })}</span><button id="refresh-history-btn" style="background:none; border:none; cursor:pointer; margin-left:10px; vertical-align: middle; opacity: 0.6;" title="Odśwież"><svg width="16" height="16"><use href="#icon-refresh-cw"/></svg></button>`;
+        headerContainer.innerHTML = `<span style="vertical-align: middle;">${date.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' })}</span><button id="refresh-history-btn" style="background:none; border:none; cursor:pointer; margin-left:10px; vertical-align: middle; opacity: 0.6;" aria-label="Odśwież historię"><svg width="16" height="16" aria-hidden="true"><use href="#icon-refresh-cw"/></svg></button>`;
         document.getElementById('refresh-history-btn').addEventListener('click', (e) => { e.stopPropagation(); renderHistoryScreen(true); });
 
         const grid = containers.calendarGrid;
@@ -120,7 +120,7 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
         const ampsBadge = e.target.closest('.amps-inline-badge');
         if (ampsBadge) {
             e.stopPropagation();
-            
+
             // Pobieramy ID sesji z kontekstu (z DELETE button w tej samej karcie)
             const sessionCard = ampsBadge.closest('.workout-context-card');
             const deleteBtn = sessionCard ? sessionCard.querySelector('.delete-session-btn') : null;
@@ -157,7 +157,78 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
             return;
         }
 
-        // 3. PRZYCISKI OCEN (KCIUKI/TRUDNOŚĆ) - ISTNIEJĄCA LOGIKA + FIX UI
+        // 3. DEVIATION BUTTONS (Łatwe/Trudne toggle)
+        const deviationBtn = e.target.closest('.deviation-btn-hist');
+        if (deviationBtn) {
+            e.stopPropagation();
+            const uniqueId = deviationBtn.dataset.uniqueId;
+            const type = deviationBtn.dataset.type; // 'easy' or 'hard'
+            const isActive = deviationBtn.classList.contains('active');
+            const card = deviationBtn.closest('.rating-card');
+            const deviationGroup = card.querySelector('.difficulty-deviation-group');
+            const difficultyIndicator = card.querySelector('.difficulty-indicator');
+
+            // Toggle all buttons in this group off first
+            deviationGroup.querySelectorAll('.deviation-btn-hist').forEach(btn => btn.classList.remove('active'));
+
+            if (!isActive) {
+                // Activate this button
+                deviationBtn.classList.add('active');
+
+                // Update the difficulty indicator
+                if (difficultyIndicator) {
+                    if (type === 'easy') {
+                        difficultyIndicator.textContent = '⬆️ Łatwe';
+                        difficultyIndicator.style.background = '#ecfdf5';
+                        difficultyIndicator.style.color = '#166534';
+                        difficultyIndicator.style.borderColor = '#10b981';
+                    } else if (type === 'hard') {
+                        difficultyIndicator.textContent = '⬇️ Trudne';
+                        difficultyIndicator.style.background = '#fef2f2';
+                        difficultyIndicator.style.color = '#991b1b';
+                        difficultyIndicator.style.borderColor = '#ef4444';
+                    }
+                }
+
+                // Persist 'easy'/'hard' deviation
+                const sessionId = card.dataset.sessionId;
+                const exerciseId = card.dataset.id;
+
+                if (sessionId) {
+                    let newRir = undefined;
+                    let newRating = undefined;
+                    if (type === 'easy') { newRir = 4; newRating = 'good'; }
+                    else if (type === 'hard') { newRir = 0; newRating = 'hard'; }
+
+                    // Call backend (async, fire and forget for UI responsiveness, or basic error handling)
+                    dataStore.updateExerciseLog(sessionId, exerciseId, undefined, newRir, type, newRating)
+                        .then(res => {
+                            if (!res) console.warn("Update might have failed");
+                        })
+                        .catch(err => console.error("History deviation update failed:", err));
+                }
+            } else {
+                // Reset to OK
+                if (difficultyIndicator) {
+                    difficultyIndicator.textContent = '👌 OK';
+                    difficultyIndicator.style.background = '#f8fafc';
+                    difficultyIndicator.style.color = '#64748b';
+                    difficultyIndicator.style.borderColor = '#e2e8f0';
+                }
+
+                const sessionId = card.dataset.sessionId;
+                const exerciseId = card.dataset.id;
+
+                if (sessionId) {
+                    // Reset: Deviation=null, RIR=2, Rating='ok'
+                    dataStore.updateExerciseLog(sessionId, exerciseId, undefined, 2, null, 'ok')
+                        .catch(err => console.error("History deviation reset failed:", err));
+                }
+            }
+            return;
+        }
+
+        // 4. PRZYCISKI OCEN (KCIUKI/TRUDNOŚĆ) - ISTNIEJĄCA LOGIKA + FIX UI
         const rateBtn = e.target.closest('.rate-btn-hist');
         if (rateBtn) {
             e.stopPropagation();

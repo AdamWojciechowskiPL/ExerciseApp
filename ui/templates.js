@@ -412,8 +412,9 @@ export function generateRestCalendarPageHTML(dateObj) {
     </div>`;
 }
 // --- SHARED HELPER DLA WIERSZY ĆWICZEŃ (POPRAWIONY) ---
-function renderExerciseRow(item, sessionRatings) {
+function renderExerciseRow(item, sessionRatings, sessionId = null) {
     const id = item.exerciseId || item.id;
+    const uniqueId = item.uniqueId || `${id}-${item.currentSet}`;
     const displayName = item.name.replace(/\s*\((Lewa|Prawa)\)/gi, '').trim();
     const pref = state.userPreferences[id] || { score: 0, difficulty: 0 };
     const score = pref.score || 0;
@@ -431,36 +432,51 @@ function renderExerciseRow(item, sessionRatings) {
         actualTimeBadge = `<span class="time-badge" style="font-size:0.65rem; padding:1px 4px;">⏱ ${dStr}</span>`;
     }
 
-    let ampsBadge = '';
-    if (item.rating || item.rir !== undefined || item.tech !== undefined) {
-        const ratingMap = { 'good': '👍', 'ok': '👌', 'hard': '👎', 'skipped': '' };
-        const icon = ratingMap[item.rating] || '';
-        const techStr = (item.tech !== undefined && item.tech !== null) ? `T:${item.tech}` : '';
-        const rirStr = (item.rir !== undefined && item.rir !== null) ? `RIR:${item.rir}` : '';
-        let content = [];
-        if (icon) content.push(icon);
-        if (techStr) content.push(techStr);
-        if (rirStr) content.push(rirStr);
-        if (item.inferred) content.push('🤖');
-        if (content.length > 0) {
-            ampsBadge = `<span class="amps-inline-badge">${content.join(' ')}</span>`;
-        }
+    // User-friendly difficulty indicator (hide technical T/RIR)
+    let difficultyIndicator = '';
+    let difficultyClass = '';
+
+    if (item.difficultyDeviation === 'easy' || (item.rir !== undefined && item.rir >= 4)) {
+        difficultyIndicator = '⬆️ Łatwe';
+        difficultyClass = 'easy';
+    } else if (item.difficultyDeviation === 'hard' || item.rating === 'hard' || (item.rir !== undefined && item.rir <= 0)) {
+        difficultyIndicator = '⬇️ Trudne';
+        difficultyClass = 'hard';
+    } else if (item.inferred) {
+        difficultyIndicator = '👌 OK';
+        difficultyClass = 'ok';
+    } else if (item.rating === 'good' || item.rating === 'ok') {
+        difficultyIndicator = '👌 OK';
+        difficultyClass = 'ok';
     }
+
+    const difficultyBadgeStyle = difficultyClass === 'easy'
+        ? 'background:#ecfdf5; color:#166534; border:1px solid #10b981;'
+        : difficultyClass === 'hard'
+            ? 'background:#fef2f2; color:#991b1b; border:1px solid #ef4444;'
+            : 'background:#f8fafc; color:#64748b; border:1px solid #e2e8f0;';
+
+    const difficultyBadge = difficultyIndicator
+        ? `<span class="difficulty-indicator" style="${difficultyBadgeStyle} padding:2px 8px; border-radius:4px; font-size:0.7rem; font-weight:600; cursor:pointer;" data-unique-id="${uniqueId}" data-current="${difficultyClass}" title="Kliknij aby zmienić">${difficultyIndicator}</span>`
+        : '';
 
     const sessionAction = sessionRatings[id];
     const isLikeActive = sessionAction === 'like' ? 'active' : '';
     const isDislikeActive = sessionAction === 'dislike' ? 'active' : '';
 
-    // FIX: Dodano klasę 'dynamic-score-val' i zawsze renderujemy span (nawet pusty), by JS mógł go zaktualizować
     const scoreContent = score !== 0 ? `[${scoreText}]` : '';
 
+    // Deviation toggle buttons for history modification
+    const isEasyActive = item.difficultyDeviation === 'easy' ? 'active' : '';
+    const isHardActive = item.difficultyDeviation === 'hard' ? 'active' : '';
+
     return `
-    <div class="rating-card history-mode" data-id="${id}">
+    <div class="rating-card history-mode" data-id="${id}" data-unique-id="${uniqueId}" data-session-id="${sessionId || ''}">
         <div class="rating-card-main">
             <div class="rating-info">
-                <div style="line-height:1.1;">
+                <div style="line-height:1.2;">
                     <span class="rating-name">${displayName}</span>
-                    ${ampsBadge}
+                    ${difficultyBadge}
                 </div>
                 <div class="history-meta-row">
                     <span class="time-badge" style="background:#f1f5f9; color:#64748b; border:1px solid #e2e8f0; font-size:0.65rem; padding:1px 4px;">
@@ -472,6 +488,10 @@ function renderExerciseRow(item, sessionRatings) {
                 </div>
             </div>
             <div class="rating-actions-group">
+                <div class="difficulty-deviation-group history-mode" style="gap:2px;">
+                    <button class="deviation-btn-hist easy ${isEasyActive}" data-id="${id}" data-unique-id="${uniqueId}" data-type="easy" title="Oznacz jako łatwe">⬆️</button>
+                    <button class="deviation-btn-hist hard ${isHardActive}" data-id="${id}" data-unique-id="${uniqueId}" data-type="hard" title="Oznacz jako trudne">⬇️</button>
+                </div>
                 <div class="btn-group-affinity">
                     <button class="rate-btn-hist affinity-btn ${isLikeActive}" data-id="${id}" data-action="like">👍</button>
                     <button class="rate-btn-hist affinity-btn ${isDislikeActive}" data-id="${id}" data-action="dislike">👎</button>
@@ -518,7 +538,7 @@ export function generateSessionCardHTML(session) {
 
     const exercisesHtml = (session.sessionLog || [])
         .filter(l => l.status === 'completed' && !l.isRest)
-        .map(item => renderExerciseRow(item, sessionRatings))
+        .map(item => renderExerciseRow(item, sessionRatings, session.sessionId))
         .join('');
 
     const notesHtml = session.notes ? `
@@ -666,7 +686,7 @@ export function generatePreTrainingCardHTML(ex, index) {
             </div>
             <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
                 ${previewBtnHTML}
-                <button class="swap-btn" title="Wymień ćwiczenie" data-exercise-index="${index}"><svg width="20" height="20"><use href="#icon-swap"/></svg></button>
+                <button class="swap-btn" aria-label="Wymień ćwiczenie" data-exercise-index="${index}"><svg width="20" height="20" aria-hidden="true"><use href="#icon-swap"/></svg></button>
             </div>
         </div>
         <div class="training-meta">
@@ -710,7 +730,7 @@ export function generateCompletedMissionCardHTML(session) {
 
     const exercisesHtml = (session.sessionLog || [])
         .filter(l => l.status === 'completed' && !l.isRest)
-        .map(item => renderExerciseRow(item, sessionRatings))
+        .map(item => renderExerciseRow(item, sessionRatings, session.sessionId))
         .join('');
 
     return `

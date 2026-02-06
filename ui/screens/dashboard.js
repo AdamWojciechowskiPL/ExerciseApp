@@ -206,20 +206,20 @@ const openGlobalMenu = (targetElement, dateISO, isRest, dayNumber) => {
     let content = '';
     if (!isRest) {
         content += `<button class="ctx-action" data-action="preview" data-day-id="${dayNumber}">
-            <svg width="18" height="18"><use href="#icon-eye"/></svg>
+            <svg width="18" height="18" aria-hidden="true"><use href="#icon-eye"/></svg>
             <span>👁️ Podgląd</span>
         </button>`;
         content += `<button class="ctx-action" data-action="rest" data-date="${dateISO}">
-            <svg width="18" height="18"><use href="#icon-rest-coffee"/></svg>
+            <svg width="18" height="18" aria-hidden="true"><use href="#icon-rest-coffee"/></svg>
             <span>Zmień na Wolne</span>
         </button>`;
         content += `<button class="ctx-action" data-action="move" data-date="${dateISO}">
-            <svg width="18" height="18"><use href="#icon-calendar-move"/></svg>
+            <svg width="18" height="18" aria-hidden="true"><use href="#icon-calendar-move"/></svg>
             <span>Przenieś...</span>
         </button>`;
     }
     content += `<button class="ctx-action" data-action="reset">
-        <svg width="18" height="18"><use href="#icon-reset-ccw"/></svg>
+        <svg width="18" height="18" aria-hidden="true"><use href="#icon-reset-ccw"/></svg>
         <span>Resetuj Plan</span>
     </button>`;
 
@@ -365,10 +365,11 @@ export const renderMainScreen = async (isLoading = false) => {
     const getMenuBtn = (date, isRest, dayNum) => `
         <div class="ctx-menu-wrapper" style="position: absolute; top: 10px; right: 10px; z-index: 20;">
             <button class="ctx-menu-btn"
+                aria-label="Opcje"
                 data-date="${date}"
                 data-is-rest="${isRest}"
                 data-day-id="${dayNum}">
-                <svg width="24" height="24"><use href="#icon-dots-vertical"/></svg>
+                <svg width="24" height="24" aria-hidden="true"><use href="#icon-dots-vertical"/></svg>
             </button>
         </div>
     `;
@@ -428,6 +429,73 @@ export const renderMainScreen = async (isLoading = false) => {
                             ampsBadge.innerHTML = originalContent;
                         }
                     });
+                }
+                return;
+            }
+
+            // --- C. DEVIATION BUTTONS (DASHBOARD) ---
+            const deviationBtn = e.target.closest('.deviation-btn-hist');
+            if (deviationBtn) {
+                e.stopPropagation();
+
+                const uniqueId = deviationBtn.dataset.uniqueId;
+                const type = deviationBtn.dataset.type; // 'easy' or 'hard'
+                const isActive = deviationBtn.classList.contains('active');
+                const card = deviationBtn.closest('.rating-card');
+                const deviationGroup = card.querySelector('.difficulty-deviation-group');
+                const difficultyIndicator = card.querySelector('.difficulty-indicator');
+
+                // Toggle all buttons in this group off first
+                deviationGroup.querySelectorAll('.deviation-btn-hist').forEach(btn => btn.classList.remove('active'));
+
+                if (!isActive) {
+                    // Activate this button
+                    deviationBtn.classList.add('active');
+
+                    // Update the difficulty indicator
+                    if (difficultyIndicator) {
+                        if (type === 'easy') {
+                            difficultyIndicator.textContent = '⬆️ Łatwe';
+                            difficultyIndicator.style.background = '#ecfdf5';
+                            difficultyIndicator.style.color = '#166534';
+                            difficultyIndicator.style.borderColor = '#10b981';
+                        } else if (type === 'hard') {
+                            difficultyIndicator.textContent = '⬇️ Trudne';
+                            difficultyIndicator.style.background = '#fef2f2';
+                            difficultyIndicator.style.color = '#991b1b';
+                            difficultyIndicator.style.borderColor = '#ef4444';
+                        }
+                    }
+
+                    const sessionId = card.dataset.sessionId;
+                    const exerciseId = card.dataset.id;
+
+                    if (sessionId) {
+                        let newRir = undefined;
+                        let newRating = undefined;
+                        if (type === 'easy') { newRir = 4; newRating = 'good'; }
+                        else if (type === 'hard') { newRir = 0; newRating = 'hard'; }
+
+                        dataStore.updateExerciseLog(sessionId, exerciseId, undefined, newRir, type, newRating)
+                            .then(res => { if (!res) console.warn("Dash Update might have failed"); })
+                            .catch(err => console.error("Dash deviation update failed:", err));
+                    }
+                } else {
+                    // Reset to OK
+                    if (difficultyIndicator) {
+                        difficultyIndicator.textContent = '👌 OK';
+                        difficultyIndicator.style.background = '#f8fafc';
+                        difficultyIndicator.style.color = '#64748b';
+                        difficultyIndicator.style.borderColor = '#e2e8f0';
+                    }
+
+                    const sessionId = card.dataset.sessionId;
+                    const exerciseId = card.dataset.id;
+
+                    if (sessionId) {
+                        dataStore.updateExerciseLog(sessionId, exerciseId, undefined, 2, null, 'ok')
+                            .catch(err => console.error("Dash deviation reset failed:", err));
+                    }
                 }
                 return;
             }
@@ -710,10 +778,11 @@ function renderUpcomingQueue(days, todayISO) {
 
         const btnHtml = `
             <button class="strip-menu-btn ctx-menu-btn"
+                aria-label="Opcje dnia"
                 data-date="${dayData.date}"
                 data-is-rest="${isRest}"
                 data-day-id="${dayData.dayNumber}">
-                <svg width="16" height="16" fill="currentColor" style="color: #94a3b8;"><use href="#icon-dots-vertical"/></svg>
+                <svg width="16" height="16" fill="currentColor" style="color: #94a3b8;" aria-hidden="true"><use href="#icon-dots-vertical"/></svg>
             </button>
         `;
 

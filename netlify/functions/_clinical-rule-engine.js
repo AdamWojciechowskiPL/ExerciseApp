@@ -16,6 +16,90 @@ const isRotationalPlane = (p) => {
     return plane === 'rotation' || plane === 'transverse';
 };
 
+const HARD_EXCLUDED_KNEE_LOAD_FOR_DIAGNOSES = new Set([
+    'chondromalacia', 'meniscus_tear', 'acl_rehab', 'mcl_rehab', 'lcl_rehab', 'knee_oa'
+]);
+
+const HARD_EXCLUDED_SPINE_LOAD_FOR_DIAGNOSES = new Set([
+    'disc_herniation', 'spondylolisthesis',
+]);
+
+const KNEE_FLEXION_SAFETY_LIMIT = 60; // Stopnie
+
+function violatesDiagnosisHardContraindications(ex, diagnosisSet, ctx) {
+    const kneeLoad = (ex.knee_load_level || 'low').toLowerCase();
+    const spineLoad = (ex.spine_load_level || 'low').toLowerCase();
+    const impact = (ex.impact_level || 'low').toLowerCase();
+
+    if (kneeLoad === 'high') { for (const d of diagnosisSet) { if (HARD_EXCLUDED_KNEE_LOAD_FOR_DIAGNOSES.has(d)) return true; } }
+    if (spineLoad === 'high') { for (const d of diagnosisSet) { if (HARD_EXCLUDED_SPINE_LOAD_FOR_DIAGNOSES.has(d)) return true; } }
+    if (impact === 'high' && diagnosisSet.has('disc_herniation')) return true;
+
+    const hasKneeDiagnosis = [...diagnosisSet].some(d => HARD_EXCLUDED_KNEE_LOAD_FOR_DIAGNOSES.has(d));
+    const hasKneePain = ctx.painFilters && (ctx.painFilters.has('knee') || ctx.painFilters.has('knee_anterior') || ctx.painFilters.has('patella'));
+
+    if (hasKneeDiagnosis || hasKneePain) {
+        if (ex.kneeFlexionApplicability) {
+            if (ctx.isSevere) {
+                if (ex.kneeFlexionMaxDeg === null) return true;
+                if (ex.kneeFlexionMaxDeg > KNEE_FLEXION_SAFETY_LIMIT) return true;
+            }
+        }
+    }
+
+    const hasNeckOrShoulderPain = ctx.painFilters && (
+        ctx.painFilters.has('cervical') || ctx.painFilters.has('neck') || ctx.painFilters.has('shoulder')
+    );
+
+    if (hasNeckOrShoulderPain && ctx.isSevere) {
+        if (ex.overheadRequired) return true;
+    }
+
+    return false;
+}
+
+function violatesSeverePainRules(ex, ctx) {
+    if (!ctx.isSevere) return false;
+    if ((ex.difficulty_level || 1) > 2) return true;
+    if ((ex.metabolic_intensity || 1) >= 4) return true;
+    return false;
+}
+
+function isExerciseSafeForFatigue(ex, strictLevel = 0) {
+    const impact = (ex.impact_level || 'low').toLowerCase();
+    const spineLoad = (ex.spine_load_level || 'low').toLowerCase();
+    const kneeLoad = (ex.knee_load_level || 'low').toLowerCase();
+    const diff = ex.difficulty_level || 1;
+    const met = ex.metabolic_intensity || 1;
+    const style = ex.conditioning_style || 'none';
+
+    if (strictLevel === 0) {
+        if (impact === 'high') return false;
+        if (spineLoad === 'high') return false;
+        if (kneeLoad === 'high') return false;
+        if (diff >= 4) return false;
+        if (met >= 4) return false;
+        if (style === 'interval') return false;
+    }
+    else if (strictLevel === 1) {
+        if (impact === 'high') return false;
+        if (spineLoad === 'high') return false;
+        if (kneeLoad === 'high') return false;
+        if (diff >= 5) return false;
+        if (met >= 4) return false;
+        if (style === 'interval') return false;
+    }
+    else if (strictLevel === 2) {
+        if (impact === 'high') return false;
+        if (spineLoad === 'high') return false;
+        if (kneeLoad === 'high') return false;
+        if (diff >= 5) return false;
+        if (met >= 5) return false;
+        if (style === 'interval') return false;
+    }
+    return true;
+}
+
 function detectTolerancePattern(triggers, reliefs) {
     if (!Array.isArray(triggers)) triggers = [];
     if (!Array.isArray(reliefs)) reliefs = [];
@@ -207,5 +291,8 @@ module.exports = {
     detectTolerancePattern,
     KNOWN_POSITIONS,
     isRotationalPlane,
-    passesTolerancePattern // Export for testing
+    passesTolerancePattern, // Export for testing
+    violatesDiagnosisHardContraindications,
+    violatesSeverePainRules,
+    isExerciseSafeForFatigue
 };

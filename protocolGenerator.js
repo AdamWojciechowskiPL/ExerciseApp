@@ -15,9 +15,9 @@ const calculateLocalTiming = (ex, mode) => {
     else if (load >= 4) baseRest = 60;
     else if (cat.includes('mobility')) baseRest = 20;
 
-    // TASK 6: Update Local Timing Logic
-    const requiresSideSwitch = !!ex.requiresSideSwitch;
-    const transitionSec = requiresSideSwitch ? 12 : 5;
+    // SIMPLIFIED LOGIC: Unilateral always implies 12s transition
+    const isUnilateral = ex.isUnilateral || String(ex.reps_or_time || '').includes('/str');
+    const transitionSec = isUnilateral ? 12 : 5;
 
     return {
         rest_sec: baseRest,
@@ -26,7 +26,7 @@ const calculateLocalTiming = (ex, mode) => {
 };
 
 /**
- * PROTOCOL GENERATOR v6.1 (Refactored: Backend-Driven Fatigue Integration)
+ * PROTOCOL GENERATOR v6.3 (Simplified Unilateral Logic)
  */
 
 const ZONE_MAP = {
@@ -45,46 +45,53 @@ const ZONE_MAP = {
     'metabolic': { type: 'tag', keys: ['fat_loss', 'conditioning'] }
 };
 
+// Mapowanie Tryb Protokołu -> Kolumna w Bazie (CamelCase w Frontendzie)
+const TEMPO_COLUMN_MAP = {
+    'sos': 'tempoRehab',
+    'neuro': 'tempoRehab',
+    'calm': 'tempoControl',
+    'flow': 'tempoMobility',
+    'reset': 'tempoMobility',
+    'ladder': 'tempoControl',
+    'burn': 'tempoMetabolic',
+    'booster': 'tempoStrength'
+};
+
 const TIMING_CONFIG = {
-    'sos': { work: 60, rest: 15, tempo: 'Wolne / Oddechowe' },
-    'reset': { work: 45, rest: 10, tempo: 'Płynne' },
-    'booster': { work: 40, rest: 20, tempo: 'Dynamiczne' },
-    'calm': { work: 120, rest: 10, tempo: 'Wolne / nos / przepona' },
-    'flow': { work: 40, rest: 5, tempo: 'Płynne / kontrola zakresu' },
-    'neuro': { work: 25, rest: 20, tempo: 'Delikatne / bez bólu' },
-    'ladder': { work: 50, rest: 20, tempo: 'Technika / kontrola' },
-    'burn': { work: 30, rest: 15, tempo: 'Żwawe (Low Impact)' }
+    'sos': { work: 60, rest: 15 },
+    'reset': { work: 45, rest: 10 },
+    'booster': { work: 40, rest: 20 },
+    'calm': { work: 120, rest: 10 },
+    'flow': { work: 40, rest: 5 },
+    'neuro': { work: 25, rest: 20 },
+    'ladder': { work: 50, rest: 20 },
+    'burn': { work: 30, rest: 15 }
 };
 
 const DEFAULT_MAX_DURATION = 60;
 const DEFAULT_MAX_REPS = 15;
 
 export function generateBioProtocol({ mode, focusZone, durationMin, userContext, timeFactor = 1.0 }) {
-    console.log(`🧪 [ProtocolGenerator] Generowanie v6.1: ${mode} / ${focusZone}`);
+    console.log(`🧪 [ProtocolGenerator] Generowanie v6.3: ${mode} / ${focusZone}`);
 
     // --- CNS SAFETY NET LOGIC (INTEGRATED WITH BACKEND METRICS) ---
     let actualMode = mode;
     let safetyMessage = null;
 
-    // Pobieramy Fatigue Score obliczony przez Backend (Model Banistera)
-    // 0-40: Fresh, 40-80: Moderate, >80: Critical
     const fatigueScore = state.userStats?.fatigueScore || 0;
     const highLoadModes = ['burn', 'booster', 'ladder'];
 
     if (highLoadModes.includes(mode)) {
         if (fatigueScore >= 80) {
-            // CRITICAL: Bezwzględne wymuszenie regeneracji
             console.warn(`[ProtocolGenerator] 🛡️ CRITICAL FATIGUE (${fatigueScore}). Forcing CALM.`);
             actualMode = 'calm';
-            focusZone = 'sleep'; // Bezpieczny fallback
+            focusZone = 'sleep';
             safetyMessage = `🚨 ALARM PRZETRENOWANIA (Score: ${fatigueScore})\nTwój układ nerwowy jest przeciążony. Wymuszono tryb regeneracji (Calm), aby zapobiec kontuzji.`;
         }
         else if (fatigueScore >= 50) {
-            // HIGH RISK: Ostrzeżenie, ale pozwalamy (chyba że user zdecyduje inaczej)
             safetyMessage = `⚠️ OSTRZEŻENIE (HIGH RISK)\nTwoje skumulowane zmęczenie wynosi ${fatigueScore}/120. Zalecamy zmianę na tryb "Flow" lub "Reset", jeśli nie czujesz się w pełni sił.`;
         }
         else if (fatigueScore >= 35) {
-            // MODERATE: Info
             safetyMessage = `ℹ️ INFO: Narastające zmęczenie (${fatigueScore}). Pamiętaj o technice i nie forsuj tempa ponad siły.`;
         }
     }
@@ -105,8 +112,6 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext,
 
     // Wzbogacamy kandydatów o lokalny timing
     candidates.forEach(c => {
-        // Hydration of requiresSideSwitch logic needed here
-        if (c.requiresSideSwitch === undefined) c.requiresSideSwitch = !!c.requires_side_switch;
         c.calculated_timing = calculateLocalTiming(c, actualMode);
     });
 
@@ -216,6 +221,21 @@ function getStrictUnique(pool, usedIds) {
     return null;
 }
 
+// Helper do wyboru tempa
+function resolveTempoForMode(ex, mode) {
+    const targetColumn = TEMPO_COLUMN_MAP[mode];
+    // 1. Sprawdź specyficzną kolumnę (np. tempoStrength)
+    if (targetColumn && ex[targetColumn]) {
+        return ex[targetColumn];
+    }
+    // 2. Fallback do defaultTempo
+    if (ex.defaultTempo) {
+        return ex.defaultTempo;
+    }
+    // 3. Ostateczny fallback
+    return "Kontrolowane";
+}
+
 function buildSteps(exercises, config, mode, timeFactor, globalRestFactor) {
     const SECONDS_PER_REP_ESTIMATE = state.settings.secondsPerRep || 6;
     const INTRA_SET_REST = Math.round(15 * globalRestFactor);
@@ -254,9 +274,12 @@ function buildSteps(exercises, config, mode, timeFactor, globalRestFactor) {
 
         targetTotalSeconds = Math.max(15, targetTotalSeconds);
 
+        // --- ZMIANA LOGIKI TEMPA ---
+        const tempoDisplay = resolveTempoForMode(ex, mode);
+
         const rawReps = String(ex.reps_or_time || "").toLowerCase();
         const hasTimeUnits = rawReps.includes('s') || rawReps.includes('min');
-        const tempoStr = (ex.defaultTempo || ex.tempo_or_iso || "").toLowerCase();
+        const tempoStr = (tempoDisplay || ex.defaultTempo || "").toLowerCase();
         const isIso = tempoStr.includes("izo") || tempoStr.includes("iso");
         const hasMaxDuration = (ex.maxDuration > 0) || (ex.max_recommended_duration > 0);
 
@@ -292,8 +315,6 @@ function buildSteps(exercises, config, mode, timeFactor, globalRestFactor) {
         driftCompensation += (totalDurationCreated - baseWork);
 
         const isUnilateral = ex.isUnilateral || String(ex.reps_or_time).includes('/str');
-        const requiresSideSwitch = !!ex.requiresSideSwitch; // TASK 6
-        const tempoDisplay = config.tempo;
 
         const createCompactStep = (suffix) => ({
             ...ex,
@@ -307,7 +328,7 @@ function buildSteps(exercises, config, mode, timeFactor, globalRestFactor) {
             sectionName: mapModeToSectionName(mode),
             reps_or_time: displayValue,
             duration: durationPerSet,
-            tempo_or_iso: tempoDisplay,
+            tempo_or_iso: tempoDisplay, // Używamy pobranego z bazy
             uniqueId: `${ex.id}_p${index}${suffix ? suffix.replace(/[\s()]/g, '') : ''}`,
             restBetweenSets: INTRA_SET_REST,
             calculated_timing: ex.calculated_timing
@@ -315,13 +336,11 @@ function buildSteps(exercises, config, mode, timeFactor, globalRestFactor) {
 
         if (isUnilateral) {
             steps.push(createCompactStep(' (Lewa)'));
-            
-            // TASK 6: Conditional Side Switch Step
-            if (requiresSideSwitch) {
-                const transitionTime = Math.max(5, Math.round(5 * globalRestFactor));
-                steps.push({ name: "Zmiana Strony", isWork: false, isRest: true, duration: transitionTime, sectionName: "Przejście", description: "Druga strona" });
-            }
-            
+
+            // SIMPLIFIED LOGIC: Always insert transition for unilateral exercises
+            const transitionTime = Math.max(5, Math.round(5 * globalRestFactor));
+            steps.push({ name: "Zmiana Strony", isWork: false, isRest: true, duration: transitionTime, sectionName: "Przejście", description: "Druga strona" });
+
             steps.push(createCompactStep(' (Prawa)'));
         } else {
             steps.push(createCompactStep(''));

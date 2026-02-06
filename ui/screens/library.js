@@ -26,7 +26,7 @@ const CAT_ICONS = {
     'core': '🧱', 'glute': '🍑', 'hip': '⚙️', 'spine': '🐍', 'thoracic': '🔙',
     'nerve': '⚡', 'knee': '🦵', 'calves': '👠', 'breathing': '🌬️', 'conditioning': '❤️'
 };
-const getCatIcon = (id) => CAT_ICONS[Object.keys(CAT_ICONS).find(k => (id||'').includes(k))] || '🏋️';
+const getCatIcon = (id) => CAT_ICONS[Object.keys(CAT_ICONS).find(k => (id || '').includes(k))] || '🏋️';
 
 // --- DEFINICJE FILTRÓW ---
 const SPECIAL_FILTERS = [
@@ -34,6 +34,8 @@ const SPECIAL_FILTERS = [
     { id: 'favorites', label: '⭐ Ulubione', check: (ex) => (state.userPreferences[ex.id]?.score || 0) > 0 },
     { id: 'safe', label: '✅ Bezpieczne', check: (ex) => ex.isAllowed !== false && !(state.blacklist || []).includes(ex.id) },
     { id: 'progression', label: '📈 Progresje', check: (ex) => isExerciseInOverrideChain(ex.id) },
+    { id: 'hard_rated', label: '🔴 Trudne dla mnie', check: (ex) => (state.userPreferences[ex.id]?.difficultyRating || 0) > 0 },
+    { id: 'easy_rated', label: '🟢 Łatwe dla mnie', check: (ex) => (state.userPreferences[ex.id]?.difficultyRating || 0) < 0 },
     { id: 'mobility', label: '🧘 Mobilność', check: (ex) => (ex.categoryId || '').includes('mobility') || (ex.categoryId || '').includes('stretch') },
     { id: 'strength', label: '💪 Siła', check: (ex) => (ex.categoryId || '').includes('strength') || (ex.categoryId || '').includes('activation') },
     { id: 'home_friendly', label: '🏠 Bez sprzętu', check: (ex) => !ex.equipment || ex.equipment.length === 0 || ex.equipment.some(e => ['brak', 'none', 'mata', 'bodyweight'].includes(e.toLowerCase())) }
@@ -122,8 +124,8 @@ function getFilteredExercises() {
         const term = atlasState.search.toLowerCase();
         items = items.filter(ex => {
             return ex.name.toLowerCase().includes(term) ||
-                   (ex.categoryId || '').toLowerCase().includes(term) ||
-                   (ex.equipment || []).join(' ').toLowerCase().includes(term);
+                (ex.categoryId || '').toLowerCase().includes(term) ||
+                (ex.equipment || []).join(' ').toLowerCase().includes(term);
         });
     }
 
@@ -156,7 +158,7 @@ function getFilteredExercises() {
                 return (b.difficultyLevel || 1) - (a.difficultyLevel || 1);
             }
         }
-        
+
         // 3. Fallback: Alfabetycznie
         return a.name.localeCompare(b.name);
     });
@@ -196,13 +198,13 @@ function createRowHTML(ex) {
 
     // --- PROGRESJA / REGRESJA (OVERRIDES) ---
     let overrideBadge = '';
-    
+
     if (overrides[ex.id]) { // ŹRÓDŁO
         const targetId = overrides[ex.id];
         const targetEx = state.exerciseLibrary[targetId];
         if (targetEx) {
             const isEvo = (targetEx.difficultyLevel || 1) > (ex.difficultyLevel || 1);
-            overrideBadge = isEvo 
+            overrideBadge = isEvo
                 ? `<span class="badge-evo source">⬆️ Zastąpione przez: ${targetEx.name}</span>`
                 : `<span class="badge-devo source">⬇️ Zastąpione przez: ${targetEx.name}</span>`;
         }
@@ -212,7 +214,7 @@ function createRowHTML(ex) {
             const sourceEx = state.exerciseLibrary[sourceId];
             if (sourceEx) {
                 const isEvo = (ex.difficultyLevel || 1) > (sourceEx.difficultyLevel || 1);
-                overrideBadge = isEvo 
+                overrideBadge = isEvo
                     ? `<span class="badge-evo target">⭐ Ewolucja z: ${sourceEx.name}</span>`
                     : `<span class="badge-devo target">🛡️ Wersja łatwiejsza dla: ${sourceEx.name}</span>`;
             }
@@ -233,7 +235,7 @@ function createRowHTML(ex) {
         const scoreClass = pref.score > 0 ? 'pos' : 'neg';
         const frozenIcon = isFrozen ? '<span title="Punkty zamrożone (ochrona 7 dni)">❄️</span>' : '';
         const frozenClass = isFrozen ? 'frozen' : '';
-        
+
         scoreDisplay = `<span class="score-badge ${scoreClass} ${frozenClass}">${pref.score > 0 ? '+' : ''}${pref.score} ${frozenIcon}</span>`;
     }
 
@@ -356,7 +358,7 @@ function attachEvents(container) {
                     showLoader();
                     const svg = await dataStore.fetchExerciseAnimation(id);
                     hideLoader();
-                    if(svg) renderPreviewModal(svg, state.exerciseLibrary[id].name);
+                    if (svg) renderPreviewModal(svg, state.exerciseLibrary[id].name);
                 }
                 if (action === 'video') window.open(btn.dataset.url, '_blank');
             }
@@ -365,18 +367,18 @@ function attachEvents(container) {
 
     searchInput.addEventListener('input', (e) => {
         atlasState.search = e.target.value;
-        if(clearBtn) clearBtn.style.display = atlasState.search ? 'block' : 'none';
+        if (clearBtn) clearBtn.style.display = atlasState.search ? 'block' : 'none';
         renderList();
     });
 
-    if(clearBtn) clearBtn.addEventListener('click', () => {
+    if (clearBtn) clearBtn.addEventListener('click', () => {
         atlasState.search = '';
         searchInput.value = '';
         clearBtn.style.display = 'none';
         renderList();
     });
 
-    if(sortSelect) sortSelect.addEventListener('change', (e) => {
+    if (sortSelect) sortSelect.addEventListener('change', (e) => {
         atlasState.sortBy = e.target.value;
         renderList();
     });

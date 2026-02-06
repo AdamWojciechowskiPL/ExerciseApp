@@ -1,6 +1,3 @@
-// ExerciseApp/training.js
-// === WAŻNE: To jest plik LOGIKI w głównym folderze: ExerciseApp/training.js ===
-
 import { state } from './state.js';
 import { focus, screens, initializeFocusElements } from './dom.js';
 import { speak } from './tts.js';
@@ -11,7 +8,7 @@ import { renderSummaryScreen } from './ui/screens/summary.js';
 import { getIsCasting, sendTrainingStateUpdate } from './cast.js';
 import { saveSessionBackup } from './sessionRecovery.js';
 import { getAffinityBadge } from './ui/templates.js';
-import { renderDetailAssessmentModal } from './ui/modals.js'; // AMPS PHASE 2 IMPORT
+import { renderPainCheckModal } from './ui/modals.js'; // AMPS PHASE 3 IMPORT
 import dataStore from './dataStore.js';
 
 let backupInterval = null;
@@ -173,7 +170,7 @@ function triggerSessionBackup() {
         stopwatchSeconds: state.stopwatch.seconds,
         timerTimeLeft: state.timer.timeLeft,
         timerInitialDuration: state.timer.initialDuration,
-        sessionDetailPromptCount: state.sessionDetailPromptCount, // AMPS
+        sessionDetailPromptCount: state.sessionDetailPromptCount,
         sessionParams: state.sessionParams
     });
 }
@@ -263,66 +260,58 @@ export function moveToPreviousExercise() {
     }
 }
 
-// --- AMPS PHASE 1 & 2: LOGIKA OCEN ---
+// --- AMPS PHASE 3: S.A.F.E (Sensation & Ability Feedback Engine) ---
 
-// Global handler for Quick Rating (Thumbs)
-window.handleSetRating = (uniqueId, rating) => {
+// Global handler for S.A.F.E clicks
+window.handleSafeRating = (uniqueId, type) => {
     const logEntry = state.sessionLog.find(l => l.uniqueId === uniqueId);
-    if (logEntry) {
-        logEntry.rating = rating;
-        logEntry.promptType = "quick";
-        console.log(`[AMPS] Quick Rating saved for ${uniqueId}: ${rating}`);
+    if (!logEntry) return;
+
+    if (type === 'struggle') {
+        // Otwórz modal Pain Check
+        renderPainCheckModal((isPain) => {
+            if (isPain) {
+                // CZERWONY: Walka + Ból -> RIR 0, Tech 1, Hard
+                logEntry.rating = 'hard';
+                logEntry.rir = 0;
+                logEntry.tech = 1;
+                console.log(`[S.A.F.E] Struggle + PAIN recorded for ${uniqueId}`);
+            } else {
+                // POMARAŃCZOWY: Walka (Mięśnie) -> RIR 0, Tech 6, OK
+                logEntry.rating = 'ok';
+                logEntry.rir = 0;
+                logEntry.tech = 6;
+                console.log(`[S.A.F.E] Muscle Failure recorded for ${uniqueId}`);
+            }
+            logEntry.promptType = 'safe';
+            finalizeSafeRating(logEntry.rating);
+        });
+    } else {
+        // ZIELONY / NIEBIESKI
+        if (type === 'easy') {
+            // LEKKO: RIR 4, Tech 10, Good
+            logEntry.rating = 'good'; // Używamy 'good' jako proxy dla 'easy'
+            logEntry.rir = 4;
+            logEntry.tech = 10;
+        } else if (type === 'solid') {
+            // KONTROLA: RIR 2, Tech 9, Good
+            logEntry.rating = 'good';
+            logEntry.rir = 2;
+            logEntry.tech = 9;
+        }
+        logEntry.promptType = 'safe';
+        console.log(`[S.A.F.E] Rating ${type} recorded for ${uniqueId}`);
+        finalizeSafeRating(logEntry.rating);
     }
+};
+
+function finalizeSafeRating(rating) {
     triggerSessionBackup();
     if (focus.ratingContainer) {
         const labels = { 'good': '👍 Dobrze', 'ok': '👌 OK', 'hard': '👎 Trudne' };
         focus.ratingContainer.innerHTML = `<div class="saved-feedback">Zapisano: ${labels[rating] || rating}</div>`;
         setTimeout(() => { if (focus.ratingContainer) focus.ratingContainer.classList.add('hidden'); }, 1000);
     }
-};
-
-// Global handler for Detail Rating (Tech + RIR)
-window.handleSetDetailRating = (uniqueId, tech, rir) => {
-    const logEntry = state.sessionLog.find(l => l.uniqueId === uniqueId);
-    if (logEntry) {
-        logEntry.tech = tech;
-        logEntry.rir = rir;
-        logEntry.rating = 'good'; // Implicitly good if user bothered to fill detail
-        logEntry.promptType = "detail";
-        console.log(`[AMPS] Detail Rating saved for ${uniqueId}: Tech=${tech}, RIR=${rir}`);
-    }
-    triggerSessionBackup();
-};
-
-function shouldTriggerDetailPrompt(exercise) {
-    // 1. Sprawdź limit na sesję
-    if (!state.sessionDetailPromptCount) state.sessionDetailPromptCount = 0;
-    if (state.sessionDetailPromptCount >= 2) return false;
-
-    // 2. Sprawdź, czy to ćwiczenie zostało już ocenione w tej sesji (unikalność)
-    // Nie chcemy pytać o to samo ćwiczenie w 2. i 3. serii
-    const alreadyPrompted = state.sessionLog.some(l => 
-        l.exerciseId === exercise.exerciseId && l.promptType === 'detail'
-    );
-    if (alreadyPrompted) return false;
-
-    // 3. Kryterium: "Trudne" w historii (Difficulty Flag)
-    // Sprawdzamy preferencje użytkownika (difficulty = 1 oznacza flagę trudności)
-    const exId = exercise.exerciseId || exercise.id;
-    const pref = state.userPreferences[exId];
-    if (pref && pref.difficulty === 1) {
-        state.sessionDetailPromptCount++;
-        return true;
-    }
-
-    // 4. Kryterium: Losowość (15% szans)
-    // Tylko dla sekcji 'main'
-    if (exercise.sectionName === 'Część główna' && Math.random() < 0.15) {
-        state.sessionDetailPromptCount++;
-        return true;
-    }
-
-    return false;
 }
 
 function renderQuickRating(exercise) {
@@ -330,22 +319,24 @@ function renderQuickRating(exercise) {
 
     // Nie pokazuj jeśli już oceniono
     const logEntry = state.sessionLog.find(l => l.uniqueId === exercise.uniqueId);
-    if (logEntry && (logEntry.rating || logEntry.promptType === 'detail')) return;
+    if (logEntry && (logEntry.rating || logEntry.promptType)) return;
 
-    // AMPS PHASE 2: DECYZJA (Quick vs Detail)
-    if (shouldTriggerDetailPrompt(exercise)) {
-        renderDetailAssessmentModal(exercise.name, (tech, rir) => {
-            window.handleSetDetailRating(exercise.uniqueId, tech, rir);
-        });
-        return; // Modal handles UI, no inline buttons needed
-    }
-
+    // S.A.F.E Interface - Zastępuje stare kciuki
     focus.ratingContainer.innerHTML = `
-        <div class="quick-rate-label">${exercise.name}</div>
-        <div class="quick-rate-buttons">
-            <button class="quick-rate-btn positive" onclick="handleSetRating('${exercise.uniqueId}', 'good')">👍</button>
-            <button class="quick-rate-btn ok" onclick="handleSetRating('${exercise.uniqueId}', 'ok')">👌</button>
-            <button class="quick-rate-btn difficult" onclick="handleSetRating('${exercise.uniqueId}', 'hard')">👎</button>
+        <div class="safe-label">Jak poszło?</div>
+        <div class="safe-buttons-grid">
+            <button class="safe-btn easy" onclick="handleSafeRating('${exercise.uniqueId}', 'easy')">
+                <span class="icon">🟢</span>
+                Lekko
+            </button>
+            <button class="safe-btn solid" onclick="handleSafeRating('${exercise.uniqueId}', 'solid')">
+                <span class="icon">🔵</span>
+                Kontrola
+            </button>
+            <button class="safe-btn struggle" onclick="handleSafeRating('${exercise.uniqueId}', 'struggle')">
+                <span class="icon">🔴</span>
+                Walka
+            </button>
         </div>
     `;
     focus.ratingContainer.classList.remove('hidden');
@@ -468,7 +459,7 @@ export async function startExercise(index, isResuming = false) {
         if (flipIndicator) flipIndicator.classList.add('hidden');
         if (focus.affinityBadge) focus.affinityBadge.innerHTML = '';
 
-        // AMPS: POKAŻ OCENĘ DLA POPRZEDNIEGO ĆWICZENIA
+        // AMPS S.A.F.E: POKAŻ OCENĘ DLA POPRZEDNIEGO ĆWICZENIA
         const prevIndex = index - 1;
         if (prevIndex >= 0 && state.flatExercises[prevIndex].isWork) {
             renderQuickRating(state.flatExercises[prevIndex]);
@@ -552,25 +543,11 @@ export function generateFlatExercises(dayData) {
                                  String(exercise.reps_or_time).includes('/str') ||
                                  String(exercise.reps_or_time).includes('stron');
 
-            // TASK 5: Generowanie kroku "Zmiana Strony" tylko gdy requiresSideSwitch jest true
-            const requiresSideSwitch = !!exercise.requiresSideSwitch;
+            // === SIMPLIFIED: ALWAYS 12s TRANSITION FOR UNILATERAL ===
+            const forcedTransitionBase = 12;
+            const finalTransitionTime = Math.max(5, Math.round(forcedTransitionBase * restFactor));
 
             const smartRestTime = calculateSmartRest(exercise, restFactor);
-
-            let transitionTime = 12;
-            if (exercise.transitionTime) {
-                transitionTime = exercise.transitionTime;
-            } else if (exercise.calculated_timing && exercise.calculated_timing.transition_sec) {
-                transitionTime = exercise.calculated_timing.transition_sec;
-            }
-
-            // FIX: Enforce minimum 12s if side switch is explicitly required,
-            // regardless of what data hydration might have set (e.g. 5s default fallback)
-            if (requiresSideSwitch && transitionTime < 10) {
-                transitionTime = 12;
-            }
-
-            const finalTransitionTime = Math.max(5, Math.round(transitionTime * restFactor));
 
             let loopLimit = totalSetsDeclared;
             let displayTotalSets = totalSetsDeclared;
@@ -628,19 +605,16 @@ export function generateFlatExercises(dayData) {
                         uniqueId: `${exercise.id || exercise.exerciseId}_step${globalStepCounter++}`
                     });
 
-                    // Krok 2: Opcjonalne Przejście (Switch)
-                    // TASK 5: Dodajemy krok zmiany strony TYLKO jeśli requiresSideSwitch=true
-                    if (requiresSideSwitch) {
-                        plan.push({
-                            name: "Zmiana Strony",
-                            isRest: true,
-                            isWork: false,
-                            duration: finalTransitionTime,
-                            sectionName: "Przejście",
-                            description: `Przygotuj stronę: ${secondSide}`,
-                            uniqueId: `rest_transition_${globalStepCounter++}`
-                        });
-                    }
+                    // Krok 2: Zmiana Strony (ZAWSZE OBECNY DLA UNILATERAL)
+                    plan.push({
+                        name: "Zmiana Strony",
+                        isRest: true,
+                        isWork: false,
+                        duration: finalTransitionTime,
+                        sectionName: "Przejście",
+                        description: `Przygotuj stronę: ${secondSide}`,
+                        uniqueId: `rest_transition_${globalStepCounter++}`
+                    });
 
                     // Krok 3: Druga strona
                     plan.push({
@@ -668,11 +642,16 @@ export function generateFlatExercises(dayData) {
                 }
 
                 if (i < loopLimit) {
+                    let interSetRest = smartRestTime;
+                    if (isUnilateral) {
+                        interSetRest = Math.max(smartRestTime, finalTransitionTime);
+                    }
+
                     plan.push({
                         name: 'Odpoczynek',
                         isRest: true,
                         isWork: false,
-                        duration: smartRestTime,
+                        duration: interSetRest,
                         sectionName: 'Przerwa między seriami',
                         uniqueId: `rest_set_${globalStepCounter++}`
                     });

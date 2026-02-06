@@ -2,7 +2,7 @@
 :root {
     /* Kolory główne */
     --primary-color: #005f73;
-    --secondary-color: #0a9396;
+    --secondary-color: #006d77;
     --accent-color: #94d2bd;
     --background-color: #f4f4f9;
     --card-background: #ffffff;
@@ -10,12 +10,12 @@
     /* Kolory tekstów */
     --text-color: #333;
     --light-text-color: #ffffff;
-    --muted-text-color: #666;
+    --muted-text-color: #555555;
 
     /* Kolory stanów */
     --success-color: #2a9d8f;
     --inprogress-color: #e9c46a;
-    --danger-color: #e76f51;
+    --danger-color: #c65236;
     --border-color: #e0e0e0;
 
     /* Gamifikacja */
@@ -41,7 +41,9 @@
     --radius-xl: 20px;
 }
 
-*, *::before, *::after {
+*,
+*::before,
+*::after {
     box-sizing: border-box;
 }
 
@@ -58,7 +60,42 @@ body {
 }
 
 /* Animacje ogólne */
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes slideUp { to { transform: translateY(0); } }
-@keyframes spin { 100% { transform: rotate(360deg); } }
-@keyframes pulse-fade { 0% { transform: scale(0.95); opacity: 0.8; } 50% { transform: scale(1.05); opacity: 1; box-shadow: 0 0 30px rgba(10, 147, 150, 0.5); } 100% { transform: scale(0.95); opacity: 0.8; } }
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideUp {
+    to {
+        transform: translateY(0);
+    }
+}
+
+@keyframes spin {
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes pulse-fade {
+    0% {
+        transform: scale(0.95);
+        opacity: 0.8;
+    }
+
+    50% {
+        transform: scale(1.05);
+        opacity: 1;
+        box-shadow: 0 0 30px rgba(10, 147, 150, 0.5);
+    }
+
+    100% {
+        transform: scale(0.95);
+        opacity: 0.8;
+    }
+}

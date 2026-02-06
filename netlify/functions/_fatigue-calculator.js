@@ -2,12 +2,14 @@
 'use strict';
 
 /**
- * FATIGUE CALCULATOR v4.0 (AMPS Integrated)
+ * FATIGUE CALCULATOR v4.2 (Fixed: Safety Floor for Calibration)
  *
  * Wykorzystuje model Banistera (Impulse-Response) zasilany danymi obliczanymi
  * metodą zmodyfikowanego RPE wg Fostera (2001).
  *
- * NOWOŚĆ v4.0: Uwzględnia RIR i Quick Rating (AMPS) dla precyzyjnego RPE.
+ * ZMIANA v4.2: Dodano Math.max(30, ...) przy obliczaniu thExit.
+ * Zapobiega to sytuacji "Low Volume Trap", gdzie użytkownicy o bardzo lekkiej
+ * historii treningowej nie mogli wyjść z Deloadu mimo niskiego zmęczenia.
  */
 
 // Stałe fizjologiczne i konfiguracyjne
@@ -15,10 +17,14 @@ const FATIGUE_HALF_LIFE_HOURS = 24;
 const MAX_BUCKET_CAPACITY = 120;
 const HISTORY_WINDOW_DAYS = 56; // 8 tygodni do kalibracji
 const MIN_SESSIONS_FOR_CALIBRATION = 10;
-const DEFAULT_SECONDS_PER_REP = 6; // Średnie tempo jeśli brak danych
+const DEFAULT_SECONDS_PER_REP = 6;
 
-// Stałe kalibracyjne (Session-RPE -> Bucket Point)
+// Stałe kalibracyjne
 const LOAD_SCALE = 0.1333;
+
+// Bramki bezpieczeństwa (Safety Gates)
+const MIN_RELEVANT_DAILY_LOAD = 200;
+const MIN_RELEVANT_STRAIN_THRESHOLD = 2500;
 
 // --- HELPERS STATYSTYCZNE ---
 
@@ -61,7 +67,7 @@ function parseDurationSeconds(valStr) {
         const match = text.match(/(\d+)/);
         return match ? parseInt(match[0], 10) : 30;
     }
-    return 0; // To nie jest czasówka
+    return 0;
 }
 
 function parseReps(valStr) {
@@ -71,66 +77,44 @@ function parseReps(valStr) {
     return match ? parseInt(match[0], 10) : 10;
 }
 
-// --- LOGIKA BIZNESOWA: SCIENCE-BASED LOAD (AMPS ENHANCED) ---
+// --- LOGIKA BIZNESOWA ---
 
-/**
- * Oblicza RPE (Rate of Perceived Exertion 1-10) dla pojedynczego ćwiczenia.
- * Priorytety danych (od najdokładniejszych):
- * 1. RIR (Reps In Reserve) -> RPE = 10 - RIR
- * 2. Quick Rating (Thumbs) -> Mapowanie na RPE
- * 3. Difficulty Level -> Estymacja (Legacy Fallback)
- */
 function calculateExerciseRPE(logEntry) {
     // 1. RIR (Złoty standard)
     if (logEntry.rir !== undefined && logEntry.rir !== null) {
-        // RIR 0 = RPE 10, RIR 3 = RPE 7. Clamp 1-10.
         return Math.min(10, Math.max(1, 10 - logEntry.rir));
     }
-
     // 2. Quick Rating (Szybka ocena)
     if (logEntry.rating) {
         switch (logEntry.rating) {
-            case 'hard': return 9;      // Bardzo ciężko
-            case 'ok': return 7;        // Średnio-ciężko (optimum)
-            case 'good': return 6;      // Dobrze/Lekko
-            case 'skipped': return 5;   // Pomiń = neutral
+            case 'hard': return 9;
+            case 'ok': return 7;
+            case 'good': return 6;
+            case 'skipped': return 5;
             default: break;
         }
     }
-
-    // 3. Fallback: Difficulty Level (Legacy logic)
+    // 3. Fallback
     const difficultyLevel = logEntry.difficultyLevel || 1;
     const metabolicIntensity = logEntry.metabolicIntensity || 1;
-
-    // Lvl 1->2, Lvl 3->6, Lvl 5->10
     let rpe = difficultyLevel * 2;
-
-    // Korekta metaboliczna (krótkie przerwy podbijają RPE)
     if (metabolicIntensity >= 3) {
         rpe += 1.5;
     }
-
     return Math.min(10, Math.max(1, rpe));
 }
 
-/**
- * Oblicza obciążenie (AU) dla całej sesji.
- */
 function calculateSessionLoadAU(session) {
-    // A. BOTTOM-UP: Sumowanie obciążenia per ćwiczenie
     if (session.sessionLog && Array.isArray(session.sessionLog) && session.sessionLog.length > 0) {
         let totalLoad = 0;
         let hasValidLogs = false;
 
         session.sessionLog.forEach(log => {
             if (log.status === 'skipped' || log.isRest) return;
-
             hasValidLogs = true;
 
-            // AMPS: Przekazujemy cały obiekt logu do kalkulacji RPE
             const rpe = calculateExerciseRPE(log);
             const sets = parseSetCount(log.sets) || log.totalSets || 1;
-
             let workSeconds = 0;
 
             if (log.duration && log.duration > 0) {
@@ -146,18 +130,14 @@ function calculateSessionLoadAU(session) {
                 const isUnilateral = String(log.reps_or_time || '').includes('/str');
                 if (isUnilateral) workSeconds *= 2;
             }
-
-            // Wzór Fostera: Minuty * RPE
             const load = (workSeconds / 60) * rpe;
             totalLoad += load;
         });
 
-        if (hasValidLogs && totalLoad > 0) {
-            return totalLoad;
-        }
+        if (hasValidLogs && totalLoad > 0) return totalLoad;
     }
 
-    // B. TOP-DOWN: Fallback (Czas sesji * RPE sesji)
+    // Fallback Top-Down
     let durationMinutes = 0;
     if (session.netDurationSeconds) {
         durationMinutes = session.netDurationSeconds / 60;
@@ -167,25 +147,12 @@ function calculateSessionLoadAU(session) {
     } else {
         durationMinutes = 30;
     }
-
-    const globalRPE = estimateSessionRPE(session);
+    const globalRPE = (session.feedback && parseInt(session.feedback.value, 10) === -1) ? 7 : 5;
     return durationMinutes * globalRPE;
 }
 
-function estimateSessionRPE(session) {
-    if (session.feedback) {
-        const val = parseInt(session.feedback.value, 10);
-        if (val === -1) return 7; // Hard
-        if (val === 1) return 3;  // Easy
-    }
-    return 5;
-}
-
-/**
- * Główna funkcja obliczająca profil zmęczenia.
- */
 async function calculateFatigueProfile(client, userId) {
-    console.log(`[FatigueCalc v4] 🏁 Starting profile calculation for: ${userId}`);
+    console.log(`[FatigueCalc v4.2] 🏁 Starting profile calculation for: ${userId}`);
 
     try {
         const query = `
@@ -227,7 +194,6 @@ async function calculateFatigueProfile(client, userId) {
             const dateKey = dateIter.toISOString().split('T')[0];
 
             currentBucketScore *= 0.5; // Decay
-
             const dayLoadAU = dailyLoadsMap.get(dateKey) || 0;
             const scaledLoad = dayLoadAU * LOAD_SCALE;
             currentBucketScore += scaledLoad;
@@ -273,11 +239,20 @@ async function calculateFatigueProfile(client, userId) {
 
         if (isCalibrated) {
             thEnter = Math.max(80, p85_fatigue);
-            thExit = Math.min(60, p60_fatigue);
+
+            // --- FIX 4.2: SAFETY FLOOR FOR EXIT THRESHOLD ---
+            // Zapobiega ustawieniu progu wyjścia poniżej 30, co mogłoby uwięzić
+            // użytkowników o niskiej objętości treningowej w wiecznym Deloadzie.
+            thExit = Math.max(30, Math.min(60, p60_fatigue));
+
             thFilter = Math.max(70, p75_fatigue);
         }
 
         const finalScore = Math.min(MAX_BUCKET_CAPACITY, Math.round(currentBucketScore));
+
+        // Load Gate Check
+        const averageDailyLoad = todayWeekLoad / 7;
+        const isMonotonyRelevant = (averageDailyLoad >= MIN_RELEVANT_DAILY_LOAD) && (todayStrain >= MIN_RELEVANT_STRAIN_THRESHOLD);
 
         const result = {
             fatigueScoreNow: finalScore,
@@ -289,17 +264,18 @@ async function calculateFatigueProfile(client, userId) {
             strain7d: Math.round(todayStrain),
             p85_strain_56d: Math.round(p85_strain),
             p85_fatigue_56d: Math.round(p85_fatigue),
+            isMonotonyRelevant: isMonotonyRelevant,
             dataQuality: { sessions56d: sessionCount, calibrated: isCalibrated }
         };
 
-        console.log(`[FatigueCalc] Profile Calculated: Score=${finalScore}, Enter=${result.fatigueThresholdEnter}, Monotony=${result.monotony7d.toFixed(2)}`);
+        console.log(`[FatigueCalc] Result: Score=${finalScore}, ThresholdExit=${result.fatigueThresholdExit}, Monotony=${result.monotony7d} (Relevant: ${isMonotonyRelevant}), AvgDailyLoad=${Math.round(averageDailyLoad)}`);
         return result;
 
     } catch (error) {
         console.error("[FatigueCalc] Critical Error:", error);
         return {
             fatigueScoreNow: 0, fatigueThresholdEnter: 80, fatigueThresholdExit: 60, fatigueThresholdFilter: 70,
-            weekLoad7d: 0, monotony7d: 0, strain7d: 0, p85_strain_56d: 9999, p85_fatigue_56d: 80,
+            weekLoad7d: 0, monotony7d: 0, strain7d: 0, p85_strain_56d: 9999, p85_fatigue_56d: 80, isMonotonyRelevant: false,
             dataQuality: { sessions56d: 0, calibrated: false, error: error.message }
         };
     }

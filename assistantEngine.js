@@ -5,12 +5,12 @@ import { state } from './state.js';
 import { parseSetCount } from './utils.js';
 
 /**
- * MÓZG SYSTEMU (ASSISTANT ENGINE) v4.2 (AMPS Classification)
+ * MÓZG SYSTEMU (ASSISTANT ENGINE) v4.3 (AMPS S.A.F.E. Update)
  */
 
 export const assistant = {
 
-    // AMPS PHASE 3: CLASSIFICATION
+    // AMPS PHASE 3: CLASSIFICATION (S.A.F.E. Compatible)
     classifySessionPerformance: (sessionLog) => {
         const groups = {
             good: [],
@@ -32,10 +32,12 @@ export const assistant = {
 
             let classification = 'moderate';
 
-            // Rules
+            // Rules - updated for S.A.F.E values
+            // S.A.F.E Struggle (Red) -> RIR 0
             if (rating === 'hard' || (tech !== -1 && tech <= 4) || rir === 0) {
                 classification = 'difficult';
             }
+            // S.A.F.E Solid/Easy (Blue/Green) -> RIR >= 2
             else if (rating === 'good' || (tech >= 8 && rir >= 2)) {
                 classification = 'good';
             }

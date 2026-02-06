@@ -543,9 +543,7 @@ export function generateFlatExercises(dayData) {
                                  String(exercise.reps_or_time).includes('/str') ||
                                  String(exercise.reps_or_time).includes('stron');
 
-            // === ZMIANA: WYMUSZENIE 12s NA ZMIANĘ STRONY ===
-            // Ignorujemy flagę requiresSideSwitch i zawsze ustawiamy 12s jako bazę.
-            // Użytkownik nadal może to skrócić swoim suwakiem restFactor.
+            // === SIMPLIFIED: ALWAYS 12s TRANSITION FOR UNILATERAL ===
             const forcedTransitionBase = 12;
             const finalTransitionTime = Math.max(5, Math.round(forcedTransitionBase * restFactor));
 
@@ -608,7 +606,6 @@ export function generateFlatExercises(dayData) {
                     });
 
                     // Krok 2: Zmiana Strony (ZAWSZE OBECNY DLA UNILATERAL)
-                    // Usunięto warunek `if (requiresSideSwitch)`
                     plan.push({
                         name: "Zmiana Strony",
                         isRest: true,
@@ -645,8 +642,6 @@ export function generateFlatExercises(dayData) {
                 }
 
                 if (i < loopLimit) {
-                    // FIX: Przerwa między seriami musi uwzględniać czas przejścia (12s base)
-                    // jako minimum, jeśli wracamy do pierwszej strony.
                     let interSetRest = smartRestTime;
                     if (isUnilateral) {
                         interSetRest = Math.max(smartRestTime, finalTransitionTime);

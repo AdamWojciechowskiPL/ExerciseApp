@@ -102,11 +102,6 @@ function resolveValidTempo(rawTempo, fallbackTempo = null) {
 
 function normalizeExerciseRow(row) {
     const isUnilateral = !!row.is_unilateral;
-    let requiresSideSwitch = !!row.requires_side_switch;
-
-    if (!isUnilateral && requiresSideSwitch) {
-        requiresSideSwitch = false;
-    }
 
     let validDefaultTempo = SAFE_FALLBACK_TEMPO;
     const defCheck = validateTempoString(row.default_tempo);
@@ -154,7 +149,6 @@ function normalizeExerciseRow(row) {
         description: row.description,
         equipment: normalizeStringArray(row.equipment).map(cleanString).filter(Boolean),
         is_unilateral: isUnilateral,
-        requires_side_switch: requiresSideSwitch,
         is_foot_loading: row.is_foot_loading,
         category_id: row.category_id ? String(row.category_id) : 'uncategorized',
         difficulty_level: clamp(toNumber(row.difficulty_level, 1), 1, 5),
@@ -198,10 +192,6 @@ function validateExerciseRecord(ex) {
     if (!ex.impact_level) return { valid: false, error: 'missing_impact_level' };
     if (!ex.position) return { valid: false, error: 'missing_position' };
     if (ex.is_foot_loading === null || ex.is_foot_loading === undefined) return { valid: false, error: 'missing_foot_loading' };
-
-    if (ex.is_unilateral === false && ex.requires_side_switch === true) {
-        return { valid: false, error: 'inconsistent_unilateral_switch_flags' };
-    }
 
     if (ex.conditioning_style === 'interval') {
         const i = ex.recommended_interval_sec;
@@ -391,10 +381,10 @@ function filterExerciseCandidates(exercises, userData, ctx, fatigueProfile, rpeD
     const restrictionsSet = normalizeLowerSet(userData?.physical_restrictions);
 
     const isFatigued = fatigueProfile.fatigueScoreNow >= fatigueProfile.fatigueThresholdFilter;
-    
+
     // ZMIANA: Load Gate. Ignorujemy monotonię, jeśli obciążenie jest nieistotne.
-    const isMonotonySpike = fatigueProfile.isMonotonyRelevant && 
-                            fatigueProfile.monotony7d >= 2.0 && 
+    const isMonotonySpike = fatigueProfile.isMonotonyRelevant &&
+                            fatigueProfile.monotony7d >= 2.0 &&
                             fatigueProfile.strain7d >= fatigueProfile.p85_strain_56d;
 
     const applySafetyGate = isFatigued || isMonotonySpike;
@@ -613,8 +603,8 @@ function scoreExercise(ex, section, userData, ctx, categoryWeights, state, painZ
     if (fatigueProfile) {
         const isFatigued = fatigueProfile.fatigueScoreNow >= fatigueProfile.fatigueThresholdFilter;
         // ZMIANA: Load Gate Logic
-        const isMonotonySpike = fatigueProfile.isMonotonyRelevant && 
-                                fatigueProfile.monotony7d >= 2.0 && 
+        const isMonotonySpike = fatigueProfile.isMonotonyRelevant &&
+                                fatigueProfile.monotony7d >= 2.0 &&
                                 fatigueProfile.strain7d >= fatigueProfile.p85_strain_56d;
 
         if (isFatigued || isMonotonySpike) {
@@ -804,7 +794,7 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatig
         if (experience === 'regular') durationMin = 15;
         if (experience === 'advanced') durationMin = 20;
         if (targetMin <= 20) durationMin = 10;
-        
+
         durationMin = Math.round(durationMin * undulationFactor); // Undulation
 
         return {
@@ -878,8 +868,9 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatig
     const phaseRestFactor = getPhaseRestFactor(phaseConfig, section);
     let phaseAdjustedRest = Math.round(baseRest * phaseRestFactor);
 
-    if (ex.is_unilateral && ex.requires_side_switch) {
-        phaseAdjustedRest = Math.max(phaseAdjustedRest, baseTransition);
+    if (ex.is_unilateral) {
+        // ZAWSZE minimum 12s jeśli unilateral, niezależnie od side switch
+        phaseAdjustedRest = Math.max(phaseAdjustedRest, 12);
     }
 
     return {
@@ -889,7 +880,7 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatig
         restFactor: prescriptionConfig.restFactor || 1.0,
         restAfterExercise: phaseAdjustedRest,
         transitionTime: baseTransition,
-        requiresSideSwitch: ex.requires_side_switch
+        requiresSideSwitch: false // DEPRECATED flag, sending false to avoid confusion
     };
 }
 
@@ -928,22 +919,25 @@ function estimateExerciseDurationSeconds(exEntry, userData, paceMap, effectiveRe
     }
     const sidesMultiplier = isUnilateral ? 2 : 1;
     const totalWorkTime = sets * singleSideWorkTime * sidesMultiplier;
+    
+    // Transition logic: Unilateral always 12s, Bilateral 5s or as defined
     let transitionPerSet = 0;
     if (isUnilateral) {
-        if (exEntry.transitionTime) { transitionPerSet = exEntry.transitionTime; }
-        else if (exEntry.calculated_timing && exEntry.calculated_timing.transition_sec) {
-            transitionPerSet = (exEntry.requires_side_switch || exEntry.calculated_timing.transition_sec === 12) ? 12 : 5;
-        } else { transitionPerSet = exEntry.requires_side_switch ? 12 : 5; }
+        transitionPerSet = 12;
+    } else {
+        if (exEntry.transitionTime) transitionPerSet = exEntry.transitionTime;
+        else if (exEntry.calculated_timing && exEntry.calculated_timing.transition_sec) transitionPerSet = exEntry.calculated_timing.transition_sec;
+        else transitionPerSet = 5;
     }
+    
     const totalTransition = sets * transitionPerSet;
     const restBase = getRestAfterExercise(exEntry, 1.0);
     let smartRestTime = Math.round(restBase * effectiveRestFactor);
-    if (isUnilateral && exEntry.requires_side_switch) {
-        let transTime = exEntry.transitionTime || 0;
-        if (!transTime && exEntry.calculated_timing) transTime = exEntry.calculated_timing.transition_sec;
-        if (!transTime) transTime = 12;
-        smartRestTime = Math.max(smartRestTime, transTime);
+    
+    if (isUnilateral) {
+        smartRestTime = Math.max(smartRestTime, 12);
     }
+    
     const totalRest = (sets > 1) ? (sets - 1) * smartRestTime : 0;
     return totalWorkTime + totalTransition + totalRest;
 }
@@ -1201,7 +1195,7 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
             let costOfSession = 25 * dailyUndulation;
             const sessionTitleSuffix = phaseContext.isOverride ? `(${phaseContext.phaseId.toUpperCase()})` : '';
             const session = createInitialSession(dayOffset + 1, targetMin);
-            
+
             let intensityLabel = "";
             if (dailyUndulation > 1.1) intensityLabel = " (Mocny)";
             else if (dailyUndulation < 0.9) intensityLabel = " (Lekki)";
@@ -1259,7 +1253,7 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
             shrinkSessionToTarget(session, userData, paceMap, targetMin, phaseContext);
             const finalDur = Math.round(estimateSessionDurationSeconds(session, userData, paceMap, phaseContext) / 60);
             session.estimatedDurationMin = finalDur;
-            
+
             plan.days.push(session);
             fatigueScore += costOfSession;
             fatigueScore = Math.min(MAX_BUCKET_CAPACITY, Math.max(0, fatigueScore));
@@ -1358,8 +1352,8 @@ exports.handler = async (event) => {
         const safetyCtx = {
             isSeverePain: ctx.isSevere, painStatus: painData.painStatus,
             fatigueScore: fatigueProfile.fatigueScoreNow, fatigueThresholdEnter: fatigueProfile.fatigueThresholdEnter, fatigueThresholdExit: fatigueProfile.fatigueThresholdExit,
-            monotony7d: fatigueProfile.isMonotonyRelevant ? fatigueProfile.monotony7d : 1.0, 
-            strain7d: fatigueProfile.isMonotonyRelevant ? fatigueProfile.strain7d : 0, 
+            monotony7d: fatigueProfile.isMonotonyRelevant ? fatigueProfile.monotony7d : 1.0,
+            strain7d: fatigueProfile.isMonotonyRelevant ? fatigueProfile.strain7d : 0,
             p85_strain_56d: fatigueProfile.p85_strain_56d,
             lastFeedbackValue: rpeData.lastFeedback?.value, lastFeedbackType: rpeData.lastFeedback?.type
         };

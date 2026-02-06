@@ -2,13 +2,14 @@
 'use strict';
 
 /**
- * FATIGUE CALCULATOR v4.1 (Load Gated Monotony)
+ * FATIGUE CALCULATOR v4.2 (Fixed: Safety Floor for Calibration)
  *
  * Wykorzystuje model Banistera (Impulse-Response) zasilany danymi obliczanymi
  * metodą zmodyfikowanego RPE wg Fostera (2001).
  *
- * ZMIANA v4.1: Dodano "Load Gate". Monotonia jest ignorowana, jeśli średnie
- * obciążenie tygodniowe jest niskie (Paradoks Spacerowicza).
+ * ZMIANA v4.2: Dodano Math.max(30, ...) przy obliczaniu thExit.
+ * Zapobiega to sytuacji "Low Volume Trap", gdzie użytkownicy o bardzo lekkiej
+ * historii treningowej nie mogli wyjść z Deloadu mimo niskiego zmęczenia.
  */
 
 // Stałe fizjologiczne i konfiguracyjne
@@ -21,11 +22,8 @@ const DEFAULT_SECONDS_PER_REP = 6;
 // Stałe kalibracyjne
 const LOAD_SCALE = 0.1333;
 
-// --- NOWOŚĆ: BRAMKI BEZPIECZEŃSTWA (SAFETY GATES) ---
-// Jeśli średnie dzienne obciążenie jest < 200 AU (np. 40 min RPE 5),
-// wysoka monotonia jest fizjologicznie bezpieczna.
+// Bramki bezpieczeństwa (Safety Gates)
 const MIN_RELEVANT_DAILY_LOAD = 200;
-// Minimalny Strain, który może wywołać alarm (nawet przy wysokiej monotonii)
 const MIN_RELEVANT_STRAIN_THRESHOLD = 2500;
 
 // --- HELPERS STATYSTYCZNE ---
@@ -154,7 +152,7 @@ function calculateSessionLoadAU(session) {
 }
 
 async function calculateFatigueProfile(client, userId) {
-    console.log(`[FatigueCalc v4.1] 🏁 Starting profile calculation for: ${userId}`);
+    console.log(`[FatigueCalc v4.2] 🏁 Starting profile calculation for: ${userId}`);
 
     try {
         const query = `
@@ -241,13 +239,18 @@ async function calculateFatigueProfile(client, userId) {
 
         if (isCalibrated) {
             thEnter = Math.max(80, p85_fatigue);
-            thExit = Math.min(60, p60_fatigue);
+
+            // --- FIX 4.2: SAFETY FLOOR FOR EXIT THRESHOLD ---
+            // Zapobiega ustawieniu progu wyjścia poniżej 30, co mogłoby uwięzić
+            // użytkowników o niskiej objętości treningowej w wiecznym Deloadzie.
+            thExit = Math.max(30, Math.min(60, p60_fatigue));
+
             thFilter = Math.max(70, p75_fatigue);
         }
 
         const finalScore = Math.min(MAX_BUCKET_CAPACITY, Math.round(currentBucketScore));
 
-        // --- ZMIANA: LOAD GATE CHECK ---
+        // Load Gate Check
         const averageDailyLoad = todayWeekLoad / 7;
         const isMonotonyRelevant = (averageDailyLoad >= MIN_RELEVANT_DAILY_LOAD) && (todayStrain >= MIN_RELEVANT_STRAIN_THRESHOLD);
 
@@ -261,11 +264,11 @@ async function calculateFatigueProfile(client, userId) {
             strain7d: Math.round(todayStrain),
             p85_strain_56d: Math.round(p85_strain),
             p85_fatigue_56d: Math.round(p85_fatigue),
-            isMonotonyRelevant: isMonotonyRelevant, // Flaga dla Phase Managera
+            isMonotonyRelevant: isMonotonyRelevant,
             dataQuality: { sessions56d: sessionCount, calibrated: isCalibrated }
         };
 
-        console.log(`[FatigueCalc] Result: Score=${finalScore}, Monotony=${result.monotony7d} (Relevant: ${isMonotonyRelevant}), AvgDailyLoad=${Math.round(averageDailyLoad)}`);
+        console.log(`[FatigueCalc] Result: Score=${finalScore}, ThresholdExit=${result.fatigueThresholdExit}, Monotony=${result.monotony7d} (Relevant: ${isMonotonyRelevant}), AvgDailyLoad=${Math.round(averageDailyLoad)}`);
         return result;
 
     } catch (error) {

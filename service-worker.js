@@ -2,7 +2,7 @@
 
 // ⚠️ WAŻNE: Zmieniaj ten numer wersji przy KAŻDYM wdrożeniu (deployu) na produkcję!
 // To sygnał dla przeglądarki, że są nowe pliki.
-const STATIC_CACHE_NAME = 'static-assets-v27.1.0'; // BUMPED VERSION FOR S.A.F.E. UPDATE
+const STATIC_CACHE_NAME = 'static-assets-v27.2.0'; // BUMPED VERSION FOR S.A.F.E. UPDATE
 const DYNAMIC_CACHE_NAME = 'dynamic-content-v1';
 
 const APP_SHELL_ASSETS = [

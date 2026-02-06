@@ -1,4 +1,4 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v27.1.0
+# Aplikacja Treningowa (Smart Rehab PWA) v27.2.0
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
@@ -266,8 +266,7 @@ Katalog ćwiczeń (Baza Wiedzy).
 *   `tempo_strength` (VARCHAR): Np. "2-0-2".
 *   `tempo_metabolic` (VARCHAR): Np. "2-0-2".
 *   `tempo_rehab` (VARCHAR): Np. "2-0-2".
-*   `is_unilateral` (BOOLEAN): Czy wykonywane jednostronnie.
-*   `requires_side_switch` (BOOLEAN): Czy ćwiczenie wymaga jawnej zmiany strony/ustawienia pomiędzy pracą na lewą i prawą stronę.
+*   `is_unilateral` (BOOLEAN): Czy wykonywane jednostronnie i wymaga jawnej zmiany strony/ustawienia pomiędzy pracą na lewą i prawą stronę.
 *   `max_recommended_reps` (INT).
 *   `max_recommended_duration` (INT).
 *   `primary_plane` (VARCHAR): Płaszczyzna ruchu (flexion/extension/rotation/lateral_flexion/multi).

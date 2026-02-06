@@ -15,9 +15,9 @@ const calculateLocalTiming = (ex, mode) => {
     else if (load >= 4) baseRest = 60;
     else if (cat.includes('mobility')) baseRest = 20;
 
-    // TASK 6: Update Local Timing Logic
-    const requiresSideSwitch = !!ex.requiresSideSwitch;
-    const transitionSec = requiresSideSwitch ? 12 : 5;
+    // SIMPLIFIED LOGIC: Unilateral always implies 12s transition
+    const isUnilateral = ex.isUnilateral || String(ex.reps_or_time || '').includes('/str');
+    const transitionSec = isUnilateral ? 12 : 5;
 
     return {
         rest_sec: baseRest,
@@ -26,7 +26,7 @@ const calculateLocalTiming = (ex, mode) => {
 };
 
 /**
- * PROTOCOL GENERATOR v6.2 (FIX: Explicit Database Tempo)
+ * PROTOCOL GENERATOR v6.3 (Simplified Unilateral Logic)
  */
 
 const ZONE_MAP = {
@@ -72,7 +72,7 @@ const DEFAULT_MAX_DURATION = 60;
 const DEFAULT_MAX_REPS = 15;
 
 export function generateBioProtocol({ mode, focusZone, durationMin, userContext, timeFactor = 1.0 }) {
-    console.log(`🧪 [ProtocolGenerator] Generowanie v6.2: ${mode} / ${focusZone}`);
+    console.log(`🧪 [ProtocolGenerator] Generowanie v6.3: ${mode} / ${focusZone}`);
 
     // --- CNS SAFETY NET LOGIC (INTEGRATED WITH BACKEND METRICS) ---
     let actualMode = mode;
@@ -112,7 +112,6 @@ export function generateBioProtocol({ mode, focusZone, durationMin, userContext,
 
     // Wzbogacamy kandydatów o lokalny timing
     candidates.forEach(c => {
-        if (c.requiresSideSwitch === undefined) c.requiresSideSwitch = !!c.requires_side_switch;
         c.calculated_timing = calculateLocalTiming(c, actualMode);
     });
 
@@ -276,7 +275,6 @@ function buildSteps(exercises, config, mode, timeFactor, globalRestFactor) {
         targetTotalSeconds = Math.max(15, targetTotalSeconds);
 
         // --- ZMIANA LOGIKI TEMPA ---
-        // Zamiast brać tempo z configu, pobieramy z bazy danych
         const tempoDisplay = resolveTempoForMode(ex, mode);
 
         const rawReps = String(ex.reps_or_time || "").toLowerCase();
@@ -317,7 +315,6 @@ function buildSteps(exercises, config, mode, timeFactor, globalRestFactor) {
         driftCompensation += (totalDurationCreated - baseWork);
 
         const isUnilateral = ex.isUnilateral || String(ex.reps_or_time).includes('/str');
-        const requiresSideSwitch = !!ex.requiresSideSwitch;
 
         const createCompactStep = (suffix) => ({
             ...ex,
@@ -340,10 +337,9 @@ function buildSteps(exercises, config, mode, timeFactor, globalRestFactor) {
         if (isUnilateral) {
             steps.push(createCompactStep(' (Lewa)'));
 
-            if (requiresSideSwitch) {
-                const transitionTime = Math.max(5, Math.round(5 * globalRestFactor));
-                steps.push({ name: "Zmiana Strony", isWork: false, isRest: true, duration: transitionTime, sectionName: "Przejście", description: "Druga strona" });
-            }
+            // SIMPLIFIED LOGIC: Always insert transition for unilateral exercises
+            const transitionTime = Math.max(5, Math.round(5 * globalRestFactor));
+            steps.push({ name: "Zmiana Strony", isWork: false, isRest: true, duration: transitionTime, sectionName: "Przejście", description: "Druga strona" });
 
             steps.push(createCompactStep(' (Prawa)'));
         } else {

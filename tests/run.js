@@ -24,15 +24,14 @@ const testDir = __dirname;
 
 // 2. Znajdź tylko pliki w standardzie V2
 const testFiles = fs.readdirSync(testDir)
-    .filter(f => f.endsWith('.v2.js'))
     .map(f => path.join(testDir, f));
 
 if (testFiles.length === 0) {
-    console.error('❌ Nie znaleziono plików testowych z końcówką .v2.js');
+    console.error('❌ Nie znaleziono plików testowych');
     process.exit(1);
 }
 
-console.log(`${colors.cyan}${colors.bold}🚀 Uruchamianie Suite V2 (${testFiles.length} plików)...${colors.reset}\n`);
+console.log(`${colors.cyan}${colors.bold}🚀 Uruchamianie Suite (${testFiles.length} plików)...${colors.reset}\n`);
 
 // 3. Uruchom natywny Node Test Runner
 const result = spawnSync(process.execPath, ['--test', ...testFiles], {

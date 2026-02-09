@@ -1,36 +1,22 @@
 # ===================================================
-#      Kompletna konfiguracja Netlify
+#      Kompletna konfiguracja Netlify (NAPRAWIONA)
 # ===================================================
 
-# --- Konfiguracja budowania dla serwerów Netlify ---
-# Ta sekcja jest używana podczas wdrożeń (produkcyjnych i roboczych).
 [build]
-  # Definiuje, gdzie znajdują się Twoje funkcje serverless.
   functions = "netlify/functions"
-  
-  # NAJWAŻNIEJSZA ZMIANA:
-  # Informuje Netlify, że główny katalog ("/") jest folderem publicznym.
-  # To naprawi błąd typu MIME, ponieważ serwer będzie wiedział, gdzie szukać app.js.
-  # Użycie "." jest równoznaczne z "/", ale "/" jest bardziej jednoznaczne.
-  publish = "/"
-
-# --- Konfiguracja dla lokalnego serwera deweloperskiego (`netlify dev`) ---
-[dev]
-  # Ustawia port, na którym działa lokalny serwer.
-  port = 8888
-  # Dla `netlify dev`, również wskazujemy bieżący katalog jako publiczny.
+  # NAPRAWA: Kropka oznacza bieżący katalog. "/" powodowało błąd 404.
   publish = "."
 
-# --- Przekierowania dla aplikacji SPA ---
-# Zapewnia, że odświeżanie na podstronach (np. /history) działa poprawnie.
-# Ta reguła jest niezbędna zarówno lokalnie, jak i na produkcji.
+[dev]
+  port = 8888
+  publish = "."
+
+# Przekierowania SPA - to naprawia odświeżanie na podstronach
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
 
-# --- Zmienne środowiskowe ---
-# Twoje istniejące zmienne pozostają bez zmian.
 [context.development.environment]
   AUTH0_WEBHOOK_SECRET = "*x-D$WJ9'Uzt~+"
   AUTH0_AUDIENCE = "https://excercise-app.netlify.app/"

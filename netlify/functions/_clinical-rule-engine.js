@@ -24,7 +24,20 @@ const HARD_EXCLUDED_SPINE_LOAD_FOR_DIAGNOSES = new Set([
     'disc_herniation', 'spondylolisthesis',
 ]);
 
-const KNEE_FLEXION_SAFETY_LIMIT = 60; // Stopnie
+const KNEEFLEXIONSAFETYLIMITS = {
+    CKC_SEVERE: 45,      // Closed chain, severe pain
+    CKC_MODERATE: 60,    // Closed chain, moderate pain
+    OKC_SEVERE: 90,      // Open chain, severe pain
+    OKC_MODERATE: 90     // Open chain, moderate pain
+};
+
+function getKneeFlexionLimit(ex, ctx) {
+    const isFootLoading = ex.is_foot_loading === true;
+    if (isFootLoading) {
+        return ctx.isSevere ? KNEEFLEXIONSAFETYLIMITS.CKC_SEVERE : KNEEFLEXIONSAFETYLIMITS.CKC_MODERATE;
+    }
+    return ctx.isSevere ? KNEEFLEXIONSAFETYLIMITS.OKC_SEVERE : KNEEFLEXIONSAFETYLIMITS.OKC_MODERATE;
+}
 
 function violatesDiagnosisHardContraindications(ex, diagnosisSet, ctx) {
     const kneeLoad = (ex.knee_load_level || 'low').toLowerCase();
@@ -38,12 +51,12 @@ function violatesDiagnosisHardContraindications(ex, diagnosisSet, ctx) {
     const hasKneeDiagnosis = [...diagnosisSet].some(d => HARD_EXCLUDED_KNEE_LOAD_FOR_DIAGNOSES.has(d));
     const hasKneePain = ctx.painFilters && (ctx.painFilters.has('knee') || ctx.painFilters.has('knee_anterior') || ctx.painFilters.has('patella'));
 
+    // US-01: Safer Logic for Knee Flexion
     if (hasKneeDiagnosis || hasKneePain) {
         if (ex.kneeFlexionApplicability) {
-            if (ctx.isSevere) {
-                if (ex.kneeFlexionMaxDeg === null) return true;
-                if (ex.kneeFlexionMaxDeg > KNEE_FLEXION_SAFETY_LIMIT) return true;
-            }
+            const safetyLimit = getKneeFlexionLimit(ex, ctx);
+            if (ex.kneeFlexionMaxDeg === null) return true; // Block if unlimited flexion
+            if (ex.kneeFlexionMaxDeg > safetyLimit) return true;
         }
     }
 
@@ -51,8 +64,20 @@ function violatesDiagnosisHardContraindications(ex, diagnosisSet, ctx) {
         ctx.painFilters.has('cervical') || ctx.painFilters.has('neck') || ctx.painFilters.has('shoulder')
     );
 
+    // US-03: Overhead Restriction with Scapular Stability Exception
     if (hasNeckOrShoulderPain && ctx.isSevere) {
-        if (ex.overheadRequired) return true;
+        if (ex.overheadRequired) {
+            const cat = (ex.category_id || ex.categoryid || '').toLowerCase(); // Fallback for different object shapes
+            const isScapularStability = cat === 'scapularstability' || cat === 'scapular_stability';
+            const isLowLoad = (ex.difficulty_level || 1) <= 2;
+            const plane = (ex.primary_plane || '').toLowerCase();
+            const isControlled = plane === 'sagittal' || plane === 'multi';
+
+            if (isScapularStability && isLowLoad && isControlled) {
+                return false; // Allow exception
+            }
+            return true; // Block other overheads
+        }
     }
 
     return false;
@@ -60,8 +85,34 @@ function violatesDiagnosisHardContraindications(ex, diagnosisSet, ctx) {
 
 function violatesSeverePainRules(ex, ctx) {
     if (!ctx.isSevere) return false;
-    if ((ex.difficulty_level || 1) > 2) return true;
+
+    // US-04: Allow Lvl 3 if therapeutic category + controlled tempo
+    const therapeuticCategories = [
+        'coreantiextension', 'core_anti_extension',
+        'coreantirotation', 'core_anti_rotation',
+        'corestability', 'core_stability',
+        'gluteactivation', 'glute_activation',
+        'scapularstability', 'scapular_stability',
+        'nerveflossing', 'nerve_flossing',
+        'breathing', 'breathing_control',
+        'hipmobility', 'hip_mobility',
+        'spinemobility', 'spine_mobility'
+    ];
+
+    const cat = (ex.category_id || ex.categoryid || '').toLowerCase();
+    const isTherapeutic = therapeuticCategories.includes(cat);
+
+    // Check for controlled tempo (not dynamic)
+    const tempo = (ex.default_tempo || ex.defaulttempo || '').toLowerCase();
+    const isControlled = tempo && !tempo.includes('dynamicznie') && !tempo.includes('fast');
+
+    if ((ex.difficulty_level || 1) === 3 && isTherapeutic && isControlled) {
+        return false; // Safe exception for therapeutic Level 3
+    }
+
+    if ((ex.difficulty_level || 1) > 2) return true; // Block other Lvl 3+
     if ((ex.metabolic_intensity || 1) >= 4) return true;
+
     return false;
 }
 
@@ -220,14 +271,29 @@ function violatesRestrictions(ex, ctx) {
     const hasKneeIssue = ctx.painFilters.has('knee') || ctx.painFilters.has('knee_anterior');
     const isChondromalacia = diagnosis.includes('chondromalacia') || diagnosis.includes('runners_knee');
 
-    if (hasKneeIssue && ctx.isSevere && kneeLoad === 'high') return true;
+    // Strict Knee Control: Block High Load (Deep Flexion/High Force) for ANY knee pain.
+    // Originally this checked ctx.isSevere, but clinically moderate knee pain also requires ROM restriction.
+    if (hasKneeIssue && kneeLoad === 'high') return true;
+
     if (isChondromalacia && kneeLoad === 'high') return true;
     if (restrictions.includes('no_deep_squat') && kneeLoad === 'high') return true;
 
     // --- US-11: Overhead Restriction in Severe Neck Pain ---
-    const hasNeckIssue = ctx.painFilters.has('cervical') || ctx.painFilters.has('neck') || ctx.painFilters.has('shoulder');
-    if (hasNeckIssue && ctx.isSevere && ex.overheadRequired) {
-        return true;
+    const hasNeckIssue = ctx.painFilters && (ctx.painFilters.has('cervical') || ctx.painFilters.has('neck') || ctx.painFilters.has('shoulder'));
+
+    if (hasNeckIssue && ctx.isSevere) {
+        if (ex.overheadRequired) {
+            const sLoad = (ex.shoulderLoadLevel || ex.shoulder_load_level || 'low').toLowerCase();
+
+            if (sLoad === 'high') return true;
+
+            // EXCEPTION LOGIC (Mirroring US-03):
+            const cat = (ex.category_id || ex.categoryid || '').toLowerCase();
+            const isScapularStability = cat === 'scapularstability' || cat === 'scapular_stability';
+            if (sLoad === 'low' && isScapularStability) return false;
+
+            return true;
+        }
     }
 
     return false;
@@ -268,6 +334,8 @@ function checkExerciseAvailability(ex, ctx, options = {}) {
         const spineLoad = String(ex.spine_load_level || 'low').toLowerCase();
         if (spineLoad === 'high') return { allowed: false, reason: 'severity_filter' };
 
+        // Note: Knee Load check for severe is now redundant here as it's covered in violatesRestrictions for ALL knee pain,
+        // but we keep it for safety consistency or if painFilters logic changes.
         const kneeLoad = String(ex.knee_load_level || 'low').toLowerCase();
         if ((ctx.painFilters.has('knee') || ctx.painFilters.has('knee_anterior')) && kneeLoad === 'high') {
             return { allowed: false, reason: 'severity_filter' };

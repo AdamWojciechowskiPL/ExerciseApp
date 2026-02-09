@@ -9,7 +9,7 @@
  * Teraz is_unilateral zawsze wymusza 12s na zmianę strony.
  */
 
-const calculateTiming = (exercise) => {
+const calculateTiming = (exercise, userExperience = 'intermediate') => {
     // 1. Normalizacja danych wejściowych
     const cat = String(exercise.category_id || '').toLowerCase();
     const load = parseInt(exercise.difficulty_level || 1, 10);
@@ -115,10 +115,20 @@ const calculateTiming = (exercise) => {
     // C. LOGIKA PRZEJŚĆ (TRANSITION) - ZGODNA Z UI
     // ====================================================================
 
-    // ZASADA: Ćwiczenia jednostronne (Unilateral) ZAWSZE otrzymują 12 sekund na zmianę strony.
-    // Dla ćwiczeń obustronnych (Bilateral) standardowy bufor 5s.
+    // ZASADA: Ćwiczenia jednostronne (Unilateral) wymagają czasu na zmianę strony.
+    // US-09: Experience-adjusted Transition Time
+    let baseTransition = 5;
 
-    const baseTransition = isUnilateral ? 12 : 5;
+    if (isUnilateral) {
+        const exp = String(userExperience || 'intermediate').toLowerCase();
+        if (exp === 'beginner' || exp === 'none' || exp === 'occasional') {
+            baseTransition = 15; // Więcej czasu na ustawienie
+        } else if (exp === 'advanced') {
+            baseTransition = 8;  // Szybka zmiana
+        } else {
+            baseTransition = 12; // Standard
+        }
+    }
 
     return {
         rest_sec: Math.round(baseRest),

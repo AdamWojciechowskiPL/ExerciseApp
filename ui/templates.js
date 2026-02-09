@@ -1,5 +1,7 @@
+
 import { state } from '../state.js';
 import { extractYoutubeId, calculateSystemLoad, calculateClinicalProfile, getSessionFocus, getISODate } from '../utils.js';
+import { BADGES_CONFIG } from '../gamification.js'; // Import konfiguracji odznak
 
 // --- HELPERY (WEWNĘTRZNE) ---
 
@@ -71,8 +73,6 @@ function getCurrentWeekDays() {
     return weekDays;
 }
 
-// getISODate is now imported from utils.js
-
 export const getAffinityBadge = (exerciseId) => {
     const pref = state.userPreferences[exerciseId] || { score: 0 };
     const score = pref.score || 0;
@@ -100,7 +100,7 @@ export const getAffinityBadge = (exerciseId) => {
     `;
 };
 
-// --- PHASE WIDGET GENERATOR (KOMPAKTOWY) ---
+// --- PHASE WIDGET GENERATOR (Z EDUKACJĄ) ---
 function generatePhaseWidget(phaseData) {
     if (!phaseData) return '';
 
@@ -109,6 +109,7 @@ function generatePhaseWidget(phaseData) {
     let target = phaseData.current_phase_stats?.target_sessions || 12;
     let isOverride = false;
     let overrideLabel = '';
+    let educationalMessage = '';
 
     const goalId = phaseData.template_id || 'default';
     const goalName = GOAL_NAMES[goalId] || 'Plan Treningowy';
@@ -117,9 +118,16 @@ function generatePhaseWidget(phaseData) {
         isOverride = true;
         activePhaseId = phaseData.override.mode;
         sessionsDone = phaseData.override.stats.sessions_completed;
-        target = 0;
-        if (activePhaseId === 'rehab') overrideLabel = '🚑 REHAB';
-        if (activePhaseId === 'deload') overrideLabel = '🔋 DELOAD';
+        target = 0; // W override nie ma sztywnego celu liczbowego
+
+        if (activePhaseId === 'rehab') {
+            overrideLabel = '🚑 REHAB';
+            educationalMessage = "Priorytet: Bezpieczeństwo. Zmniejszyliśmy obciążenia, by wyciszyć objawy.";
+        }
+        else if (activePhaseId === 'deload') {
+            overrideLabel = '🔋 DELOAD';
+            educationalMessage = "Priorytet: Regeneracja. Lżejszy tydzień pozwoli na superkompensację (wzrost formy).";
+        }
     }
 
     const phaseName = PHASE_NAMES[activePhaseId] || activePhaseId.toUpperCase();
@@ -133,7 +141,7 @@ function generatePhaseWidget(phaseData) {
     const barClass = isOverride ? 'phase-progress-fill override' : 'phase-progress-fill';
 
     let progressText = `${sessionsDone}/${target}`;
-    if (isOverride) progressText = `${sessionsDone}`;
+    if (isOverride) progressText = `${sessionsDone} wykonanych`;
 
     return `
         <div class="${widgetClass}">
@@ -161,7 +169,7 @@ function generatePhaseWidget(phaseData) {
                 </div>
             ` : `
                 <div class="phase-override-info compact">
-                    Tryb bezpieczny aktywny.
+                    ${educationalMessage}
                 </div>
             `}
         </div>
@@ -197,11 +205,35 @@ export function generateHeroDashboardHTML(stats) {
 
     const phaseWidgetHTML = generatePhaseWidget(stats.phaseData);
 
+    // --- TROPHY CASE USUNIĘTE Z WIDOKU (ZGODNIE Z PROŚBĄ) ---
+    // Kod logiki pozostawiam zakomentowany dla potomnych
+    /*
+    const earnedBadges = stats.badges || [];
+    let trophiesHtml = '';
+
+    if (earnedBadges.length > 0) {
+        trophiesHtml = `<div class="hero-trophy-case">`;
+        earnedBadges.slice(0, 5).forEach(badgeId => {
+            const badgeDef = BADGES_CONFIG.find(b => b.id === badgeId);
+            if (badgeDef) {
+                trophiesHtml += `<span class="mini-trophy" title="${badgeDef.label}">${badgeDef.icon}</span>`;
+            }
+        });
+        if (earnedBadges.length > 5) {
+            trophiesHtml += `<span class="mini-trophy-count">+${earnedBadges.length - 5}</span>`;
+        }
+        trophiesHtml += `</div>`;
+    }
+    */
+
     return `
     <div class="hero-top-row">
         <div class="hero-avatar-wrapper"><div class="progress-ring" style="--progress-deg: ${progressDegrees}deg;"></div><img src="${stats.iconPath || '/icons/badge-level-1.svg'}" class="hero-avatar" alt="Ranga"><div class="level-badge">LVL ${stats.level || 1}</div></div>
         <div class="hero-content">
-            <h3 class="hero-rank-title ${loadingClass}">${stats.tierName || 'Ładowanie...'}</h3>
+            <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
+                <h3 class="hero-rank-title ${loadingClass}">${stats.tierName || 'Ładowanie...'}</h3>
+                <!-- Tu była gablota z trofeami -->
+            </div>
             <div class="hero-metrics-grid">
                 <div class="metric-item" title="Twoja aktualna seria"><svg class="metric-icon" width="16" height="16"><use href="#icon-streak-fire"/></svg><div class="metric-text"><span class="metric-label">Seria</span><span class="metric-value ${loadingClass}">${stats.streak !== undefined ? stats.streak : '-'} Dni</span></div></div>
                 <div class="metric-item" title="Wskaźnik odporności"><svg class="metric-icon" width="16" height="16"><use href="#icon-shield-check"/></svg><div class="metric-text"><span class="metric-label">Tarcza</span><span class="metric-value shield-score ${shieldClass} ${loadingClass}">${resilienceScore}${isLoading ? '' : '%'}</span></div></div>
@@ -411,7 +443,7 @@ export function generateRestCalendarPageHTML(dateObj) {
         </div>
     </div>`;
 }
-// --- SHARED HELPER DLA WIERSZY ĆWICZEŃ (POPRAWIONY) ---
+
 function renderExerciseRow(item, sessionRatings, sessionId = null) {
     const id = item.exerciseId || item.id;
     const uniqueId = item.uniqueId || `${id}-${item.currentSet}`;
@@ -432,7 +464,6 @@ function renderExerciseRow(item, sessionRatings, sessionId = null) {
         actualTimeBadge = `<span class="time-badge" style="font-size:0.65rem; padding:1px 4px;">⏱ ${dStr}</span>`;
     }
 
-    // User-friendly difficulty indicator (hide technical T/RIR)
     let difficultyIndicator = '';
     let difficultyClass = '';
 
@@ -466,16 +497,22 @@ function renderExerciseRow(item, sessionRatings, sessionId = null) {
 
     const scoreContent = score !== 0 ? `[${scoreText}]` : '';
 
-    // Deviation toggle buttons for history modification
     const isEasyActive = item.difficultyDeviation === 'easy' ? 'active' : '';
     const isHardActive = item.difficultyDeviation === 'hard' ? 'active' : '';
+
+    // --- ROM INFO BADGE (US-12) ---
+    let romInfo = '';
+    if (item.romConstraint) {
+        const label = item.romConstraint.instruction || `${item.romConstraint.limitDegrees}°`;
+        romInfo = `<span style="font-size:0.65rem; color:#0369a1; background:#e0f2fe; padding:1px 4px; border-radius:4px; margin-left:4px; font-weight:700;">📏 ${label}</span>`;
+    }
 
     return `
     <div class="rating-card history-mode" data-id="${id}" data-unique-id="${uniqueId}" data-session-id="${sessionId || ''}">
         <div class="rating-card-main">
             <div class="rating-info">
                 <div style="line-height:1.2;">
-                    <span class="rating-name">${displayName}</span>
+                    <span class="rating-name">${displayName}</span> ${romInfo}
                     ${difficultyBadge}
                 </div>
                 <div class="history-meta-row">
@@ -602,10 +639,7 @@ export function generateSessionCardHTML(session) {
     </div>`;
 }
 
-// ... (generatePreTrainingCardHTML i generateCompletedMissionCardHTML - ta druga używa teraz renderExerciseRow, więc jest spójna) ...
 export function generatePreTrainingCardHTML(ex, index) {
-    // Bez zmian, pozostaje jak w poprzedniej odpowiedzi
-    // ...
     const uniqueId = `ex-${index}`;
     const exerciseId = ex.id || ex.exerciseId;
     const lvl = ex.difficultyLevel || 1;
@@ -647,12 +681,28 @@ export function generatePreTrainingCardHTML(ex, index) {
         let bg = '#eee';
         let color = '#333';
         let border = '#ccc';
+        let tip = '';
+
         if (ex.modification.type === 'boost') {
             bg = '#fdf4ff'; color = '#86198f'; border = '#f0abfc';
+            tip = "Zwiększamy liczbę serii dla lepszego efektu.";
         }
-        else if (ex.modification.type === 'eco') { bg = '#eff6ff'; color = '#1d4ed8'; border = '#93c5fd'; }
-        else if (ex.modification.type === 'care' || ex.modification.type === 'sos') { bg = '#fff7ed'; color = '#c2410c'; border = '#fdba74'; }
-        modBadge = `<span class="meta-badge" style="background:${bg}; color:${color}; border:1px solid ${border}; white-space:nowrap;">${ex.modification.label}</span>`;
+        else if (ex.modification.type === 'eco') {
+            bg = '#eff6ff'; color = '#1d4ed8'; border = '#93c5fd';
+            tip = "Oszczędzamy energię.";
+        }
+        else if (ex.modification.type === 'care' || ex.modification.type === 'sos') {
+            bg = '#fff7ed'; color = '#c2410c'; border = '#fdba74';
+            tip = "Zmniejszona objętość dla bezpieczeństwa.";
+        }
+        modBadge = `<span class="meta-badge" style="background:${bg}; color:${color}; border:1px solid ${border}; white-space:nowrap;" title="${tip}">${ex.modification.label}</span>`;
+    }
+
+    // --- ROM CONSTRAINT BADGE (US-12) ---
+    let romBadge = '';
+    if (ex.romConstraint) {
+        const label = ex.romConstraint.instruction || `${ex.romConstraint.limitDegrees}°`;
+        romBadge = `<span class="meta-badge" style="background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; font-weight:800;" title="Ograniczony zakres ruchu dla bezpieczeństwa stawu">📏 ${label}</span>`;
     }
 
     const targetsHTML = `
@@ -692,6 +742,7 @@ export function generatePreTrainingCardHTML(ex, index) {
         <div class="training-meta">
             ${badgeHTML}
             ${modBadge}
+            ${romBadge}
             ${kneeBadge}
             <span class="meta-badge badge-lvl-${lvl}">⚡ ${getLevelLabel(lvl)}</span>
             <span class="meta-badge badge-category">📂 ${categoryName}</span>
@@ -711,68 +762,5 @@ export function generatePreTrainingCardHTML(ex, index) {
     </div>`;
 }
 
-export function generateCompletedMissionCardHTML(session) {
-    const durationSeconds = session.netDurationSeconds || 0;
-    const minutes = Math.floor(durationSeconds / 60);
-    const feedbackInfo = formatFeedback(session);
-
-    const completionDate = new Date(session.completedAt || new Date());
-    const dayName = completionDate.toLocaleDateString('pl-PL', { weekday: 'long' });
-    const dayNumber = completionDate.getDate();
-    const monthYear = completionDate.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' });
-
-    const title = session.trainingTitle || "Trening";
-
-    const sessionRatings = {};
-    if (session.exerciseRatings && Array.isArray(session.exerciseRatings)) {
-        session.exerciseRatings.forEach(r => sessionRatings[r.exerciseId] = r.action);
-    }
-
-    const exercisesHtml = (session.sessionLog || [])
-        .filter(l => l.status === 'completed' && !l.isRest)
-        .map(item => renderExerciseRow(item, sessionRatings, session.sessionId))
-        .join('');
-
-    return `
-    <div class="calendar-sheet completed-mode shine-effect">
-        <div class="calendar-top-binding success-binding"></div>
-
-        <div class="calendar-date-header">
-            <span class="calendar-day-name success-text">${dayName}</span>
-            <span class="calendar-day-number success-text">${dayNumber}</span>
-            <span class="calendar-month-year">${monthYear}</span>
-        </div>
-
-        <div class="calendar-body" style="position: relative;">
-            <div class="completion-stamp">WYKONANE</div>
-
-            <div class="workout-context-card" style="background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%); border-color: var(--success-color);">
-                <div class="wc-header" style="justify-content: center; flex-direction: column; text-align: center;">
-                    <div style="font-size: 2rem; margin-bottom: 5px;">🏆</div>
-                    <h3 class="wc-title" style="color: var(--text-color); font-size: 1.2rem;">${title}</h3>
-                    <p style="font-size: 0.8rem; color: #666; margin: 2px 0 10px 0;">Misja zakończona sukcesem</p>
-                </div>
-
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 1rem;">
-                    <div style="text-align: center; background: rgba(255,255,255,0.6); padding: 8px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.05);">
-                        <div style="font-size: 0.7rem; text-transform: uppercase; color: #888; font-weight: 700;">Czas</div>
-                        <div style="font-weight: 800; color: var(--success-color); font-size: 1.1rem;">${minutes} min</div>
-                    </div>
-                    <div style="text-align: center; background: rgba(255,255,255,0.6); padding: 8px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.05);">
-                        <div style="font-size: 0.7rem; text-transform: uppercase; color: #888; font-weight: 700;">Ocena</div>
-                        <div style="font-weight: 800; color: var(--text-color); font-size: 0.9rem; line-height: 1.6;">${feedbackInfo.label}</div>
-                    </div>
-                </div>
-
-                <!-- Lista ćwiczeń widoczna na dashboardzie po ukończeniu -->
-                <div class="history-exercise-list" style="background:rgba(255,255,255,0.5); padding: 2px 0; border-radius: 8px; margin-bottom: 10px; max-height: 200px; overflow-y: auto;">
-                    ${exercisesHtml}
-                </div>
-
-                <button class="view-details-btn" data-date="${getISODate(completionDate)}" style="width: 100%; border-color: var(--success-color); color: var(--success-color); background: transparent;">
-                    Zobacz Szczegóły ➝
-                </button>
-            </div>
-        </div>
-    </div>`;
-}
+// --- ALIAS FOR DASHBOARD ---
+export const generateCompletedMissionCardHTML = generateSessionCardHTML;

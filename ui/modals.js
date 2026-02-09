@@ -208,6 +208,47 @@ export function renderEvolutionModal(adaptation, onCheck) {
     };
 }
 
+// --- NOWOŚĆ: REWARD MODAL (ODZNAKI) ---
+export function renderRewardModal(badge, onConfirm) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+
+    // Efekt konfetti (uproszczony CSS)
+    const confettiHtml = Array.from({ length: 20 }).map((_, i) =>
+        `<div class="confetti" style="--d:${Math.random() * 2}s; --x:${Math.random() * 100}%; --c:${['#ff0000', '#00ff00', '#0000ff', '#ffff00'][i % 4]}"></div>`
+    ).join('');
+
+    overlay.innerHTML = `
+        <div class="evolution-modal reward-mode" style="--glow-color: var(--gold-color);">
+            <div class="confetti-container">${confettiHtml}</div>
+            <div class="evo-icon-wrapper reward-icon-wrapper">
+                <span style="font-size: 4rem;">${badge.icon}</span>
+            </div>
+
+            <h2 class="evo-title" style="color:var(--gold-color); text-shadow:0 0 10px rgba(233,196,106,0.5);">ODBLOKOWANO!</h2>
+            <div class="reward-name">${badge.label}</div>
+            <p class="evo-desc" style="margin-top:0.5rem; opacity:0.9;">${badge.desc}</p>
+
+            <button id="close-reward" class="action-btn" style="background: var(--gold-color); color: #000; border: none; font-weight:800; box-shadow:0 4px 15px rgba(233,196,106,0.4);">
+                Super!
+            </button>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+    if (state.completionSound) state.finalCompletionSound();
+
+    overlay.querySelector('#close-reward').onclick = () => {
+        const modalContent = overlay.querySelector('.evolution-modal');
+        modalContent.style.transform = 'scale(0.8)';
+        modalContent.style.opacity = '0';
+        setTimeout(() => {
+            overlay.remove();
+            if (onConfirm) onConfirm();
+        }, 200);
+    };
+}
+
 export function renderSessionRecoveryModal(backup, timeGapFormatted, onRestore, onDiscard) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -381,8 +422,7 @@ export function renderPainCheckModal(onConfirm) {
     });
 }
 
-// --- S.A.F.E: DETAIL ASSESSMENT MODAL (ZASTĄPIONO STARY "EXPERT" MODAL) ---
-// Teraz zamiast suwaków są te same przyciski co w treningu, dla spójności.
+// --- S.A.F.E: DETAIL ASSESSMENT MODAL ---
 export function renderDetailAssessmentModal(exerciseName, onConfirm) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -408,7 +448,7 @@ export function renderDetailAssessmentModal(exerciseName, onConfirm) {
                     Walka
                 </button>
             </div>
-            
+
             <button id="cancel-detail" class="nav-btn modal-full-btn">Anuluj</button>
         </div>
     `;
@@ -422,23 +462,14 @@ export function renderDetailAssessmentModal(exerciseName, onConfirm) {
     buttons.forEach(btn => {
         btn.addEventListener('click', () => {
             const type = btn.dataset.type;
-            
-            // Mapowanie S.A.F.E -> RIR/Tech
             let newTech, newRir;
 
             if (type === 'easy') {
-                // Lekko: RIR 4, Tech 10
-                newTech = 10;
-                newRir = 4;
+                newTech = 10; newRir = 4;
             } else if (type === 'solid') {
-                // Kontrola: RIR 2, Tech 9
-                newTech = 9;
-                newRir = 2;
+                newTech = 9; newRir = 2;
             } else if (type === 'struggle') {
-                // Walka: Domyślnie zakładamy RIR 0 (Upadek mięśniowy), Tech 6
-                // (W edycji post-factum nie pytamy o ból, zakładamy mięśniowy)
-                newTech = 6;
-                newRir = 0;
+                newTech = 6; newRir = 0;
             }
 
             if (onConfirm) onConfirm(newTech, newRir);
@@ -453,46 +484,78 @@ const PHASE_LABELS = {
     'capacity': 'Budowa Pojemności',
     'strength': 'Siła Maksymalna',
     'metabolic': 'Kondycja',
-    'deload': 'Roztrenowanie',
-    'rehab': 'Regeneracja'
+    'deload': 'Roztrenowanie (Deload)',
+    'rehab': 'Regeneracja (Rehab)'
 };
 
-const PHASE_DESCRIPTIONS = {
-    'control': 'Skupimy się na poprawności ruchu i wolnym tempie.',
-    'mobility': 'Zwiększymy zakresy ruchu i zdrowie stawów.',
-    'capacity': 'Zwiększymy objętość, aby zbudować wytrzymałość mięśniową.',
-    'strength': 'Mniej powtórzeń, większy opór. Budujemy siłę.',
-    'metabolic': 'Szybsze tempo i krótsze przerwy dla spalania.',
-    'deload': 'Krótki okres lżejszych treningów dla regeneracji CUN.',
-    'rehab': 'Priorytet to bezpieczeństwo i redukcja bólu.'
+// --- BEHAVIORAL MESSAGING (EDUKACJA I WZMOCNIENIE) ---
+const TRANSITION_MESSAGES = {
+    // SCENARIUSZ: SUKCES (PROGRESJA)
+    'target_reached': {
+        title: "LEVEL UP! 🏆",
+        icon: "🚀",
+        color: "var(--gold-color)",
+        btn: "Lecimy Dalej!",
+        getMessage: (phaseName) => `Gratulacje! Opanowałeś fazę <strong>${phaseName}</strong>. Twój organizm jest gotowy na nowe wyzwania. Zwiększamy intensywność, aby utrzymać progres.`
+    },
+    // SCENARIUSZ: SAFETY OVERRIDE (DELOAD)
+    'deload_entry': {
+        title: "Tarcza Aktywna 🛡️",
+        icon: "🔋",
+        color: "#60a5fa", // Blue/Soft
+        btn: "Zregeneruj się",
+        getMessage: () => `Wykryliśmy nagromadzone zmęczenie. To normalne w procesie treningowym. Przechodzimy w tryb <strong>Deload</strong> (mniejsza objętość), abyś mógł się w pełni zregenerować i wrócić silniejszy ("Superkompensacja").`
+    },
+    // SCENARIUSZ: SAFETY OVERRIDE (REHAB)
+    'rehab_entry': {
+        title: "Tryb Ochronny 🚑",
+        icon: "❤️‍🩹",
+        color: "#f87171", // Soft Red
+        btn: "Zadbaj o siebie",
+        getMessage: () => `Twoje raporty wskazują na nasilenie dolegliwości. Spokojnie – to nie regres, a sygnał od ciała. Tymczasowo zmieniamy plan na <strong>Rehab</strong>: skupimy się na bezbólowym ruchu i regeneracji, by wyciszyć objawy.`
+    },
+    // SCENARIUSZ: TIME CAP (SOFT PROGRESSION)
+    'time_cap': {
+        title: "Zmiana Bodźca ⏱️",
+        icon: "🔄",
+        color: "var(--secondary-color)",
+        btn: "Rozumiem",
+        getMessage: (phaseName) => `Minął czas przewidziany na ten etap. Aby uniknąć stagnacji (przyzwyczajenia mięśni), przechodzimy do fazy <strong>${phaseName}</strong>. Zmiana bodźca to klucz do rozwoju.`
+    },
+    // DEFAULT
+    'default': {
+        title: "Nowy Etap",
+        icon: "✨",
+        color: "var(--primary-color)",
+        btn: "OK",
+        getMessage: (phaseName) => `Rozpoczynasz fazę: <strong>${phaseName}</strong>.`
+    }
 };
 
 export function renderPhaseTransitionModal(updateData, onConfirm) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
 
-    const isSoft = updateData.isSoft; 
     const newPhaseId = updateData.newPhaseId;
+    const transitionType = updateData.transition; // 'target_reached', 'time_cap', etc.
+    const isSoft = updateData.isSoft;
+
     const newPhaseName = PHASE_LABELS[newPhaseId] || newPhaseId.toUpperCase();
-    const description = PHASE_DESCRIPTIONS[newPhaseId] || 'Nowy cykl treningowy.';
 
-    const config = isSoft
-        ? {
-            title: "Zmiana Bodźca",
-            icon: "⏱️",
-            color: "var(--secondary-color)",
-            msg: "Minął czas przewidziany na obecną fazę. Przechodzimy dalej, aby uniknąć stagnacji.",
-            btn: "Rozumiem"
-        }
-        : {
-            title: "FAZA UKOŃCZONA!",
-            icon: "🏆",
-            color: "var(--gold-color)",
-            msg: "Gratulacje! Wykonałeś wszystkie założone sesje w tej fazie.",
-            btn: "Lecimy Dalej!"
-        };
+    // Detekcja typu wiadomości
+    let msgKey = 'default';
+    if (newPhaseId === 'rehab') msgKey = 'rehab_entry';
+    else if (newPhaseId === 'deload') msgKey = 'deload_entry';
+    else if (transitionType === 'target_reached') msgKey = 'target_reached';
+    else if (transitionType === 'time_cap' || isSoft) msgKey = 'time_cap';
 
-    if (!isSoft && state.completionSound) state.finalCompletionSound();
+    const config = TRANSITION_MESSAGES[msgKey];
+    const message = config.getMessage(newPhaseName);
+
+    // Dźwięk sukcesu tylko przy awansie
+    if (msgKey === 'target_reached' && state.completionSound) {
+        state.finalCompletionSound();
+    }
 
     overlay.innerHTML = `
         <div class="evolution-modal" style="--glow-color: ${config.color}">
@@ -501,15 +564,17 @@ export function renderPhaseTransitionModal(updateData, onConfirm) {
             </div>
 
             <h2 class="evo-title" style="color:${config.color}">${config.title}</h2>
-            <p class="evo-desc" style="margin-bottom: 1.5rem;">${config.msg}</p>
 
-            <div class="change-box" style="border-color:${config.color}">
-                <div style="font-size:0.75rem; text-transform:uppercase; color:#aaa; margin-bottom:5px;">NOWY CEL</div>
-                <div class="ex-name" style="color:#fff; font-size:1.3rem;">${newPhaseName}</div>
-                <div style="font-size:0.9rem; opacity:0.8; margin-top:5px;">${description}</div>
+            <div style="background:rgba(255,255,255,0.1); padding:15px; border-radius:12px; margin-bottom:1.5rem; text-align:left;">
+                <p class="evo-desc" style="margin:0; font-size:0.95rem; line-height:1.6;">${message}</p>
             </div>
 
-            <button id="close-phase-modal" class="action-btn" style="background: ${config.color}; color: #000; border: none; font-weight:800;">
+            <div class="change-box" style="border-color:rgba(255,255,255,0.2); background:transparent; padding:10px;">
+                <div style="font-size:0.7rem; text-transform:uppercase; color:#aaa; margin-bottom:2px;">AKTUALNY CEL:</div>
+                <div class="ex-name" style="color:#fff; font-size:1.1rem;">${newPhaseName}</div>
+            </div>
+
+            <button id="close-phase-modal" class="action-btn" style="background: ${config.color}; color: #000; border: none; font-weight:800; margin-top:10px;">
                 ${config.btn}
             </button>
         </div>

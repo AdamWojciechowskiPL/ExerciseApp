@@ -43,8 +43,18 @@ const GLOBAL_MAX_REPS = 25;
 const MAX_BUCKET_CAPACITY = 120;
 
 const PAIN_CONFIG = {
-    maxPainDuring_green: 4,
-    maxPainDuring_amber: 6,
+    maxPainDuring: {
+        green: 5,
+        amber: 7
+    },
+    maxPainAfter24h: {
+        green: 2,
+        amber: 4
+    },
+    maxDeltaFromBaseline: {
+        green: 1,
+        amber: 3
+    },
     redRequiresConsecutiveSessions: 2,
     modifiers: {
         green: 1.0,
@@ -100,7 +110,7 @@ function resolveValidTempo(rawTempo, fallbackTempo = null) {
     return fallbackTempo;
 }
 
-function normalizeExerciseRow(row) {
+function normalizeExerciseRow(row, userExperience = 'intermediate') {
     const isUnilateral = !!row.is_unilateral;
 
     let validDefaultTempo = SAFE_FALLBACK_TEMPO;
@@ -142,6 +152,8 @@ function normalizeExerciseRow(row) {
     }
 
     const overheadRequired = (row.overhead_required === true);
+    const shoulderLoadLevel = row.shoulder_load_level ? String(row.shoulder_load_level).toLowerCase() : 'low';
+    const intendedPainResponse = row.intended_pain_response ? String(row.intended_pain_response).toLowerCase() : 'painfree';
 
     const ex = {
         id: row.id,
@@ -169,6 +181,8 @@ function normalizeExerciseRow(row) {
         kneeFlexionApplicability,
         spineMotionProfile,
         overheadRequired,
+        shoulderLoadLevel,
+        intendedPainResponse,
 
         default_tempo: validDefaultTempo,
 
@@ -183,7 +197,7 @@ function normalizeExerciseRow(row) {
         }
     };
 
-    ex.calculated_timing = calculateTiming(ex);
+    ex.calculated_timing = calculateTiming(ex, userExperience);
     return ex;
 }
 
@@ -272,13 +286,17 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
     // 1. Pain Based Boosts
     if (painLocs.has('knee') || painLocs.has('knee_anterior')) {
         boost(weights, 'vmo_activation', 1.0);
+        boost(weights, 'glute_activation', 2.0);
+        boost(weights, 'hip_extension', 1.5);
         boost(weights, 'knee_stability', 2.2);
+        boost(weights, 'patellofemoralcontrol', 2.5);
+
         const tkeBoost = ctx.isSevere ? 1.1 : 1.3;
         boost(weights, 'terminal_knee_extension', tkeBoost);
-        boost(weights, 'glute_activation', 1.8);
-        boost(weights, 'hip_extension', 1.2);
+
         boost(weights, 'hip_mobility', 0.2);
-        const condMult = ctx.isSevere ? 0.75 : 0.9;
+
+        const condMult = ctx.isSevere ? 0.70 : 0.9;
         multiplyMatching(weights, (cat) => isConditioningCategory(cat), condMult);
     }
 
@@ -290,14 +308,22 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
         boost(weights, 'hip_mobility', 0.6);
     }
 
+    if (diagnosis.has('disc_herniation') || diagnosis.has('spondylolisthesis')) {
+        boost(weights, 'core_anti_extension', 1.2);
+    }
+
     if (painLocs.has('hip')) { boost(weights, 'hip_mobility', 1.0); boost(weights, 'glute_activation', 0.8); }
 
     if (painLocs.has('neck') || painLocs.has('cervical')) {
         boost(weights, 'thoracic_mobility', 0.8);
-        boost(weights, 'scapular_stability', 0.8);
-        boost(weights, 'cervical_motor_control', 1.2);
+        boost(weights, 'scapular_stability', 1.3);
+        boost(weights, 'cervical_motor_control', 1.5);
         boost(weights, 'breathing_control', 0.6);
         boost(weights, 'muscle_relaxation', 0.4);
+    }
+
+    if (diagnosis.has('chondromalacia') || diagnosis.has('patellofemoral')) {
+        boost(weights, 'patellofemoralcontrol', 2.0);
     }
 
     if (painLocs.has('ankle') || painLocs.has('foot')) { boost(weights, 'calves', 0.6); boost(weights, 'ankle_mobility', 0.8); boost(weights, 'balance_proprioception', 0.5); }
@@ -310,18 +336,17 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
     if (workType === 'sedentary') { boost(weights, 'thoracic_mobility', 0.7); boost(weights, 'hip_flexor_stretch', 0.5); boost(weights, 'glute_activation', 0.6); }
     else if (workType === 'standing') { boost(weights, 'spine_mobility', 0.4); boost(weights, 'calves', 0.4); }
 
-    if (hobby === 'running') { boost(weights, 'core_stability', 1.0); boost(weights, 'vmo_activation', 0.4); }
+    if (hobby === 'running') { boost(weights, 'core_stability', 1.0); boost(weights, 'vmo_activation', 0.3); }
     else if (hobby === 'cycling') { boost(weights, 'thoracic_mobility', 0.8); boost(weights, 'hip_flexor_stretch', 0.9); }
 
     // 4. Diagnosis
-    if (diagnosis.has('disc_herniation')) { boost(weights, 'core_anti_extension', 0.8); boost(weights, 'hip_mobility', 0.4); }
     if (diagnosis.has('chondromalacia') || diagnosis.has('osteoarthritis')) {
         boost(weights, 'vmo_activation', 0.3); boost(weights, 'glute_activation', 1.2); boost(weights, 'hip_extension', 0.8);
         multiplyMatching(weights, (cat) => isConditioningCategory(cat), 0.9);
     }
     if (diagnosis.has('scoliosis')) { boost(weights, 'core_anti_rotation', 0.6); boost(weights, 'core_anti_lateral_flexion', 0.6); }
     if (diagnosis.has('piriformis') || painLocs.has('sciatica') || ctx.painFilters.has('sciatica')) {
-        const nfBoost = ctx.isSevere ? 1.2 : 2.0;
+        const nfBoost = ctx.isSevere ? 1.5 : 2.0;
         boost(weights, 'nerve_flossing', nfBoost); boost(weights, 'glute_activation', 0.4);
     }
 
@@ -335,9 +360,13 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
     if (componentWeights.has('conditioning')) multiplyMatching(weights, (cat) => isConditioningCategory(cat), 1.45);
 
     if (primaryGoal === 'pain_relief') {
-        multiplyMatching(weights, (cat) => isBreathingCategory(cat) || isMobilityCategory(cat) || String(cat).toLowerCase().includes('nerve') || cat === 'breathing_control' || cat === 'muscle_relaxation', 1.25);
-        multiplyMatching(weights, (cat) => isConditioningCategory(cat), 0.9);
-    } else if (primaryGoal === 'fat_loss') { multiplyMatching(weights, (cat) => isConditioningCategory(cat), 1.25); }
+        multiplyMatching(weights, (cat) => isBreathingCategory(cat) || isMobilityCategory(cat) || String(cat).toLowerCase().includes('nerve') || cat === 'breathing_control' || cat === 'muscle_relaxation', 1.2);
+        multiplyMatching(weights, (cat) => isConditioningCategory(cat), 0.8);
+        multiplyMatching(weights, (cat) => isCoreCategory(cat), 1.15);
+
+    } else if (primaryGoal === 'fat_loss') {
+        multiplyMatching(weights, (cat) => isConditioningCategory(cat), 1.3);
+    }
 
     for (const cat of Object.keys(weights)) { weights[cat] = Math.max(0.05, weights[cat]); }
     return weights;
@@ -381,11 +410,12 @@ function filterExerciseCandidates(exercises, userData, ctx, fatigueProfile, rpeD
     const restrictionsSet = normalizeLowerSet(userData?.physical_restrictions);
 
     const isFatigued = fatigueProfile.fatigueScoreNow >= fatigueProfile.fatigueThresholdFilter;
+    const isRelevantVolume = (fatigueProfile.weekLoad7d || 0) >= 1400;
 
-    // ZMIANA: Load Gate. Ignorujemy monotonię, jeśli obciążenie jest nieistotne.
     const isMonotonySpike = fatigueProfile.isMonotonyRelevant &&
-                            fatigueProfile.monotony7d >= 2.0 &&
-                            fatigueProfile.strain7d >= fatigueProfile.p85_strain_56d;
+        fatigueProfile.monotony7d >= 2.0 &&
+        fatigueProfile.strain7d >= fatigueProfile.p85_strain_56d &&
+        isRelevantVolume;
 
     const applySafetyGate = isFatigued || isMonotonySpike;
 
@@ -455,6 +485,12 @@ function goalMultiplierForExercise(ex, userData, ctx) {
     let m = 1.0;
     if (primaryGoal === 'pain_relief') {
         const cat = ex.category_id || '';
+
+        // US-08 Check: Use ctx.painStatus (injected in main handler)
+        if (ctx.painStatus === 'green' || !ctx.painStatus) {
+            if (ex.intendedPainResponse === 'acceptable') m *= 1.1;
+        }
+
         if (isBreathingCategory(cat) || isMobilityCategory(cat)) m *= 1.25;
         else if (cat === 'breathing_control' || cat === 'muscle_relaxation') m *= 1.25;
     }
@@ -474,7 +510,7 @@ function painSafetyPenalty(ex, userData, ctx) {
     const hasKneeIssue = painLocs.has('knee') || painLocs.has('knee_anterior') || diagnosisSet.has('chondromalacia') || diagnosisSet.has('knee_oa');
     if (hasKneeIssue && ex.kneeFlexionApplicability && !ctx.isSevere) {
         if (ex.kneeFlexionMaxDeg === null) p *= 0.75;
-        else if (ex.kneeFlexionMaxDeg > 60) p *= 0.65; // KNEE_FLEXION_SAFETY_LIMIT
+        else if (ex.kneeFlexionMaxDeg > 60) p *= 0.65;
         else p *= 1.10;
     }
 
@@ -486,7 +522,9 @@ function painSafetyPenalty(ex, userData, ctx) {
 
     const hasNeckIssue = painLocs.has('cervical') || painLocs.has('neck') || painLocs.has('shoulder');
     if (hasNeckIssue && ex.overheadRequired && !ctx.isSevere) {
-        p *= 0.75;
+        if (ex.shoulderLoadLevel === 'high') p *= 0.7;
+        if (ex.shoulderLoadLevel === 'low') p *= 1.1;
+        if (!ex.shoulderLoadLevel) p *= 0.75;
     }
 
     return p;
@@ -579,13 +617,32 @@ function scoreExercise(ex, section, userData, ctx, categoryWeights, state, painZ
     score *= goalMultiplierForExercise(ex, userData, ctx);
     score *= varietyPenalty(ex, state, section);
 
+    // --- FIX: AFFINITY LOGIC (User Request) ---
+    // Pobieramy Affinity Score z mapy preferencji przekazanej w `state`.
+    if (state.preferencesMap) {
+        const pref = state.preferencesMap[ex.id] || { score: 0 };
+        const affinity = pref.score || 0;
+        let affinityMult = 1.0;
+
+        if (affinity > 0) {
+            // Like: Liniowy Boost (np. +20 pkt = x1.2, +100 pkt = x2.0)
+            affinityMult = 1.0 + (affinity * 0.01);
+        } else if (affinity < 0) {
+            // Dislike: Liniowa Kara (np. -50 pkt = x0.5)
+            // Zabezpieczenie (floor): min 0.1, żeby nie zerować całkowicie (do tego służy Blacklist),
+            // ale znacząco zmniejszyć szansę wylosowania.
+            affinityMult = Math.max(0.1, 1.0 + (affinity * 0.01));
+        }
+        score *= affinityMult;
+    }
+    // ------------------------------------------
+
     if (phaseContext) {
         const phaseFit = calculatePhaseFit(ex, phaseContext);
         if (phaseFit === 0) return 0;
         score *= phaseFit;
     }
 
-    // --- PRZYWRÓCONA LOGIKA BIZNESOWA DLA TESTÓW ---
     const hobby = String(userData?.hobby || '').toLowerCase();
     const diagnoses = normalizeLowerSet(userData?.medical_diagnosis);
 
@@ -598,14 +655,12 @@ function scoreExercise(ex, section, userData, ctx, categoryWeights, state, painZ
         const isRehabControl = phaseContext?.phaseId === 'control' || phaseContext?.phaseId === 'rehab';
         score *= isRehabControl ? 0.5 : 0.7;
     }
-    // ------------------------------------------------
 
     if (fatigueProfile) {
         const isFatigued = fatigueProfile.fatigueScoreNow >= fatigueProfile.fatigueThresholdFilter;
-        // ZMIANA: Load Gate Logic
         const isMonotonySpike = fatigueProfile.isMonotonyRelevant &&
-                                fatigueProfile.monotony7d >= 2.0 &&
-                                fatigueProfile.strain7d >= fatigueProfile.p85_strain_56d;
+            fatigueProfile.monotony7d >= 2.0 &&
+            fatigueProfile.strain7d >= fatigueProfile.p85_strain_56d;
 
         if (isFatigued || isMonotonySpike) {
             if (isBreathingCategory(cat) || isMobilityCategory(cat)) { score *= 1.25; }
@@ -756,10 +811,29 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatig
     const factor = loadFactorFromState(userData, ctx, fatigueState, rpeModifier);
     const experience = String(userData?.exercise_experience || 'none').toLowerCase();
 
+    // --- ROM CONSTRAINT INJECTION (US-12) ---
+    // Pobieramy globalny profil ROM z kontekstu fazy (przekazany z handlera)
+    let romConstraint = null;
+    if (phaseContext && phaseContext.romProfile) {
+        // Logika dla kolana
+        if (ex.kneeFlexionApplicability && phaseContext.romProfile.knee_flexion) {
+            const limit = phaseContext.romProfile.knee_flexion.current_limit;
+            if (limit < 130) { // Jeśli limit jest mniejszy niż pełny zakres
+                romConstraint = {
+                    joint: 'knee',
+                    limitDegrees: limit,
+                    instruction: `Zakres do ${limit}°`
+                };
+            }
+        }
+    }
+    // ----------------------------------------
+
     let selectedTempo = ex.default_tempo;
     if (ex.tempos && ex.tempos[phaseId]) { selectedTempo = ex.tempos[phaseId]; }
     selectedTempo = enforceTempoByPhaseIntent(selectedTempo, ex, phaseId);
 
+    // ... (reszta logiki sets/reps bez zmian) ...
     let sets = 1;
     if (section === 'warmup') { sets = 2; }
     else if (section === 'cooldown') { sets = 1; }
@@ -768,7 +842,6 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatig
         sets = resolveValueFromRange(rangeStr, experience);
     }
 
-    // --- Daily Undulation ---
     if (section === 'main' && !isDeload) {
         sets = Math.max(2, Math.round(sets * undulationFactor));
     }
@@ -782,11 +855,11 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatig
     let repsOrTime = '10';
     if (ex.conditioning_style === 'interval' && ex.recommended_interval_sec) {
         const { work, rest } = ex.recommended_interval_sec;
-        const baseTotalSec = 480 * factor * undulationFactor; // Undulation
+        const baseTotalSec = 480 * factor * undulationFactor;
         const cycle = work + rest;
         let calculatedSets = Math.round(baseTotalSec / cycle);
         calculatedSets = clamp(calculatedSets, 3, 20);
-        return { sets: String(calculatedSets), reps_or_time: `${work} s`, restBetweenSets: rest, tempo_or_iso: selectedTempo };
+        return { sets: String(calculatedSets), reps_or_time: `${work} s`, restBetweenSets: rest, tempo_or_iso: selectedTempo, romConstraint };
     }
 
     if (ex.conditioning_style === 'steady') {
@@ -795,7 +868,7 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatig
         if (experience === 'advanced') durationMin = 20;
         if (targetMin <= 20) durationMin = 10;
 
-        durationMin = Math.round(durationMin * undulationFactor); // Undulation
+        durationMin = Math.round(durationMin * undulationFactor);
 
         return {
             sets: "1",
@@ -804,7 +877,8 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatig
             restFactor: 1.0,
             restAfterExercise: 60,
             transitionTime: 5,
-            requiresSideSwitch: false
+            requiresSideSwitch: false,
+            romConstraint // Dodano
         };
     }
 
@@ -816,7 +890,8 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatig
             restFactor: 1.5,
             restAfterExercise: 90,
             transitionTime: 5,
-            requiresSideSwitch: ex.requires_side_switch
+            requiresSideSwitch: ex.requires_side_switch,
+            romConstraint // Dodano
         };
     }
 
@@ -838,12 +913,12 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatig
         if (phaseRepsStr.includes('s')) {
             const rangeStr = phaseRepsStr.replace('s', '');
             let targetSec = resolveValueFromRange(rangeStr, experience);
-            if (!isDeload) targetSec = Math.round(targetSec * undulationFactor); // Undulation
+            if (!isDeload) targetSec = Math.round(targetSec * undulationFactor);
             repsOrTime = `${targetSec} s`;
         } else {
             const targetReps = resolveValueFromRange(phaseRepsStr, experience);
             let estimatedSec = targetReps * 4;
-            if (!isDeload) estimatedSec = Math.round(estimatedSec * undulationFactor); // Undulation
+            if (!isDeload) estimatedSec = Math.round(estimatedSec * undulationFactor);
             estimatedSec = clamp(estimatedSec, 15, ex.max_recommended_duration || 60);
             repsOrTime = `${Math.ceil(estimatedSec / 5) * 5} s`;
         }
@@ -853,7 +928,7 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatig
         else {
             let targetReps = resolveValueFromRange(rangeStr, experience);
             targetReps = Math.min(targetReps, ex.max_recommended_reps || GLOBAL_MAX_REPS);
-            if (!isDeload) targetReps = Math.round(targetReps * factor * undulationFactor); // Undulation
+            if (!isDeload) targetReps = Math.round(targetReps * factor * undulationFactor);
             repsOrTime = String(targetReps);
         }
     }
@@ -869,7 +944,6 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatig
     let phaseAdjustedRest = Math.round(baseRest * phaseRestFactor);
 
     if (ex.is_unilateral) {
-        // ZAWSZE minimum 12s jeśli unilateral, niezależnie od side switch
         phaseAdjustedRest = Math.max(phaseAdjustedRest, 12);
     }
 
@@ -880,9 +954,11 @@ function prescribeForExercise(ex, section, userData, ctx, categoryWeights, fatig
         restFactor: prescriptionConfig.restFactor || 1.0,
         restAfterExercise: phaseAdjustedRest,
         transitionTime: baseTransition,
-        requiresSideSwitch: false // DEPRECATED flag, sending false to avoid confusion
+        requiresSideSwitch: false,
+        romConstraint // Dodano na końcu
     };
 }
+
 
 // ============================================================================
 // 6. ESTIMATION & SHRINKING
@@ -919,8 +995,7 @@ function estimateExerciseDurationSeconds(exEntry, userData, paceMap, effectiveRe
     }
     const sidesMultiplier = isUnilateral ? 2 : 1;
     const totalWorkTime = sets * singleSideWorkTime * sidesMultiplier;
-    
-    // Transition logic: Unilateral always 12s, Bilateral 5s or as defined
+
     let transitionPerSet = 0;
     if (isUnilateral) {
         transitionPerSet = 12;
@@ -929,15 +1004,15 @@ function estimateExerciseDurationSeconds(exEntry, userData, paceMap, effectiveRe
         else if (exEntry.calculated_timing && exEntry.calculated_timing.transition_sec) transitionPerSet = exEntry.calculated_timing.transition_sec;
         else transitionPerSet = 5;
     }
-    
+
     const totalTransition = sets * transitionPerSet;
     const restBase = getRestAfterExercise(exEntry, 1.0);
     let smartRestTime = Math.round(restBase * effectiveRestFactor);
-    
+
     if (isUnilateral) {
         smartRestTime = Math.max(smartRestTime, 12);
     }
-    
+
     const totalRest = (sets > 1) ? (sets - 1) * smartRestTime : 0;
     return totalWorkTime + totalTransition + totalRest;
 }
@@ -1084,22 +1159,35 @@ function analyzePainResponse(recentSessions) {
 
     if (fb && fb.type === 'pain_monitoring') {
         const duringMax = fb.during?.max_nprs || 0;
-        const afterMax = fb.after24h?.max_nprs || 0;
         const delta = fb.after24h?.delta_vs_baseline || 0;
         const flags = fb.after24h || {};
 
         result.painDuringMax = duringMax;
         result.pain24hDelta = delta;
 
-        if (duringMax >= 7 || delta >= 3 || flags.neuro_red_flags === true) {
-            result.painStatus = 'red'; result.painModifier = PAIN_CONFIG.modifiers.red; result.painReason = flags.neuro_red_flags ? 'neuro_flags_detected' : 'high_pain_metrics';
+        if (duringMax > PAIN_CONFIG.maxPainDuring.amber ||
+            delta > PAIN_CONFIG.maxDeltaFromBaseline.amber ||
+            flags.neuro_red_flags === true) {
+
+            result.painStatus = 'red';
+            result.painModifier = PAIN_CONFIG.modifiers.red;
+            result.painReason = flags.neuro_red_flags ? 'neuro_flags_detected' : 'high_pain_metrics';
             return result;
         }
-        if (duringMax >= 5 || delta >= 2 || flags.night_pain === true || flags.stiffness_increased === true) {
-            result.painStatus = 'amber'; result.painModifier = PAIN_CONFIG.modifiers.amber; result.painReason = 'moderate_symptoms';
+
+        if (duringMax > PAIN_CONFIG.maxPainDuring.green ||
+            delta > PAIN_CONFIG.maxDeltaFromBaseline.green ||
+            flags.night_pain === true ||
+            flags.stiffness_increased === true) {
+
+            result.painStatus = 'amber';
+            result.painModifier = PAIN_CONFIG.modifiers.amber;
+            result.painReason = 'moderate_symptoms';
             return result;
         }
-        result.painStatus = 'green'; result.painModifier = PAIN_CONFIG.modifiers.green;
+
+        result.painStatus = 'green';
+        result.painModifier = PAIN_CONFIG.modifiers.green;
         return result;
     }
 
@@ -1120,8 +1208,12 @@ function analyzePainResponse(recentSessions) {
     }
     result.consecutiveSymptomNegatives = negativeCount;
 
-    if (painDuring >= 7 || negativeCount >= PAIN_CONFIG.redRequiresConsecutiveSessions) { result.painStatus = 'red'; result.painModifier = PAIN_CONFIG.modifiers.red; result.painReason = (painDuring >= 7) ? 'high_pain_intensity_legacy' : 'persistent_symptoms_legacy'; }
-    else if (painDuring >= 5 || negativeCount === 1) { result.painStatus = 'amber'; result.painModifier = PAIN_CONFIG.modifiers.amber; result.painReason = 'moderate_pain_warning_legacy'; }
+    if (painDuring >= PAIN_CONFIG.maxPainDuring.amber || negativeCount >= PAIN_CONFIG.redRequiresConsecutiveSessions) {
+        result.painStatus = 'red'; result.painModifier = PAIN_CONFIG.modifiers.red; result.painReason = (painDuring >= 7) ? 'high_pain_intensity_legacy' : 'persistent_symptoms_legacy';
+    }
+    else if (painDuring > PAIN_CONFIG.maxPainDuring.green || negativeCount === 1) {
+        result.painStatus = 'amber'; result.painModifier = PAIN_CONFIG.modifiers.amber; result.painReason = 'moderate_pain_warning_legacy';
+    }
     else { result.painStatus = 'green'; result.painModifier = PAIN_CONFIG.modifiers.green; }
     return result;
 }
@@ -1138,10 +1230,6 @@ function analyzeRpeTrend(recentSessions) {
     if (lastFeedback?.value === -1) { result.volumeModifier = 0.85; result.label = 'Recovery'; }
     else if (lastFeedback?.value === 1) { result.volumeModifier = 1.15; result.label = 'Progressive'; }
     return result;
-}
-
-function logFinalSessionBreakdown(session, userData, paceMap, phaseContext) {
-    // Logging logic preserved but omitted for brevity
 }
 
 // ============================================================================
@@ -1320,7 +1408,7 @@ exports.handler = async (event) => {
             client.query('SELECT settings FROM user_settings WHERE user_id = $1', [userId])
         ]);
 
-        const exercises = eR.rows.map(normalizeExerciseRow);
+        const exercises = eR.rows.map(r => normalizeExerciseRow(r, userData.exercise_experience));
         const ctx = safeBuildUserContext(userData);
         bR.rows.forEach(r => ctx.blockedIds.add(r.exercise_id));
         const preferencesMap = {}; pR.rows.forEach(r => preferencesMap[r.exercise_id] = { score: r.affinity_score });
@@ -1371,6 +1459,9 @@ exports.handler = async (event) => {
             isSoftProgression: phaseState.current_phase_stats?.is_soft_progression || false, spiralDifficultyBias: phaseState.spiral?.base_difficulty_bias || 0
         };
 
+        // Fix: Inject painStatus into ctx for goalMultiplierForExercise usage
+        ctx.painStatus = painData.painStatus;
+
         console.log(`[PlanGen] User: ${userId}, Phase: ${phaseContext.phaseId} (Override: ${phaseContext.isOverride}), Fatigue: ${fatigueProfile.fatigueScoreNow}, PainStatus: ${painData.painStatus}`);
 
         const cWeights = buildDynamicCategoryWeights(exercises, userData, ctx);
@@ -1406,3 +1497,4 @@ module.exports.scoreExercise = scoreExercise;
 module.exports.safeBuildUserContext = safeBuildUserContext;
 module.exports.deriveFamilyKey = deriveFamilyKey;
 module.exports.selectMicrocycleAnchors = selectMicrocycleAnchors;
+module.exports.analyzePainResponse = analyzePainResponse; // Exported for testing US-02

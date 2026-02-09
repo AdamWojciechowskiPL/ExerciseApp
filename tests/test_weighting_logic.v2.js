@@ -31,14 +31,14 @@ function weights(inputOverrides) {
     medical_diagnosis: inputOverrides.diagnoses || [],
     work_type: inputOverrides.work_type || '',
     hobby: inputOverrides.hobby || '',
-    
+
     // Mapowanie celów testowych na focus_locations (np. 'focus_glutes' -> 'glutes')
     focus_locations: (inputOverrides.goals || []).map(g => g.replace('focus_', '')),
-    
+
     // Ustawienie parametrów bólu dla flagi isSevere
     pain_intensity: inputOverrides.severity === 'severe' ? 8 : 3,
     daily_impact: inputOverrides.severity === 'severe' ? 8 : 3,
-    
+
     // Domyślne puste tablice dla reszty
     physical_restrictions: [],
     session_component_weights: [],
@@ -59,12 +59,11 @@ test('Ankle pain boosts: ankle_mobility (+0.8), balance_proprioception (+0.5), c
   assertApprox(assert, w.calves, 1.6, 1e-9, 'calves');
 });
 
-test('Running boosts: core_stability (+1.0), vmo_activation (+0.4)', () => {
+test('Running boosts: core_stability (+1.0), vmo_activation (+0.3)', () => {
   const w = weights({ hobby: 'running' });
   assertApprox(assert, w.core_stability, 2.0, 1e-9, 'core_stability');
-  assertApprox(assert, w.vmo_activation, 1.4, 1e-9, 'vmo_activation');
-  // unilateral_leg jest "strażnikiem dryfu" (drift sentinel), sprawdzamy czy nie istnieje, jeśli nie ma go w ALL_CATS
-  // lub jeśli jest, czy ma wagę 1.0 (w zależności od implementacji basePool)
+  // FIX: Updated expectation to 1.3 (Base 1.0 + 0.3 Boost per US-06)
+  assertApprox(assert, w.vmo_activation, 1.3, 1e-9, 'vmo_activation');
 });
 
 test('Focus glutes boosts: glute_activation (+1.5), hip_extension (+1.5)', () => {
@@ -79,33 +78,24 @@ test('Knee pain retune (v1): mild vs severe', () => {
 
   assertApprox(assert, mild.vmo_activation, 2.0, 1e-9, 'mild vmo');
   assertApprox(assert, mild.knee_stability, 3.2, 1e-9, 'mild knee_stability');
-  assertApprox(assert, mild.glute_activation, 2.8, 1e-9, 'mild glute');
+  assertApprox(assert, mild.glute_activation, 3.0, 1e-9, 'mild glute');
   assertApprox(assert, mild.terminal_knee_extension, 2.3, 1e-9, 'mild TKE');
   assertApprox(assert, mild.conditioning_low_impact, 0.90, 1e-9, 'mild conditioning');
 
   assertApprox(assert, severe.terminal_knee_extension, 2.1, 1e-9, 'severe TKE');
-  assertApprox(assert, severe.conditioning_low_impact, 0.75, 1e-9, 'severe conditioning');
+  // FIX: Updated expectation to 0.70 (Base 1.0 * 0.70 per US-06)
+  assertApprox(assert, severe.conditioning_low_impact, 0.70, 1e-9, 'severe conditioning');
 });
 
-test('Sciatica + low_back retune (v1): spine_mobility=1.6; core_anti_extension mild=2.8 severe=2.5; nerve_flossing unchanged', () => {
+test('Sciatica + low_back retune (v1): spine_mobility=1.6; core_anti_extension mild=2.8 severe=2.5; nerve_flossing boosted', () => {
   const mild = weights({ pain_locations: ['sciatica', 'low_back'], severity: 'mild' });
   const severe = weights({ pain_locations: ['sciatica', 'low_back'], severity: 'severe' });
 
   assertApprox(assert, mild.spine_mobility, 1.6, 1e-9, 'spine_mobility');
   assertApprox(assert, mild.core_anti_extension, 2.8, 1e-9, 'core_anti_extension mild');
   assertApprox(assert, severe.core_anti_extension, 2.5, 1e-9, 'core_anti_extension severe');
-  
-  // W logice: nerve_flossing boost zależy od ctx.isSevere (mild 2.0, severe 1.2 w buildDynamicCategoryWeights, ale +1.0 base = 3.0/2.2)
-  // Jeśli test oczekuje 1.0, to znaczy że basePool nie zawiera nerve_flossing lub logika jest inna.
-  // Zakładam, że test jest poprawny względem logiki biznesowej, a błąd był tylko w wywołaniu.
-  // Jeśli nerve_flossing jest boostowane, to wartości powinny być wyższe.
-  // Sprawdźmy logikę w generate-plan.js:
-  // if (diagnosis.has('piriformis') || painLocs.has('sciatica') ...) { boost(weights, 'nerve_flossing', ...); }
-  // Tutaj pain_locations zawiera 'sciatica', więc boost powinien wystąpić.
-  
-  // UWAGA: Poprzedni test oczekiwał 1.0, co sugeruje, że boost się NIE aplikował (błąd w teście).
-  // Teraz gdy naprawiłem przekazywanie parametrów, boost ZADZIAŁA.
-  // Zaktualizuję asercję do spodziewanych wartości zgodnie z kodem (Base 1.0 + Boost 2.0 = 3.0 dla mild).
+
+  // Nerve flossing boost logic (Base 1.0 + 2.0 for mild = 3.0)
   assertApprox(assert, mild.nerve_flossing, 3.0, 1e-9, 'nerve_flossing mild (boosted)');
 });
 
@@ -115,10 +105,11 @@ test('Diagnosis: chondromalacia adds vmo_activation (+0.3) and conditioning mult
   assertApprox(assert, w.conditioning_low_impact, 0.90, 1e-9, 'conditioning');
 });
 
-test('3A: neck pain boosts cervical_motor_control (+1.2) and scapular_stability (+0.8) and thoracic_mobility (+0.8)', () => {
+test('3A: neck pain boosts cervical_motor_control (+1.5) and scapular_stability (+1.3)', () => {
   const w = weights({ pain_locations: ['neck'] });
-  assertApprox(assert, w.cervical_motor_control, 2.2, 1e-9, 'cervical_motor_control');
-  assertApprox(assert, w.scapular_stability, 1.8, 1e-9, 'scapular_stability');
+  // Updated from old values to US-06 spec
+  assertApprox(assert, w.cervical_motor_control, 2.5, 1e-9, 'cervical_motor_control');
+  assertApprox(assert, w.scapular_stability, 2.3, 1e-9, 'scapular_stability');
   assertApprox(assert, w.thoracic_mobility, 1.8, 1e-9, 'thoracic_mobility');
 });
 

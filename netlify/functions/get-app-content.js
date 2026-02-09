@@ -4,37 +4,37 @@ const { buildUserContext, checkExerciseAvailability } = require('./_clinical-rul
 const { calculateTiming } = require('./_pacing-engine.js'); // IMPORT NOWEGO SILNIKA (Task B3)
 
 const normalizeEquipment = (rawEquipment) => {
-    if (!rawEquipment) return [];
+  if (!rawEquipment) return [];
 
-    let items = [];
-    if (Array.isArray(rawEquipment)) {
-        items = rawEquipment.map(item => String(item).trim());
-    } else if (typeof rawEquipment === 'string') {
-        items = rawEquipment.split(',').map(item => item.trim());
-    } else {
-        return [];
-    }
+  let items = [];
+  if (Array.isArray(rawEquipment)) {
+    items = rawEquipment.map(item => String(item).trim());
+  } else if (typeof rawEquipment === 'string') {
+    items = rawEquipment.split(',').map(item => item.trim());
+  } else {
+    return [];
+  }
 
-    const IGNORE_LIST = ['brak', 'none', 'brak sprzętu', 'masa własna', 'bodyweight', ''];
-    const normalizedSet = new Set();
+  const IGNORE_LIST = ['brak', 'none', 'brak sprzętu', 'masa własna', 'bodyweight', ''];
+  const normalizedSet = new Set();
 
-    items.forEach(item => {
-        if (IGNORE_LIST.includes(item.toLowerCase())) return;
-        const formatted = item.charAt(0).toUpperCase() + item.slice(1);
-        normalizedSet.add(formatted);
-    });
+  items.forEach(item => {
+    if (IGNORE_LIST.includes(item.toLowerCase())) return;
+    const formatted = item.charAt(0).toUpperCase() + item.slice(1);
+    normalizedSet.add(formatted);
+  });
 
-    return Array.from(normalizedSet);
+  return Array.from(normalizedSet);
 };
 
 const normalizePainZones = (zones) => {
-    if (Array.isArray(zones)) return zones;
-    return [];
+  if (Array.isArray(zones)) return zones;
+  return [];
 };
 
 const normalizeArray = (arr) => {
-    if (Array.isArray(arr)) return arr;
-    return [];
+  if (Array.isArray(arr)) return arr;
+  return [];
 };
 
 exports.handler = async (event) => {
@@ -62,6 +62,7 @@ exports.handler = async (event) => {
     let overrides = {};
     let blockedIds = new Set();
     let clinicalContext = null;
+    let userData = null; // NAPRAWA: Deklaracja zmiennej userData
 
     if (userId) {
       const [overridesResult, blacklistResult, settingsResult] = await Promise.all([
@@ -85,8 +86,9 @@ exports.handler = async (event) => {
       if (settingsResult.rows.length > 0 && settingsResult.rows[0].settings) {
         const settings = settingsResult.rows[0].settings;
         if (settings.wizardData) {
-            clinicalContext = buildUserContext(settings.wizardData);
-            blacklistResult.rows.forEach(row => clinicalContext.blockedIds.add(row.exercise_id));
+          userData = settings.wizardData; // NAPRAWA: Przypisanie danych użytkownika
+          clinicalContext = buildUserContext(settings.wizardData);
+          blacklistResult.rows.forEach(row => clinicalContext.blockedIds.add(row.exercise_id));
         }
       }
     }
@@ -97,29 +99,32 @@ exports.handler = async (event) => {
       const normalizedZones = normalizePainZones(ex.pain_relief_zones);
 
       const exForCheck = {
-          ...ex,
-          is_unilateral: !!ex.is_unilateral,
-          pain_relief_zones: normalizedZones,
-          equipment: normalizedEquipment,
-          default_tempo: ex.default_tempo,
-          primary_plane: ex.primary_plane || 'multi',
-          position: ex.position || null,
-          is_foot_loading: !!ex.is_foot_loading,
-          impact_level: ex.impact_level || 'low',
-          spine_load_level: ex.spine_load_level || 'low',
-          knee_load_level: ex.knee_load_level || 'low'
+        ...ex,
+        is_unilateral: !!ex.is_unilateral,
+        pain_relief_zones: normalizedZones,
+        equipment: normalizedEquipment,
+        default_tempo: ex.default_tempo,
+        primary_plane: ex.primary_plane || 'multi',
+        position: ex.position || null,
+        is_foot_loading: !!ex.is_foot_loading,
+        impact_level: ex.impact_level || 'low',
+        spine_load_level: ex.spine_load_level || 'low',
+        knee_load_level: ex.knee_load_level || 'low'
       };
 
       let isAllowed = true;
       let rejectionReason = null;
 
       if (clinicalContext) {
-          const check = checkExerciseAvailability(exForCheck, clinicalContext, { strictSeverity: false });
-          isAllowed = check.allowed;
-          rejectionReason = check.reason;
+        const check = checkExerciseAvailability(exForCheck, clinicalContext, { strictSeverity: false });
+        isAllowed = check.allowed;
+        rejectionReason = check.reason;
       }
 
-      const timing = calculateTiming(exForCheck);
+      // US-09: Pass experience if available, otherwise default
+      // userData jest teraz poprawnie zdefiniowane wyżej
+      const experience = userData?.exercise_experience || 'intermediate';
+      const timing = calculateTiming(exForCheck, experience);
 
       acc[ex.id] = {
         name: ex.name,

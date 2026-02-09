@@ -3,12 +3,12 @@ import { state } from '../../state.js';
 import { screens } from '../../dom.js';
 import { navigateTo, showLoader, hideLoader } from '../core.js';
 import dataStore from '../../dataStore.js';
-import { renderEvolutionModal, renderPhaseTransitionModal } from '../modals.js';
+import { renderEvolutionModal, renderPhaseTransitionModal, renderRewardModal } from '../modals.js';
 import { getIsCasting, sendShowIdle } from '../../cast.js';
 import { clearSessionBackup } from '../../sessionRecovery.js';
 import { clearPlanFromStorage } from './dashboard.js';
-import { assistant } from '../../assistantEngine.js';
 import { workoutMixer } from '../../workoutMixer.js';
+import { checkNewBadges } from '../../gamification.js';
 
 let selectedFeedback = { type: null, value: 0 };
 let sessionAffinityDeltas = {};
@@ -47,14 +47,12 @@ export const renderSummaryScreen = () => {
         <div class="feedback-option" data-type="tension" data-value="-1"><div class="fb-icon">🥵</div><div class="fb-text"><h4>Za mocno</h4></div></div>
     `;
 
-    // AMPS PHASE 3: CLASSIFICATION
-    const groups = assistant.classifySessionPerformance(state.sessionLog || []);
-    const hasData = groups.good.length > 0 || groups.moderate.length > 0 || groups.difficult.length > 0;
+    // ZMIANA: Pobieramy listę płaską, bez sztucznego grupowania
+    const completedLogs = (state.sessionLog || []).filter(l => l.status === 'completed' && !l.isRest);
+    const hasData = completedLogs.length > 0;
 
-    const renderGroup = (label, cssClass, logs, isDifficult = false) => {
-        if (!logs || logs.length === 0) return '';
-
-        const cardsHtml = logs.map(ex => {
+    const renderLogs = (logs) => {
+        return logs.map(ex => {
             const id = ex.exerciseId || ex.id;
             const pref = state.userPreferences[id] || { score: 0 };
             const baseScore = pref.score || 0;
@@ -66,13 +64,6 @@ export const renderSummaryScreen = () => {
             else if (baseScore > 0) { scoreColor = 'var(--success-color)'; scorePrefix = '+'; }
             else if (baseScore < 0) { scoreColor = 'var(--danger-color)'; }
 
-            // Deviation Rating System (Minimal Click Design)
-            // Default: Everything is OK (Solid/RIR 2-3) - implicit, no button pre-selected
-            // User only clicks if there's a deviation:
-            // - "Za łatwe" (Easy deviation) → RIR 4+
-            // - "Za trudne" (Hard deviation) → RIR 0-1
-
-            // Show set context for per-set fatigue awareness
             const setContext = ex.currentSet && ex.totalSets
                 ? `<span class="set-context-badge">S ${ex.currentSet}/${ex.totalSets}</span>`
                 : '';
@@ -83,15 +74,16 @@ export const renderSummaryScreen = () => {
                 <button type="button" class="deviation-btn hard" data-type="hard" title="Za trudne (RIR 0-1)">⬇️ Trudne</button>
             </div>`;
 
-
-            // Devolution Action (For Difficult Items)
+            // Logika sugestii Dewolucji (jeśli było naprawdę ciężko - RIR 0 lub Walka)
             let devolutionHtml = '';
-            if (isDifficult) {
+            const wasStruggle = (ex.rating === 'hard' || (ex.rir !== undefined && ex.rir <= 0));
+
+            if (wasStruggle) {
                 const easierVariant = workoutMixer.getEasierVariant(id);
                 if (easierVariant) {
                     devolutionHtml = `
                     <div class="devolution-action">
-                        <span style="font-size:0.75rem; color:var(--danger-color);">Zbyt trudne?</span>
+                        <span style="font-size:0.75rem; color:var(--danger-color);">Zgłoszono walkę. Sugestia:</span>
                         <button type="button" class="devolution-btn" data-ex-id="${id}" data-target-id="${easierVariant.id}" data-target-name="${easierVariant.name}">
                             ⬇ Zmień na: ${easierVariant.name}
                         </button>
@@ -111,13 +103,13 @@ export const renderSummaryScreen = () => {
                             </span>
                         </div>
                     </div>
-                    
+
                     <div class="summary-actions-container">
                         ${deviationButtonsHtml}
-                        
+
                         <div class="btn-group-affinity">
-                            <button type="button" class="rate-btn affinity-btn" data-action="like" title="Super (+15)">👍</button>
-                            <button type="button" class="rate-btn affinity-btn" data-action="dislike" title="Słabo (-30)">👎</button>
+                            <button type="button" class="rate-btn affinity-btn" data-action="like" title="Lubię to (+15 Affinity)">👍</button>
+                            <button type="button" class="rate-btn affinity-btn" data-action="dislike" title="Nie lubię (-30 Affinity)">👎</button>
                         </div>
                     </div>
                 </div>
@@ -125,20 +117,15 @@ export const renderSummaryScreen = () => {
             </div>
             `;
         }).join('');
-
-        return `
-            <div class="summary-section">
-                <div class="summary-section-header ${cssClass}">${label}</div>
-                <div class="ratings-list">${cardsHtml}</div>
-            </div>
-        `;
     };
 
     let contentHtml = '';
     if (hasData) {
-        contentHtml += renderGroup('✅ Poszło Gładko', 'good', groups.good);
-        contentHtml += renderGroup('🟡 Wymagało Wysiłku', 'moderate', groups.moderate);
-        contentHtml += renderGroup('🔴 Było Trudno', 'difficult', groups.difficult, true);
+        contentHtml = `
+            <div class="ratings-list">
+                ${renderLogs(completedLogs)}
+            </div>
+        `;
     } else {
         contentHtml = '<p class="empty-state">Brak wykonanych ćwiczeń do oceny.</p>';
     }
@@ -156,12 +143,14 @@ export const renderSummaryScreen = () => {
         <p style="opacity:0.6; font-size:0.9rem; margin-top:0;">Podsumowanie sesji</p>
         <form id="summary-form">
             <div class="form-group">
-                <label style="display:block; margin-bottom:10px; font-weight:700;">${isSafetyMode ? "Samopoczucie" : "Trudność sesji"}</label>
+                <label style="display:block; margin-bottom:10px; font-weight:700;">${isSafetyMode ? "Samopoczucie po treningu" : "Ocena ogólna"}</label>
                 <div class="feedback-container compact">${globalOptionsHtml}</div>
             </div>
             <div class="form-group" style="margin-top:1.5rem;">
-                <label style="display:block; margin-bottom:5px; font-weight:700;">Analiza Wykonania</label>
-                <p style="font-size:0.8rem; color:#666; margin-bottom:10px;">Dostosuj ocenę, jeśli odczucia były inne niż domyślne.</p>
+                <label style="display:block; margin-bottom:5px; font-weight:700;">Raport Ćwiczeń</label>
+                <p style="font-size:0.8rem; color:#666; margin-bottom:10px;">
+                    Skoryguj trudność (Strzałki) lub oznacz ulubione/nielubiane (Kciuki).
+                </p>
                 ${contentHtml}
             </div>
             <div class="form-group" style="margin-top:2rem;">
@@ -187,8 +176,7 @@ export const renderSummaryScreen = () => {
 
     const formContainer = summaryScreen.querySelector('#summary-form');
 
-    // 2. DEVIATION BUTTONS (Kliknięcie w przyciski ⬆️ Łatwe / ⬇️ Trudne)
-    // Toggle behavior: click once to select, click again to deselect (reset to OK)
+    // 2. DEVIATION BUTTONS
     formContainer.addEventListener('click', (e) => {
         const deviationBtn = e.target.closest('.deviation-btn');
         if (deviationBtn) {
@@ -201,46 +189,35 @@ export const renderSummaryScreen = () => {
             const type = deviationBtn.dataset.type;
             const isActive = deviationBtn.classList.contains('active');
 
-            // Find log entry
             const logEntry = state.sessionLog.find(l => l.uniqueId === uniqueId);
             if (!logEntry) return;
 
-            // Toggle logic: if already active, reset to default (OK)
             if (isActive) {
-                // Reset to default "OK" state
+                // Reset do stanu "OK"
                 logEntry.tech = 9;
                 logEntry.rir = 2;
                 logEntry.rating = 'good';
                 logEntry.inferred = true;
                 logEntry.difficultyDeviation = null;
-
-                // Visual update: remove all active states
                 container.querySelectorAll('.deviation-btn').forEach(btn => btn.classList.remove('active'));
             } else {
-                // Apply deviation
                 let newTech, newRir, newRating;
+                if (type === 'easy') { newTech = 10; newRir = 4; newRating = 'good'; }
+                else if (type === 'hard') { newTech = 6; newRir = 0; newRating = 'hard'; }
 
-                if (type === 'easy') {
-                    newTech = 10; newRir = 4; newRating = 'good';
-                } else if (type === 'hard') {
-                    newTech = 6; newRir = 0; newRating = 'hard';
-                }
-
-                // Update log entry
                 logEntry.tech = newTech;
                 logEntry.rir = newRir;
                 logEntry.rating = newRating;
                 logEntry.inferred = false;
-                logEntry.difficultyDeviation = type; // Track which deviation was selected
+                logEntry.difficultyDeviation = type;
 
-                // Visual update: clear all, then activate this one
                 container.querySelectorAll('.deviation-btn').forEach(btn => btn.classList.remove('active'));
                 deviationBtn.classList.add('active');
             }
         }
     });
 
-    // 3. Affinity Buttons (Kciuki)
+    // 3. Affinity Buttons
     formContainer.querySelectorAll('.rating-card').forEach(card => {
         const id = card.dataset.id;
         const baseScore = parseInt(card.dataset.baseScore, 10);
@@ -317,26 +294,20 @@ export async function handleSummarySubmit(e) {
             ratingsArray.push({ exerciseId: id, action: action });
         }
 
-        // AMPS Devolution Logic
         const devBtn = card.querySelector('.devolution-btn.pending-devolution');
         if (devBtn) {
             ratingsArray.push({ exerciseId: id, action: 'hard' });
         }
     });
 
-    // --- LOGIKA DEFAULTINGU S.A.F.E. ---
-    // Jeśli użytkownik nic nie kliknął (brak RIR w logu), a chce zapisać,
-    // przypisujemy wartości domyślne ("Solid").
     if (state.sessionLog) {
         state.sessionLog.forEach(entry => {
             if (entry.status === 'completed' && !entry.isRest) {
-                // Jeśli brak twardych danych (RIR/Tech) i brak ratingu 'hard' (który mógłby być ustawiony automatycznie),
-                // ustawiamy domyślne wartości dla "Solid" (Niebieski).
                 if (entry.rir === undefined || entry.rir === null) {
-                    entry.rir = 2; // Default solid RIR
-                    entry.tech = 9; // Default solid Tech
-                    entry.rating = 'good'; // Default solid Rating
-                    entry.inferred = true; // Zaznaczamy, że to system uzupełnił
+                    entry.rir = 2;
+                    entry.tech = 9;
+                    entry.rating = 'good';
+                    entry.inferred = true;
                 }
             }
         });
@@ -365,7 +336,7 @@ export async function handleSummarySubmit(e) {
         notes: document.getElementById('general-notes').value,
         startedAt: state.sessionStartTime.toISOString(),
         completedAt: now.toISOString(),
-        sessionLog: state.sessionLog, // To teraz zawiera zaktualizowane dane AMPS (z defaultami)
+        sessionLog: state.sessionLog,
         netDurationSeconds: durationSeconds
     };
 
@@ -374,6 +345,8 @@ export async function handleSummarySubmit(e) {
         clearSessionBackup();
         await dataStore.loadRecentHistory(7);
         if (state.todaysDynamicPlan?.type === 'protocol') state.todaysDynamicPlan = null;
+
+        const oldStats = { ...state.userStats };
 
         if (response?.newStats) state.userStats = { ...state.userStats, ...response.newStats };
 
@@ -432,7 +405,18 @@ export async function handleSummarySubmit(e) {
             await finalizeProcess();
         };
 
-        const checkPhaseTransition = () => {
+        const checkAchievements = async () => {
+            const unlockedBadges = checkNewBadges(oldStats, state.userStats);
+            if (unlockedBadges.length > 0) {
+                for (const badge of unlockedBadges) {
+                    await new Promise(resolve => {
+                        renderRewardModal(badge, resolve);
+                    });
+                }
+            }
+        };
+
+        const checkPhaseTransition = async () => {
             if (response && response.phaseUpdate) {
                 if (state.settings.phase_manager) {
                     state.settings.phase_manager.current_phase_stats.phase_id = response.phaseUpdate.newPhaseId;
@@ -440,10 +424,13 @@ export async function handleSummarySubmit(e) {
                     if (state.settings.phase_manager.override) state.settings.phase_manager.override.mode = null;
                 }
                 hideLoader();
-                renderPhaseTransitionModal(response.phaseUpdate, () => checkRpeAndNavigate());
+                await new Promise(resolve => renderPhaseTransitionModal(response.phaseUpdate, resolve));
             } else {
-                checkRpeAndNavigate();
+                hideLoader();
             }
+
+            await checkAchievements();
+            checkRpeAndNavigate();
         };
 
         if (response && response.adaptation) {

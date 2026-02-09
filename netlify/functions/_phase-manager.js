@@ -36,6 +36,38 @@ const createPhaseStats = (phaseId, userCtx) => {
     };
 };
 
+/**
+ * Inicjalizuje profil ROM w zależności od lokalizacji bólu.
+ */
+const initializeRomProfile = (userCtx) => {
+    const romProfile = {};
+    const painLocs = (userCtx.pain_locations || []).map(s => s.toLowerCase());
+    const diagnosis = (userCtx.medical_diagnosis || []).map(s => s.toLowerCase());
+
+    // Logika dla kolana (PFPS, Chondromalacja, OA, ACL)
+    const hasKneeIssue = painLocs.includes('knee') ||
+                         painLocs.includes('knee_anterior') ||
+                         painLocs.includes('patella') ||
+                         diagnosis.includes('chondromalacia') ||
+                         diagnosis.includes('meniscus_tear') ||
+                         diagnosis.includes('knee_oa');
+
+    if (hasKneeIssue) {
+        // Startujemy konserwatywnie (45-60 stopni)
+        // Jeśli ból jest silny (Severe), startujemy od 45. Jeśli nie, od 60.
+        // UserCtx w init może nie mieć isSevere, zakładamy bezpieczny start 60.
+        romProfile.knee_flexion = {
+            current_limit: 60,
+            max_limit: 135, // Pełny przysiad
+            step: 15,       // Krok progresji
+            consecutive_clean_sessions: 0,
+            required_clean_sessions: 3 // Co 3 czyste sesje zwiększamy zakres
+        };
+    }
+
+    return romProfile;
+};
+
 // ============================================================================
 // PUBLIC API
 // ============================================================================
@@ -45,13 +77,15 @@ function initializePhaseState(primaryGoal, userCtx) {
     const startPhase = template.sequence[0];
 
     return {
-        version: 1,
+        version: 2, // Bumped version for ROM support
         enabled: true,
         template_id: template.id,
         phases_sequence: template.sequence,
         current_cycle_id: 1,
         current_phase_index: 0,
         current_phase_stats: createPhaseStats(startPhase, userCtx),
+        // NOWOŚĆ: Stan Progresji Zakresu Ruchu
+        rom_profile: initializeRomProfile(userCtx),
         override: {
             mode: null,
             reason: null,
@@ -65,27 +99,18 @@ function initializePhaseState(primaryGoal, userCtx) {
     };
 }
 
-/**
- * 2. RESOLVE ACTIVE PHASE (US-08 Updated)
- * Obsługuje painStatus (Red/Amber) oraz fatigue/monotony triggers.
- */
 function resolveActivePhase(state, safetyCtx) {
     if (!state || !state.enabled) {
         return { activePhaseId: PHASE_IDS.CONTROL, isOverride: false };
     }
 
-    // Default thresholds (fallback)
     const thresholdEnter = safetyCtx.fatigueThresholdEnter || 80;
     const thresholdExit = safetyCtx.fatigueThresholdExit || 60;
-
-    // Monotony triggers
     const isMonotonySpike = (safetyCtx.monotony7d >= 2.0 && safetyCtx.strain7d >= (safetyCtx.p85_strain_56d || 9999));
 
-    // A. Czy wchodzimy w nowy Override?
     let newOverrideMode = null;
     let overrideReason = null;
 
-    // US-08: Red Pain Logic (Flare-up / Severe)
     if (safetyCtx.isSeverePain) {
         newOverrideMode = PHASE_IDS.REHAB;
         overrideReason = 'severe_pain_reported';
@@ -94,12 +119,10 @@ function resolveActivePhase(state, safetyCtx) {
         newOverrideMode = PHASE_IDS.REHAB;
         overrideReason = 'pain_flare_up_detected';
     }
-    // US-08: Amber Pain -> Deload (Warning)
     else if (safetyCtx.painStatus === 'amber') {
         newOverrideMode = PHASE_IDS.DELOAD;
         overrideReason = 'pain_warning_amber';
     }
-    // High Fatigue OR Monotony Spike -> Deload
     else if (safetyCtx.fatigueScore >= thresholdEnter) {
         newOverrideMode = PHASE_IDS.DELOAD;
         overrideReason = 'high_fatigue_load';
@@ -109,7 +132,6 @@ function resolveActivePhase(state, safetyCtx) {
         overrideReason = 'monotony_strain_spike';
     }
 
-    // Jeśli wykryto potrzebę wejścia w override
     if (newOverrideMode && state.override.mode !== newOverrideMode) {
         return {
             activePhaseId: newOverrideMode,
@@ -118,22 +140,18 @@ function resolveActivePhase(state, safetyCtx) {
         };
     }
 
-    // B. Jeśli już jesteśmy w Override -> Sprawdzamy wyjście
     if (state.override.mode) {
         let shouldExit = false;
 
         if (state.override.mode === PHASE_IDS.REHAB) {
-            // US-08: Exit Rehab if no severe pain AND pain status is NOT red AND min 1 session done
             const isPainClear = !safetyCtx.isSeverePain && safetyCtx.painStatus !== 'red';
             if (isPainClear && state.override.stats.sessions_completed >= 1) {
                 shouldExit = true;
             }
         }
         else if (state.override.mode === PHASE_IDS.DELOAD) {
-            // Exit Deload: pain is green (not amber/red) AND fatigue OK
             const isPainGreen = safetyCtx.painStatus === 'green';
             const isFatigueOk = safetyCtx.fatigueScore < thresholdExit;
-            
             if (isPainGreen && isFatigueOk && state.override.stats.sessions_completed >= 1) {
                 shouldExit = true;
             }
@@ -146,7 +164,6 @@ function resolveActivePhase(state, safetyCtx) {
                 suggestedUpdate: { mode: null, reason: 'condition_cleared' }
             };
         }
-
         return { activePhaseId: state.override.mode, isOverride: true };
     }
 
@@ -162,11 +179,21 @@ function applySuggestedUpdate(state, suggestedUpdate) {
         newState.override.mode = suggestedUpdate.mode;
         newState.override.reason = suggestedUpdate.reason;
         newState.override.triggered_at = now;
-        newState.override.exit_conditions = null; 
+        newState.override.exit_conditions = null;
         newState.override.stats = {
             sessions_completed: 0,
             start_date: now
         };
+        // Reset ROM progress on flare-up (Safety First)
+        if (suggestedUpdate.reason.includes('pain') && newState.rom_profile?.knee_flexion) {
+             console.log(`[PhaseManager] Pain detected. Regression of ROM limits.`);
+             // Cofamy się o 2 kroki lub do bazy
+             newState.rom_profile.knee_flexion.current_limit = Math.max(
+                 45,
+                 newState.rom_profile.knee_flexion.current_limit - (newState.rom_profile.knee_flexion.step * 2)
+             );
+             newState.rom_profile.knee_flexion.consecutive_clean_sessions = 0;
+        }
     } else {
         console.log(`[PhaseManager] Exiting Override (${suggestedUpdate.reason})`);
         newState.override = {
@@ -181,10 +208,50 @@ function applySuggestedUpdate(state, suggestedUpdate) {
     return newState;
 }
 
+/**
+ * Aktualizuje ROM po udanej sesji.
+ */
+function updateRomProgress(romProfile, painStatus) {
+    if (!romProfile) return;
+
+    // Obsługa Kolana
+    if (romProfile.knee_flexion) {
+        const k = romProfile.knee_flexion;
+        // Tylko jeśli sesja była "Green" (bez bólu)
+        if (painStatus === 'green') {
+            k.consecutive_clean_sessions++;
+            if (k.consecutive_clean_sessions >= k.required_clean_sessions) {
+                if (k.current_limit < k.max_limit) {
+                    k.current_limit = Math.min(k.max_limit, k.current_limit + k.step);
+                    k.consecutive_clean_sessions = 0; // Reset licznika po awansie
+                    console.log(`[PhaseManager] 🚀 ROM Upgrade! Knee Flexion -> ${k.current_limit}°`);
+                }
+            }
+        } else if (painStatus === 'amber' || painStatus === 'red') {
+            // Jeśli ból wystąpił, resetujemy licznik postępu.
+            // (Regresję limitu obsługuje applySuggestedUpdate przy wejściu w Rehab)
+            k.consecutive_clean_sessions = 0;
+        }
+    }
+}
+
 function updatePhaseStateAfterSession(state, completedPhaseId, userCtx) {
     const newState = JSON.parse(JSON.stringify(state));
     const now = getTodayISO();
 
+    // 1. Aktualizacja ROM (niezależnie od fazy)
+    // Potrzebujemy statusu bólu z tej konkretnej sesji.
+    // userCtx tutaj to wizardData, który jest statyczny.
+    // W save-session.js musimy przekazać painStatus do tej funkcji.
+    // (Wymaga małej zmiany w sygnaturze wywołania w save-session.js lub analizy userCtx.painStatus,
+    // ale generate-plan.js wstrzykuje painStatus do ctx.
+    // Tutaj zakładamy, że `userCtx` ma pole `lastSessionPainStatus` przekazane z handlera)
+
+    if (userCtx.lastSessionPainStatus && newState.rom_profile) {
+        updateRomProgress(newState.rom_profile, userCtx.lastSessionPainStatus);
+    }
+
+    // 2. Liczniki Faz
     if (state.override.mode === completedPhaseId) {
         newState.override.stats.sessions_completed++;
         return { newState, transition: null };
@@ -263,6 +330,10 @@ function checkDetraining(state) {
         console.log(`[PhaseManager] Detraining detected (${diffDays} days). Reducing volume.`);
         const newState = JSON.parse(JSON.stringify(state));
         newState.current_phase_stats.sessions_completed = Math.floor(newState.current_phase_stats.sessions_completed * 0.5);
+        // Reset ROM on detraining
+        if (newState.rom_profile?.knee_flexion) {
+             newState.rom_profile.knee_flexion.current_limit = 60;
+        }
         return newState;
     }
     return state;
@@ -274,6 +345,10 @@ function applyGoalChangePolicy(state, newGoal, userCtx) {
         return state;
     }
     const newState = initializePhaseState(newGoal, userCtx);
+    // Preserve existing ROM profile on goal change (body hasn't changed)
+    if (state && state.rom_profile) {
+        newState.rom_profile = state.rom_profile;
+    }
     if (state && state.override.mode) {
         newState.override = JSON.parse(JSON.stringify(state.override));
     }

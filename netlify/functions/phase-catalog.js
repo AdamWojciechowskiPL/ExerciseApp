@@ -76,7 +76,9 @@ const PHASE_CONFIG = {
         bias: {
             // Preferuj łatwe/średnie ćwiczenia (Lvl 1-2)
             difficulty: { 1: 1.5, 2: 1.2, 3: 0.8, 4: 0.1, 5: 0.0 },
-            metabolicPenalty: 2.0 // Unikaj wysokiego tętna
+            metabolicPenalty: 2.0, // Unikaj wysokiego tętna
+            // US-10/11: Control Phase is good for initial control and exposure
+            categoryKeywords: ['control', 'activation', 'patellofemoralcontrol']
         },
         prescription: {
             sets: '2-4',
@@ -202,7 +204,8 @@ const PHASE_CONFIG = {
         bias: {
             difficulty: { 1: 2.0, 2: 1.0, 3: 0.0, 4: 0.0, 5: 0.0 },
             metabolicPenalty: 3.0,
-            categoryKeywords: ['isometric', 'stability', 'activation', 'nerve']
+            // US-10/11: Rehab specifically triggers specific therapeutic categories
+            categoryKeywords: ['isometric', 'stability', 'activation', 'nerve', 'patellofemoralcontrol']
         },
         prescription: {
             sets: '3-5',
@@ -257,7 +260,7 @@ const resolveTemplate = (primaryGoal) => {
 const pickTargetSessions = (phaseId, userCtx) => {
     const config = getPhaseConfig(phaseId);
     const range = config.progression.targetSessions; // [min, max]
-    
+
     const experience = String(userCtx?.exercise_experience || 'none').toLowerCase();
     const isBeginner = experience === 'none' || experience === 'occasional';
     const isAdvanced = experience === 'advanced';
@@ -269,7 +272,7 @@ const pickTargetSessions = (phaseId, userCtx) => {
         // Fazy adaptacyjne: Początkujący dłużej, Zaawansowani krócej
         if (isBeginner) target = range[1]; // Max
         if (isAdvanced) target = range[0]; // Min
-    } 
+    }
     else if (phaseId === PHASE_IDS.STRENGTH || phaseId === PHASE_IDS.METABOLIC) {
         // Fazy intensywne: Początkujący krócej (bezpieczeństwo), Zaawansowani dłużej (efekt)
         if (isBeginner) target = range[0]; // Min

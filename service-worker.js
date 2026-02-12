@@ -1,7 +1,7 @@
 // service-worker.js
 
 // ⚠️ WAŻNE: Zmieniaj ten numer wersji przy KAŻDYM wdrożeniu (deployu) na produkcję!
-const STATIC_CACHE_NAME = 'static-assets-v28.0.0';
+const STATIC_CACHE_NAME = 'static-assets-v29.0.0';
 const DYNAMIC_CACHE_NAME = 'dynamic-content-v1';
 
 const APP_SHELL_ASSETS = [

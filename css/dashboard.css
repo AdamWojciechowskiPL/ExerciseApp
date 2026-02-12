@@ -108,6 +108,7 @@
     line-height: 1;
     background: linear-gradient(90deg, #fff, #ccc);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
     white-space: nowrap;
 }
@@ -458,14 +459,6 @@
     border: 1px solid #cbd5e1;
 }
 
-.wc-footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 0.85rem;
-    color: var(--muted-text-color);
-    margin-bottom: 1rem;
-}
 
 /* Sekcja Samopoczucia */
 .sheet-wellness {
@@ -638,97 +631,6 @@
     animation: popIn 0.5s ease;
 }
 
-.success-binding {
-    background: linear-gradient(135deg, #22c55e 0%, #15803d 50%, #facc15 100%) !important;
-}
-
-.success-text {
-    color: var(--success-color) !important;
-}
-
-.completion-stamp {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%) rotate(-15deg) scale(1.2);
-    font-size: 2.5rem;
-    font-weight: 900;
-    color: var(--success-color);
-    border: 5px solid var(--success-color);
-    padding: 10px 20px;
-    opacity: 0.15;
-    pointer-events: none;
-    z-index: 0;
-    text-transform: uppercase;
-    white-space: nowrap;
-    letter-spacing: 5px;
-    animation: stamp-pop 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-}
-
-.shine-effect {
-    position: relative;
-    overflow: hidden;
-}
-
-.shine-effect::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 50%;
-    height: 100%;
-    background: linear-gradient(to right, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.4) 50%, rgba(255, 255, 255, 0) 100%);
-    transform: skewX(-20deg);
-    animation: shine-pass 2s ease-in-out infinite;
-    animation-delay: 1s;
-    pointer-events: none;
-    z-index: 10;
-}
-
-@keyframes stamp-pop {
-    0% {
-        transform: translate(-50%, -50%) rotate(-30deg) scale(2);
-        opacity: 0;
-    }
-
-    100% {
-        transform: translate(-50%, -50%) rotate(-15deg) scale(1);
-        opacity: 0.15;
-    }
-}
-
-@keyframes popIn {
-    0% {
-        transform: scale(0.9);
-        opacity: 0;
-    }
-
-    100% {
-        transform: scale(1);
-        opacity: 1;
-    }
-}
-
-@keyframes shine-pass {
-    0% {
-        left: -100%;
-        opacity: 0;
-    }
-
-    20% {
-        opacity: 1;
-    }
-
-    50% {
-        left: 200%;
-        opacity: 0;
-    }
-
-    100% {
-        left: 200%;
-        opacity: 0;
-    }
-}
 
 /* --- CALENDAR STRIP (Pełna szerokość) --- */
 .calendar-strip {
@@ -819,18 +721,6 @@
     opacity: 1;
 }
 
-.upcoming-timeline {
-    display: none;
-}
-
-.timeline-section-title {
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 1.5px;
-    color: var(--muted-text-color);
-    margin: 0.8rem 0 0.5rem 4px;
-    font-weight: 700;
-}
 
 /* Bio-Hub */
 .bio-hub-container {
@@ -978,6 +868,7 @@
     margin-top: 2px;
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
     line-height: 1.2;

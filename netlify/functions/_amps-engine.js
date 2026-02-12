@@ -7,12 +7,40 @@ const SCORE_MAX = 100;
 const SCORE_MIN = -100;
 
 /**
- * AMPS: INFERENCE ENGINE
- * Uzupełnia brakujące dane w logu sesji.
- * Supports new difficultyDeviation field from minimal-click rating system.
+ * Helper: Oblicza oczekiwany czas trwania serii (Time Under Tension)
+ * Służy do porównania z czasem rzeczywistym (entry.duration).
  */
-function inferMissingSessionData(sessionLog, feedback) {
+function calculateExpectedDuration(repsOrTime, secondsPerRep = 6) {
+    const val = String(repsOrTime || '').toLowerCase();
+
+    // Jeśli zadano czas (np. "45 s")
+    if (val.includes('s') || val.includes('min')) {
+        if (val.includes('min')) {
+            const match = val.match(/(\d+(?:[.,]\d+)?)/);
+            return match ? parseFloat(match[0].replace(',', '.')) * 60 : 60;
+        }
+        return parseInt(val) || 30;
+    }
+
+    // Jeśli zadano powtórzenia (np. "10")
+    const reps = parseInt(val) || 10;
+    // Unilateral (na stronę) zajmuje 2x więcej czasu + margines na zmianę
+    // Bilateral: 1.0, Unilateral: ~2.2 (czas na stronę L + P + przejście)
+    const isUnilateral = val.includes('/str') || val.includes('stron');
+    const multiplier = isUnilateral ? 2.2 : 1.0;
+
+    return reps * secondsPerRep * multiplier;
+}
+
+/**
+ * AMPS: SMART INFERENCE ENGINE v2.0
+ * Uzupełnia brakujące dane w logu sesji na podstawie kontekstu (czas, trudność).
+ */
+function inferMissingSessionData(sessionLog, feedback, userSettings = {}) {
     if (!Array.isArray(sessionLog)) return sessionLog;
+
+    // Pobieramy globalne tempo usera (domyślnie 6s na powtórzenie)
+    const pace = userSettings.secondsPerRep || 6;
 
     let defaultRating = 'ok';
     let defaultRir = 2;
@@ -25,41 +53,88 @@ function inferMissingSessionData(sessionLog, feedback) {
 
     return sessionLog.map(entry => {
         if (entry.status === 'skipped' || entry.isRest) return entry;
+
+        // Jeśli dane zostały już wpisane ręcznie przez modal "Detail Assessment" (i nie jest to szybka ocena), zostawiamy je
+        if (entry.rating && !entry.inferred && entry.difficultyDeviation === undefined) {
+            return entry;
+        }
+
         const newEntry = { ...entry };
 
-        // Priority 1: Check for explicit difficultyDeviation from new UI
-        if (newEntry.difficultyDeviation) {
-            if (newEntry.difficultyDeviation === 'easy') {
-                newEntry.rating = 'good';
-                newEntry.rir = newEntry.rir ?? 4;
-                newEntry.tech = newEntry.tech ?? 10;
-            } else if (newEntry.difficultyDeviation === 'hard') {
-                newEntry.rating = 'hard';
-                newEntry.rir = newEntry.rir ?? 0;
-                newEntry.tech = newEntry.tech ?? 6;
+        // 1. Analiza Pacingu (Czas rzeczywisty vs Oczekiwany)
+        // entry.duration pochodzi ze stopera w training.js (czas netto wykonywania)
+        const expectedDuration = calculateExpectedDuration(entry.reps_or_time, pace);
+        const actualDuration = entry.duration || expectedDuration; // Fallback jeśli błąd stopera
+
+        // Ratio: > 1.0 (Wolniej/Dłużej), < 1.0 (Szybciej/Krócej)
+        // Np. 1.3 oznacza, że robiliśmy ćwiczenie 30% dłużej niż planowano (Grind)
+        const paceRatio = expectedDuration > 0 ? (actualDuration / expectedDuration) : 1.0;
+
+        // Czy ćwiczenie jest złożone technicznie? (Lvl 4+)
+        const isComplex = (parseInt(entry.difficultyLevel || 1, 10)) >= 4;
+
+        // --- LOGIKA OCENY (User Intent + Pacing Data) ---
+
+        // PRZYPADEK 1: User kliknął "TRUDNE" (lub difficultyDeviation='hard')
+        if (newEntry.difficultyDeviation === 'hard' || newEntry.rating === 'hard') {
+            newEntry.rating = 'hard';
+
+            if (paceRatio < 0.75) {
+                // Zrobił dużo szybciej niż planowano -> "Rwanie" techniki, kompensacja pędem
+                newEntry.tech = 5; // Technika ucierpiała
+                newEntry.rir = 1;  // Siła jeszcze była, ale technika padła
+                newEntry.inferenceReason = "Rushed Hard Set (Momentum)";
+            } else if (paceRatio > 1.25) {
+                // Zrobił dużo wolniej -> "Grind" (walka z ciężarem, velocity loss)
+                newEntry.tech = 8; // Technika utrzymana (w miarę)
+                newEntry.rir = 0;  // Prawdziwy upadek mięśniowy
+                newEntry.inferenceReason = "Grinded Failure";
+            } else {
+                // Standardowe trudne
+                newEntry.tech = isComplex ? 6 : 9; // Przy trudnych ćwiczeniach zakładamy gorszą technikę przy failure
+                newEntry.rir = 0;
             }
-            return newEntry;
         }
 
-        // Priority 2: If rating/RIR already set (from explicit user action), keep them
-        if (newEntry.rating && !newEntry.inferred) {
-            return newEntry;
+        // PRZYPADEK 2: User kliknął "ŁATWE" (lub difficultyDeviation='easy')
+        else if (newEntry.difficultyDeviation === 'easy') {
+            newEntry.rating = 'good';
+
+            if (paceRatio > 1.1) {
+                // Robił bardzo wolno/dokładnie -> To nie było AŻ TAK łatwe, po prostu kontrolowane
+                newEntry.tech = 10;
+                newEntry.rir = 3;
+                newEntry.inferenceReason = "Slow Controlled Easy";
+            } else {
+                // Standardowe łatwe (lub szybkie)
+                newEntry.tech = 10;
+                newEntry.rir = 4; // RPE 6 (duży zapas)
+            }
         }
 
-        // Priority 3: Infer from existing RIR if present
-        if (newEntry.rir !== undefined && newEntry.rir !== null && !newEntry.rating) {
-            if (newEntry.rir <= 1) newEntry.rating = 'hard';
-            else if (newEntry.rir >= 3) newEntry.rating = 'good';
-            else newEntry.rating = 'ok';
+        // PRZYPADEK 3: Brak reakcji (Neutral) - Inteligentne domyślanie się
+        // Jeśli nie ma ratingu i RIR jest pusty -> User nie kliknął nic
+        else if (!newEntry.rating && (newEntry.rir === undefined || newEntry.rir === null)) {
+            newEntry.rating = 'ok';
             newEntry.inferred = true;
-            return newEntry;
-        }
 
-        // Priority 4: Fall back to session-level feedback defaults
-        if (!newEntry.rating && (newEntry.rir === undefined || newEntry.rir === null)) {
-            newEntry.rating = defaultRating;
-            newEntry.rir = defaultRir;
-            newEntry.inferred = true;
+            // Jeśli znacznie odbiegł od czasu, korygujemy RIR
+            if (paceRatio > 1.3) {
+                // Bardzo wolno -> Prawdopodobnie było ciężej niż 'ok'
+                newEntry.rir = 1.5;
+                newEntry.tech = 8;
+                newEntry.inferenceReason = "Auto-detected Grind (Slow)";
+            } else if (paceRatio < 0.7) {
+                // Bardzo szybko -> Prawdopodobnie za łatwo / niedbale
+                newEntry.rir = 3;
+                newEntry.tech = 9;
+                newEntry.inferenceReason = "Auto-detected Speed (Fast)";
+            } else {
+                // Idealnie w punkt (Sweet Spot)
+                newEntry.rir = 2;
+                newEntry.tech = 9;
+                newEntry.inferenceReason = "Perfect Pace";
+            }
         }
 
         return newEntry;
@@ -201,35 +276,13 @@ async function applyImmediatePlanAdjustmentsInMemory(client, ratings, sessionLog
 
     if (likes.length === 0 && dislikes.length === 0) return false;
 
-    const plan = settings.dynamicPlanData;
-    if (!plan || !plan.days) return false;
-
-    // Logika wewnątrz save-session.js była częściowo pusta ("... Reszta logiki ...") w podglądzie,
-    // ale AMPS opiera się na prostym założeniu: like/dislike wpływa na affinity_score (już zrobione w updatePreferences),
-    // a funkcja ta zwraca true, jeśli plan wymaga przeładowania (tutaj po prostu zwracamy false lub true,
-    // w oryginalnym kodzie było to bardziej złożone, ale tutaj upraszczamy do sygnalizacji).
-    // W pełni reaktywny plan i tak odświeży się przy następnym generowaniu.
-
-    // W oryginalnym save-session.js ta funkcja zwracała flagę, czy zmodyfikowano plan w pamięci.
-    // Skoro tutaj nie mamy dostępu do pełnego obiektu 'plan' i logiki 'replaceExerciseInPlan',
-    // a AMPS ewoluował w stronę twardych danych, możemy uznać, że affinity wpływa na PRZYSZŁE generowanie planu.
-    // Zwracamy false, żeby nie wymuszać skomplikowanych operacji na JSONie w locie, chyba że jest to krytyczne.
-
-    // TODO: Jeśli wymagana jest natychmiastowa podmiana ćwiczenia w *następnych* dniach tego samego planu,
-    // należałoby tutaj zaimplementować logikę przeszukiwania plan.days.
-    // Na ten moment zwracamy false sugerując, że zmiany wejdą w życie przy kolejnym re-rollu.
-
+    // Placeholder logic - Affinity affects future generation via updatePreferences
     return false;
 }
 
 /**
  * AMPS: MICRO-LOADING
  * Dostosowuje liczbę serii na podstawie historii (RIR/Rating).
- * Enhanced with set-context awareness for smarter volume adjustments.
- * 
- * If exercise was hard on last set of multiple sets → reduce volume (set fatigue)
- * If exercise was hard on single set or early sets → consider exercise too difficult
- * If exercise was easy → increase volume
  */
 function applyMicroLoading(sets, historyEntry) {
     if (!historyEntry) return sets;
@@ -238,29 +291,22 @@ function applyMicroLoading(sets, historyEntry) {
     const isHard = historyEntry.rir === 0 || historyEntry.rating === 'hard' || historyEntry.difficultyDeviation === 'hard';
     const isEasy = historyEntry.rir >= 3 || historyEntry.rating === 'good' || historyEntry.difficultyDeviation === 'easy';
 
-    // Check if this was a set-fatigue issue (hard on later sets of multi-set exercise)
     const currentSet = historyEntry.currentSet || 1;
     const totalSets = historyEntry.totalSets || 1;
     const isLastSetOfMultiple = totalSets > 1 && currentSet === totalSets;
     const isMultiSetExercise = totalSets > 1;
 
     if (isEasy) {
-        // Exercise was too easy - increase volume
         newSets += 1;
         console.log(`[AMPS] Micro-Loading: Boosted sets (+1 due to easy rating/RIR >= 3)`);
     } else if (isHard) {
         if (isLastSetOfMultiple) {
-            // Hard on last set of multiple = likely set fatigue, not exercise difficulty
-            // Reduce sets for next time but don't flag as "too hard overall"
             newSets -= 1;
             console.log(`[AMPS] Micro-Loading: Reduced sets (-1 due to last-set fatigue)`);
         } else if (!isMultiSetExercise) {
-            // Hard on single set = exercise may be too difficult overall
-            // Still reduce, but this should trigger consideration for devolution
             newSets -= 1;
             console.log(`[AMPS] Micro-Loading: Reduced sets (-1 due to single-set struggle)`);
         } else {
-            // Hard on early/middle set = definitely too difficult
             newSets -= 1;
             console.log(`[AMPS] Micro-Loading: Reduced sets (-1 due to early difficulty)`);
         }

@@ -208,12 +208,11 @@ export function renderEvolutionModal(adaptation, onCheck) {
     };
 }
 
-// --- NOWOŚĆ: REWARD MODAL (ODZNAKI) ---
+// --- REWARD MODAL (ODZNAKI) ---
 export function renderRewardModal(badge, onConfirm) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
 
-    // Efekt konfetti (uproszczony CSS)
     const confettiHtml = Array.from({ length: 20 }).map((_, i) =>
         `<div class="confetti" style="--d:${Math.random() * 2}s; --x:${Math.random() * 100}%; --c:${['#ff0000', '#00ff00', '#0000ff', '#ffff00'][i % 4]}"></div>`
     ).join('');
@@ -387,42 +386,7 @@ export function renderTunerModal(exerciseId, onUpdate) {
     });
 }
 
-// --- S.A.F.E: PAIN CHECK MODAL ---
-export function renderPainCheckModal(onConfirm) {
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-
-    overlay.innerHTML = `
-        <div class="swap-modal" style="text-align:center;">
-            <div style="font-size:3rem; margin-bottom:10px;">🛡️</div>
-            <h3>Weryfikacja Bezpieczeństwa</h3>
-            <p style="margin-bottom:1.5rem; opacity:0.8;">
-                Zgłaszasz walkę z ciężarem.<br>
-                <strong>Czy czułeś ból w stawach lub kręgosłupie?</strong>
-            </p>
-
-            <div class="modal-actions-row">
-                <button id="pain-yes" class="action-btn" style="background:#ef4444; border:none;">TAK (Ból)</button>
-                <button id="pain-no" class="action-btn" style="background:#10b981; border:none;">NIE (Tylko Mięśnie)</button>
-            </div>
-        </div>
-    `;
-
-    document.body.appendChild(overlay);
-    attachBackdropClose(overlay);
-
-    overlay.querySelector('#pain-yes').addEventListener('click', () => {
-        if (onConfirm) onConfirm(true);
-        overlay.remove();
-    });
-
-    overlay.querySelector('#pain-no').addEventListener('click', () => {
-        if (onConfirm) onConfirm(false);
-        overlay.remove();
-    });
-}
-
-// --- S.A.F.E: DETAIL ASSESSMENT MODAL ---
+// --- S.A.F.E: DETAIL ASSESSMENT MODAL (ZAKTUALIZOWANY - BEZ WALKI) ---
 export function renderDetailAssessmentModal(exerciseName, onConfirm) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -434,7 +398,8 @@ export function renderDetailAssessmentModal(exerciseName, onConfirm) {
                 <p class="amps-modal-subtitle">Jak poszła ta seria?</p>
             </div>
 
-            <div class="safe-buttons-grid" style="margin-top: 20px;">
+            <!-- USUNIĘTO: Czerwony przycisk 'WALKA' -->
+            <div class="safe-buttons-grid" style="margin-top: 20px; grid-template-columns: 1fr 1fr;">
                 <button class="safe-btn easy" data-type="easy">
                     <span class="icon">🟢</span>
                     Lekko
@@ -442,10 +407,6 @@ export function renderDetailAssessmentModal(exerciseName, onConfirm) {
                 <button class="safe-btn solid" data-type="solid">
                     <span class="icon">🔵</span>
                     Kontrola
-                </button>
-                <button class="safe-btn struggle" data-type="struggle">
-                    <span class="icon">🔴</span>
-                    Walka
                 </button>
             </div>
 
@@ -468,8 +429,6 @@ export function renderDetailAssessmentModal(exerciseName, onConfirm) {
                 newTech = 10; newRir = 4;
             } else if (type === 'solid') {
                 newTech = 9; newRir = 2;
-            } else if (type === 'struggle') {
-                newTech = 6; newRir = 0;
             }
 
             if (onConfirm) onConfirm(newTech, newRir);
@@ -488,9 +447,7 @@ const PHASE_LABELS = {
     'rehab': 'Regeneracja (Rehab)'
 };
 
-// --- BEHAVIORAL MESSAGING (EDUKACJA I WZMOCNIENIE) ---
 const TRANSITION_MESSAGES = {
-    // SCENARIUSZ: SUKCES (PROGRESJA)
     'target_reached': {
         title: "LEVEL UP! 🏆",
         icon: "🚀",
@@ -498,23 +455,20 @@ const TRANSITION_MESSAGES = {
         btn: "Lecimy Dalej!",
         getMessage: (phaseName) => `Gratulacje! Opanowałeś fazę <strong>${phaseName}</strong>. Twój organizm jest gotowy na nowe wyzwania. Zwiększamy intensywność, aby utrzymać progres.`
     },
-    // SCENARIUSZ: SAFETY OVERRIDE (DELOAD)
     'deload_entry': {
         title: "Tarcza Aktywna 🛡️",
         icon: "🔋",
-        color: "#60a5fa", // Blue/Soft
+        color: "#60a5fa",
         btn: "Zregeneruj się",
         getMessage: () => `Wykryliśmy nagromadzone zmęczenie. To normalne w procesie treningowym. Przechodzimy w tryb <strong>Deload</strong> (mniejsza objętość), abyś mógł się w pełni zregenerować i wrócić silniejszy ("Superkompensacja").`
     },
-    // SCENARIUSZ: SAFETY OVERRIDE (REHAB)
     'rehab_entry': {
         title: "Tryb Ochronny 🚑",
         icon: "❤️‍🩹",
-        color: "#f87171", // Soft Red
+        color: "#f87171",
         btn: "Zadbaj o siebie",
         getMessage: () => `Twoje raporty wskazują na nasilenie dolegliwości. Spokojnie – to nie regres, a sygnał od ciała. Tymczasowo zmieniamy plan na <strong>Rehab</strong>: skupimy się na bezbólowym ruchu i regeneracji, by wyciszyć objawy.`
     },
-    // SCENARIUSZ: TIME CAP (SOFT PROGRESSION)
     'time_cap': {
         title: "Zmiana Bodźca ⏱️",
         icon: "🔄",
@@ -522,7 +476,6 @@ const TRANSITION_MESSAGES = {
         btn: "Rozumiem",
         getMessage: (phaseName) => `Minął czas przewidziany na ten etap. Aby uniknąć stagnacji (przyzwyczajenia mięśni), przechodzimy do fazy <strong>${phaseName}</strong>. Zmiana bodźca to klucz do rozwoju.`
     },
-    // DEFAULT
     'default': {
         title: "Nowy Etap",
         icon: "✨",
@@ -537,12 +490,11 @@ export function renderPhaseTransitionModal(updateData, onConfirm) {
     overlay.className = 'modal-overlay';
 
     const newPhaseId = updateData.newPhaseId;
-    const transitionType = updateData.transition; // 'target_reached', 'time_cap', etc.
+    const transitionType = updateData.transition;
     const isSoft = updateData.isSoft;
 
     const newPhaseName = PHASE_LABELS[newPhaseId] || newPhaseId.toUpperCase();
 
-    // Detekcja typu wiadomości
     let msgKey = 'default';
     if (newPhaseId === 'rehab') msgKey = 'rehab_entry';
     else if (newPhaseId === 'deload') msgKey = 'deload_entry';
@@ -552,7 +504,6 @@ export function renderPhaseTransitionModal(updateData, onConfirm) {
     const config = TRANSITION_MESSAGES[msgKey];
     const message = config.getMessage(newPhaseName);
 
-    // Dźwięk sukcesu tylko przy awansie
     if (msgKey === 'target_reached' && state.completionSound) {
         state.finalCompletionSound();
     }

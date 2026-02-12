@@ -1,4 +1,3 @@
-// ExerciseApp/ui/screens/summary.js
 import { state } from '../../state.js';
 import { screens } from '../../dom.js';
 import { navigateTo, showLoader, hideLoader } from '../core.js';
@@ -7,7 +6,6 @@ import { renderEvolutionModal, renderPhaseTransitionModal, renderRewardModal } f
 import { getIsCasting, sendShowIdle } from '../../cast.js';
 import { clearSessionBackup } from '../../sessionRecovery.js';
 import { clearPlanFromStorage } from './dashboard.js';
-import { workoutMixer } from '../../workoutMixer.js';
 import { checkNewBadges } from '../../gamification.js';
 
 let selectedFeedback = { type: null, value: 0 };
@@ -47,12 +45,26 @@ export const renderSummaryScreen = () => {
         <div class="feedback-option" data-type="tension" data-value="-1"><div class="fb-icon">🥵</div><div class="fb-text"><h4>Za mocno</h4></div></div>
     `;
 
-    // ZMIANA: Pobieramy listę płaską, bez sztucznego grupowania
     const completedLogs = (state.sessionLog || []).filter(l => l.status === 'completed' && !l.isRest);
     const hasData = completedLogs.length > 0;
 
-    const renderLogs = (logs) => {
-        return logs.map(ex => {
+    // --- GRUPOWANIE SERII PO ĆWICZENIU ---
+    const groupedExercises = completedLogs.reduce((acc, log) => {
+        const id = log.exerciseId || log.id;
+        if (!acc[id]) {
+            acc[id] = {
+                ...log, // Kopiujemy dane ogólne z pierwszej napotkanej serii
+                sets: []
+            };
+        }
+        acc[id].sets.push(log);
+        return acc;
+    }, {});
+
+    const groupedArray = Object.values(groupedExercises);
+
+    const renderLogs = (exercises) => {
+        return exercises.map(ex => {
             const id = ex.exerciseId || ex.id;
             const pref = state.userPreferences[id] || { score: 0 };
             const baseScore = pref.score || 0;
@@ -64,32 +76,34 @@ export const renderSummaryScreen = () => {
             else if (baseScore > 0) { scoreColor = 'var(--success-color)'; scorePrefix = '+'; }
             else if (baseScore < 0) { scoreColor = 'var(--danger-color)'; }
 
-            const setContext = ex.currentSet && ex.totalSets
-                ? `<span class="set-context-badge">S ${ex.currentSet}/${ex.totalSets}</span>`
-                : '';
-
             const deviationButtonsHtml = `
             <div class="difficulty-deviation-group">
                 <button type="button" class="deviation-btn easy" data-type="easy" title="Za łatwe (RIR 4+)">⬆️ Łatwe</button>
                 <button type="button" class="deviation-btn hard" data-type="hard" title="Za trudne (RIR 0-1)">⬇️ Trudne</button>
             </div>`;
 
-            // Logika sugestii Dewolucji (jeśli było naprawdę ciężko - RIR 0 lub Walka)
-            let devolutionHtml = '';
-            const wasStruggle = (ex.rating === 'hard' || (ex.rir !== undefined && ex.rir <= 0));
-
-            if (wasStruggle) {
-                const easierVariant = workoutMixer.getEasierVariant(id);
-                if (easierVariant) {
-                    devolutionHtml = `
-                    <div class="devolution-action">
-                        <span style="font-size:0.75rem; color:var(--danger-color);">Zgłoszono walkę. Sugestia:</span>
-                        <button type="button" class="devolution-btn" data-ex-id="${id}" data-target-id="${easierVariant.id}" data-target-name="${easierVariant.name}">
-                            ⬇ Zmień na: ${easierVariant.name}
-                        </button>
-                    </div>`;
+            // --- GENEROWANIE TABELI SERII ---
+            const setsHtml = ex.sets.map((setLog, index) => {
+                const duration = setLog.duration || 0;
+                let timeStr = '-';
+                if (duration > 0) {
+                    const m = Math.floor(duration / 60);
+                    const s = duration % 60;
+                    timeStr = m > 0 ? `${m}m ${s}s` : `${s}s`;
                 }
-            }
+                const isUnilateral = setLog.name.includes('(Lewa)') || setLog.name.includes('(Prawa)');
+                const setLabel = isUnilateral 
+                    ? (setLog.name.includes('Lewa') ? 'L' : 'P')
+                    : (index + 1);
+
+                return `
+                    <div class="set-row">
+                        <div class="set-cell num">${setLabel}</div>
+                        <div class="set-cell target">${setLog.reps_or_time}</div>
+                        <div class="set-cell time">${timeStr}</div>
+                    </div>
+                `;
+            }).join('');
 
             return `
             <div class="rating-card" data-id="${id}" data-unique-id="${ex.uniqueId}" data-base-score="${baseScore}">
@@ -97,9 +111,11 @@ export const renderSummaryScreen = () => {
                     <div class="rating-info">
                         <div class="rating-name">${displayName}</div>
                         <div class="rating-score-row">
-                            ${setContext}
                             <span class="rating-score-display" style="font-weight:700; color:${scoreColor}; transition:color 0.2s;">
                                 <span class="current-score-val">${scorePrefix}${baseScore}</span>
+                            </span>
+                            <span style="font-size:0.7rem; color:#94a3b8; margin-left:6px;">
+                                ${ex.sets.length} ${ex.sets.length === 1 ? 'seria' : (ex.sets.length < 5 ? 'serie' : 'serii')}
                             </span>
                         </div>
                     </div>
@@ -113,7 +129,11 @@ export const renderSummaryScreen = () => {
                         </div>
                     </div>
                 </div>
-                ${devolutionHtml}
+                
+                <!-- NOWA SEKCJA STATYSTYK -->
+                <div class="set-breakdown-container">
+                    ${setsHtml}
+                </div>
             </div>
             `;
         }).join('');
@@ -123,7 +143,7 @@ export const renderSummaryScreen = () => {
     if (hasData) {
         contentHtml = `
             <div class="ratings-list">
-                ${renderLogs(completedLogs)}
+                ${renderLogs(groupedArray)}
             </div>
         `;
     } else {
@@ -164,7 +184,6 @@ export const renderSummaryScreen = () => {
 
     // --- EVENT LISTENERS ---
 
-    // 1. Feedback Global
     summaryScreen.querySelectorAll('.feedback-option').forEach(opt => {
         opt.addEventListener('click', () => {
             summaryScreen.querySelectorAll('.feedback-option').forEach(o => o.classList.remove('selected'));
@@ -176,7 +195,6 @@ export const renderSummaryScreen = () => {
 
     const formContainer = summaryScreen.querySelector('#summary-form');
 
-    // 2. DEVIATION BUTTONS
     formContainer.addEventListener('click', (e) => {
         const deviationBtn = e.target.closest('.deviation-btn');
         if (deviationBtn) {
@@ -185,31 +203,38 @@ export const renderSummaryScreen = () => {
 
             const container = deviationBtn.closest('.difficulty-deviation-group');
             const card = deviationBtn.closest('.rating-card');
-            const uniqueId = card.dataset.uniqueId;
+            // Zmieniamy pobieranie ID: interesuje nas exerciseId dla wszystkich serii
+            const exerciseId = card.dataset.id;
             const type = deviationBtn.dataset.type;
             const isActive = deviationBtn.classList.contains('active');
 
-            const logEntry = state.sessionLog.find(l => l.uniqueId === uniqueId);
-            if (!logEntry) return;
+            // Znajdź WSZYSTKIE logi dla tego ćwiczenia w sesji
+            const logEntries = state.sessionLog.filter(l => (l.exerciseId === exerciseId || l.id === exerciseId) && l.status === 'completed');
+            if (logEntries.length === 0) return;
 
             if (isActive) {
-                // Reset do stanu "OK"
-                logEntry.tech = 9;
-                logEntry.rir = 2;
-                logEntry.rating = 'good';
-                logEntry.inferred = true;
-                logEntry.difficultyDeviation = null;
+                // Resetuj wszystkie serie
+                logEntries.forEach(logEntry => {
+                    logEntry.tech = 9;
+                    logEntry.rir = 2;
+                    logEntry.rating = 'good';
+                    logEntry.inferred = true;
+                    logEntry.difficultyDeviation = null;
+                });
                 container.querySelectorAll('.deviation-btn').forEach(btn => btn.classList.remove('active'));
             } else {
+                // Ustaw odchylenie dla wszystkich serii
                 let newTech, newRir, newRating;
                 if (type === 'easy') { newTech = 10; newRir = 4; newRating = 'good'; }
                 else if (type === 'hard') { newTech = 6; newRir = 0; newRating = 'hard'; }
 
-                logEntry.tech = newTech;
-                logEntry.rir = newRir;
-                logEntry.rating = newRating;
-                logEntry.inferred = false;
-                logEntry.difficultyDeviation = type;
+                logEntries.forEach(logEntry => {
+                    logEntry.tech = newTech;
+                    logEntry.rir = newRir;
+                    logEntry.rating = newRating;
+                    logEntry.inferred = false;
+                    logEntry.difficultyDeviation = type;
+                });
 
                 container.querySelectorAll('.deviation-btn').forEach(btn => btn.classList.remove('active'));
                 deviationBtn.classList.add('active');
@@ -217,7 +242,6 @@ export const renderSummaryScreen = () => {
         }
     });
 
-    // 3. Affinity Buttons
     formContainer.querySelectorAll('.rating-card').forEach(card => {
         const id = card.dataset.id;
         const baseScore = parseInt(card.dataset.baseScore, 10);
@@ -249,25 +273,6 @@ export const renderSummaryScreen = () => {
         });
     });
 
-    // 4. Devolution Buttons
-    formContainer.querySelectorAll('.devolution-btn').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-            e.preventDefault();
-            if (btn.disabled) return;
-
-            const targetName = btn.dataset.targetName;
-
-            if (confirm(`Czy na pewno chcesz na stałe zamienić to ćwiczenie na łatwiejsze: "${targetName}"?`)) {
-                btn.classList.add('pending-devolution');
-                btn.textContent = `✅ Zmieniono na: ${targetName}`;
-                btn.style.backgroundColor = "#f0fdf4";
-                btn.style.borderColor = "#bbf7d0";
-                btn.style.color = "#166534";
-                btn.disabled = true;
-            }
-        });
-    });
-
     formContainer.removeEventListener('submit', handleSummarySubmit);
     formContainer.addEventListener('submit', handleSummarySubmit);
 
@@ -292,11 +297,6 @@ export async function handleSummarySubmit(e) {
         if (delta) {
             const action = delta === SCORE_LIKE ? 'like' : 'dislike';
             ratingsArray.push({ exerciseId: id, action: action });
-        }
-
-        const devBtn = card.querySelector('.devolution-btn.pending-devolution');
-        if (devBtn) {
-            ratingsArray.push({ exerciseId: id, action: 'hard' });
         }
     });
 

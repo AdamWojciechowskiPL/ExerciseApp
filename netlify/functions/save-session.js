@@ -13,8 +13,6 @@ const {
     applyImmediatePlanAdjustmentsInMemory
 } = require('./_amps-engine.js');
 
-// AMPS functions (inferMissingSessionData, updatePreferences, analyzeAndAdjustPlan, applyImmediatePlanAdjustmentsInMemory) moved to _amps-engine.js
-
 exports.handler = async (event) => {
     if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method Not Allowed' };
 
@@ -34,11 +32,6 @@ exports.handler = async (event) => {
             }
         }
 
-        // AMPS: Wypełniamy luki
-        if (session_data.sessionLog) {
-            session_data.sessionLog = inferMissingSessionData(session_data.sessionLog, feedback);
-        }
-
         const client = await pool.connect();
         let adaptationResult = null;
         let newStats = null;
@@ -49,6 +42,14 @@ exports.handler = async (event) => {
 
             const settingsRes = await client.query('SELECT settings FROM user_settings WHERE user_id = $1 FOR UPDATE', [userId]);
             let settings = settingsRes.rows[0]?.settings || {};
+
+            // --- AMPS SMART INFERENCE v2.0 ---
+            // Uruchamiamy wnioskowanie dopiero teraz, gdy mamy dostęp do `settings` (dla secondsPerRep)
+            if (session_data.sessionLog) {
+                session_data.sessionLog = inferMissingSessionData(session_data.sessionLog, feedback, settings);
+            }
+            // ---------------------------------
+
             let phaseState = settings.phase_manager;
 
             if (phaseState) {
@@ -60,7 +61,7 @@ exports.handler = async (event) => {
                 settings.phase_manager = phaseState;
             }
 
-            // Zapis sesji
+            // Zapis sesji (z już uzupełnionym Smart Inference Logiem)
             await client.query(`
                 INSERT INTO training_sessions (user_id, plan_id, started_at, completed_at, session_data)
                 VALUES ($1, $2, $3, $4, $5)

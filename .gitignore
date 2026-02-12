@@ -27,3 +27,5 @@ yarn-error.log*
 debug-state.js
 
 instruction.md
+
+netlify.toml

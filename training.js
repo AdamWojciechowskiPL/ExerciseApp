@@ -8,7 +8,6 @@ import { renderSummaryScreen } from './ui/screens/summary.js';
 import { getIsCasting, sendTrainingStateUpdate } from './cast.js';
 import { saveSessionBackup } from './sessionRecovery.js';
 import { getAffinityBadge } from './ui/templates.js';
-import { renderPainCheckModal } from './ui/modals.js'; // AMPS PHASE 3 IMPORT
 import dataStore from './dataStore.js';
 
 let backupInterval = null;
@@ -135,7 +134,6 @@ function logCurrentStep(status) {
     const existingEntryIndex = state.sessionLog.findIndex(entry => entry.uniqueId === newLogEntry.uniqueId);
 
     if (existingEntryIndex > -1) {
-        // Zachowaj ocenę, jeśli już była
         newLogEntry.rating = state.sessionLog[existingEntryIndex].rating;
         newLogEntry.rir = state.sessionLog[existingEntryIndex].rir;
         newLogEntry.tech = state.sessionLog[existingEntryIndex].tech;
@@ -260,95 +258,6 @@ export function moveToPreviousExercise() {
     }
 }
 
-// --- AMPS PHASE 3: S.A.F.E (Sensation & Ability Feedback Engine) ---
-
-// Global handler for S.A.F.E clicks
-window.handleSafeRating = (uniqueId, type) => {
-    const logEntry = state.sessionLog.find(l => l.uniqueId === uniqueId);
-    if (!logEntry) return;
-
-    if (type === 'struggle') {
-        // Otwórz modal Pain Check
-        renderPainCheckModal((isPain) => {
-            if (isPain) {
-                // CZERWONY: Walka + Ból -> RIR 0, Tech 1, Hard
-                logEntry.rating = 'hard';
-                logEntry.rir = 0;
-                logEntry.tech = 1;
-                console.log(`[S.A.F.E] Struggle + PAIN recorded for ${uniqueId}`);
-            } else {
-                // POMARAŃCZOWY: Walka (Mięśnie) -> RIR 0, Tech 6, OK
-                logEntry.rating = 'ok';
-                logEntry.rir = 0;
-                logEntry.tech = 6;
-                console.log(`[S.A.F.E] Muscle Failure recorded for ${uniqueId}`);
-            }
-            logEntry.promptType = 'safe';
-            finalizeSafeRating(logEntry.rating);
-        });
-    } else {
-        // ZIELONY / NIEBIESKI
-        if (type === 'easy') {
-            // LEKKO: RIR 4, Tech 10, Good
-            logEntry.rating = 'good'; // Używamy 'good' jako proxy dla 'easy'
-            logEntry.rir = 4;
-            logEntry.tech = 10;
-        } else if (type === 'solid') {
-            // KONTROLA: RIR 2, Tech 9, Good
-            logEntry.rating = 'good';
-            logEntry.rir = 2;
-            logEntry.tech = 9;
-        }
-        logEntry.promptType = 'safe';
-        console.log(`[S.A.F.E] Rating ${type} recorded for ${uniqueId}`);
-        finalizeSafeRating(logEntry.rating);
-    }
-};
-
-function finalizeSafeRating(rating) {
-    triggerSessionBackup();
-    if (focus.ratingContainer) {
-        const labels = { 'good': '👍 Dobrze', 'ok': '👌 OK', 'hard': '👎 Trudne' };
-        focus.ratingContainer.innerHTML = `<div class="saved-feedback">Zapisano: ${labels[rating] || rating}</div>`;
-        setTimeout(() => { if (focus.ratingContainer) focus.ratingContainer.classList.add('hidden'); }, 1000);
-    }
-}
-
-function renderQuickRating(exercise) {
-    if (!focus.ratingContainer) return;
-
-    // Nie pokazuj jeśli już oceniono
-    const logEntry = state.sessionLog.find(l => l.uniqueId === exercise.uniqueId);
-    if (logEntry && (logEntry.rating || logEntry.promptType)) return;
-
-    // S.A.F.E Interface - Zastępuje stare kciuki
-    focus.ratingContainer.innerHTML = `
-        <div class="safe-label">Jak poszło?</div>
-        <div class="safe-buttons-grid">
-            <button class="safe-btn easy" onclick="handleSafeRating('${exercise.uniqueId}', 'easy')">
-                <span class="icon">🟢</span>
-                Lekko
-            </button>
-            <button class="safe-btn solid" onclick="handleSafeRating('${exercise.uniqueId}', 'solid')">
-                <span class="icon">🔵</span>
-                Kontrola
-            </button>
-            <button class="safe-btn struggle" onclick="handleSafeRating('${exercise.uniqueId}', 'struggle')">
-                <span class="icon">🔴</span>
-                Walka
-            </button>
-        </div>
-    `;
-    focus.ratingContainer.classList.remove('hidden');
-}
-
-function hideQuickRating() {
-    if (focus.ratingContainer) {
-        focus.ratingContainer.classList.add('hidden');
-        focus.ratingContainer.innerHTML = '';
-    }
-}
-
 export async function startExercise(index, isResuming = false) {
     state.currentExerciseIndex = index;
     const exercise = state.flatExercises[index];
@@ -406,9 +315,6 @@ export async function startExercise(index, isResuming = false) {
     }
 
     if (exercise.isWork) {
-        // --- TRYB PRACY (ĆWICZENIE) ---
-        hideQuickRating(); // Ukryj ocenę jeśli przypadkiem została
-
         focus.exerciseName.textContent = exercise.name;
         fitText(focus.exerciseName);
         focus.exerciseDetails.textContent = `Seria ${exercise.currentSet}/${exercise.totalSets} | Cel: ${exercise.reps_or_time}`;
@@ -427,18 +333,17 @@ export async function startExercise(index, isResuming = false) {
         focus.nextExerciseName.textContent = nextWorkExercise ? nextWorkExercise.name : "Koniec treningu";
 
         if (!isResuming) {
-            stopTimer(); // Upewniamy się, że timer przerwy jest zatrzymany
-            state.stopwatch.seconds = 0; // Resetujemy stoper do 0:00
+            stopTimer();
+            state.stopwatch.seconds = 0;
         }
 
-        updateStopwatchDisplay(); // Pokaż 0:00 lub aktualny czas wznowienia
+        updateStopwatchDisplay();
 
         focus.repBasedDoneBtn.classList.remove('hidden');
         focus.pauseResumeBtn.classList.remove('hidden');
         focus.timerDisplay.classList.remove('rep-based-text');
 
         if (!state.isPaused) {
-            // ZAWSZE URUCHAMIAMY STOPER (LICZENIE W GÓRĘ)
             startStopwatch();
 
             if (!isResuming && state.tts.isSoundOn) {
@@ -453,19 +358,10 @@ export async function startExercise(index, isResuming = false) {
         }
     }
     else {
-        // --- PRZERWA (REST) ---
         if (animContainer) animContainer.classList.add('hidden');
         if (descContainer) descContainer.classList.remove('hidden');
         if (flipIndicator) flipIndicator.classList.add('hidden');
         if (focus.affinityBadge) focus.affinityBadge.innerHTML = '';
-
-        // AMPS S.A.F.E: POKAŻ OCENĘ DLA POPRZEDNIEGO ĆWICZENIA
-        const prevIndex = index - 1;
-        if (prevIndex >= 0 && state.flatExercises[prevIndex].isWork) {
-            renderQuickRating(state.flatExercises[prevIndex]);
-        } else {
-            hideQuickRating();
-        }
 
         const upcomingExercise = state.flatExercises[index + 1];
         if (!upcomingExercise) { moveToNextExercise({ skipped: false }); return; }
@@ -493,7 +389,6 @@ export async function startExercise(index, isResuming = false) {
         focus.nextExerciseName.textContent = afterUpcomingExercise ? afterUpcomingExercise.name : "Koniec treningu";
         focus.timerDisplay.classList.remove('rep-based-text');
 
-        // Czyścimy klasy stopera
         focus.timerDisplay.classList.remove('target-reached');
 
         const startNextExercise = () => moveToNextExercise({ skipped: false });
@@ -506,7 +401,6 @@ export async function startExercise(index, isResuming = false) {
         updateTimerDisplay();
 
         if (!state.isPaused) {
-            // TIMER (ODLICZANIE W DÓŁ)
             if (!isResuming && state.tts.isSoundOn) {
                 let announcement = `Odpocznij. Następnie: ${upcomingExercise.name}.`;
                 speak(announcement, true);
@@ -543,7 +437,6 @@ export function generateFlatExercises(dayData) {
                                  String(exercise.reps_or_time).includes('/str') ||
                                  String(exercise.reps_or_time).includes('stron');
 
-            // === SIMPLIFIED: ALWAYS 12s TRANSITION FOR UNILATERAL ===
             const forcedTransitionBase = 12;
             const finalTransitionTime = Math.max(5, Math.round(forcedTransitionBase * restFactor));
 
@@ -592,7 +485,6 @@ export function generateFlatExercises(dayData) {
 
             for (let i = 1; i <= loopLimit; i++) {
                 if (isUnilateral) {
-                    // Krok 1: Pierwsza strona
                     plan.push({
                         ...exercise,
                         isWork: true,
@@ -605,7 +497,6 @@ export function generateFlatExercises(dayData) {
                         uniqueId: `${exercise.id || exercise.exerciseId}_step${globalStepCounter++}`
                     });
 
-                    // Krok 2: Zmiana Strony (ZAWSZE OBECNY DLA UNILATERAL)
                     plan.push({
                         name: "Zmiana Strony",
                         isRest: true,
@@ -616,7 +507,6 @@ export function generateFlatExercises(dayData) {
                         uniqueId: `rest_transition_${globalStepCounter++}`
                     });
 
-                    // Krok 3: Druga strona
                     plan.push({
                         ...exercise,
                         isWork: true,
@@ -630,7 +520,6 @@ export function generateFlatExercises(dayData) {
                     });
 
                 } else {
-                    // Standardowe (obustronne)
                     plan.push({
                         ...exercise,
                         isWork: true,
@@ -697,7 +586,7 @@ export async function startModifiedTraining() {
     state.totalPausedTime = 0;
     state.isPaused = false;
     state.lastPauseStartTime = null;
-    state.sessionDetailPromptCount = 0; // RESET AMPS COUNTER
+    state.sessionDetailPromptCount = 0;
 
     let sourcePlan;
 
@@ -770,7 +659,7 @@ export function resumeFromBackup(backup, timeGapMs) {
     state.flatExercises = backup.flatExercises;
     state.sessionLog = backup.sessionLog || [];
     state.sessionParams = backup.sessionParams || { initialPainLevel: 0, timeFactor: 1.0 };
-    state.sessionDetailPromptCount = backup.sessionDetailPromptCount || 0; // Restore AMPS counter
+    state.sessionDetailPromptCount = backup.sessionDetailPromptCount || 0;
 
     state.stopwatch.seconds = backup.stopwatchSeconds || 0;
     state.timer.timeLeft = backup.timerTimeLeft || 0;

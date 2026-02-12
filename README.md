@@ -1,4 +1,4 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v28.0.0
+# Aplikacja Treningowa (Smart Rehab PWA) v29.0.0
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
@@ -18,16 +18,7 @@ System nie generuje już "przypadkowych" treningów. Każdy użytkownik znajduje
     *   **Deload Mode:** Wymuszany przy wysokim skumulowanym zmęczeniu (Acute Fatigue > 80).
 
 ### ⚡ AMPS (Adaptive Multi-Dimensional Progression System)
-Nowy system zbierania i analizy danych w trakcie treningu, mający na celu precyzyjne sterowanie obciążeniem (Autoregulacja).
-
-*   **Real-Time Feedback (Szybka Ocena):**
-    *   **Quick Swipe:** Podczas przerwy użytkownik ocenia poprzednią serię jednym kliknięciem (👍 Dobrze / 👌 OK / 👎 Trudno). Dane są zapisywane lokalnie (State-First).
-    *   **Intelligent Prompt (Deep Dive):** Dla nowych lub problematycznych ćwiczeń system prosi o szczegóły: **RIR** (Rezerwa Powtórzeń) oraz **Jakość Techniki** (1-10).
-    *   **Smart Logic:** System sam decyduje, kiedy zapytać o szczegóły, aby nie męczyć użytkownika (max 2 razy na sesję).
-
-*   **Smart Session Summary:**
-    *   Po treningu ćwiczenia są automatycznie grupowane na: **✅ Poszło Gładko**, **🟡 Wymagało Wysiłku** i **🔴 Było Trudno**.
-    *   **Auto-Devolution:** Dla ćwiczeń oznaczonych jako "Trudne" dostępny jest przycisk szybkiej zamiany na łatwiejszy wariant w przyszłych planach.
+System zbierania i analizy danych w trakcie treningu, mający na celu precyzyjne sterowanie obciążeniem (Autoregulacja).
 
 *   **Inference Engine (Silnik Wnioskowania):**
     *   Działa na Backendzie (`save-session.js`).

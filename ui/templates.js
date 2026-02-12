@@ -1,7 +1,6 @@
-
 import { state } from '../state.js';
 import { extractYoutubeId, calculateSystemLoad, calculateClinicalProfile, getSessionFocus, getISODate } from '../utils.js';
-import { BADGES_CONFIG } from '../gamification.js'; // Import konfiguracji odznak
+import { BADGES_CONFIG } from '../gamification.js';
 
 // --- HELPERY (WEWNĘTRZNE) ---
 
@@ -100,7 +99,7 @@ export const getAffinityBadge = (exerciseId) => {
     `;
 };
 
-// --- PHASE WIDGET GENERATOR (Z EDUKACJĄ) ---
+// --- PHASE WIDGET GENERATOR ---
 function generatePhaseWidget(phaseData) {
     if (!phaseData) return '';
 
@@ -118,7 +117,7 @@ function generatePhaseWidget(phaseData) {
         isOverride = true;
         activePhaseId = phaseData.override.mode;
         sessionsDone = phaseData.override.stats.sessions_completed;
-        target = 0; // W override nie ma sztywnego celu liczbowego
+        target = 0;
 
         if (activePhaseId === 'rehab') {
             overrideLabel = '🚑 REHAB';
@@ -126,7 +125,7 @@ function generatePhaseWidget(phaseData) {
         }
         else if (activePhaseId === 'deload') {
             overrideLabel = '🔋 DELOAD';
-            educationalMessage = "Priorytet: Regeneracja. Lżejszy tydzień pozwoli na superkompensację (wzrost formy).";
+            educationalMessage = "Priorytet: Regeneracja. Lżejszy tydzień pozwoli na superkompensację.";
         }
     }
 
@@ -205,34 +204,12 @@ export function generateHeroDashboardHTML(stats) {
 
     const phaseWidgetHTML = generatePhaseWidget(stats.phaseData);
 
-    // --- TROPHY CASE USUNIĘTE Z WIDOKU (ZGODNIE Z PROŚBĄ) ---
-    // Kod logiki pozostawiam zakomentowany dla potomnych
-    /*
-    const earnedBadges = stats.badges || [];
-    let trophiesHtml = '';
-
-    if (earnedBadges.length > 0) {
-        trophiesHtml = `<div class="hero-trophy-case">`;
-        earnedBadges.slice(0, 5).forEach(badgeId => {
-            const badgeDef = BADGES_CONFIG.find(b => b.id === badgeId);
-            if (badgeDef) {
-                trophiesHtml += `<span class="mini-trophy" title="${badgeDef.label}">${badgeDef.icon}</span>`;
-            }
-        });
-        if (earnedBadges.length > 5) {
-            trophiesHtml += `<span class="mini-trophy-count">+${earnedBadges.length - 5}</span>`;
-        }
-        trophiesHtml += `</div>`;
-    }
-    */
-
     return `
     <div class="hero-top-row">
         <div class="hero-avatar-wrapper"><div class="progress-ring" style="--progress-deg: ${progressDegrees}deg;"></div><img src="${stats.iconPath || '/icons/badge-level-1.svg'}" class="hero-avatar" alt="Ranga"><div class="level-badge">LVL ${stats.level || 1}</div></div>
         <div class="hero-content">
             <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
                 <h3 class="hero-rank-title ${loadingClass}">${stats.tierName || 'Ładowanie...'}</h3>
-                <!-- Tu była gablota z trofeami -->
             </div>
             <div class="hero-metrics-grid">
                 <div class="metric-item" title="Twoja aktualna seria"><svg class="metric-icon" width="16" height="16"><use href="#icon-streak-fire"/></svg><div class="metric-text"><span class="metric-label">Seria</span><span class="metric-value ${loadingClass}">${stats.streak !== undefined ? stats.streak : '-'} Dni</span></div></div>
@@ -444,41 +421,36 @@ export function generateRestCalendarPageHTML(dateObj) {
     </div>`;
 }
 
-function renderExerciseRow(item, sessionRatings, sessionId = null) {
-    const id = item.exerciseId || item.id;
-    const uniqueId = item.uniqueId || `${id}-${item.currentSet}`;
-    const displayName = item.name.replace(/\s*\((Lewa|Prawa)\)/gi, '').trim();
-    const pref = state.userPreferences[id] || { score: 0, difficulty: 0 };
+// --- NOWA WERSJA FUNKCJI RENDERUJĄCEJ POJEDYNCZY WIERSZ ĆWICZENIA (GRUPOWANIE) ---
+function renderGroupedExerciseRow(exerciseGroup, sessionRatings, sessionId = null) {
+    const { id, exerciseId, name, sets } = exerciseGroup;
+    const realId = exerciseId || id;
+    const pref = state.userPreferences[realId] || { score: 0, difficulty: 0 };
     const score = pref.score || 0;
+    const displayName = name.replace(/\s*\((Lewa|Prawa)\)/gi, '').trim();
 
     let scoreText = score > 0 ? `+${score}` : `${score}`;
     let scoreColor = '#6b7280';
     if (score > 0) scoreColor = '#10b981';
     if (score < 0) scoreColor = '#ef4444';
 
-    let actualTimeBadge = '';
-    if (item.duration && item.duration > 0) {
-        const dm = Math.floor(item.duration / 60);
-        const ds = item.duration % 60;
-        const dStr = dm > 0 ? `${dm}m ${ds}s` : `${ds}s`;
-        actualTimeBadge = `<span class="time-badge" style="font-size:0.65rem; padding:1px 4px;">⏱ ${dStr}</span>`;
-    }
+    const scoreContent = score !== 0 ? `[${scoreText}]` : '';
+
+    // Pobieramy status z pierwszej serii (zakładamy, że user ocenia ćwiczenie globalnie)
+    const representativeSet = sets[0];
+    const difficultyDeviation = representativeSet.difficultyDeviation;
+    const rir = representativeSet.rir;
+    const rating = representativeSet.rating;
 
     let difficultyIndicator = '';
     let difficultyClass = '';
 
-    if (item.difficultyDeviation === 'easy' || (item.rir !== undefined && item.rir >= 4)) {
+    if (difficultyDeviation === 'easy' || (rir !== undefined && rir >= 4)) {
         difficultyIndicator = '⬆️ Łatwe';
         difficultyClass = 'easy';
-    } else if (item.difficultyDeviation === 'hard' || item.rating === 'hard' || (item.rir !== undefined && item.rir <= 0)) {
+    } else if (difficultyDeviation === 'hard' || rating === 'hard' || (rir !== undefined && rir <= 0)) {
         difficultyIndicator = '⬇️ Trudne';
         difficultyClass = 'hard';
-    } else if (item.inferred) {
-        difficultyIndicator = '👌 OK';
-        difficultyClass = 'ok';
-    } else if (item.rating === 'good' || item.rating === 'ok') {
-        difficultyIndicator = '👌 OK';
-        difficultyClass = 'ok';
     }
 
     const difficultyBadgeStyle = difficultyClass === 'easy'
@@ -487,28 +459,50 @@ function renderExerciseRow(item, sessionRatings, sessionId = null) {
             ? 'background:#fef2f2; color:#991b1b; border:1px solid #ef4444;'
             : 'background:#f8fafc; color:#64748b; border:1px solid #e2e8f0;';
 
+    const uniqueId = representativeSet.uniqueId; // Używamy ID pierwszej serii jako kotwicy
+
     const difficultyBadge = difficultyIndicator
-        ? `<span class="difficulty-indicator" style="${difficultyBadgeStyle} padding:2px 8px; border-radius:4px; font-size:0.7rem; font-weight:600; cursor:pointer;" data-unique-id="${uniqueId}" data-current="${difficultyClass}" title="Kliknij aby zmienić">${difficultyIndicator}</span>`
+        ? `<span class="difficulty-indicator" style="${difficultyBadgeStyle} padding:2px 8px; border-radius:4px; font-size:0.7rem; font-weight:600; cursor:pointer;" data-id="${realId}" data-current="${difficultyClass}" title="Kliknij aby zmienić">${difficultyIndicator}</span>`
         : '';
 
-    const sessionAction = sessionRatings[id];
+    const sessionAction = sessionRatings[realId];
     const isLikeActive = sessionAction === 'like' ? 'active' : '';
     const isDislikeActive = sessionAction === 'dislike' ? 'active' : '';
 
-    const scoreContent = score !== 0 ? `[${scoreText}]` : '';
+    const isEasyActive = difficultyClass === 'easy' ? 'active' : '';
+    const isHardActive = difficultyClass === 'hard' ? 'active' : '';
 
-    const isEasyActive = item.difficultyDeviation === 'easy' ? 'active' : '';
-    const isHardActive = item.difficultyDeviation === 'hard' ? 'active' : '';
-
-    // --- ROM INFO BADGE (US-12) ---
     let romInfo = '';
-    if (item.romConstraint) {
-        const label = item.romConstraint.instruction || `${item.romConstraint.limitDegrees}°`;
+    if (representativeSet.romConstraint) {
+        const label = representativeSet.romConstraint.instruction || `${representativeSet.romConstraint.limitDegrees}°`;
         romInfo = `<span style="font-size:0.65rem; color:#0369a1; background:#e0f2fe; padding:1px 4px; border-radius:4px; margin-left:4px; font-weight:700;">📏 ${label}</span>`;
     }
 
+    // --- TABELA SERII ---
+    const setsHtml = sets.map((set, idx) => {
+        const duration = set.duration || 0;
+        let timeStr = '-';
+        if (duration > 0) {
+            const m = Math.floor(duration / 60);
+            const s = duration % 60;
+            timeStr = m > 0 ? `${m}m ${s}s` : `${s}s`;
+        }
+        const isUnilateral = set.name.includes('(Lewa)') || set.name.includes('(Prawa)');
+        const setLabel = isUnilateral
+            ? (set.name.includes('Lewa') ? 'L' : 'P')
+            : (idx + 1);
+
+        return `
+            <div class="set-row">
+                <div class="set-cell num">${setLabel}</div>
+                <div class="set-cell target">${set.reps_or_time}</div>
+                <div class="set-cell time">${timeStr}</div>
+            </div>
+        `;
+    }).join('');
+
     return `
-    <div class="rating-card history-mode" data-id="${id}" data-unique-id="${uniqueId}" data-session-id="${sessionId || ''}">
+    <div class="rating-card history-mode" data-id="${realId}" data-session-id="${sessionId || ''}">
         <div class="rating-card-main">
             <div class="rating-info">
                 <div style="line-height:1.2;">
@@ -516,24 +510,25 @@ function renderExerciseRow(item, sessionRatings, sessionId = null) {
                     ${difficultyBadge}
                 </div>
                 <div class="history-meta-row">
-                    <span class="time-badge" style="background:#f1f5f9; color:#64748b; border:1px solid #e2e8f0; font-size:0.65rem; padding:1px 4px;">
-                        Cel: ${item.reps_or_time}
+                    <span style="font-size:0.7rem; color:#94a3b8;">
+                        ${sets.length} ${sets.length === 1 ? 'seria' : (sets.length < 5 ? 'serie' : 'serii')}
                     </span>
-                    ${actualTimeBadge}
-                    <span style="font-size:0.65rem; color:#94a3b8;">S ${item.currentSet}/${item.totalSets}</span>
                     <span class="dynamic-score-val" style="font-size:0.65rem; font-weight:700; color:${scoreColor}; transition: color 0.2s;">${scoreContent}</span>
                 </div>
             </div>
             <div class="rating-actions-group">
                 <div class="difficulty-deviation-group history-mode" style="gap:2px;">
-                    <button class="deviation-btn-hist easy ${isEasyActive}" data-id="${id}" data-unique-id="${uniqueId}" data-type="easy" title="Oznacz jako łatwe">⬆️</button>
-                    <button class="deviation-btn-hist hard ${isHardActive}" data-id="${id}" data-unique-id="${uniqueId}" data-type="hard" title="Oznacz jako trudne">⬇️</button>
+                    <button class="deviation-btn-hist easy ${isEasyActive}" data-id="${realId}" data-type="easy" title="Oznacz jako łatwe">⬆️</button>
+                    <button class="deviation-btn-hist hard ${isHardActive}" data-id="${realId}" data-type="hard" title="Oznacz jako trudne">⬇️</button>
                 </div>
                 <div class="btn-group-affinity">
-                    <button class="rate-btn-hist affinity-btn ${isLikeActive}" data-id="${id}" data-action="like">👍</button>
-                    <button class="rate-btn-hist affinity-btn ${isDislikeActive}" data-id="${id}" data-action="dislike">👎</button>
+                    <button class="rate-btn-hist affinity-btn ${isLikeActive}" data-id="${realId}" data-action="like">👍</button>
+                    <button class="rate-btn-hist affinity-btn ${isDislikeActive}" data-id="${realId}" data-action="dislike">👎</button>
                 </div>
             </div>
+        </div>
+        <div class="set-breakdown-container">
+            ${setsHtml}
         </div>
     </div>`;
 }
@@ -573,9 +568,20 @@ export function generateSessionCardHTML(session) {
         session.exerciseRatings.forEach(r => sessionRatings[r.exerciseId] = r.action);
     }
 
-    const exercisesHtml = (session.sessionLog || [])
-        .filter(l => l.status === 'completed' && !l.isRest)
-        .map(item => renderExerciseRow(item, sessionRatings, session.sessionId))
+    // --- LOGIKA GRUPOWANIA ---
+    const completedLogs = (session.sessionLog || []).filter(l => l.status === 'completed' && !l.isRest);
+    const groupedExercises = completedLogs.reduce((acc, log) => {
+        const id = log.exerciseId || log.id;
+        if (!acc[id]) {
+            acc[id] = { ...log, sets: [] };
+        }
+        acc[id].sets.push(log);
+        return acc;
+    }, {});
+    const groupedArray = Object.values(groupedExercises);
+
+    const exercisesHtml = groupedArray
+        .map(item => renderGroupedExerciseRow(item, sessionRatings, session.sessionId))
         .join('');
 
     const notesHtml = session.notes ? `
@@ -698,7 +704,6 @@ export function generatePreTrainingCardHTML(ex, index) {
         modBadge = `<span class="meta-badge" style="background:${bg}; color:${color}; border:1px solid ${border}; white-space:nowrap;" title="${tip}">${ex.modification.label}</span>`;
     }
 
-    // --- ROM CONSTRAINT BADGE (US-12) ---
     let romBadge = '';
     if (ex.romConstraint) {
         const label = ex.romConstraint.instruction || `${ex.romConstraint.limitDegrees}°`;

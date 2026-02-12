@@ -2,8 +2,7 @@
 import { state } from './state.js';
 import { buildClinicalContext, checkExerciseAvailability } from './clinicalEngine.js';
 
-// workoutMixer.js v3.2 (Added Devolution Helper)
-// Moduł helperów do ręcznych modyfikacji treningu (Swap).
+// workoutMixer.js v3.3 (Cleaned up Devolution Logic)
 
 export const workoutMixer = {
 
@@ -19,46 +18,7 @@ export const workoutMixer = {
         return variant ? mergeExerciseData(originalExercise, variant) : originalExercise;
     },
 
-    // AMPS PHASE 3: Znajdź łatwiejszy wariant (Dewolucja)
-    getEasierVariant: (exerciseId) => {
-        const originalEx = state.exerciseLibrary[exerciseId];
-        if (!originalEx) return null;
-
-        const currentLevel = parseInt(originalEx.difficultyLevel || 1, 10);
-        if (currentLevel <= 1) return null; // Nie ma łatwiejszych niż 1
-
-        const wizardData = state.settings.wizardData || {};
-        const clinicalCtx = buildClinicalContext(wizardData);
-        
-        // Szukamy w tej samej kategorii, poziom niższy
-        const candidates = Object.values(state.exerciseLibrary).filter(ex => {
-            if (ex.categoryId !== originalEx.categoryId) return false;
-            if (ex.id === exerciseId) return false;
-            
-            const lvl = parseInt(ex.difficultyLevel || 1, 10);
-            // Szukamy ćwiczeń o poziom niższych (lub 2 poziomy, jeśli 1 niedostępny)
-            return lvl < currentLevel;
-        });
-
-        // Sortujemy: Najpierw te najbliżej obecnego poziomu (np. z 3 na 2), potem affinity score
-        candidates.sort((a, b) => {
-            const lvlA = parseInt(a.difficultyLevel || 1);
-            const lvlB = parseInt(b.difficultyLevel || 1);
-            if (lvlA !== lvlB) return lvlB - lvlA; // Descending (im bliżej oryginału tym lepiej)
-            
-            const prefA = (state.userPreferences[a.id]?.score || 0);
-            const prefB = (state.userPreferences[b.id]?.score || 0);
-            return prefB - prefA;
-        });
-
-        // Walidacja kliniczna top kandydata
-        for (const cand of candidates) {
-            const check = checkExerciseAvailability(cand, clinicalCtx, { ignoreDifficulty: true });
-            if (check.allowed) return cand;
-        }
-
-        return null;
-    },
+    // USUNIĘTO: getEasierVariant (nieużywane)
 
     adaptVolume: (oldEx, newDef) => adaptVolumeInternal(oldEx, newDef),
 
@@ -158,7 +118,6 @@ function mergeExerciseData(original, variant) {
         else merged.reps_or_time = `${merged.reps_or_time}/str.`;
 
         // Reset serii do 1 jeśli w oryginale była tylko 1, a nowe jest na stronę (unikamy 1 seria Lewa, brak Prawej)
-        // W training.js i tak jest pętla, ale to dla czystości danych
         if (original.sets === "1") merged.sets = "1";
     }
     return merged;

@@ -157,14 +157,14 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
             return;
         }
 
-        // 3. DEVIATION BUTTONS (Łatwe/Trudne toggle)
+        // 3. DEVIATION BUTTONS (Łatwe/Trudne toggle) - ZAKTUALIZOWANE DLA GRUPOWANIA
         const deviationBtn = e.target.closest('.deviation-btn-hist');
         if (deviationBtn) {
             e.stopPropagation();
-            const uniqueId = deviationBtn.dataset.uniqueId;
             const type = deviationBtn.dataset.type; // 'easy' or 'hard'
             const isActive = deviationBtn.classList.contains('active');
             const card = deviationBtn.closest('.rating-card');
+            const exerciseId = card.dataset.id; // To teraz jest ID ćwiczenia dla całej grupy
             const deviationGroup = card.querySelector('.difficulty-deviation-group');
             const difficultyIndicator = card.querySelector('.difficulty-indicator');
 
@@ -190,9 +190,8 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
                     }
                 }
 
-                // Persist 'easy'/'hard' deviation
+                // Persist 'easy'/'hard' deviation for ALL sets
                 const sessionId = card.dataset.sessionId;
-                const exerciseId = card.dataset.id;
 
                 if (sessionId) {
                     let newRir = undefined;
@@ -201,6 +200,7 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
                     else if (type === 'hard') { newRir = 0; newRating = 'hard'; }
 
                     // Call backend (async, fire and forget for UI responsiveness, or basic error handling)
+                    // The backend function 'updateExerciseLog' loops through sessionLog and updates all matching exerciseIds, so this works for groups.
                     dataStore.updateExerciseLog(sessionId, exerciseId, undefined, newRir, type, newRating)
                         .then(res => {
                             if (!res) console.warn("Update might have failed");
@@ -217,7 +217,6 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
                 }
 
                 const sessionId = card.dataset.sessionId;
-                const exerciseId = card.dataset.id;
 
                 if (sessionId) {
                     // Reset: Deviation=null, RIR=2, Rating='ok'
@@ -228,13 +227,14 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
             return;
         }
 
-        // 4. PRZYCISKI OCEN (KCIUKI/TRUDNOŚĆ) - ISTNIEJĄCA LOGIKA + FIX UI
+        // 4. PRZYCISKI OCEN (KCIUKI/AFFINITY)
         const rateBtn = e.target.closest('.rate-btn-hist');
         if (rateBtn) {
             e.stopPropagation();
             const exerciseId = rateBtn.dataset.id;
             const action = rateBtn.dataset.action;
             const isAffinity = rateBtn.classList.contains('affinity-btn');
+            // Zaktualizuj wszystkie wiersze dla tego ćwiczenia (w przypadku gdyby było wielokrotnie renderowane, choć teraz jest zgrupowane)
             const allRowsForExercise = contentContainer.querySelectorAll(`.rating-card[data-id="${exerciseId}"]`);
 
             if (isAffinity) {
@@ -269,7 +269,6 @@ export const renderDayDetailsScreen = (isoDate, customBackAction = null) => {
                         if (action === 'dislike') dislikeBtn.classList.add('active');
                     }
 
-                    // FIX: Aktualizacja spanu z wynikiem
                     const scoreSpan = row.querySelector('.dynamic-score-val');
                     let scoreText = newScore > 0 ? `+${newScore}` : `${newScore}`;
                     let scoreColor = newScore > 0 ? '#10b981' : (newScore < 0 ? '#ef4444' : '#6b7280');

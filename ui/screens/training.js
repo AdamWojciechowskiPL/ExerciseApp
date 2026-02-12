@@ -13,8 +13,6 @@ import { workoutMixer } from '../../workoutMixer.js';
 import { getUserPayload } from '../../auth.js';
 import { generateBioProtocol } from '../../protocolGenerator.js';
 
-// savePlanToStorage is now imported from utils.js
-
 // --- RENDEROWANIE PROTOKOŁU (Z SUWAKIEM) ---
 export const renderProtocolStart = (protocol) => {
     state.todaysDynamicPlan = protocol;
@@ -85,7 +83,6 @@ export const renderProtocolStart = (protocol) => {
     const slider = screen.querySelector('#time-slider');
     const display = screen.querySelector('#time-factor-display');
 
-    // --- LOGIKA SUWAKA (Z POPRAWKĄ REPS vs TIME) ---
     slider.addEventListener('input', (e) => {
         const timeFactor = parseFloat(e.target.value);
         display.textContent = `${Math.round(timeFactor * 100)}%`;
@@ -93,10 +90,9 @@ export const renderProtocolStart = (protocol) => {
         const previewProtocol = JSON.parse(JSON.stringify(protocol));
 
         previewProtocol.flatExercises.forEach((ex, i) => {
-            const originalEx = protocol.flatExercises[i]; // Bierzemy oryginał, żeby znać typ (reps/time)
+            const originalEx = protocol.flatExercises[i];
 
             if (ex.duration) {
-                // Skalujemy duration zawsze (bo to używane przez timer)
                 const newDuration = Math.round(originalEx.duration * timeFactor);
                 ex.duration = newDuration;
 
@@ -105,10 +101,8 @@ export const renderProtocolStart = (protocol) => {
                     const isTimeBased = valStr.includes('s') || valStr.includes('min');
 
                     if (isTimeBased) {
-                        // Jeśli to czasówka -> aktualizujemy tekst "XX s"
                         ex.reps_or_time = `${newDuration} s`;
                     } else {
-                        // Jeśli to powtórzenia -> skalujemy liczbę powtórzeń
                         const baseReps = parseInt(valStr, 10) || 0;
                         if (baseReps > 0) {
                             const newReps = Math.max(1, Math.round(baseReps * timeFactor));
@@ -159,7 +153,6 @@ export const renderProtocolStart = (protocol) => {
                 }
 
                 // Odśwież widok z zachowaniem aktualnego timeFactor
-                const timeFactor = parseFloat(slider.value) || 1.0;
                 // Wyzwalamy zdarzenie input, aby przeliczyć listę z nowym ćwiczeniem i aktualnym suwakiem
                 slider.dispatchEvent(new Event('input'));
             });
@@ -172,7 +165,6 @@ export const renderProtocolStart = (protocol) => {
         renderMainScreen();
     });
 
-    // --- LOGIKA STARTU (Z POPRAWKĄ REPS vs TIME) ---
     screen.querySelector('#proto-start-btn').addEventListener('click', () => {
         const timeFactor = parseFloat(slider.value) || 1.0;
         const scaledProtocol = JSON.parse(JSON.stringify(protocol));
@@ -212,7 +204,6 @@ export const renderProtocolStart = (protocol) => {
         if (btn) {
             e.stopPropagation();
             const exId = btn.dataset.exerciseId;
-            const exName = state.exerciseLibrary[exId]?.name || "Podgląd";
             const originalContent = btn.innerHTML;
             btn.innerHTML = `<span style="font-size:0.75rem">⏳</span>`;
             btn.style.opacity = "0.7";
@@ -258,7 +249,6 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
 
     const basePlanData = getHydratedDay(rawDayData);
 
-    // Utrzymujemy lokalny stan poziomu bólu
     let currentPainLevel = initialPainLevel;
     let currentAdjustedPlan = assistant.adjustTrainingVolume(basePlanData, currentPainLevel, 1.0);
 
@@ -365,7 +355,6 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
     const listContainer = screen.querySelector('#pre-training-list');
     const startBtn = screen.querySelector('#start-modified-training-btn');
 
-    // Funkcja Renderująca Listę
     const renderList = (planToRender) => {
         listContainer.innerHTML = '';
         const sections = [
@@ -390,14 +379,13 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
 
                 if (isUnilateral) {
                     let startSide = unilateralGlobalIndex % 2 === 0 ? 'Lewa' : 'Prawa';
-                    let secondSide = unilateralGlobalIndex % 2 === 0 ? 'Prawa' : 'Lewa';
                     unilateralGlobalIndex++;
 
                     const cleanReps = ex.reps_or_time.replace(/\/str\.?|\s*stron.*/gi, '').trim();
                     const setsPerSide = Math.ceil(parseInt(ex.sets.split('-').pop()) / 2);
 
                     listContainer.innerHTML += generatePreTrainingCardHTML({ ...ex, name: `${ex.name} (${startSide})`, reps_or_time: cleanReps, sets: setsPerSide.toString() }, currentDataIndex);
-                    listContainer.innerHTML += generatePreTrainingCardHTML({ ...ex, name: `${ex.name} (${secondSide})`, reps_or_time: cleanReps, sets: setsPerSide.toString() }, currentDataIndex);
+                    // NOTE: Drugą stronę generuje się dynamicznie w training.js w pętli
                 } else {
                     listContainer.innerHTML += generatePreTrainingCardHTML(ex, currentDataIndex);
                 }
@@ -405,9 +393,7 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
         });
     };
 
-    // Funkcja odświeżająca Header, Listę i Przycisk Start
     const updateScreen = () => {
-        // Obliczanie planu na podstawie bólu (asystent)
         currentAdjustedPlan = assistant.adjustTrainingVolume(basePlanData, currentPainLevel, 1.0);
         currentAdjustedPlan = getHydratedDay(currentAdjustedPlan);
 
@@ -526,7 +512,6 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
         if (btn) {
             e.stopPropagation();
             const exId = btn.dataset.exerciseId;
-            const exName = state.exerciseLibrary[exId]?.name || "Podgląd";
             const originalContent = btn.innerHTML;
             btn.innerHTML = `<span style="font-size:0.75rem">⏳</span>`;
             try {
@@ -545,18 +530,12 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
     startBtn.addEventListener('click', () => {
         if (!isCurrentDynamicDay && useDynamicPlan) {
             if (confirm("To jest trening z przyszłości. Czy chcesz ustawić go jako dzisiejszy plan i rozpocząć?")) {
-                // FIX: Tutaj też upewniamy się, że zapisujemy ZMODYFIKOWANY plan
                 state.todaysDynamicPlan = currentAdjustedPlan;
                 savePlanToStorage(currentAdjustedPlan);
             } else return;
         }
 
-        // === FIX START ===
-        // Aktualizujemy globalny plan dzisiejszy o wersję przetworzoną przez Asystenta (zmienione serie/powtórzenia)
-        // Dzięki temu startModifiedTraining() pobierze już poprawione wartości.
         state.todaysDynamicPlan = currentAdjustedPlan;
-        // === FIX END ===
-
         state.sessionParams.initialPainLevel = currentPainLevel;
         state.sessionParams.timeFactor = 1.0;
 
@@ -567,8 +546,7 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
 };
 
 export const renderTrainingScreen = () => {
-    // --- NOWOŚĆ: Zaktualizowany HTML z licznikiem czasu ---
-    // --- AMPS (Phase 1): Added focus-rating-container ---
+    // --- USUNIĘTO div#focus-rating-container Z HTML ---
     screens.training.innerHTML = `
     <div class="focus-view">
         <div id="focus-progress-bar" class="focus-progress-container"></div>
@@ -577,9 +555,6 @@ export const renderTrainingScreen = () => {
             <div id="focus-total-time" class="session-elapsed-time">00:00</div>
         </div>
         <div class="focus-timer-container"><p id="focus-timer-display"></p></div>
-        
-        <!-- AMPS: QUICK RATING CONTAINER (Hidden by default) -->
-        <div id="focus-rating-container" class="focus-rating-container hidden"></div>
 
         <div class="focus-exercise-info" style="margin-bottom: 0.5rem;">
             <div class="exercise-title-container">

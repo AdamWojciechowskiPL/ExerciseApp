@@ -1,4 +1,3 @@
-// ExerciseApp/ui/screens/training.js
 import { state } from '../../state.js';
 import { screens, initializeFocusElements, focus } from '../../dom.js';
 import { getActiveTrainingPlan, getHydratedDay, getISODate, calculateSmartDuration, calculateSystemLoad, calculateClinicalProfile, getSessionFocus, savePlanToStorage } from '../../utils.js';
@@ -379,13 +378,17 @@ export const renderPreTrainingScreen = (dayId, initialPainLevel = 0, useDynamicP
 
                 if (isUnilateral) {
                     let startSide = unilateralGlobalIndex % 2 === 0 ? 'Lewa' : 'Prawa';
+                    let secondSide = startSide === 'Lewa' ? 'Prawa' : 'Lewa'; // Dodano drugą stronę
                     unilateralGlobalIndex++;
 
                     const cleanReps = ex.reps_or_time.replace(/\/str\.?|\s*stron.*/gi, '').trim();
                     const setsPerSide = Math.ceil(parseInt(ex.sets.split('-').pop()) / 2);
 
+                    // Generujemy kartę dla pierwszej strony
                     listContainer.innerHTML += generatePreTrainingCardHTML({ ...ex, name: `${ex.name} (${startSide})`, reps_or_time: cleanReps, sets: setsPerSide.toString() }, currentDataIndex);
-                    // NOTE: Drugą stronę generuje się dynamicznie w training.js w pętli
+                    
+                    // Generujemy kartę dla drugiej strony (używając tego samego currentDataIndex, aby swap działał na ten sam obiekt bazowy)
+                    listContainer.innerHTML += generatePreTrainingCardHTML({ ...ex, name: `${ex.name} (${secondSide})`, reps_or_time: cleanReps, sets: setsPerSide.toString() }, currentDataIndex);
                 } else {
                     listContainer.innerHTML += generatePreTrainingCardHTML(ex, currentDataIndex);
                 }

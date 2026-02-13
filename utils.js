@@ -61,17 +61,14 @@ export const shouldSynchronizePlan = (plan) => {
     if (!plan || !plan.days || plan.days.length === 0) return { needed: true, reason: 'missing_plan' };
     const todayISO = getISODate(new Date());
     const hasToday = plan.days.some(d => d.date === todayISO);
+    
+    // ZMIANA: Usunięto logikę bufora 3 dni. Synchronizacja tylko przy braku dnia dzisiejszego.
     if (!hasToday) return { needed: true, reason: 'missing_today' };
+    
+    // Walidacja spójności danych
     const lastDayEntry = plan.days[plan.days.length - 1];
-    if (!lastDayEntry.date) return { needed: true, reason: 'corrupt_data' };
-    const lastDate = new Date(lastDayEntry.date);
-    const bufferThresholdDate = new Date();
-    bufferThresholdDate.setDate(bufferThresholdDate.getDate() + 3);
-    lastDate.setHours(0, 0, 0, 0);
-    bufferThresholdDate.setHours(0, 0, 0, 0);
-    if (lastDate < bufferThresholdDate) {
-        return { needed: true, reason: 'buffer_low' };
-    }
+    if (!lastDayEntry || !lastDayEntry.date) return { needed: true, reason: 'corrupt_data' };
+
     return { needed: false, reason: null };
 };
 

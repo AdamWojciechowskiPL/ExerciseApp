@@ -1236,7 +1236,7 @@ function analyzeRpeTrend(recentSessions) {
 // 7. ROLLING PLAN BUILDER
 // ============================================================================
 
-function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap, fatigueProfile, rpeData, progressionMap, phaseContext) {
+function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap, fatigueProfile, rpeData, progressionMap, phaseContext, currentSessionsDone, targetSessionsTotal) {
     const schedulePattern = userData?.schedule_pattern || DEFAULT_SCHEDULE_PATTERN;
     const targetMin = clamp(toNumber(userData?.target_session_duration_min, DEFAULT_TARGET_MIN), 10, 90);
     const forcedRestDates = new Set(normalizeStringArray(userData?.forced_rest_dates));
@@ -1266,6 +1266,9 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
     const weeklyFamilyUsage = new Map();
 
     const undulationWave = [1.0, 0.85, 1.15, 0.9, 0.8, 1.2, 1.0];
+    
+    // ZMIANA: Obliczamy ile sesji pozostało do końca fazy
+    let sessionsRemaining = targetSessionsTotal - currentSessionsDone;
 
     for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
         const currentDate = new Date();
@@ -1280,6 +1283,12 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
         if (dayOffset > 0) fatigueScore = Math.round(fatigueScore * 0.6);
 
         if (isScheduled && !isForcedRest) {
+            // ZMIANA: Jeśli skończył się limit sesji w fazie, przerywamy generowanie planu
+            // aby wymusić sprawdzenie przejścia fazy (target reached).
+            if (sessionsRemaining <= 0) {
+                break;
+            }
+
             let costOfSession = 25 * dailyUndulation;
             const sessionTitleSuffix = phaseContext.isOverride ? `(${phaseContext.phaseId.toUpperCase()})` : '';
             const session = createInitialSession(dayOffset + 1, targetMin);
@@ -1343,6 +1352,10 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
             session.estimatedDurationMin = finalDur;
 
             plan.days.push(session);
+            
+            // ZMIANA: Zmniejszamy licznik dostępnych sesji po wygenerowaniu treningu
+            sessionsRemaining--;
+            
             fatigueScore += costOfSession;
             fatigueScore = Math.min(MAX_BUCKET_CAPACITY, Math.max(0, fatigueScore));
         } else {
@@ -1471,7 +1484,12 @@ exports.handler = async (event) => {
         const candidates = filterExerciseCandidates(exercises, userData, ctx, fatigueProfile, rpeData);
         if (candidates.length < 5) return { statusCode: 400, body: JSON.stringify({ error: 'NO_SAFE_EXERCISES' }) };
 
-        const plan = buildRollingPlan(candidates, cWeights, userData, ctx, userId, historyMap, preferencesMap, paceMap, fatigueProfile, rpeData, progressionMap, phaseContext);
+        // ZMIANA: Przekazanie liczników fazy do funkcji budującej plan
+        const plan = buildRollingPlan(
+            candidates, cWeights, userData, ctx, userId, historyMap, preferencesMap, 
+            paceMap, fatigueProfile, rpeData, progressionMap, phaseContext,
+            phaseContext.sessionsCompleted, phaseContext.targetSessions
+        );
         validateAndCorrectPlan(plan, phaseContext);
 
         settings.dynamicPlanData = plan;

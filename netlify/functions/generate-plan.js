@@ -604,43 +604,47 @@ function calculatePhaseFit(ex, phaseContext) {
     return multiplier;
 }
 
-function scoreExercise(ex, section, userData, ctx, categoryWeights, state, painZoneSet, phaseContext, fatigueProfile) {
+function calculateScoreComponents(ex, section, userData, ctx, categoryWeights, state, painZoneSet, phaseContext, fatigueProfile) {
     const cat = ex.category_id || 'uncategorized';
     const base = categoryWeights[cat] != null ? categoryWeights[cat] : 1.0;
 
-    if (state.usedIds.has(ex.id)) return 0;
+    let sectionFit = 1.0;
+    let painRelief = 1.0;
+    let painSafety = 1.0;
+    let goal = 1.0;
+    let variety = 1.0;
+    let affinity = 1.0;
+    let phaseFit = 1.0;
+    let rehabAdjust = 1.0;
+    let fatigueAdjust = 1.0;
 
-    let score = base;
-    score *= sectionCategoryFitMultiplier(section, cat);
-    score *= painReliefFitMultiplier(ex, section, painZoneSet);
-    score *= painSafetyPenalty(ex, userData, ctx);
-    score *= goalMultiplierForExercise(ex, userData, ctx);
-    score *= varietyPenalty(ex, state, section);
+    if (state.usedIds.has(ex.id)) {
+        return { base, sectionFit, painRelief, painSafety, goal, variety, affinity, phaseFit, rehabAdjust, fatigueAdjust, finalScore: 0 };
+    }
+
+    sectionFit = sectionCategoryFitMultiplier(section, cat);
+    painRelief = painReliefFitMultiplier(ex, section, painZoneSet);
+    painSafety = painSafetyPenalty(ex, userData, ctx);
+    goal = goalMultiplierForExercise(ex, userData, ctx);
+    variety = varietyPenalty(ex, state, section);
 
     // --- FIX: AFFINITY LOGIC (User Request) ---
-    // Pobieramy Affinity Score z mapy preferencji przekazanej w `state`.
     if (state.preferencesMap) {
         const pref = state.preferencesMap[ex.id] || { score: 0 };
-        const affinity = pref.score || 0;
-        let affinityMult = 1.0;
-
-        if (affinity > 0) {
-            // Like: Liniowy Boost (np. +20 pkt = x1.2, +100 pkt = x2.0)
-            affinityMult = 1.0 + (affinity * 0.01);
-        } else if (affinity < 0) {
-            // Dislike: Liniowa Kara (np. -50 pkt = x0.5)
-            // Zabezpieczenie (floor): min 0.1, żeby nie zerować całkowicie (do tego służy Blacklist),
-            // ale znacząco zmniejszyć szansę wylosowania.
-            affinityMult = Math.max(0.1, 1.0 + (affinity * 0.01));
+        const affScore = pref.score || 0;
+        if (affScore > 0) {
+            affinity = 1.0 + (affScore * 0.02);
+        } else if (affScore < 0) {
+            affinity = Math.max(0.1, 1.0 + (affScore * 0.02));
         }
-        score *= affinityMult;
     }
     // ------------------------------------------
 
     if (phaseContext) {
-        const phaseFit = calculatePhaseFit(ex, phaseContext);
-        if (phaseFit === 0) return 0;
-        score *= phaseFit;
+        phaseFit = calculatePhaseFit(ex, phaseContext);
+        if (phaseFit === 0) {
+            return { base, sectionFit, painRelief, painSafety, goal, variety, affinity, phaseFit, rehabAdjust, fatigueAdjust, finalScore: 0 };
+        }
     }
 
     const hobby = String(userData?.hobby || '').toLowerCase();
@@ -648,12 +652,12 @@ function scoreExercise(ex, section, userData, ctx, categoryWeights, state, painZ
 
     if (hobby.includes('running') && ex.is_unilateral) {
         const isRehabControl = phaseContext?.phaseId === 'control' || phaseContext?.phaseId === 'rehab';
-        score *= isRehabControl ? 1.1 : 1.2;
+        rehabAdjust *= isRehabControl ? 1.1 : 1.2;
     }
 
     if (diagnoses.has('disc_herniation') && ex.primary_plane === 'rotation') {
         const isRehabControl = phaseContext?.phaseId === 'control' || phaseContext?.phaseId === 'rehab';
-        score *= isRehabControl ? 0.5 : 0.7;
+        rehabAdjust *= isRehabControl ? 0.5 : 0.7;
     }
 
     if (fatigueProfile) {
@@ -663,13 +667,23 @@ function scoreExercise(ex, section, userData, ctx, categoryWeights, state, painZ
             fatigueProfile.strain7d >= fatigueProfile.p85_strain_56d;
 
         if (isFatigued || isMonotonySpike) {
-            if (isBreathingCategory(cat) || isMobilityCategory(cat)) { score *= 1.25; }
-            if (section === 'main' && (ex.difficulty_level || 1) === 3) { score *= 0.75; }
-            if ((ex.metabolic_intensity || 1) === 3) { score *= 0.80; }
+            if (isBreathingCategory(cat) || isMobilityCategory(cat)) { fatigueAdjust *= 1.25; }
+            if (section === 'main' && (ex.difficulty_level || 1) === 3) { fatigueAdjust *= 0.75; }
+            if ((ex.metabolic_intensity || 1) === 3) { fatigueAdjust *= 0.80; }
         }
     }
 
-    return Math.max(0, score);
+    let finalScore = base * sectionFit * painRelief * painSafety * goal * variety * affinity * phaseFit * rehabAdjust * fatigueAdjust;
+    finalScore = Math.max(0, finalScore);
+
+    return {
+        base, sectionFit, painRelief, painSafety, goal, variety, affinity, phaseFit, rehabAdjust, fatigueAdjust, finalScore
+    };
+}
+
+function scoreExercise(ex, section, userData, ctx, categoryWeights, state, painZoneSet, phaseContext, fatigueProfile) {
+    const components = calculateScoreComponents(ex, section, userData, ctx, categoryWeights, state, painZoneSet, phaseContext, fatigueProfile);
+    return components.finalScore;
 }
 
 function selectMicrocycleAnchors(candidates, userData, ctx, categoryWeights, phaseContext, fatigueProfile) {
@@ -1266,7 +1280,7 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
     const weeklyFamilyUsage = new Map();
 
     const undulationWave = [1.0, 0.85, 1.15, 0.9, 0.8, 1.2, 1.0];
-    
+
     // ZMIANA: Obliczamy ile sesji pozostało do końca fazy
     let sessionsRemaining = targetSessionsTotal - currentSessionsDone;
 
@@ -1352,10 +1366,10 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
             session.estimatedDurationMin = finalDur;
 
             plan.days.push(session);
-            
+
             // ZMIANA: Zmniejszamy licznik dostępnych sesji po wygenerowaniu treningu
             sessionsRemaining--;
-            
+
             fatigueScore += costOfSession;
             fatigueScore = Math.min(MAX_BUCKET_CAPACITY, Math.max(0, fatigueScore));
         } else {
@@ -1482,11 +1496,49 @@ exports.handler = async (event) => {
         rpeData.volumeModifier = effectiveVolumeModifier;
 
         const candidates = filterExerciseCandidates(exercises, userData, ctx, fatigueProfile, rpeData);
+
+        // --- LOGGING INJECTION START ---
+        try {
+            const debugPZones = derivePainZoneSet(userData.pain_locations);
+            const debugState = {
+                usedIds: new Set(),
+                weeklyUsage: new Map(),
+                weeklyCategoryUsage: new Map(),
+                weeklyFamilyUsage: new Map(),
+                sessionCategoryUsage: new Map(),
+                sessionFamilyUsage: new Map(),
+                sessionPlaneUsage: new Map(),
+                historyMap: historyMap || {},
+                preferencesMap: preferencesMap || {},
+                progressionMap: progressionMap || { sources: new Map(), targets: new Set() },
+                anchorFamilies: new Set(),
+                anchorTargetExposure: 2
+            };
+
+            const debugLog = candidates.map(ex => {
+                const finalScoreMain = calculateScoreComponents(ex, 'main', userData, ctx, cWeights, debugState, debugPZones, phaseContext, fatigueProfile);
+                return {
+                    id: ex.id,
+                    name: ex.name,
+                    cat: ex.category_id,
+                    w_main: finalScoreMain.finalScore,
+                    breakdown: finalScoreMain
+                };
+            }).sort((a, b) => b.w_main - a.w_main);
+
+            console.log("=== CLINICALLY ALLOWED EXERCISES & WEIGHTS ===");
+            console.log(JSON.stringify(debugLog, null, 2));
+            console.log("==============================================");
+        } catch (err) {
+            console.error("Error generating weight logs:", err);
+        }
+        // --- LOGGING INJECTION END ---
+
         if (candidates.length < 5) return { statusCode: 400, body: JSON.stringify({ error: 'NO_SAFE_EXERCISES' }) };
 
         // ZMIANA: Przekazanie liczników fazy do funkcji budującej plan
         const plan = buildRollingPlan(
-            candidates, cWeights, userData, ctx, userId, historyMap, preferencesMap, 
+            candidates, cWeights, userData, ctx, userId, historyMap, preferencesMap,
             paceMap, fatigueProfile, rpeData, progressionMap, phaseContext,
             phaseContext.sessionsCompleted, phaseContext.targetSessions
         );

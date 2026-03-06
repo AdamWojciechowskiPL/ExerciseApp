@@ -49,7 +49,7 @@ test('Frontend wizard guardrails: p4b validation and generation block are presen
 
   assert.match(
     wizardSource,
-    /case 'p4b': return wizardAnswers\.pain_locations\.length === 0 \|\| wizardAnswers\.red_flags\.length > 0;/,
+    /case 'p4b': return wizardAnswers\.pain_locations\.length === 0 \|\| hasExplicitRedFlagsAnswer\(\);/,
     'wizard should require explicit p4b answer when pain flow is active'
   );
 
@@ -57,5 +57,16 @@ test('Frontend wizard guardrails: p4b validation and generation block are presen
     wizardSource,
     /if \(hasRedFlags\) \{[\s\S]*plan nie został wygenerowany/,
     'wizard should block plan generation when red flags are present'
+  );
+});
+
+
+test('Frontend wizard p4b explicit-answer logic supports none and specific flags', () => {
+  const wizardSource = fs.readFileSync(wizardPath, 'utf8');
+
+  assert.match(
+    wizardSource,
+    /function hasExplicitRedFlagsAnswer\(\) \{[\s\S]*selectedFlags\.includes\('none'\) \|\| selectedFlags\.some\(\(flag\) => flag !== 'none'\);[\s\S]*\}/,
+    'wizard should treat "none" or any concrete red flag as an explicit p4b answer'
   );
 });

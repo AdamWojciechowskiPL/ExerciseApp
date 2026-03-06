@@ -1,10 +1,16 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v29.4.19
+# Aplikacja Treningowa (Smart Rehab PWA) v29.4.20
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
 ---
 
 
+
+## 🆕 Aktualizacje v29.4.20
+
+* Usunięto bezwarunkowy boost `core_anti_extension` wynikający wyłącznie z lokalizacji bólu lędźwi (`low_back` / `lumbar` / `lumbar_general`).
+* Preferencja dla `core_anti_extension` jest teraz warunkowa i oparta o odpowiedź objawową: `tolerancePattern`, licznik `directionalNegative24hCount`, trend objawów (`symptom_trend`) oraz `acuteGuard`.
+* Zachowano neutralne boosty lędźwi dla oddechu/mobilności (`breathing`, `spine_mobility`, `hip_mobility`) bez mechanicznego biasu wyprostnego.
 
 ## 🆕 Aktualizacje v29.4.19
 

@@ -42,6 +42,7 @@ const MAX_SETS_MAIN = 6;
 const MAX_SETS_MOBILITY = 3;
 const GLOBAL_MAX_REPS = 25;
 const MAX_BUCKET_CAPACITY = 120;
+const DIRECTIONAL_BIAS_PENALTY_MULTIPLIER = 0.82;
 
 const PAIN_CONFIG = {
     maxPainDuring: {
@@ -454,7 +455,11 @@ function filterExerciseCandidates(exercises, userData, ctx, fatigueProfile, rpeD
             return { allowed: false, reason: `fatigue_filter_level_${fatigueLevel}` };
         }
 
-        return { allowed: true, reason: null };
+        return {
+            allowed: true,
+            reason: safetyCheck.reason || null,
+            directionalBias: safetyCheck.reason === 'directional_bias'
+        };
     };
 
     let filtered = [];
@@ -462,7 +467,7 @@ function filterExerciseCandidates(exercises, userData, ctx, fatigueProfile, rpeD
         const result = evaluateCandidate(ex, applySafetyGate ? 0 : null);
         if (debug) diagnostics.push({ id: ex?.id, passed: result.allowed, reason: result.reason, stage: applySafetyGate ? 'strict' : 'base' });
         if (!result.allowed) continue;
-        filtered.push(ex);
+        filtered.push({ ...ex, directionalBias: result.directionalBias === true });
     }
 
     if (applySafetyGate && filtered.length < 5) {
@@ -472,7 +477,7 @@ function filterExerciseCandidates(exercises, userData, ctx, fatigueProfile, rpeD
             const result = evaluateCandidate(ex, 1);
             if (debug) diagnostics.push({ id: ex?.id, passed: result.allowed, reason: result.reason, stage: 'relaxed' });
             if (!result.allowed) continue;
-            filtered.push(ex);
+            filtered.push({ ...ex, directionalBias: result.directionalBias === true });
         }
     }
 
@@ -639,9 +644,10 @@ function calculateScoreComponents(ex, section, userData, ctx, categoryWeights, s
     let phaseFit = 1.0;
     let rehabAdjust = 1.0;
     let fatigueAdjust = 1.0;
+    let directionalBiasPenalty = 1.0;
 
     if (state.usedIds.has(ex.id)) {
-        return { base, sectionFit, painRelief, painSafety, goal, variety, affinity, phaseFit, rehabAdjust, fatigueAdjust, finalScore: 0 };
+        return { base, sectionFit, painRelief, painSafety, goal, variety, affinity, phaseFit, rehabAdjust, fatigueAdjust, directionalBiasPenalty, finalScore: 0 };
     }
 
     sectionFit = sectionCategoryFitMultiplier(section, cat);
@@ -695,11 +701,17 @@ function calculateScoreComponents(ex, section, userData, ctx, categoryWeights, s
         }
     }
 
-    let finalScore = base * sectionFit * painRelief * painSafety * goal * variety * affinity * phaseFit * rehabAdjust * fatigueAdjust;
+    const hasSingleDirectionalSignal = (ctx?.toleranceBias?.strength || 0) > 0 && (ctx?.toleranceBias?.strength || 0) < 1;
+    const hasConfirmedDirectionalIntolerance = (ctx?.directionalNegative24hCount || 0) >= 2 || ctx?.toleranceBias?.strength >= 1;
+    if (ex.directionalBias === true && hasSingleDirectionalSignal && !hasConfirmedDirectionalIntolerance) {
+        directionalBiasPenalty *= DIRECTIONAL_BIAS_PENALTY_MULTIPLIER;
+    }
+
+    let finalScore = base * sectionFit * painRelief * painSafety * goal * variety * affinity * phaseFit * rehabAdjust * fatigueAdjust * directionalBiasPenalty;
     finalScore = Math.max(0, finalScore);
 
     return {
-        base, sectionFit, painRelief, painSafety, goal, variety, affinity, phaseFit, rehabAdjust, fatigueAdjust, finalScore
+        base, sectionFit, painRelief, painSafety, goal, variety, affinity, phaseFit, rehabAdjust, fatigueAdjust, directionalBiasPenalty, finalScore
     };
 }
 

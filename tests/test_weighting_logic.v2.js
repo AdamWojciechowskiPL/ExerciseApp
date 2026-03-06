@@ -89,13 +89,13 @@ test('Knee pain retune (v1): mild vs severe', () => {
   assertApprox(assert, severe.conditioning_low_impact, 0.70, 1e-9, 'severe conditioning');
 });
 
-test('Sciatica + low_back retune (v1): spine_mobility=1.6; core_anti_extension mild=2.8 severe=2.5; nerve_flossing boosted', () => {
+test('Sciatica + low_back: lumbar location alone does not auto-bias anti-extension; nerve_flossing still boosted', () => {
   const mild = weights({ pain_locations: ['sciatica', 'low_back'], severity: 'mild' });
   const severe = weights({ pain_locations: ['sciatica', 'low_back'], severity: 'severe' });
 
   assertApprox(assert, mild.spine_mobility, 1.6, 1e-9, 'spine_mobility');
-  assertApprox(assert, mild.core_anti_extension, 2.8, 1e-9, 'core_anti_extension mild');
-  assertApprox(assert, severe.core_anti_extension, 2.5, 1e-9, 'core_anti_extension severe');
+  assertApprox(assert, mild.core_anti_extension, 1.0, 1e-9, 'core_anti_extension mild (no directional bias)');
+  assertApprox(assert, severe.core_anti_extension, 1.0, 1e-9, 'core_anti_extension severe (no directional bias)');
 
   // Nerve flossing boost logic (Base 1.0 + 2.0 for mild = 3.0)
   assertApprox(assert, mild.nerve_flossing, 3.0, 1e-9, 'nerve_flossing mild (boosted)');
@@ -219,7 +219,27 @@ test('Directional pattern drives anti-extension: extension intolerance does not 
   const wFlex = plan.buildDynamicCategoryWeights(basePool(), flexIntolerantData, plan.safeBuildUserContext(flexIntolerantData));
 
   assertApprox(assert, wExt.core_anti_extension, 0.85, 1e-9, 'extension intolerant anti-extension penalty');
-  assertApprox(assert, wFlex.core_anti_extension, 2.0, 1e-9, 'flexion intolerant anti-extension boost');
+  assertApprox(assert, wFlex.core_anti_extension, 1.6, 1e-9, 'flexion intolerant anti-extension boost');
+});
+
+
+test('Confirmed directional negatives and worsening trend strengthen flexion-intolerant anti-extension preference', () => {
+  const data = {
+    pain_locations: ['lumbar_general'],
+    medical_diagnosis: [],
+    trigger_movements: ['bending_forward'],
+    relief_movements: [],
+    symptom_trend: 'worsening',
+    directional_negative_24h_count: 2,
+    symptom_onset: 'sudden',
+    symptom_duration: 'lt_6_weeks',
+    pain_intensity: 3,
+    daily_impact: 3,
+    session_component_weights: []
+  };
+
+  const w = plan.buildDynamicCategoryWeights(basePool(), data, plan.safeBuildUserContext(data));
+  assertApprox(assert, w.core_anti_extension, 2.25, 1e-9, 'flexion intolerance + 24h + worsening + acute guard');
 });
 
 test('Safety-only knee diagnoses do not change category weights', () => {

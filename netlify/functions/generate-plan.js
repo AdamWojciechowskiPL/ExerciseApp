@@ -358,6 +358,10 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
     const tolerancePattern = String(ctx?.tolerancePattern || 'unknown').toLowerCase();
     const directionalNegative24hCount = Math.max(0, Number(ctx?.directionalNegative24hCount || 0));
     const hasConfirmedDirectionalIntolerance = directionalNegative24hCount >= 2;
+    const symptomTrend = String(ctx?.symptomProfile?.trend || userData?.symptom_trend || '').toLowerCase();
+    const acuteGuard = ctx?.acuteGuard || null;
+    const isWorseningTrend = symptomTrend === 'worsening' || acuteGuard?.isWorsening === true;
+    const isAcuteWorsening = acuteGuard?.isAcuteWorsening === true;
     const weightedKneeDiagnoses = new Set(['chondromalacia', 'knee_oa']);
     const hasWeightedKneeDiagnosis = [...weightedKneeDiagnoses].some((d) => diagnosis.has(d));
 
@@ -381,13 +385,15 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
     if (painLocs.has('lumbar') || painLocs.has('lumbar_general') || painLocs.has('low_back')) {
         boost(weights, 'breathing', 0.8);
         boost(weights, 'spine_mobility', 0.6);
-        const coreBoost = ctx.isSevere ? 1.5 : 1.8;
-        boost(weights, 'core_anti_extension', coreBoost);
         boost(weights, 'hip_mobility', 0.6);
     }
 
-    if (tolerancePattern === 'flexion_intolerant' && !hasConfirmedDirectionalIntolerance) {
-        boost(weights, 'core_anti_extension', 1.0);
+    if (tolerancePattern === 'flexion_intolerant') {
+        let directionalBoost = 0.6;
+        if (hasConfirmedDirectionalIntolerance) directionalBoost += 0.4;
+        if (isWorseningTrend) directionalBoost += 0.15;
+        if (isAcuteWorsening) directionalBoost += 0.1;
+        boost(weights, 'core_anti_extension', directionalBoost);
     } else if (tolerancePattern === 'extension_intolerant') {
         multiplyMatching(weights, (cat) => cat === 'core_anti_extension', 0.85);
     }

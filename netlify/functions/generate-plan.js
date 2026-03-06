@@ -1715,8 +1715,26 @@ exports.handler = async (event) => {
             const sessionDate = new Date(r.completed_at);
             (r.logs || []).forEach(l => {
                 const id = l.exerciseId || l.id;
-                if (id && (!historyMap[id] || sessionDate > historyMap[id].date)) {
-                    historyMap[id] = { date: sessionDate, rir: l.rir, rating: l.rating };
+                if (!id) return;
+
+                const existing = historyMap[id];
+                const sameSession = existing && existing.date && sessionDate.getTime() === existing.date.getTime();
+                const incomingSet = Number.isFinite(Number(l.currentSet)) ? Number(l.currentSet) : 0;
+                const existingSet = Number.isFinite(Number(existing?.currentSet)) ? Number(existing.currentSet) : 0;
+                const shouldReplace = !existing
+                    || sessionDate > existing.date
+                    || (sameSession && incomingSet >= existingSet);
+
+                if (shouldReplace) {
+                    historyMap[id] = {
+                        date: sessionDate,
+                        rir: l.rir,
+                        rating: l.rating,
+                        difficultyDeviation: l.difficultyDeviation,
+                        currentSet: l.currentSet,
+                        totalSets: l.totalSets,
+                        tech: l.tech
+                    };
                 }
             });
         });

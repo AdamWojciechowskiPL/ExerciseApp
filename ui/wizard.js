@@ -13,6 +13,7 @@ const STEPS = [
     { id: 'p2', title: 'Nasilenie', render: renderP2 },
     { id: 'p3', title: 'Charakter', render: renderP3 },
     { id: 'p4', title: 'Diagnoza', render: renderP4 },
+    { id: 'p4b', title: 'Czerwone flagi', render: renderP4b },
     { id: 'p5', title: 'Co nasila?', render: renderP5 },
     { id: 'p6', title: 'Co pomaga?', render: renderP6 },
     { id: 'p7', title: 'Wpływ na życie', render: renderP7 },
@@ -39,6 +40,7 @@ export function initWizard(forceStart = false) {
         pain_intensity: saved.pain_intensity !== undefined ? saved.pain_intensity : 0,
         pain_character: saved.pain_character || [],
         medical_diagnosis: saved.medical_diagnosis || [],
+        red_flags: saved.red_flags || [],
         trigger_movements: saved.trigger_movements || [],
         relief_movements: saved.relief_movements || [],
         daily_impact: saved.daily_impact !== undefined ? saved.daily_impact : 0,
@@ -88,7 +90,7 @@ function closeWizardWithoutSaving() {
 
 function getStepsToSkip() {
     if (wizardAnswers.pain_locations.length === 0) {
-        return ['p2', 'p3', 'p4', 'p5', 'p6', 'p7'];
+        return ['p2', 'p3', 'p4', 'p4b', 'p5', 'p6', 'p7'];
     }
     return [];
 }
@@ -117,6 +119,7 @@ function resetSkippedStepData(stepId) {
         case 'p2': wizardAnswers.pain_intensity = 0; break;
         case 'p3': wizardAnswers.pain_character = []; break;
         case 'p4': wizardAnswers.medical_diagnosis = ['none']; break;
+        case 'p4b': wizardAnswers.red_flags = []; break;
         case 'p5': wizardAnswers.trigger_movements = []; break;
         case 'p6': wizardAnswers.relief_movements = []; break;
         case 'p7': wizardAnswers.daily_impact = 0; break;
@@ -289,7 +292,7 @@ async function renderP1(c) {
       <g id="zones">
         <rect id="cervical" class="zone" x="86" y="60" width="28" height="20" rx="5" data-label="Szyja"/>
         <path id="thoracic" class="zone" d="M80 85 C84 80 116 80 120 85 L116 145 C114 150 86 150 84 145 Z" data-label="Plecy (Góra)"/>
-        <path id="lumbar_general" class="zone" d="M84 148 C88 145 112 145 116 148 L114 185 C112 190 88 190 86 185 Z" data-label="Lędźwia"/>
+        <path id="low_back" class="zone" d="M84 148 C88 145 112 145 116 148 L114 185 C112 190 88 190 86 185 Z" data-label="Lędźwia"/>
         <path id="si_joint" class="zone" d="M100 188 L116 200 L100 215 L84 200 Z" data-label="Krzyż"/>
         <circle id="hip_left" class="zone" cx="74" cy="210" r="14" data-val="hip" data-label="Biodro L"/>
         <circle id="hip_right" class="zone" cx="126" cy="210" r="14" data-val="hip" data-label="Biodro P"/>
@@ -376,10 +379,10 @@ function renderP3(c) { renderMultiSelect(c, 'Jaki to rodzaj bólu?', [{ val: 'sh
 function renderP4(c) {
     const title = 'Czy masz diagnozę lekarską?';
     const diagnosisTriggerMap = {
-        'scoliosis': ['thoracic', 'lumbar_general', 'cervical'],
-        'disc_herniation': ['lumbar_general', 'cervical', 'sciatica'],
-        'stenosis': ['lumbar_general', 'cervical'],
-        'facet_syndrome': ['lumbar_general', 'thoracic', 'cervical', 'si_joint'],
+        'scoliosis': ['thoracic', 'low_back', 'cervical'],
+        'disc_herniation': ['low_back', 'cervical', 'sciatica'],
+        'stenosis': ['low_back', 'cervical'],
+        'facet_syndrome': ['low_back', 'thoracic', 'cervical', 'si_joint'],
         'piriformis': ['sciatica', 'hip'],
         'chondromalacia': ['knee'],
         'meniscus_tear': ['knee'],
@@ -409,6 +412,18 @@ function renderP4(c) {
     });
 
     renderMultiSelect(c, title, filteredOptions, 'medical_diagnosis');
+}
+
+
+function renderP4b(c) {
+    renderMultiSelect(c, 'Czy występuje coś z poniższych objawów alarmowych?', [
+        { val: 'trauma_recent', label: '🚨 Świeży uraz / upadek + ból kręgosłupa' },
+        { val: 'cauda_equina_symptoms', label: '🚨 Problemy z oddawaniem moczu/stolca lub drętwienie krocza' },
+        { val: 'progressive_neuro_deficit', label: '🚨 Narastające osłabienie lub niedowład kończyny' },
+        { val: 'unexplained_weight_loss_fever', label: '🚨 Niewyjaśniona utrata masy ciała / gorączka + ból' },
+        { val: 'night_rest_pain_unrelenting', label: '🚨 Stały ból nocny, nieustępujący w spoczynku' },
+        { val: 'none', label: '✅ Żadna z powyższych' }
+    ], 'red_flags');
 }
 
 function renderP5(c) { renderMultiSelect(c, 'Kiedy ból się NASILA?', [{ val: 'bending_forward', label: 'Pochylanie do przodu' }, { val: 'bending_backward', label: 'Odchylanie w tył' }, { val: 'twisting', label: 'Skręty tułowia' }, { val: 'sitting', label: 'Długie siedzenie' }, { val: 'standing', label: 'Długie stanie' }, { val: 'walking', label: 'Chodzenie' }, { val: 'lying_back', label: 'Leżenie na plecach' }], 'trigger_movements'); }
@@ -597,6 +612,8 @@ function renderSummary(c) {
         focusSection = `<li style="color:#3b82f6">🔵 <strong>Cel:</strong> ${wizardAnswers.focus_locations.join(', ')}</li>`;
     }
 
+    const hasRedFlags = Array.isArray(wizardAnswers.red_flags) && wizardAnswers.red_flags.some(flag => flag !== 'none');
+
     const dayLabels = { 1: 'Pn', 2: 'Wt', 3: 'Śr', 4: 'Cz', 5: 'Pt', 6: 'So', 0: 'Nd' };
     const pattern = wizardAnswers.schedule_pattern || [];
     const formattedDays = pattern.map(d => dayLabels[d]).join(', ');
@@ -633,6 +650,7 @@ function renderSummary(c) {
             <li>🎯 <strong>Główny cel:</strong> ${wizardAnswers.primary_goal}</li>
             <li>📅 <strong>Dni:</strong> ${formattedDays || 'Brak'}</li>
             <li>⏱️ <strong>Czas:</strong> ${wizardAnswers.target_session_duration_min} min</li>
+            <li>${hasRedFlags ? '🚨' : '✅'} <strong>Objawy alarmowe:</strong> ${hasRedFlags ? 'Wykryto (wymagana konsultacja)' : 'Brak'}</li>
         </ul>
 
         ${warningHTML}
@@ -672,6 +690,17 @@ async function renderProcessing(c) {
 
 async function finalizeGeneration(consoleDiv) {
     try {
+        const hasRedFlags = Array.isArray(wizardAnswers.red_flags) && wizardAnswers.red_flags.some(flag => flag !== 'none');
+        if (hasRedFlags) {
+            const msg = 'Wykryto objawy alarmowe. Ze względów bezpieczeństwa plan nie został wygenerowany. Skonsultuj się pilnie z lekarzem lub fizjoterapeutą.';
+            if (consoleDiv) {
+                consoleDiv.textContent = `⛔ ${msg}`;
+                consoleDiv.style.color = 'var(--danger-color)';
+            }
+            setTimeout(() => alert(msg), 150);
+            return;
+        }
+
         const payload = {
             ...wizardAnswers,
             secondsPerRep: state.settings.secondsPerRep || 6,
@@ -702,5 +731,41 @@ async function finalizeGeneration(consoleDiv) {
     }
 }
 
-function renderMultiSelect(container, question, options, key) { container.innerHTML = `<p class="wizard-step-desc">${question}</p><div class="options-list"></div>`; const list = container.querySelector('.options-list'); options.forEach(opt => { const isSel = wizardAnswers[key].includes(opt.val); const btn = document.createElement('div'); btn.className = `option-btn ${isSel ? 'selected' : ''}`; btn.textContent = opt.label; btn.addEventListener('click', () => { btn.classList.toggle('selected'); if (btn.classList.contains('selected')) { wizardAnswers[key].push(opt.val); } else { wizardAnswers[key] = wizardAnswers[key].filter(x => x !== opt.val); } }); list.appendChild(btn); }); }
+function renderMultiSelect(container, question, options, key) {
+    container.innerHTML = `<p class="wizard-step-desc">${question}</p><div class="options-list"></div>`;
+    const list = container.querySelector('.options-list');
+
+    options.forEach(opt => {
+        const isSel = wizardAnswers[key].includes(opt.val);
+        const btn = document.createElement('div');
+        btn.className = `option-btn ${isSel ? 'selected' : ''}`;
+        btn.textContent = opt.label;
+
+        btn.addEventListener('click', () => {
+            const isNoneOpt = opt.val === 'none';
+
+            if (isNoneOpt) {
+                const wasSelected = btn.classList.contains('selected');
+                list.querySelectorAll('.option-btn').forEach(b => b.classList.remove('selected'));
+                wizardAnswers[key] = [];
+                if (!wasSelected) {
+                    btn.classList.add('selected');
+                    wizardAnswers[key].push('none');
+                }
+                return;
+            }
+
+            wizardAnswers[key] = wizardAnswers[key].filter(x => x !== 'none');
+            const noneOption = Array.from(list.querySelectorAll('.option-btn')).find(b => b.textContent.includes('Brak') || b.textContent.includes('Żadna'));
+            if (noneOption) noneOption.classList.remove('selected');
+
+            btn.classList.toggle('selected');
+            if (btn.classList.contains('selected')) wizardAnswers[key].push(opt.val);
+            else wizardAnswers[key] = wizardAnswers[key].filter(x => x !== opt.val);
+        });
+
+        list.appendChild(btn);
+    });
+}
+
 function renderSingleSelect(container, question, options, key) { container.innerHTML = `<p class="wizard-step-desc">${question}</p><div class="options-list"></div>`; const list = container.querySelector('.options-list'); options.forEach(opt => { const isSel = wizardAnswers[key] === opt.val; const btn = document.createElement('div'); btn.className = `option-btn ${isSel ? 'selected' : ''}`; btn.textContent = opt.label; btn.addEventListener('click', () => { container.querySelectorAll('.option-btn').forEach(b => b.classList.remove('selected')); btn.classList.add('selected'); wizardAnswers[key] = opt.val; }); list.appendChild(btn); }); }

@@ -48,7 +48,7 @@ function getScore(ex, weights, userData = {}, phaseCtx = null) {
 }
 
 test('Scoring: runner preference boosts strength/control (relative checks)', () => {
-  const userData = { hobby: 'running' };
+  const userData = { hobby: ['running','gym'] };
   
   // Weights (Base score 1.0)
   const weights = { 

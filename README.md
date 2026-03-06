@@ -1,8 +1,15 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v29.1.0
+# Aplikacja Treningowa (Smart Rehab PWA) v29.2.0
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
 ---
+
+## 🆕 Aktualizacje v29.2.0
+
+* Dodano krok **Czerwonych Flag** w wizardzie oraz blokadę backendu dla generowania planu (status `ineligible_for_plan`).
+* Ujednolicono taksonomię lędźwiową (`low_back` ↔ `lumbar_general`) między wizardem, silnikami klinicznymi i generatorem.
+* Poprawiono obsługę `hobby` jako multi-select (wiele aktywności wpływa jednocześnie na scoring).
+* Główny flow podsumowania sesji zapisuje feedback w kontrakcie `pain_monitoring` (z `during.max_nprs`) i wspiera follow-up 24h przez endpoint patch.
 
 ## 🚀 Kluczowe Funkcjonalności
 

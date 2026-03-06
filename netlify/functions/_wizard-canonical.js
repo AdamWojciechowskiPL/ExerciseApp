@@ -69,6 +69,17 @@ function normalizeMedicalClearance(raw) {
         normalized[field] = source[field] === true;
     }
 
+    const hasPositiveFlag = fields.some((field) => normalized[field] === true);
+    const hasExplicitNone = source.none === true;
+
+    normalized.none = hasExplicitNone || (!hasPositiveFlag && source.none !== false);
+
+    if (normalized.none) {
+        for (const field of fields) {
+            normalized[field] = false;
+        }
+    }
+
     return normalized;
 }
 

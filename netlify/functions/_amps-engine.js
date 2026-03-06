@@ -302,11 +302,15 @@ function applyMicroLoading(sets, historyEntry) {
         return reduced;
     }
 
-    const isHard = historyEntry.rir === 0 || historyEntry.rating === 'hard' || historyEntry.difficultyDeviation === 'hard';
-    const isEasy = historyEntry.rir >= 3 || historyEntry.rating === 'good' || historyEntry.difficultyDeviation === 'easy';
+    const hardByRir = Number.isFinite(Number(historyEntry.rir)) && Number(historyEntry.rir) <= 0;
+    const easyByRir = Number.isFinite(Number(historyEntry.rir)) && Number(historyEntry.rir) >= 3;
+    const isHard = hardByRir || historyEntry.rating === 'hard' || historyEntry.difficultyDeviation === 'hard';
+    const isEasy = easyByRir || historyEntry.rating === 'good' || historyEntry.difficultyDeviation === 'easy';
 
-    const currentSet = historyEntry.currentSet || 1;
-    const totalSets = historyEntry.totalSets || 1;
+    const parsedCurrentSet = Number.parseInt(historyEntry.currentSet, 10);
+    const parsedTotalSets = Number.parseInt(historyEntry.totalSets, 10);
+    const currentSet = Number.isFinite(parsedCurrentSet) && parsedCurrentSet > 0 ? parsedCurrentSet : 1;
+    const totalSets = Number.isFinite(parsedTotalSets) && parsedTotalSets > 0 ? parsedTotalSets : 1;
     const isLastSetOfMultiple = totalSets > 1 && currentSet === totalSets;
     const isMultiSetExercise = totalSets > 1;
 

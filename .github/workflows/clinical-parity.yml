@@ -1,0 +1,32 @@
+name: Clinical Parity
+
+on:
+  pull_request:
+    paths:
+      - 'clinicalEngine.js'
+      - 'netlify/functions/_clinical-rule-engine.js'
+      - 'shared/clinical-core/**'
+      - 'shared/clinical-rules-core.js'
+      - 'tests/test_clinical_*'
+      - 'tests/test_safety_compliance_phase1.js'
+      - 'tests/run.js'
+  push:
+    paths:
+      - 'clinicalEngine.js'
+      - 'netlify/functions/_clinical-rule-engine.js'
+      - 'shared/clinical-core/**'
+      - 'shared/clinical-rules-core.js'
+      - 'tests/test_clinical_*'
+      - 'tests/test_safety_compliance_phase1.js'
+      - 'tests/run.js'
+
+jobs:
+  clinical-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: node --test tests/test_clinical_fe_be_contract.v2.js tests/test_clinical_rule_engine.v2.js tests/test_clinical_mappings.v2.js tests/test_clinical_core_contract.v2.js tests/test_safety_compliance_phase1.js

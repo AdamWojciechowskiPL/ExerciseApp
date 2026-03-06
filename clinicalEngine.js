@@ -1,7 +1,8 @@
 // ExerciseApp/clinicalEngine.js
 
 import CANONICAL_VALUES from './shared/wizard-canonical-values.js';
-import './shared/clinical-rules-core.js';
+import './shared/clinical-core/contracts.js';
+import './shared/clinical-core/index.js';
 
 const { KNOWN_POSITIONS, isRotationalPlane, createClinicalRules } = globalThis.__ClinicalRulesCore;
 

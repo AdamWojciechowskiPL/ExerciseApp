@@ -102,7 +102,7 @@ test('Frontend wizard guardrails: p4b validation and generation block are presen
 
   assert.match(
     wizardSource,
-    /if \(hasRedFlags\) \{[\s\S]*plan nie został wygenerowany/,
+    /if \(hasRedFlags\) \{[\s\S]*(dobór planu został zatrzymany|plan nie został wygenerowany)/,
     'wizard should block plan generation when red flags are present'
   );
 });

@@ -51,6 +51,12 @@ function normalizeEquipmentList(values) {
     return out;
 }
 
+function normalizeCanonicalValue(value, group) {
+    const allowed = new Set((CANONICAL[group] || []).map(v => String(v).toLowerCase()));
+    const normalized = normalizeEntry(value, group);
+    return allowed.has(normalized) ? normalized : '';
+}
+
 function normalizeWizardPayload(payload = {}) {
     return {
         ...payload,
@@ -61,7 +67,10 @@ function normalizeWizardPayload(payload = {}) {
         physical_restrictions: normalizeCanonicalArray(payload.physical_restrictions, 'physical_restrictions'),
         hobby: normalizeCanonicalArray(payload.hobby, 'hobby'),
         session_component_weights: normalizeCanonicalArray(payload.session_component_weights, 'focus'),
-        equipment_available: normalizeEquipmentList(payload.equipment_available)
+        equipment_available: normalizeEquipmentList(payload.equipment_available),
+        symptom_onset: normalizeCanonicalValue(payload.symptom_onset, 'symptom_onset'),
+        symptom_duration: normalizeCanonicalValue(payload.symptom_duration, 'symptom_duration'),
+        symptom_trend: normalizeCanonicalValue(payload.symptom_trend, 'symptom_trend')
     };
 }
 
@@ -69,5 +78,6 @@ module.exports = {
     CANONICAL,
     normalizeCanonicalArray,
     normalizeEquipmentList,
+    normalizeCanonicalValue,
     normalizeWizardPayload
 };

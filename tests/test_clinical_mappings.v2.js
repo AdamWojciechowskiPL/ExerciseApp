@@ -57,3 +57,39 @@ test('canonical hobby/equipment/restrictions keep only allowed values', () => {
     assert.deepEqual(normalized.equipment_available, ['hantle', 'mata']);
     assert.deepEqual(normalized.physical_restrictions, ['no_kneeling']);
 });
+
+
+test('acute + worsening profile lowers first-plan difficulty vs chronic stable', () => {
+    const acute = clinical.buildUserContext({
+        pain_intensity: 4,
+        daily_impact: 4,
+        exercise_experience: 'advanced',
+        symptom_onset: 'sudden',
+        symptom_duration: 'lt_6_weeks',
+        symptom_trend: 'worsening'
+    });
+
+    const chronicStable = clinical.buildUserContext({
+        pain_intensity: 4,
+        daily_impact: 4,
+        exercise_experience: 'advanced',
+        symptom_onset: 'gradual',
+        symptom_duration: 'gt_12_weeks',
+        symptom_trend: 'stable'
+    });
+
+    assert.equal(acute.difficultyCap <= chronicStable.difficultyCap, true);
+    assert.equal(acute.symptomProfile.trend, 'worsening');
+});
+
+test('canonical symptom fields keep only allowed values', () => {
+    const normalized = canonical.normalizeWizardPayload({
+        symptom_onset: 'SUDDEN',
+        symptom_duration: 'w6_12_weeks',
+        symptom_trend: 'invalid'
+    });
+
+    assert.equal(normalized.symptom_onset, 'sudden');
+    assert.equal(normalized.symptom_duration, 'w6_12_weeks');
+    assert.equal(normalized.symptom_trend, '');
+});

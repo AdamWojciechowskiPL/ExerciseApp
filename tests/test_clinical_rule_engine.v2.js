@@ -48,19 +48,26 @@ test('No twisting blocks rotation/transverse planes', () => {
   assert.equal(clinical.checkExerciseAvailability(exTrans, ctx).allowed, false, 'Should block transverse');
 });
 
-test('Tolerance tags: flexion_intolerant blocks flexion unless ok_for_flexion_intolerant', () => {
+test('Tolerance pattern is soft bias on first signal, hard-block after repeated 24h worsening', () => {
   // Force tolerance pattern via mock inputs that trigger it
   const ctx = clinical.buildUserContext({ trigger_movements: ['bending_forward'] }); 
   // verify detection works
   assert.equal(ctx.tolerancePattern, 'flexion_intolerant', 'Context setup failed');
 
-  // Case 1: Flexion plane, no tag -> Block
   const exBad = { id: 'flex1', primary_plane: 'flexion', tolerance_tags: [] };
-  assert.equal(clinical.checkExerciseAvailability(exBad, ctx).allowed, false, 'Should block flexion');
+  const firstSignal = clinical.checkExerciseAvailability(exBad, ctx);
+  assert.equal(firstSignal.allowed, true, 'Single signal should not hard-block flexion');
+  assert.equal(firstSignal.reason, 'directional_bias');
 
-  // Case 2: Flexion plane, HAS tag -> Allow
+  const confirmedCtx = clinical.buildUserContext({
+    trigger_movements: ['bending_forward'],
+    directional_negative_24h_count: 2
+  });
+  const confirmedSignal = clinical.checkExerciseAvailability(exBad, confirmedCtx);
+  assert.equal(confirmedSignal.allowed, false, 'Repeated 24h worsening should hard-block mismatch');
+
   const exGood = { id: 'flex2', primary_plane: 'flexion', tolerance_tags: ['ok_for_flexion_intolerant'] };
-  assert.equal(clinical.checkExerciseAvailability(exGood, ctx).allowed, true, 'Should allow tagged flexion');
+  assert.equal(clinical.checkExerciseAvailability(exGood, confirmedCtx).allowed, true, 'Tagged flexion remains allowed');
 });
 
 test('US-11: engine tolerates new spine_motion_profile field (NULL-safe)', () => {

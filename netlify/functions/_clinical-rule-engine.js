@@ -152,6 +152,37 @@ function isExerciseSafeForFatigue(ex, strictLevel = 0) {
     return true;
 }
 
+
+function computeAcuteGuard(normalizedData) {
+    const onset = normalizedData.symptom_onset;
+    const duration = normalizedData.symptom_duration;
+    const trend = normalizedData.symptom_trend;
+    const isAcute = onset === 'sudden' || onset === 'post_traumatic' || duration === 'lt_6_weeks';
+    const isWorsening = trend === 'worsening';
+    return { isAcute, isWorsening, isAcuteWorsening: isAcute && isWorsening };
+}
+
+function getToleranceBias(tolerancePattern, confirmedDirectionalIntolerance) {
+    const strength = confirmedDirectionalIntolerance ? 1 : (tolerancePattern === 'neutral' ? 0 : 0.35);
+    return { pattern: tolerancePattern, strength, confirmed: confirmedDirectionalIntolerance };
+}
+
+function isDirectionalMismatch(ex, tolerancePattern) {
+    const plane = String(ex.primary_plane || 'multi').toLowerCase();
+    const tags = Array.isArray(ex.tolerance_tags) ? ex.tolerance_tags : [];
+    const profile = ex.spineMotionProfile || 'neutral';
+
+    if (tolerancePattern === 'flexion_intolerant') {
+        if (plane === 'flexion' && !tags.includes('ok_for_flexion_intolerant')) return true;
+        if (profile === 'lumbar_flexion_loaded') return true;
+    } else if (tolerancePattern === 'extension_intolerant') {
+        if (plane === 'extension' && !tags.includes('ok_for_extension_intolerant')) return true;
+        if (profile === 'lumbar_extension_loaded') return true;
+    }
+
+    return false;
+}
+
 function detectTolerancePattern(triggers, reliefs) {
     if (!Array.isArray(triggers)) triggers = [];
     if (!Array.isArray(reliefs)) reliefs = [];
@@ -165,6 +196,8 @@ function buildUserContext(userData) {
     const normalizedData = normalizeWizardPayload(userData || {});
     const tolerancePattern = detectTolerancePattern(normalizedData.trigger_movements, normalizedData.relief_movements);
     const painChar = normalizedData.pain_character || [];
+    const directionalNegative24hCount = Math.max(0, parseInt(normalizedData.directional_negative_24h_count, 10) || 0);
+    const confirmedDirectionalIntolerance = directionalNegative24hCount >= 2;
     const isPainSharp = painChar.includes('sharp') || painChar.includes('burning') || painChar.includes('radiating');
     const painInt = parseInt(normalizedData.pain_intensity) || 0;
     const impact = parseInt(normalizedData.daily_impact) || 0;
@@ -172,6 +205,7 @@ function buildUserContext(userData) {
     let severityScore = (painInt + impact) / 2;
     if (isPainSharp) severityScore *= 1.2;
     const isSevere = severityScore >= 6.5;
+    const acuteGuard = computeAcuteGuard(normalizedData);
 
     const experienceKey = normalizedData.exercise_experience;
     const baseDifficultyCap = DIFFICULTY_MAP[experienceKey] || 2;
@@ -181,6 +215,11 @@ function buildUserContext(userData) {
         difficultyCap = Math.min(baseDifficultyCap, 2);
     } else if (isPainSharp && severityScore >= 4) {
         difficultyCap = Math.min(baseDifficultyCap, 3);
+    }
+
+    if (acuteGuard.isAcuteWorsening) {
+        difficultyCap = Math.min(difficultyCap, 2);
+        severityScore = Math.max(severityScore, 6);
     }
 
     const painLocs = normalizedData.pain_locations || [];
@@ -209,6 +248,7 @@ function buildUserContext(userData) {
 
     return {
         tolerancePattern,
+        toleranceBias: getToleranceBias(tolerancePattern, confirmedDirectionalIntolerance),
         isSevere,
         severityScore,
         difficultyCap,
@@ -217,7 +257,14 @@ function buildUserContext(userData) {
         userEquipment,
         physicalRestrictions,
         medicalDiagnosis,
-        blockedIds: new Set()
+        blockedIds: new Set(),
+        symptomProfile: {
+            onset: normalizedData.symptom_onset || '',
+            duration: normalizedData.symptom_duration || '',
+            trend: normalizedData.symptom_trend || ''
+        },
+        directionalNegative24hCount,
+        confirmedDirectionalIntolerance
     };
 }
 
@@ -304,22 +351,7 @@ function violatesRestrictions(ex, ctx) {
 }
 
 function passesTolerancePattern(ex, tolerancePattern) {
-    const plane = String(ex.primary_plane || 'multi').toLowerCase();
-    const tags = Array.isArray(ex.tolerance_tags) ? ex.tolerance_tags : [];
-
-    // US-11: Użycie spineMotionProfile (jeśli dostępny)
-    const profile = ex.spineMotionProfile || 'neutral';
-
-    if (tolerancePattern === 'flexion_intolerant') {
-        if (plane === 'flexion' && !tags.includes('ok_for_flexion_intolerant')) return false;
-        if (profile === 'lumbar_flexion_loaded') return false;
-    }
-    else if (tolerancePattern === 'extension_intolerant') {
-        if (plane === 'extension' && !tags.includes('ok_for_extension_intolerant')) return false;
-        if (profile === 'lumbar_extension_loaded') return false;
-    }
-
-    return true;
+    return !isDirectionalMismatch(ex, tolerancePattern);
 }
 
 function checkExerciseAvailability(ex, ctx, options = {}) {
@@ -332,7 +364,10 @@ function checkExerciseAvailability(ex, ctx, options = {}) {
     if (!ignoreDifficulty && ctx.difficultyCap && exLevel > ctx.difficultyCap) return { allowed: false, reason: 'too_hard_calculated' };
 
     if (violatesRestrictions(ex, ctx)) return { allowed: false, reason: 'physical_restriction' };
-    if (!passesTolerancePattern(ex, ctx.tolerancePattern)) return { allowed: false, reason: 'biomechanics_mismatch' };
+
+    const directionalMismatch = isDirectionalMismatch(ex, ctx.tolerancePattern);
+    const toleranceBias = ctx.toleranceBias || { strength: 0 };
+    if (directionalMismatch && toleranceBias.strength >= 1) return { allowed: false, reason: 'biomechanics_mismatch' };
 
     if (strictSeverity && ctx.isSevere) {
         const spineLoad = String(ex.spine_load_level || 'low').toLowerCase();
@@ -351,6 +386,10 @@ function checkExerciseAvailability(ex, ctx, options = {}) {
         if (!helpsZone) {
             return { allowed: false, reason: 'severity_filter' };
         }
+    }
+
+    if (directionalMismatch) {
+        return { allowed: true, reason: 'directional_bias' };
     }
 
     return { allowed: true, reason: null };

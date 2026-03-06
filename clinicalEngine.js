@@ -9,6 +9,20 @@ const DIFFICULTY_MAP = {
     'none': 1, 'occasional': 2, 'regular': 3, 'advanced': 4
 };
 
+
+const DIAGNOSIS_ALIAS_MAP = {
+    runners_knee: 'chondromalacia',
+    patellofemoral: 'chondromalacia'
+};
+
+function normalizeDiagnosisArray(rawDiagnosis) {
+    if (!Array.isArray(rawDiagnosis)) return [];
+    return rawDiagnosis
+        .map(d => String(d).trim().toLowerCase())
+        .filter(Boolean)
+        .map(d => DIAGNOSIS_ALIAS_MAP[d] || d);
+}
+
 // --- HELPERY KONTEKSTU ---
 
 export const isRotationalPlane = (p) => {
@@ -69,7 +83,7 @@ export function buildClinicalContext(wizardData) {
     );
 
     const physicalRestrictions = wizardData.physical_restrictions || [];
-    const medicalDiagnosis = wizardData.medical_diagnosis || [];
+    const medicalDiagnosis = normalizeDiagnosisArray(wizardData.medical_diagnosis);
 
     return {
         tolerancePattern,
@@ -159,7 +173,7 @@ export function violatesRestrictions(ex, ctx) {
 
     // 6. Ochrona Kolan (Knee Protection Logic)
     const hasKneeIssue = ctx.painFilters.has('knee') || ctx.painFilters.has('knee_anterior');
-    const isChondromalacia = diagnosis.includes('chondromalacia') || diagnosis.includes('runners_knee');
+    const isChondromalacia = diagnosis.includes('chondromalacia');
 
     if (hasKneeIssue && ctx.isSevere && kneeLoad === 'high') return true;
     if (isChondromalacia && kneeLoad === 'high') return true;

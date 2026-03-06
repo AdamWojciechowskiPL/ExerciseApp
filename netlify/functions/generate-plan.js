@@ -12,7 +12,7 @@ const {
 const { calculateTiming } = require('./_pacing-engine.js');
 const { calculateFatigueProfile } = require('./_fatigue-calculator.js');
 const { applyMicroLoading } = require('./_amps-engine.js');
-const { derivePainZoneSet, normalizeStringArray, normalizeLowerSet } = require('./_pain-taxonomy.js');
+const { derivePainZoneSet, normalizeStringArray, normalizeLowerSet, normalizeDiagnosisSet } = require('./_pain-taxonomy.js');
 const { validateTempoString, enforceTempoByPhaseIntent, SAFE_FALLBACK_TEMPO } = require('./_tempo-validator.js');
 
 const {
@@ -285,7 +285,7 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
     const weights = initCategoryWeightsFromExercises(exercises);
     const painLocs = normalizeLowerSet(userData?.pain_locations);
     const focusLocs = normalizeLowerSet(userData?.focus_locations);
-    const diagnosis = normalizeLowerSet(userData?.medical_diagnosis);
+    const diagnosis = normalizeDiagnosisSet(userData?.medical_diagnosis);
     const restrictions = normalizeLowerSet(userData?.physical_restrictions);
     const componentWeights = normalizeLowerSet(userData?.session_component_weights);
     const workType = String(userData?.work_type || '').toLowerCase();
@@ -331,15 +331,18 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
         boost(weights, 'muscle_relaxation', 0.4);
     }
 
-    if (diagnosis.has('chondromalacia') || diagnosis.has('patellofemoral')) {
+    if (diagnosis.has('chondromalacia')) {
         boost(weights, 'patellofemoralcontrol', 2.0);
     }
 
     if (painLocs.has('ankle') || painLocs.has('foot')) { boost(weights, 'calves', 0.6); boost(weights, 'ankle_mobility', 0.8); boost(weights, 'balance_proprioception', 0.5); }
 
     // 2. Focus/Goal
-    if (focusLocs.has('glutes')) { boost(weights, 'glute_activation', 1.5); boost(weights, 'hip_extension', 1.5); }
-    if (focusLocs.has('abs')) { boost(weights, 'core_stability', 1.2); boost(weights, 'core_anti_extension', 1.0); }
+    if (focusLocs.has('hip')) { boost(weights, 'glute_activation', 1.1); boost(weights, 'hip_extension', 1.3); }
+    if (focusLocs.has('low_back') || focusLocs.has('lumbar') || focusLocs.has('lumbar_general') || focusLocs.has('si_joint')) {
+        boost(weights, 'core_stability', 1.2);
+        boost(weights, 'core_anti_extension', 1.0);
+    }
 
     // 3. Work/Hobby
     if (workType === 'sedentary') { boost(weights, 'thoracic_mobility', 0.7); boost(weights, 'hip_flexor_stretch', 0.5); boost(weights, 'glute_activation', 0.6); }
@@ -415,7 +418,7 @@ function violatesPhysicalRestrictions(ex, restrictionsSet) {
 
 function filterExerciseCandidates(exercises, userData, ctx, fatigueProfile, rpeData) {
     const userEquipment = normalizeEquipmentList(userData?.equipment_available);
-    const diagnosisSet = normalizeLowerSet(userData?.medical_diagnosis);
+    const diagnosisSet = normalizeDiagnosisSet(userData?.medical_diagnosis);
     const restrictionsSet = normalizeLowerSet(userData?.physical_restrictions);
 
     const isFatigued = fatigueProfile.fatigueScoreNow >= fatigueProfile.fatigueThresholdFilter;
@@ -508,7 +511,7 @@ function goalMultiplierForExercise(ex, userData, ctx) {
 
 function painSafetyPenalty(ex, userData, ctx) {
     const painLocs = normalizeLowerSet(userData?.pain_locations);
-    const diagnosisSet = normalizeLowerSet(userData?.medical_diagnosis);
+    const diagnosisSet = normalizeDiagnosisSet(userData?.medical_diagnosis);
     const painChar = userData?.pain_character || [];
     const isRadiating = painChar.includes('radiating') || painChar.includes('burning');
 
@@ -657,7 +660,7 @@ function calculateScoreComponents(ex, section, userData, ctx, categoryWeights, s
     }
 
     const hobbies = normalizeHobbySet(userData?.hobby);
-    const diagnoses = normalizeLowerSet(userData?.medical_diagnosis);
+    const diagnoses = normalizeDiagnosisSet(userData?.medical_diagnosis);
 
     if (hobbies.has('running') && ex.is_unilateral) {
         const isRehabControl = phaseContext?.phaseId === 'control' || phaseContext?.phaseId === 'rehab';
@@ -1430,7 +1433,27 @@ exports.handler = async (event) => {
     const userData = safeJsonParse(event.body);
     if (!userData) return { statusCode: 400 };
 
-    const redFlags = normalizeLowerSet(userData?.red_flags);
+    const redFlagsRaw = userData?.red_flags;
+    if (redFlagsRaw !== undefined && !Array.isArray(redFlagsRaw)) {
+        return { statusCode: 400, body: JSON.stringify({ error: 'INVALID_RED_FLAGS_PAYLOAD' }) };
+    }
+
+    const redFlags = normalizeLowerSet(redFlagsRaw);
+    const allowedRedFlags = new Set([
+        'trauma_recent',
+        'cauda_equina_symptoms',
+        'progressive_neuro_deficit',
+        'unexplained_weight_loss_fever',
+        'night_rest_pain_unrelenting',
+        'none'
+    ]);
+
+    for (const flag of redFlags) {
+        if (!allowedRedFlags.has(flag)) {
+            return { statusCode: 400, body: JSON.stringify({ error: 'INVALID_RED_FLAG_VALUE', value: flag }) };
+        }
+    }
+
     const hasRedFlags = redFlags.size > 0 && !redFlags.has('none');
     if (hasRedFlags) {
         console.warn(`[PlanGen] User: ${userId}, status=ineligible_for_plan, reason=red_flags`);

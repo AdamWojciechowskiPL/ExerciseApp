@@ -32,7 +32,7 @@ function weights(inputOverrides) {
     work_type: inputOverrides.work_type || '',
     hobby: inputOverrides.hobby || [],
 
-    // Mapowanie celów testowych na focus_locations (np. 'focus_glutes' -> 'glutes')
+    // Mapowanie celów testowych na focus_locations
     focus_locations: (inputOverrides.goals || []).map(g => g.replace('focus_', '')),
 
     // Ustawienie parametrów bólu dla flagi isSevere
@@ -67,10 +67,10 @@ test('Running boosts: core_stability (+1.0), vmo_activation (+0.3)', () => {
   assertApprox(assert, w.thoracic_mobility, 1.8, 1e-9, 'thoracic_mobility from cycling');
 });
 
-test('Focus glutes boosts: glute_activation (+1.5), hip_extension (+1.5)', () => {
-  const w = weights({ goals: ['focus_glutes'] });
-  assertApprox(assert, w.glute_activation, 2.5, 1e-9, 'glute_activation');
-  assertApprox(assert, w.hip_extension, 2.5, 1e-9, 'hip_extension');
+test('Focus hip boosts: glute_activation (+1.1), hip_extension (+1.3)', () => {
+  const w = weights({ goals: ['focus_hip'] });
+  assertApprox(assert, w.glute_activation, 2.1, 1e-9, 'glute_activation');
+  assertApprox(assert, w.hip_extension, 2.3, 1e-9, 'hip_extension');
 });
 
 test('Knee pain retune (v1): mild vs severe', () => {

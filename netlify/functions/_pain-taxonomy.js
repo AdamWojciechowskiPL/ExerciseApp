@@ -35,6 +35,22 @@ const PAIN_MAPPING = {
     'foot': ['foot', 'ankle', 'plantar_fascia']
 };
 
+
+const DIAGNOSIS_ALIAS_MAP = {
+    runners_knee: 'chondromalacia',
+    patellofemoral: 'chondromalacia'
+};
+
+function normalizeDiagnosisArray(rawDiagnosis) {
+    return normalizeStringArray(rawDiagnosis)
+        .map(s => s.toLowerCase())
+        .filter(Boolean)
+        .map(d => DIAGNOSIS_ALIAS_MAP[d] || d);
+}
+
+function normalizeDiagnosisSet(rawDiagnosis) {
+    return new Set(normalizeDiagnosisArray(rawDiagnosis));
+}
 /**
  * Normalizuje tablicę stringów (trim + lowercase).
  */
@@ -82,5 +98,7 @@ module.exports = {
     derivePainZoneSet,
     normalizeLowerSet,
     normalizeStringArray,
-    PAIN_MAPPING
+    PAIN_MAPPING,
+    normalizeDiagnosisArray,
+    normalizeDiagnosisSet
 };

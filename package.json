@@ -1,11 +1,11 @@
 {
   "name": "aplikacja-treningowa",
-  "version": "5.0.15",
+  "version": "5.0.16",
   "description": "Aplikacja do śledzenia planów treningowych.",
   "main": "app.js",
   "private": true,
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node tests/run.js"
   },
   "author": "",
   "license": "ISC",

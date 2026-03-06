@@ -1,9 +1,16 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v29.4.12
+# Aplikacja Treningowa (Smart Rehab PWA) v29.4.13
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
 ---
 
+
+## 🆕 Aktualizacje v29.4.13
+
+* Wpięto `directional_bias` do realnego rankingu generatora: kandydat przechodzi filtr jako soft bias, ale otrzymuje jawny mnożnik kary w `calculateScoreComponents()` przy pojedynczym sygnale i bez potwierdzonej nietolerancji 24h.
+* Zachowano eskalację bezpieczeństwa: przy `directionalNegative24hCount >= 2` directional mismatch nadal przechodzi w hard block (`biomechanics_mismatch`) na etapie klinicznej dostępności.
+* Dodano regresje dla directional bias scoringu (soft penalty, brak kary bez sygnału, hard block po 24h, fallback przy małej puli kandydatów).
+* Naprawiono entrypoint testów: `npm test` uruchamia teraz rzeczywisty runner (`node tests/run.js`) z automatycznym wykryciem plików `test_*.js`.
 
 ## 🆕 Aktualizacje v29.4.12
 

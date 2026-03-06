@@ -16,6 +16,7 @@ const STEPS = [
     { id: 'p4', title: 'Rozpoznanie zgłoszone', render: renderP4 },
     { id: 'p4b', title: 'Objawy alarmowe', render: renderP4b },
     { id: 'p4c', title: 'Przebieg objawów', render: renderP4c },
+    { id: 'p4d', title: 'Screening ogólnomedyczny', render: renderP4d },
     { id: 'p5', title: 'Co nasila?', render: renderP5 },
     { id: 'p6', title: 'Co pomaga?', render: renderP6 },
     { id: 'p7', title: 'Wpływ na życie', render: renderP7 },
@@ -46,6 +47,20 @@ const RED_FLAG_OPTIONS = [
 
 const RED_FLAG_VALUES = new Set(RED_FLAG_OPTIONS.map((opt) => opt.val));
 
+const MEDICAL_SCREENING_OPTIONS = [
+    { val: 'cvd', label: 'Zdiagnozowana choroba sercowo-naczyniowa' },
+    { val: 'metabolic', label: 'Zdiagnozowana choroba metaboliczna (np. cukrzyca)' },
+    { val: 'renal', label: 'Zdiagnozowana choroba nerek' },
+    { val: 'chest_pain_exertional', label: 'Ból w klatce piersiowej podczas wysiłku' },
+    { val: 'syncope_exertional', label: 'Omdlenia / zasłabnięcia podczas wysiłku' },
+    { val: 'dyspnea_disproportionate', label: 'Duszność nieproporcjonalna do wysiłku lub w spoczynku' },
+    { val: 'recent_cardiac_event', label: 'Niedawny incydent sercowy lub brak zgody lekarza na wysiłek' },
+    { val: 'uncontrolled_hypertension', label: 'Niekontrolowane nadciśnienie' },
+    { val: 'none', label: '✅ Żadna z powyższych' }
+];
+
+const MEDICAL_SCREENING_VALUES = new Set(MEDICAL_SCREENING_OPTIONS.map((opt) => opt.val));
+
 export function initWizard(forceStart = false) {
     if (state.settings.onboardingCompleted && !forceStart) return false;
     const saved = state.settings.wizardData || {};
@@ -60,6 +75,7 @@ export function initWizard(forceStart = false) {
         symptom_onset: saved.symptom_onset || '',
         symptom_duration: saved.symptom_duration || '',
         symptom_trend: saved.symptom_trend || '',
+        exercise_medical_clearance: saved.exercise_medical_clearance || {},
         trigger_movements: saved.trigger_movements || [],
         relief_movements: saved.relief_movements || [],
         daily_impact: saved.daily_impact !== undefined ? saved.daily_impact : 0,
@@ -219,6 +235,7 @@ function validateStep(stepId) {
         case 'p4': return wizardAnswers.medical_diagnosis.length > 0;
         case 'p4b': return hasExplicitRedFlagsAnswer();
         case 'p4c': return wizardAnswers.pain_locations.length === 0 || (wizardAnswers.symptom_onset !== '' && wizardAnswers.symptom_duration !== '' && wizardAnswers.symptom_trend !== '');
+        case 'p4d': return hasExplicitMedicalScreeningAnswer();
         case 'p5': return wizardAnswers.pain_locations.length === 0 || wizardAnswers.trigger_movements.length > 0;
         case 'p6': return wizardAnswers.pain_locations.length === 0 || wizardAnswers.relief_movements.length > 0;
         case 'p8': return wizardAnswers.work_type !== '';
@@ -440,32 +457,8 @@ function renderP3(c) { renderMultiSelect(c, 'Jakie objawy dominują?', [{ val: '
 
 function renderP4(c) {
     const title = 'Czy masz rozpoznanie zgłoszone przez specjalistę?';
-    const diagnosisTriggerMap = {
-        'scoliosis': ['thoracic', 'low_back', 'cervical'],
-        'disc_herniation': ['low_back', 'cervical', 'sciatica'],
-        'stenosis': ['low_back', 'cervical'],
-        'facet_syndrome': ['low_back', 'thoracic', 'cervical', 'si_joint'],
-        'piriformis': ['sciatica', 'hip'],
-        'chondromalacia': ['knee'],
-        'meniscus_tear': ['knee'],
-        'acl_rehab': ['knee'],
-        'jumpers_knee': ['knee']
-    };
-
-    const allOptions = MEDICAL_DIAGNOSIS_OPTIONS;
-
-    const currentPainZones = wizardAnswers.pain_locations;
-    const hasCurrentPainSelection = Array.isArray(currentPainZones) && currentPainZones.length > 0;
-    const optionsToRender = hasCurrentPainSelection
-        ? allOptions.filter(opt => {
-            if (opt.val === 'none') return true;
-            const requiredZones = diagnosisTriggerMap[opt.val];
-            if (!requiredZones) return true;
-            return requiredZones.some(zone => currentPainZones.includes(zone));
-        })
-        : allOptions;
-
-    renderMultiSelect(c, title, optionsToRender, 'medical_diagnosis');
+    const hint = '<p class="wizard-step-desc" style="margin-top:-8px; opacity:0.85;">Wybierz tylko rozpoznania potwierdzone przez lekarza lub fizjoterapeutę.</p>';
+    renderMultiSelect(c, title, MEDICAL_DIAGNOSIS_OPTIONS, 'medical_diagnosis', hint);
 }
 
 
@@ -525,6 +518,58 @@ function renderP4c(c) {
         { val: 'stable', label: 'Bez zmian' },
         { val: 'worsening', label: 'Pogorszenie' }
     ]);
+}
+
+
+function hasExplicitMedicalScreeningAnswer() {
+    const clearance = wizardAnswers.exercise_medical_clearance;
+    if (!clearance || typeof clearance !== 'object') return false;
+
+    const known = Object.keys(clearance).filter((key) => MEDICAL_SCREENING_VALUES.has(key));
+    if (known.length === 0) return false;
+
+    if (clearance.none === true) {
+        return known.every((key) => key === 'none' || clearance[key] === false);
+    }
+
+    return known.some((key) => key !== 'none' && clearance[key] === true);
+}
+
+function renderP4d(c) {
+    c.innerHTML = '<p class="wizard-step-desc">Przed planami o wyższej intensywności potrzebujemy krótkiego przesiewu bezpieczeństwa.</p><div class="options-list" id="medical-screening-list"></div>';
+    const list = c.querySelector('#medical-screening-list');
+
+    const current = wizardAnswers.exercise_medical_clearance || {};
+    if (Object.keys(current).length === 0) {
+        wizardAnswers.exercise_medical_clearance = {};
+    }
+
+    MEDICAL_SCREENING_OPTIONS.forEach((opt) => {
+        const btn = document.createElement('div');
+        const selected = wizardAnswers.exercise_medical_clearance[opt.val] === true;
+        btn.className = `option-btn ${selected ? 'selected' : ''}`;
+        btn.textContent = opt.label;
+
+        btn.addEventListener('click', () => {
+            if (opt.val === 'none') {
+                const makeSelected = wizardAnswers.exercise_medical_clearance.none !== true;
+                wizardAnswers.exercise_medical_clearance = {};
+                if (makeSelected) {
+                    wizardAnswers.exercise_medical_clearance.none = true;
+                    MEDICAL_SCREENING_OPTIONS.forEach((entry) => {
+                        if (entry.val !== 'none') wizardAnswers.exercise_medical_clearance[entry.val] = false;
+                    });
+                }
+            } else {
+                wizardAnswers.exercise_medical_clearance.none = false;
+                const prev = wizardAnswers.exercise_medical_clearance[opt.val] === true;
+                wizardAnswers.exercise_medical_clearance[opt.val] = !prev;
+            }
+            renderP4d(c);
+        });
+
+        list.appendChild(btn);
+    });
 }
 
 function renderP5(c) { renderMultiSelect(c, 'Kiedy ból się NASILA?', [{ val: 'bending_forward', label: 'Pochylanie do przodu' }, { val: 'bending_backward', label: 'Odchylanie w tył' }, { val: 'twisting', label: 'Skręty tułowia' }, { val: 'sitting', label: 'Długie siedzenie' }, { val: 'standing', label: 'Długie stanie' }, { val: 'walking', label: 'Chodzenie' }, { val: 'lying_back', label: 'Leżenie na plecach' }], 'trigger_movements'); }
@@ -706,6 +751,7 @@ function renderSummary(c) {
     }
 
     const hasRedFlags = Array.isArray(wizardAnswers.red_flags) && wizardAnswers.red_flags.some(flag => flag !== 'none');
+    const hasMedicalScreeningFlags = Object.entries(wizardAnswers.exercise_medical_clearance || {}).some(([key, val]) => key !== 'none' && val === true);
 
     const dayLabels = { 1: 'Pn', 2: 'Wt', 3: 'Śr', 4: 'Cz', 5: 'Pt', 6: 'So', 0: 'Nd' };
     const pattern = wizardAnswers.schedule_pattern || [];
@@ -744,6 +790,7 @@ function renderSummary(c) {
             <li>📅 <strong>Dni:</strong> ${formattedDays || 'Brak'}</li>
             <li>⏱️ <strong>Czas:</strong> ${wizardAnswers.target_session_duration_min} min</li>
             <li>${hasRedFlags ? '🚨' : '✅'} <strong>Objawy alarmowe:</strong> ${hasRedFlags ? 'Wykryto (wymagana konsultacja)' : 'Brak'}</li>
+            <li>${hasMedicalScreeningFlags ? '⚠️' : '✅'} <strong>Screening medyczny:</strong> ${hasMedicalScreeningFlags ? 'Wymagana konsultacja przed intensywnym wysiłkiem' : 'Bez dodatnich odpowiedzi'}</li>
         </ul>
 
         ${warningHTML}
@@ -794,6 +841,20 @@ async function finalizeGeneration(consoleDiv) {
             return;
         }
 
+        const highIntensityIntent = wizardAnswers.primary_goal === 'fat_loss' || Array.isArray(wizardAnswers.session_component_weights) && wizardAnswers.session_component_weights.includes('conditioning');
+        const hasMedicalScreeningFlags = Object.entries(wizardAnswers.exercise_medical_clearance || {}).some(([key, val]) => key !== 'none' && val === true);
+
+        if (highIntensityIntent && hasMedicalScreeningFlags) {
+            const msg = 'Na podstawie screeningu medycznego nie możemy wygenerować planu o wyższej intensywności. Skonsultuj możliwość wysiłku z lekarzem.';
+            if (consoleDiv) {
+                consoleDiv.textContent = `⛔ ${msg}`;
+                consoleDiv.style.color = 'var(--danger-color)';
+            }
+            setTimeout(() => alert(msg), 150);
+            currentStep = STEPS.findIndex((step) => step.id === 'summary');
+            return;
+        }
+
         const payload = {
             ...wizardAnswers,
             secondsPerRep: state.settings.secondsPerRep || 6,
@@ -824,8 +885,8 @@ async function finalizeGeneration(consoleDiv) {
     }
 }
 
-function renderMultiSelect(container, question, options, key) {
-    container.innerHTML = `<p class="wizard-step-desc">${question}</p><div class="options-list"></div>`;
+function renderMultiSelect(container, question, options, key, hintHtml = '') {
+    container.innerHTML = `<p class="wizard-step-desc">${question}</p>${hintHtml}<div class="options-list"></div>`;
     const list = container.querySelector('.options-list');
 
     options.forEach(opt => {

@@ -1,4 +1,4 @@
-import CANONICAL_VALUES from '../shared/wizard-canonical-values.json' assert { type: 'json' };
+import CANONICAL_VALUES from '../shared/wizard-canonical-values.js';
 
 const formatLabel = (value) => value.replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase());
 

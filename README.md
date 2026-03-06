@@ -1,9 +1,16 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v29.4.9
+# Aplikacja Treningowa (Smart Rehab PWA) v29.4.10
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
 ---
 
+
+## 🆕 Aktualizacje v29.4.10
+
+* Ujednolicono FE/BE Clinical Engine do wspólnego modułu `shared/clinical-rules-core.js` — kluczowe reguły (`detectTolerancePattern`, budowa kontekstu, `passesTolerancePattern`, `checkExerciseAvailability`, severe pain, knee/neck/overhead restrictions) są utrzymywane w jednym miejscu.
+* Frontend (`clinicalEngine.js`) i backend (`_clinical-rule-engine.js`) korzystają teraz z tej samej implementacji rdzenia reguł, co eliminuje drift decyzji allowed/reason między warstwami.
+* Rozszerzono test parity FE/BE o macierz przypadków bezpieczeństwa i tolerancji (knee pain, disc herniation, severe pain, no_kneeling, no_twisting, overhead, sciatica, tolerance soft bias, follow-up escalation).
+* Dodano regresję dla nowych pól objawowych (`symptom_onset`, `symptom_duration`, `symptom_trend`) obejmującą scenariusze porównawcze ostre/przewlekłe oraz test odporności na brak pól.
 
 ## 🆕 Aktualizacje v29.4.9
 

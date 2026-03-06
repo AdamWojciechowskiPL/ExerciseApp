@@ -31,6 +31,17 @@ const STEPS = [
     { id: 'generating', title: 'Przetwarzanie', render: renderProcessing }
 ];
 
+const RED_FLAG_OPTIONS = [
+    { val: 'trauma_recent', label: '🚨 Świeży uraz / upadek + ból kręgosłupa' },
+    { val: 'cauda_equina_symptoms', label: '🚨 Problemy z oddawaniem moczu/stolca lub drętwienie krocza' },
+    { val: 'progressive_neuro_deficit', label: '🚨 Narastające osłabienie lub niedowład kończyny' },
+    { val: 'unexplained_weight_loss_fever', label: '🚨 Niewyjaśniona utrata masy ciała / gorączka + ból' },
+    { val: 'night_rest_pain_unrelenting', label: '🚨 Stały ból nocny, nieustępujący w spoczynku' },
+    { val: 'none', label: '✅ Żadna z powyższych' }
+];
+
+const RED_FLAG_VALUES = new Set(RED_FLAG_OPTIONS.map((opt) => opt.val));
+
 export function initWizard(forceStart = false) {
     if (state.settings.onboardingCompleted && !forceStart) return false;
     const saved = state.settings.wizardData || {};
@@ -199,7 +210,7 @@ function validateStep(stepId) {
         case 'p1': return (wizardAnswers.pain_locations.length > 0 || wizardAnswers.focus_locations.length > 0);
         case 'p3': return wizardAnswers.pain_locations.length === 0 || wizardAnswers.pain_character.length > 0;
         case 'p4': return wizardAnswers.medical_diagnosis.length > 0;
-        case 'p4b': return wizardAnswers.pain_locations.length === 0 || wizardAnswers.red_flags.length > 0;
+        case 'p4b': return wizardAnswers.pain_locations.length === 0 || hasExplicitRedFlagsAnswer();
         case 'p5': return wizardAnswers.pain_locations.length === 0 || wizardAnswers.trigger_movements.length > 0;
         case 'p6': return wizardAnswers.pain_locations.length === 0 || wizardAnswers.relief_movements.length > 0;
         case 'p8': return wizardAnswers.work_type !== '';
@@ -213,6 +224,19 @@ function validateStep(stepId) {
         case 'p16': return wizardAnswers.physical_restrictions.length > 0;
         default: return true;
     }
+}
+
+function hasExplicitRedFlagsAnswer() {
+    if (!Array.isArray(wizardAnswers.red_flags) || wizardAnswers.red_flags.length === 0) {
+        return false;
+    }
+
+    const selectedFlags = wizardAnswers.red_flags.filter((flag) => RED_FLAG_VALUES.has(flag));
+    if (selectedFlags.length === 0) {
+        return false;
+    }
+
+    return selectedFlags.includes('none') || selectedFlags.some((flag) => flag !== 'none');
 }
 
 function renderIntro(c) { c.innerHTML = `<p class="wizard-step-desc">Moduł <strong>Virtual Physio</strong> przeanalizuje Twoje odpowiedzi i przygotuje plan ćwiczeń.<br><br>Odpowiedz na kilka pytań, abyśmy mogli bezpiecznie dopasować trening do Twoich potrzeb.</p><div style="font-size:5rem; text-align:center; margin:2rem; animation: pulse-fade 2s infinite;">🧬</div>`; }
@@ -435,14 +459,7 @@ function renderP4(c) {
 
 
 function renderP4b(c) {
-    renderMultiSelect(c, 'Czy występuje coś z poniższych objawów alarmowych?', [
-        { val: 'trauma_recent', label: '🚨 Świeży uraz / upadek + ból kręgosłupa' },
-        { val: 'cauda_equina_symptoms', label: '🚨 Problemy z oddawaniem moczu/stolca lub drętwienie krocza' },
-        { val: 'progressive_neuro_deficit', label: '🚨 Narastające osłabienie lub niedowład kończyny' },
-        { val: 'unexplained_weight_loss_fever', label: '🚨 Niewyjaśniona utrata masy ciała / gorączka + ból' },
-        { val: 'night_rest_pain_unrelenting', label: '🚨 Stały ból nocny, nieustępujący w spoczynku' },
-        { val: 'none', label: '✅ Żadna z powyższych' }
-    ], 'red_flags');
+    renderMultiSelect(c, 'Czy występuje coś z poniższych objawów alarmowych?', RED_FLAG_OPTIONS, 'red_flags');
 }
 
 function renderP5(c) { renderMultiSelect(c, 'Kiedy ból się NASILA?', [{ val: 'bending_forward', label: 'Pochylanie do przodu' }, { val: 'bending_backward', label: 'Odchylanie w tył' }, { val: 'twisting', label: 'Skręty tułowia' }, { val: 'sitting', label: 'Długie siedzenie' }, { val: 'standing', label: 'Długie stanie' }, { val: 'walking', label: 'Chodzenie' }, { val: 'lying_back', label: 'Leżenie na plecach' }], 'trigger_movements'); }

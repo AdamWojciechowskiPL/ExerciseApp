@@ -61,6 +61,25 @@ const MEDICAL_SCREENING_OPTIONS = [
 
 const MEDICAL_SCREENING_VALUES = new Set(MEDICAL_SCREENING_OPTIONS.map((opt) => opt.val));
 
+function normalizeMedicalScreeningState(source = {}) {
+    const out = {};
+    const raw = source && typeof source === 'object' ? source : {};
+    const screeningFields = MEDICAL_SCREENING_OPTIONS.filter((opt) => opt.val !== 'none').map((opt) => opt.val);
+
+    for (const field of screeningFields) {
+        out[field] = raw[field] === true;
+    }
+
+    const hasPositive = screeningFields.some((field) => out[field] === true);
+    out.none = raw.none === true || (!hasPositive && raw.none !== false);
+
+    if (out.none) {
+        for (const field of screeningFields) out[field] = false;
+    }
+
+    return out;
+}
+
 export function initWizard(forceStart = false) {
     if (state.settings.onboardingCompleted && !forceStart) return false;
     const saved = state.settings.wizardData || {};
@@ -75,7 +94,7 @@ export function initWizard(forceStart = false) {
         symptom_onset: saved.symptom_onset || '',
         symptom_duration: saved.symptom_duration || '',
         symptom_trend: saved.symptom_trend || '',
-        exercise_medical_clearance: saved.exercise_medical_clearance || {},
+        exercise_medical_clearance: normalizeMedicalScreeningState(saved.exercise_medical_clearance),
         trigger_movements: saved.trigger_movements || [],
         relief_movements: saved.relief_movements || [],
         daily_impact: saved.daily_impact !== undefined ? saved.daily_impact : 0,
@@ -536,13 +555,10 @@ function hasExplicitMedicalScreeningAnswer() {
 }
 
 function renderP4d(c) {
-    c.innerHTML = '<p class="wizard-step-desc">Przed planami o wyższej intensywności potrzebujemy krótkiej analizy odpowiedzi bezpieczeństwa.</p><div class="options-list" id="medical-screening-list"></div>';
+    c.innerHTML = '<p class="wizard-step-desc">To standardowy screening bezpieczeństwa, który pomaga dobrać plan ćwiczeń odpowiedni do Twojego stanu zdrowia.</p><div class="options-list" id="medical-screening-list"></div>';
     const list = c.querySelector('#medical-screening-list');
 
-    const current = wizardAnswers.exercise_medical_clearance || {};
-    if (Object.keys(current).length === 0) {
-        wizardAnswers.exercise_medical_clearance = {};
-    }
+    wizardAnswers.exercise_medical_clearance = normalizeMedicalScreeningState(wizardAnswers.exercise_medical_clearance);
 
     MEDICAL_SCREENING_OPTIONS.forEach((opt) => {
         const btn = document.createElement('div');

@@ -375,7 +375,7 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
     if (hobbies.has('cycling')) { boost(weights, 'thoracic_mobility', 0.8); boost(weights, 'hip_flexor_stretch', 0.9); }
 
     // 4. Diagnosis
-    if (diagnosis.has('chondromalacia') || diagnosis.has('osteoarthritis')) {
+    if (diagnosis.has('chondromalacia') || diagnosis.has('knee_oa')) {
         boost(weights, 'vmo_activation', 0.3); boost(weights, 'glute_activation', 1.2); boost(weights, 'hip_extension', 0.8);
         multiplyMatching(weights, (cat) => isConditioningCategory(cat), 0.9);
     }

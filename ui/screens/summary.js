@@ -18,6 +18,79 @@ let sessionAffinityDeltas = {};
 const SCORE_LIKE = 15;
 const SCORE_DISLIKE = -30;
 
+
+const renderPainFollowUp24hModal = () => {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay active';
+        overlay.innerHTML = `
+            <div class="modal-content" style="max-width:540px;">
+                <h3 style="margin-bottom:6px;">Check-in po 24h</h3>
+                <p style="opacity:0.75; margin-top:0; font-size:0.9rem;">
+                    Aby domknąć monitoring po sesji, uzupełnij teraz krótkie dane follow-up.
+                </p>
+                <form id="pain-24h-form-summary" class="settings-form">
+                    <div class="form-group">
+                        <label for="after24h-max-nprs-summary" style="display:flex; justify-content:space-between; font-weight:700;">
+                            <span>Maksymalne nasilenie objawów po 24h (NPRS)</span>
+                            <strong id="after24h-max-nprs-summary-value">0</strong>
+                        </label>
+                        <input type="range" id="after24h-max-nprs-summary" min="0" max="10" value="0" style="width:100%;">
+                    </div>
+                    <div class="form-group">
+                        <label for="after24h-delta-summary">Zmiana vs baseline (-10 do 10)</label>
+                        <input id="after24h-delta-summary" type="number" min="-10" max="10" step="1" value="0" required>
+                    </div>
+                    <div class="form-group" style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px;">
+                        <label class="checkbox-label"><input type="checkbox" id="after24h-stiffness-summary"> Sztywność wzrosła</label>
+                        <label class="checkbox-label"><input type="checkbox" id="after24h-swelling-summary"> Obrzęk</label>
+                        <label class="checkbox-label"><input type="checkbox" id="after24h-night-pain-summary"> Ból nocny</label>
+                        <label class="checkbox-label"><input type="checkbox" id="after24h-neuro-summary"> Objawy neuro red flags</label>
+                    </div>
+                    <div class="form-group">
+                        <label for="after24h-note-summary">Notatka (opcjonalnie)</label>
+                        <textarea id="after24h-note-summary" rows="2" maxlength="200" placeholder="Co się zmieniło po 24h?"></textarea>
+                    </div>
+                    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;">
+                        <button type="button" class="action-btn secondary" id="skip-24h-summary-btn">Później</button>
+                        <button type="submit" class="action-btn" id="save-24h-summary-btn">Zapisz check-in</button>
+                    </div>
+                </form>
+            </div>
+        `;
+
+        const close = () => {
+            overlay.remove();
+            resolve({ skipped: true });
+        };
+
+        const slider = overlay.querySelector('#after24h-max-nprs-summary');
+        const sliderLabel = overlay.querySelector('#after24h-max-nprs-summary-value');
+        slider.addEventListener('input', () => {
+            sliderLabel.textContent = slider.value;
+        });
+
+        overlay.querySelector('#skip-24h-summary-btn').addEventListener('click', close);
+
+        overlay.querySelector('#pain-24h-form-summary').addEventListener('submit', async (ev) => {
+            ev.preventDefault();
+            const after24h = {
+                max_nprs: parseInt(slider.value, 10) || 0,
+                delta_vs_baseline: parseInt(overlay.querySelector('#after24h-delta-summary').value, 10) || 0,
+                stiffness_increased: !!overlay.querySelector('#after24h-stiffness-summary').checked,
+                swelling: !!overlay.querySelector('#after24h-swelling-summary').checked,
+                night_pain: !!overlay.querySelector('#after24h-night-pain-summary').checked,
+                neuro_red_flags: !!overlay.querySelector('#after24h-neuro-summary').checked,
+            };
+            const note = overlay.querySelector('#after24h-note-summary').value || '';
+            overlay.remove();
+            resolve({ skipped: false, after24h, note });
+        });
+
+        document.body.appendChild(overlay);
+    });
+};
+
 export const renderSummaryScreen = () => {
     if (getIsCasting()) sendShowIdle();
 
@@ -376,6 +449,20 @@ export async function handleSummarySubmit(e) {
     try {
         const response = await dataStore.saveSession(sessionPayload);
         clearSessionBackup();
+
+        const shouldPrompt24hFollowUp = (selectedFeedback?.during?.max_nprs || 0) > 0;
+        if (shouldPrompt24hFollowUp) {
+            const followUpResult = await renderPainFollowUp24hModal();
+            if (!followUpResult.skipped) {
+                await dataStore.patchSessionFeedback24h(sessionPayload.sessionId, followUpResult.after24h, followUpResult.note || '');
+                selectedFeedback.after24h = { ...followUpResult.after24h, updated_at: new Date().toISOString() };
+                if (followUpResult.note) {
+                    selectedFeedback.note = (selectedFeedback.note ? selectedFeedback.note + "\n[24h]: " : "[24h]: ") + followUpResult.note;
+                }
+                alert('Check-in po 24h został zapisany. Dziękujemy!');
+            }
+        }
+
         await dataStore.loadRecentHistory(7);
         if (state.todaysDynamicPlan?.type === 'protocol') state.todaysDynamicPlan = null;
 

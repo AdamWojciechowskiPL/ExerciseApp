@@ -239,7 +239,7 @@ function hasExplicitRedFlagsAnswer() {
     return selectedFlags.includes('none') || selectedFlags.some((flag) => flag !== 'none');
 }
 
-function renderIntro(c) { c.innerHTML = `<p class="wizard-step-desc">Moduł <strong>Virtual Physio</strong> przeanalizuje Twoje odpowiedzi i przygotuje plan ćwiczeń.<br><br>Odpowiedz na kilka pytań, abyśmy mogli bezpiecznie dopasować trening do Twoich potrzeb.</p><div style="font-size:5rem; text-align:center; margin:2rem; animation: pulse-fade 2s infinite;">🧬</div>`; }
+function renderIntro(c) { c.innerHTML = `<p class="wizard-step-desc">Moduł <strong>Virtual Physio</strong> wykorzysta Twoje odpowiedzi do doboru planu ćwiczeń.<br><br>Odpowiedz na kilka pytań, abyśmy mogli bezpiecznie dopasować trening do Twoich potrzeb.</p><div style="font-size:5rem; text-align:center; margin:2rem; animation: pulse-fade 2s infinite;">🧬</div>`; }
 
 async function renderP1(c) {
     const initialMode = (wizardAnswers.pain_locations.length === 0 && wizardAnswers.focus_locations.length > 0) ? 'focus' : 'pain';

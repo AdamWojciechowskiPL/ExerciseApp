@@ -67,6 +67,22 @@ test('rejects invalid boolean flag types in after24h', () => {
   assert.match(result.error, /stiffness_increased/);
 });
 
+
+
+test('rejects after24h patch payload with missing required boolean field', () => {
+  const payload = makeBaseFeedback();
+  payload.after24h = {
+    max_nprs: 3,
+    delta_vs_baseline: 0,
+    stiffness_increased: false,
+    swelling: false,
+    night_pain: false,
+  };
+
+  const result = validatePainMonitoring(payload, { requireAfter24h: true });
+  assert.equal(result.valid, false);
+  assert.match(result.error, /Missing required boolean field: neuro_red_flags/);
+});
 test('rejects legacy feedback by default', () => {
   const legacy = { type: 'symptom', value: 1 };
   const result = validatePainMonitoring(legacy);

@@ -171,10 +171,23 @@ test('Component flags: stability changes top-k, breathing changes weights', () =
   const stabilityWeights = plan.buildDynamicCategoryWeights(exercisePool, { ...baseUser, session_component_weights: ['stability'] }, baseCtx);
   const breathingWeights = plan.buildDynamicCategoryWeights(exercisePool, { ...baseUser, session_component_weights: ['breathing'] }, baseCtx);
 
-  const rank = (weights) => exercisePool
-    .map((ex) => ({ id: ex.id, score: getScore(ex, weights, baseUser) }))
+  const rank = (weights) => {
+    const state = {
+      usedIds: new Set(),
+      weeklyUsage: new Map(),
+      sessionCategoryUsage: new Map(),
+      weeklyFamilyUsage: new Map(),
+      sessionFamilyUsage: new Map(),
+      anchorFamilies: new Set(),
+      anchorTargetExposure: 2,
+      preferencesMap: {}
+    };
+    const ctx = plan.safeBuildUserContext(baseUser);
+    return exercisePool
+    .map((ex) => ({ id: ex.id, score: plan.scoreExercise(ex, 'cooldown', baseUser, ctx, weights, state, new Set(), null, null) }))
     .sort((a, b) => b.score - a.score)
     .map((x) => x.id);
+  };
 
   const topBase = rank(baseWeights).slice(0, 2);
   const topStability = rank(stabilityWeights).slice(0, 2);
@@ -183,4 +196,41 @@ test('Component flags: stability changes top-k, breathing changes weights', () =
   assert.ok(stabilityCore > baseCore, 'stability flag should increase stability candidates score');
   assert.notDeepEqual(topBase, topStability, 'stability flag should affect top-k order');
   assert.ok(breathingWeights.breathing > baseWeights.breathing, 'breathing flag should raise breathing category weight');
+});
+
+test('Component flags: breathing changes ranking order of candidates', () => {
+  const exercisePool = [
+    makeExercise({ id: 'breath', category_id: 'breathing' }),
+    makeExercise({ id: 'core-stab', category_id: 'core_stability' })
+  ];
+
+  const baseUser = { pain_locations: [], focus_locations: [], medical_diagnosis: [] };
+  const baseCtx = plan.safeBuildUserContext(baseUser);
+  const baseWeights = plan.buildDynamicCategoryWeights(exercisePool, { ...baseUser, session_component_weights: [] }, baseCtx);
+  const breathingWeights = plan.buildDynamicCategoryWeights(exercisePool, { ...baseUser, session_component_weights: ['breathing'] }, baseCtx);
+
+  const rank = (weights) => {
+    const state = {
+      usedIds: new Set(),
+      weeklyUsage: new Map(),
+      sessionCategoryUsage: new Map(),
+      weeklyFamilyUsage: new Map(),
+      sessionFamilyUsage: new Map(),
+      anchorFamilies: new Set(),
+      anchorTargetExposure: 2,
+      preferencesMap: {
+        breath: { score: -30, difficultyRating: 1 }
+      }
+    };
+    const ctx = plan.safeBuildUserContext(baseUser);
+    return exercisePool
+      .map((ex) => ({ id: ex.id, score: plan.scoreExercise(ex, 'cooldown', baseUser, ctx, weights, state, new Set(), null, null) }))
+      .sort((a, b) => b.score - a.score)
+      .map((x) => x.id);
+  };
+
+  const baseRanking = rank(baseWeights);
+  const breathingRanking = rank(breathingWeights);
+  assert.deepEqual(baseRanking[0], 'core-stab', 'without breathing boost, core should rank first under negative breathing preference');
+  assert.deepEqual(breathingRanking[0], 'breath', 'breathing boost should flip ranking and restore breathing candidate to first place');
 });

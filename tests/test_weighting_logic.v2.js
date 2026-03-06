@@ -244,9 +244,24 @@ test('Confirmed directional negatives and worsening trend strengthen flexion-int
 
 test('Safety-only knee diagnoses do not change category weights', () => {
   const baseline = weights({});
-  const meniscus = weights({ diagnoses: ['meniscus_tear'] });
-  assertApprox(assert, meniscus.knee_stability, baseline.knee_stability, 1e-9, 'meniscus should be safety-only');
-  assertApprox(assert, meniscus.vmo_activation, baseline.vmo_activation, 1e-9, 'meniscus should be safety-only');
+  const safetyOnlyDiagnoses = ['meniscus_tear', 'acl_rehab', 'mcl_rehab', 'lcl_rehab', 'jumpers_knee'];
+
+  for (const diagnosis of safetyOnlyDiagnoses) {
+    const variant = weights({ diagnoses: [diagnosis] });
+    assertApprox(assert, variant.knee_stability, baseline.knee_stability, 1e-9, `${diagnosis} knee_stability should be safety-only`);
+    assertApprox(assert, variant.vmo_activation, baseline.vmo_activation, 1e-9, `${diagnosis} vmo_activation should be safety-only`);
+    assertApprox(assert, variant.glute_activation, baseline.glute_activation, 1e-9, `${diagnosis} glute_activation should be safety-only`);
+  }
+});
+
+test('Weighted knee diagnoses still affect category weights', () => {
+  const baseline = weights({});
+
+  for (const diagnosis of ['chondromalacia', 'knee_oa']) {
+    const weighted = weights({ diagnoses: [diagnosis] });
+    assert.ok(weighted.vmo_activation > baseline.vmo_activation, `${diagnosis} should boost vmo_activation`);
+    assert.ok(weighted.glute_activation > baseline.glute_activation, `${diagnosis} should boost glute_activation`);
+  }
 });
 
 

@@ -276,7 +276,8 @@ async function analyzeAndAdjustPlan(client, userId, sessionLog) {
 
 /**
  * AMPS: PLAN ADJUSTMENT (IN-MEMORY)
- * Obsługuje natychmiastowe zmiany z "Like/Dislike" (Affinity Injection/Ejection).
+ * Placeholder: natychmiastowe Injection/Ejection bieżącego JSON planu są wyłączone.
+ * Adaptacja Affinity działa przez updatePreferences() + kolejne generacje planu.
  */
 async function applyImmediatePlanAdjustmentsInMemory(client, ratings, sessionLog, settings) {
     const likes = ratings.filter(r => r.action === 'like');

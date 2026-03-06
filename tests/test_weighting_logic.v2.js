@@ -125,3 +125,26 @@ test('Work type: standing -> spine_mobility (+0.4), calves (+0.4)', () => {
   assertApprox(assert, w.spine_mobility, 1.4, 1e-9, 'spine_mobility');
   assertApprox(assert, w.calves, 1.4, 1e-9, 'calves');
 });
+
+test('Lumbar aliases map to wspólne zachowanie scoringu (low_back/lumbar/lumbar_general)', () => {
+  const low = weights({ pain_locations: ['low_back'], severity: 'mild' });
+  const lumbar = weights({ pain_locations: ['lumbar'], severity: 'mild' });
+  const lumbarGeneral = weights({ pain_locations: ['lumbar_general'], severity: 'mild' });
+
+  assertApprox(assert, low.spine_mobility, lumbar.spine_mobility, 1e-9, 'low_back vs lumbar spine_mobility');
+  assertApprox(assert, low.spine_mobility, lumbarGeneral.spine_mobility, 1e-9, 'low_back vs lumbar_general spine_mobility');
+  assertApprox(assert, low.core_anti_extension, lumbar.core_anti_extension, 1e-9, 'low_back vs lumbar core_anti_extension');
+  assertApprox(assert, low.core_anti_extension, lumbarGeneral.core_anti_extension, 1e-9, 'low_back vs lumbar_general core_anti_extension');
+});
+
+test('Focus aliases abs/core oraz glutes/glute mają wspólne boosty', () => {
+  const abs = weights({ goals: ['focus_abs'] });
+  const core = weights({ goals: ['focus_core'] });
+  const glutes = weights({ goals: ['focus_glutes'] });
+  const glute = weights({ goals: ['focus_glute'] });
+
+  assertApprox(assert, abs.core_stability, core.core_stability, 1e-9, 'abs vs core');
+  assertApprox(assert, abs.core_anti_extension, core.core_anti_extension, 1e-9, 'abs vs core anti-extension');
+  assertApprox(assert, glutes.glute_activation, glute.glute_activation, 1e-9, 'glutes vs glute activation');
+  assertApprox(assert, glutes.hip_extension, glute.hip_extension, 1e-9, 'glutes vs glute hip extension');
+});

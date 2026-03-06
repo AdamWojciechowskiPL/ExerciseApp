@@ -4,7 +4,13 @@ const CANONICAL = require('../../shared/wizard-canonical-values.json');
 
 const VALUE_ALIAS = {
     pain_locations: {
-        lumar_general: 'lumbar_general'
+        lumar_general: 'lumbar_general',
+        lumbar: 'low_back',
+        lumbar_general: 'low_back'
+    },
+    focus_locations: {
+        glute: 'glutes',
+        core: 'abs'
     }
 };
 

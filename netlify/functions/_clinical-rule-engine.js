@@ -190,7 +190,7 @@ function buildUserContext(userData) {
     if (painLocs.length > 0) {
         painLocs.forEach(loc => painFilters.add(loc));
         if (painLocs.includes('si_joint') || painLocs.includes('hip')) painFilters.add('low_back');
-        if (painLocs.includes('low_back') || painLocs.includes('lumbar') || painLocs.includes('lumbar_general')) painFilters.add('lumbar_general');
+        if (painLocs.includes('low_back') || painLocs.includes('lumbar') || painLocs.includes('lumbar_general')) { painFilters.add('low_back'); painFilters.add('lumbar_general'); }
         if (painLocs.includes('knee')) painFilters.add('knee');
     } else {
         painFilters.add('low_back');

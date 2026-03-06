@@ -14,7 +14,7 @@ const STEPS = [
     { id: 'p2', title: 'Nasilenie', render: renderP2 },
     { id: 'p3', title: 'Charakter', render: renderP3 },
     { id: 'p4', title: 'Rozpoznanie zgłoszone', render: renderP4 },
-    { id: 'p4b', title: 'Czerwone flagi', render: renderP4b },
+    { id: 'p4b', title: 'Objawy alarmowe', render: renderP4b },
     { id: 'p5', title: 'Co nasila?', render: renderP5 },
     { id: 'p6', title: 'Co pomaga?', render: renderP6 },
     { id: 'p7', title: 'Wpływ na życie', render: renderP7 },
@@ -264,6 +264,14 @@ async function renderP1(c) {
             <p style="text-align: center; font-size: 0.8rem; opacity: 0.6; margin: 8px 0 0 0;">
                 Dotknij obszarów na modelu.
             </p>
+
+            <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px;">
+                <div style="font-size: 0.8rem; opacity: 0.75; text-align: center;">Dodatkowe cele (tryb CEL)</div>
+                <div id="focus-quick-goals" style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">
+                    <button type="button" class="chip-toggle" data-focus="abs" style="padding:6px 10px; border-radius:999px; border:1px solid rgba(255,255,255,0.2); background:transparent; color:#fff;">Brzuch (core)</button>
+                    <button type="button" class="chip-toggle" data-focus="glutes" style="padding:6px 10px; border-radius:999px; border:1px solid rgba(255,255,255,0.2); background:transparent; color:#fff;">Pośladki</button>
+                </div>
+            </div>
         </div>
     `;
 
@@ -318,6 +326,13 @@ async function renderP1(c) {
                 el.classList.add('focus');
             }
         });
+
+        c.querySelectorAll('.chip-toggle').forEach(btn => {
+            const val = btn.dataset.focus;
+            const active = wizardAnswers.focus_locations.includes(val);
+            btn.style.background = active ? '#3b82f6' : 'transparent';
+            btn.style.borderColor = active ? '#3b82f6' : 'rgba(255,255,255,0.2)';
+        });
     };
 
     updateVisuals();
@@ -355,11 +370,24 @@ async function renderP1(c) {
             updateVisuals();
         });
     });
+
+    c.querySelectorAll('.chip-toggle').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const val = btn.dataset.focus;
+            if (!val) return;
+            if (wizardAnswers.focus_locations.includes(val)) {
+                wizardAnswers.focus_locations = wizardAnswers.focus_locations.filter(x => x !== val);
+            } else {
+                wizardAnswers.focus_locations.push(val);
+            }
+            updateVisuals();
+        });
+    });
 }
 
 function renderP2(c) {
     c.innerHTML = `
-        <p class="wizard-step-desc">Poziom bólu (0-10)</p>
+        <p class="wizard-step-desc">Nasilenie objawów (0-10)</p>
         <div class="pain-display-container">
             <div id="pain-val-display" class="pain-value-large">${wizardAnswers.pain_intensity}</div>
             <div class="pain-slider-wrapper">
@@ -376,7 +404,7 @@ function renderP2(c) {
     });
 }
 
-function renderP3(c) { renderMultiSelect(c, 'Jaki to rodzaj bólu?', [{ val: 'sharp', label: '🔪 Ostry / Kłujący' }, { val: 'dull', label: '🪨 Tępy / Uciskający' }, { val: 'burning', label: '🔥 Palący' }, { val: 'stiffness', label: '🪵 Sztywność' }, { val: 'radiating', label: '⚡ Promieniujący' }, { val: 'numbness', label: '🧊 Mrowienie' }], 'pain_character'); }
+function renderP3(c) { renderMultiSelect(c, 'Jakie objawy dominują?', [{ val: 'sharp', label: '🔪 Ostry / Kłujący' }, { val: 'dull', label: '🪨 Tępy / Uciskający' }, { val: 'burning', label: '🔥 Palący' }, { val: 'stiffness', label: '🪵 Sztywność' }, { val: 'radiating', label: '⚡ Promieniujący' }, { val: 'numbness', label: '🧊 Mrowienie' }], 'pain_character'); }
 
 function renderP4(c) {
     const title = 'Czy masz rozpoznanie zgłoszone przez specjalistę?';
@@ -583,11 +611,11 @@ function renderSummary(c) {
     let painSection = '';
     if (painCount > 0) {
         painSection = `
-            <li style="color:var(--danger-color)">🔴 <strong>Ból:</strong> ${wizardAnswers.pain_locations.join(', ')}</li>
-            <li>🤕 <strong>Nasilenie:</strong> ${wizardAnswers.pain_intensity}/10</li>
+            <li style="color:var(--danger-color)">🔴 <strong>Objawy:</strong> ${wizardAnswers.pain_locations.join(', ')}</li>
+            <li>🤕 <strong>Nasilenie objawów:</strong> ${wizardAnswers.pain_intensity}/10</li>
         `;
     } else {
-        painSection = `<li>✅ <strong>Ból:</strong> Brak</li>`;
+        painSection = `<li>✅ <strong>Objawy:</strong> Brak</li>`;
     }
 
     let focusSection = '';

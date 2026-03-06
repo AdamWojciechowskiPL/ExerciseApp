@@ -2,38 +2,19 @@
 'use strict';
 
 const PAIN_MONITORING_VERSION = 1;
-const LEGACY_PAIN_FEEDBACK_SUNSET = '2026-07-01T00:00:00.000Z';
-
-function isLegacyPainFeedbackAllowed() {
-    const featureFlag = process.env.ALLOW_LEGACY_PAIN_FEEDBACK === 'true';
-    if (!featureFlag) return false;
-
-    const now = Date.now();
-    const sunsetTs = Date.parse(LEGACY_PAIN_FEEDBACK_SUNSET);
-    if (!Number.isFinite(sunsetTs)) return false;
-    return now < sunsetTs;
-}
 
 /**
  * Waliduje obiekt feedbacku pod kątem zgodności ze schematem pain_monitoring.
  * Fail-closed: zwraca false przy jakimkolwiek odstępstwie.
  */
 function validatePainMonitoring(feedback, options = {}) {
-    const { allowLegacy = false, requireAfter24h = false } = options;
+    const { requireAfter24h = false } = options;
 
     if (!feedback) {
         return { valid: true, isSchema: false };
     }
 
     if (feedback.type !== 'pain_monitoring') {
-        if (allowLegacy && isLegacyPainFeedbackAllowed()) {
-            return {
-                valid: true,
-                isSchema: false,
-                legacyAccepted: true,
-                legacySunset: LEGACY_PAIN_FEEDBACK_SUNSET
-            };
-        }
         return { valid: false, error: 'Legacy feedback format is no longer accepted' };
     }
 
@@ -93,7 +74,5 @@ function validatePainMonitoring(feedback, options = {}) {
 
 module.exports = {
     validatePainMonitoring,
-    PAIN_MONITORING_VERSION,
-    LEGACY_PAIN_FEEDBACK_SUNSET,
-    isLegacyPainFeedbackAllowed
+    PAIN_MONITORING_VERSION
 };

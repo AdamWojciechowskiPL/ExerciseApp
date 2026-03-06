@@ -332,11 +332,11 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
     if (painLocs.has('ankle') || painLocs.has('foot')) { boost(weights, 'calves', 0.6); boost(weights, 'ankle_mobility', 0.8); boost(weights, 'balance_proprioception', 0.5); }
 
     // 2. Focus/Goal
-    if (focusLocs.has('hip') || focusLocs.has('glutes') || focusLocs.has('glute')) {
+    if (focusLocs.has('hip') || focusLocs.has('glute')) {
         boost(weights, 'glute_activation', 1.1);
         boost(weights, 'hip_extension', 1.3);
     }
-    if (focusLocs.has('low_back') || focusLocs.has('lumbar') || focusLocs.has('lumbar_general') || focusLocs.has('si_joint') || focusLocs.has('abs') || focusLocs.has('core')) {
+    if (focusLocs.has('low_back') || focusLocs.has('lumbar') || focusLocs.has('lumbar_general') || focusLocs.has('si_joint') || focusLocs.has('core')) {
         boost(weights, 'core_stability', 1.2);
         boost(weights, 'core_anti_extension', 1.0);
     }
@@ -1227,30 +1227,6 @@ function analyzePainResponse(recentSessions) {
         return result;
     }
 
-    let painDuring = 0;
-    if (typeof lastSession.pain_during === 'number') { painDuring = lastSession.pain_during; }
-    else if (fb?.type === 'symptom' || fb?.type === 'pain') {
-        const val = parseInt(fb.value, 10);
-        if (val === -1) painDuring = 7;
-        else if (val === 0) painDuring = 3;
-        else if (val === 1) painDuring = 1;
-    }
-    result.painDuringMax = painDuring;
-
-    let negativeCount = 0;
-    for (let i = 0; i < Math.min(3, recentSessions.length); i++) {
-        const s = recentSessions[i];
-        if (s.feedback?.type === 'symptom' && parseInt(s.feedback.value, 10) === -1) { negativeCount++; }
-    }
-    result.consecutiveSymptomNegatives = negativeCount;
-
-    if (painDuring >= PAIN_CONFIG.maxPainDuring.amber || negativeCount >= PAIN_CONFIG.redRequiresConsecutiveSessions) {
-        result.painStatus = 'red'; result.painModifier = PAIN_CONFIG.modifiers.red; result.painReason = (painDuring >= 7) ? 'high_pain_intensity_legacy' : 'persistent_symptoms_legacy';
-    }
-    else if (painDuring > PAIN_CONFIG.maxPainDuring.green || negativeCount === 1) {
-        result.painStatus = 'amber'; result.painModifier = PAIN_CONFIG.modifiers.amber; result.painReason = 'moderate_pain_warning_legacy';
-    }
-    else { result.painStatus = 'green'; result.painModifier = PAIN_CONFIG.modifiers.green; }
     return result;
 }
 
@@ -1261,8 +1237,7 @@ function analyzeRpeTrend(recentSessions) {
     let lastFeedback = null;
     if (lastSession.feedback) { lastFeedback = { value: parseInt(lastSession.feedback.value, 10), type: lastSession.feedback.type }; }
     const result = { ...defaultResult, lastFeedback };
-    const isPainType = lastFeedback?.type === 'symptom' || lastFeedback?.type === 'pain';
-    if (isPainType) { return result; }
+    if (lastFeedback?.type === 'pain_monitoring') { return result; }
     if (lastFeedback?.value === -1) { result.volumeModifier = 0.85; result.label = 'Recovery'; }
     else if (lastFeedback?.value === 1) { result.volumeModifier = 1.15; result.label = 'Progressive'; }
     return result;
@@ -1486,7 +1461,7 @@ exports.handler = async (event) => {
             client.query('SELECT exercise_id, affinity_score FROM user_exercise_preferences WHERE user_id = $1', [userId]),
             client.query(`SELECT session_data->'sessionLog' as logs, completed_at FROM training_sessions WHERE user_id = $1 AND completed_at > NOW() - INTERVAL '30 days'`, [userId]),
             client.query('SELECT exercise_id, avg_seconds_per_rep FROM user_exercise_stats WHERE user_id = $1', [userId]),
-            client.query(`SELECT completed_at, session_data->'feedback' as feedback, session_data->'pain_during' as pain_during FROM training_sessions WHERE user_id = $1 ORDER BY completed_at DESC LIMIT 3`, [userId]),
+            client.query(`SELECT completed_at, session_data->'feedback' as feedback FROM training_sessions WHERE user_id = $1 ORDER BY completed_at DESC LIMIT 3`, [userId]),
             client.query('SELECT original_exercise_id, replacement_exercise_id, adjustment_type FROM user_plan_overrides WHERE user_id = $1', [userId]),
             calculateFatigueProfile(client, userId),
             client.query('SELECT settings FROM user_settings WHERE user_id = $1', [userId])

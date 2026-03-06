@@ -82,6 +82,51 @@ test('acute + worsening profile lowers first-plan difficulty vs chronic stable',
     assert.equal(acute.symptomProfile.trend, 'worsening');
 });
 
+test('symptom profile conservativeness matrix: acute+worsening > post-traumatic stable > chronic stable', () => {
+    const acuteWorsening = clinical.buildUserContext({
+        pain_intensity: 3,
+        daily_impact: 3,
+        exercise_experience: 'advanced',
+        symptom_onset: 'sudden',
+        symptom_duration: 'lt_6_weeks',
+        symptom_trend: 'worsening'
+    });
+
+    const postTraumaticStable = clinical.buildUserContext({
+        pain_intensity: 3,
+        daily_impact: 3,
+        exercise_experience: 'advanced',
+        symptom_onset: 'post_traumatic',
+        symptom_duration: 'w6_12_weeks',
+        symptom_trend: 'stable'
+    });
+
+    const chronicStable = clinical.buildUserContext({
+        pain_intensity: 3,
+        daily_impact: 3,
+        exercise_experience: 'advanced',
+        symptom_onset: 'gradual',
+        symptom_duration: 'gt_12_weeks',
+        symptom_trend: 'stable'
+    });
+
+    assert.equal(acuteWorsening.difficultyCap <= postTraumaticStable.difficultyCap, true);
+    assert.equal(postTraumaticStable.difficultyCap <= chronicStable.difficultyCap, true);
+});
+
+test('missing symptom fields are safe and do not crash context build', () => {
+    const ctx = clinical.buildUserContext({
+        pain_intensity: 4,
+        daily_impact: 2,
+        exercise_experience: 'regular'
+    });
+
+    assert.equal(ctx.symptomProfile.onset, '');
+    assert.equal(ctx.symptomProfile.duration, '');
+    assert.equal(ctx.symptomProfile.trend, '');
+    assert.equal(typeof ctx.difficultyCap, 'number');
+});
+
 test('canonical symptom fields keep only allowed values', () => {
     const normalized = canonical.normalizeWizardPayload({
         symptom_onset: 'SUDDEN',

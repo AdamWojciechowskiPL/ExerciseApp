@@ -8,7 +8,12 @@ import { clearSessionBackup } from '../../sessionRecovery.js';
 import { clearPlanFromStorage } from './dashboard.js';
 import { checkNewBadges } from '../../gamification.js';
 
-let selectedFeedback = { type: null, value: 0 };
+let selectedFeedback = {
+    type: 'pain_monitoring',
+    schema_version: 1,
+    during: { max_nprs: 0, locations: [] },
+    note: ''
+};
 let sessionAffinityDeltas = {};
 const SCORE_LIKE = 15;
 const SCORE_DISLIKE = -30;
@@ -30,19 +35,22 @@ export const renderSummaryScreen = () => {
         isSafetyMode = (state.sessionParams.initialPainLevel || 0) > 3;
     }
 
-    selectedFeedback = { type: isSafetyMode ? 'symptom' : 'tension', value: 0 };
+    const initialPain = isSafetyMode ? 2 : 0;
+    selectedFeedback = {
+        type: 'pain_monitoring',
+        schema_version: 1,
+        during: { max_nprs: initialPain, locations: [] },
+        note: ''
+    };
     sessionAffinityDeltas = {};
 
     const summaryScreen = screens.summary;
 
-    let globalOptionsHtml = isSafetyMode ? `
-        <div class="feedback-option" data-type="symptom" data-value="1"><div class="fb-icon">🍃</div><div class="fb-text"><h4>Ulga</h4></div></div>
-        <div class="feedback-option selected" data-type="symptom" data-value="0"><div class="fb-icon">⚖️</div><div class="fb-text"><h4>Stabilnie</h4></div></div>
-        <div class="feedback-option" data-type="symptom" data-value="-1"><div class="fb-icon">⚡</div><div class="fb-text"><h4>Gorzej</h4></div></div>
-    ` : `
-        <div class="feedback-option" data-type="tension" data-value="1"><div class="fb-icon">🥱</div><div class="fb-text"><h4>Nuda</h4></div></div>
-        <div class="feedback-option selected" data-type="tension" data-value="0"><div class="fb-icon">🎯</div><div class="fb-text"><h4>Idealnie</h4></div></div>
-        <div class="feedback-option" data-type="tension" data-value="-1"><div class="fb-icon">🥵</div><div class="fb-text"><h4>Za mocno</h4></div></div>
+    let globalOptionsHtml = `
+        <div class="feedback-option ${isSafetyMode ? '' : 'selected'}" data-pain="0"><div class="fb-icon">🙂</div><div class="fb-text"><h4>Bez bólu</h4></div></div>
+        <div class="feedback-option ${isSafetyMode ? 'selected' : ''}" data-pain="3"><div class="fb-icon">⚖️</div><div class="fb-text"><h4>Lekki ból</h4></div></div>
+        <div class="feedback-option" data-pain="6"><div class="fb-icon">⚠️</div><div class="fb-text"><h4>Umiarkowany</h4></div></div>
+        <div class="feedback-option" data-pain="8"><div class="fb-icon">🚨</div><div class="fb-text"><h4>Silny ból</h4></div></div>
     `;
 
     const completedLogs = (state.sessionLog || []).filter(l => l.status === 'completed' && !l.isRest);
@@ -165,6 +173,13 @@ export const renderSummaryScreen = () => {
             <div class="form-group">
                 <label style="display:block; margin-bottom:10px; font-weight:700;">${isSafetyMode ? "Samopoczucie po treningu" : "Ocena ogólna"}</label>
                 <div class="feedback-container compact">${globalOptionsHtml}</div>
+                <div style="margin-top:10px;">
+                    <label for="during-max-nprs" style="font-size:0.85rem; display:flex; justify-content:space-between;">
+                        <span>Maksymalny ból podczas sesji (NPRS)</span>
+                        <strong id="during-max-nprs-value">${selectedFeedback.during.max_nprs}</strong>
+                    </label>
+                    <input type="range" id="during-max-nprs" min="0" max="10" value="${selectedFeedback.during.max_nprs}" style="width:100%;">
+                </div>
             </div>
             <div class="form-group" style="margin-top:1.5rem;">
                 <label style="display:block; margin-bottom:5px; font-weight:700;">Raport Ćwiczeń</label>
@@ -188,10 +203,26 @@ export const renderSummaryScreen = () => {
         opt.addEventListener('click', () => {
             summaryScreen.querySelectorAll('.feedback-option').forEach(o => o.classList.remove('selected'));
             opt.classList.add('selected');
-            selectedFeedback.value = parseInt(opt.dataset.value, 10);
-            selectedFeedback.type = opt.dataset.type;
+            const mappedPain = parseInt(opt.dataset.pain, 10);
+            if (Number.isFinite(mappedPain)) {
+                selectedFeedback.during.max_nprs = mappedPain;
+                const slider = summaryScreen.querySelector('#during-max-nprs');
+                const valLabel = summaryScreen.querySelector('#during-max-nprs-value');
+                if (slider) slider.value = String(mappedPain);
+                if (valLabel) valLabel.textContent = String(mappedPain);
+            }
         });
     });
+
+    const duringPainSlider = summaryScreen.querySelector('#during-max-nprs');
+    const duringPainLabel = summaryScreen.querySelector('#during-max-nprs-value');
+    if (duringPainSlider && duringPainLabel) {
+        duringPainSlider.addEventListener('input', (ev) => {
+            const val = parseInt(ev.target.value, 10) || 0;
+            selectedFeedback.during.max_nprs = val;
+            duringPainLabel.textContent = String(val);
+        });
+    }
 
     const formContainer = summaryScreen.querySelector('#summary-form');
 
@@ -325,6 +356,8 @@ export async function handleSummarySubmit(e) {
 
     const title = document.getElementById('summary-title').textContent;
 
+    selectedFeedback.note = document.getElementById('general-notes').value || '';
+
     const sessionPayload = {
         sessionId: Date.now(),
         planId: planId,
@@ -388,10 +421,10 @@ export async function handleSummarySubmit(e) {
         };
 
         const checkRpeAndNavigate = async () => {
-            if (selectedFeedback.value !== 0) {
+            if ((selectedFeedback?.during?.max_nprs || 0) !== 0) {
                 let msg = '';
-                if (selectedFeedback.value === -1) msg = "Zgłosiłeś, że trening był za ciężki/bolesny.\n\nCzy chcesz, aby Asystent przeliczył plan i zmniejszył obciążenie na kolejne dni?";
-                else if (selectedFeedback.value === 1) msg = "Zgłosiłeś, że trening był za lekki/nudny.\n\nCzy chcesz, aby Asystent zwiększył intensywność planu?";
+                if ((selectedFeedback?.during?.max_nprs || 0) >= 6) msg = "Zgłosiłeś podwyższony ból po sesji.\n\nCzy chcesz, aby Asystent przeliczył plan i zmniejszył obciążenie na kolejne dni?";
+                else if ((selectedFeedback?.during?.max_nprs || 0) <= 1) msg = "Sesja była bardzo lekka bólowo.\n\nCzy chcesz, aby Asystent zwiększył intensywność planu?";
 
                 if (msg && confirm(msg)) {
                     showLoader();

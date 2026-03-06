@@ -14,4 +14,11 @@ if (!maybe.ok) {
   test('pain-taxonomy exports derivePainZoneSet', () => {
     assert.equal(typeof tax.derivePainZoneSet, 'function');
   });
+
+  test('pain-taxonomy maps low_back and lumbar aliases to low_back zone', () => {
+    const low = tax.derivePainZoneSet(['low_back']);
+    const lum = tax.derivePainZoneSet(['lumbar_general']);
+    assert.equal(low.has('low_back'), true);
+    assert.equal(lum.has('low_back'), true);
+  });
 }

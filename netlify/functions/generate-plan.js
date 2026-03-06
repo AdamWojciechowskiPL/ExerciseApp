@@ -104,6 +104,15 @@ function normalizeEquipmentList(raw) {
     return set;
 }
 
+
+function normalizeHobbySet(rawHobby) {
+    const normalized = normalizeStringArray(rawHobby)
+        .map(cleanString)
+        .filter(Boolean)
+        .filter(v => v !== 'none' && v !== 'brak');
+    return new Set(normalized);
+}
+
 function resolveValidTempo(rawTempo, fallbackTempo = null) {
     const check = validateTempoString(rawTempo);
     if (check.ok) return check.sanitized;
@@ -280,7 +289,7 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
     const restrictions = normalizeLowerSet(userData?.physical_restrictions);
     const componentWeights = normalizeLowerSet(userData?.session_component_weights);
     const workType = String(userData?.work_type || '').toLowerCase();
-    const hobby = String(userData?.hobby || '').toLowerCase();
+    const hobbies = normalizeHobbySet(userData?.hobby);
     const primaryGoal = String(userData?.primary_goal || '').toLowerCase();
 
     // 1. Pain Based Boosts
@@ -336,8 +345,8 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
     if (workType === 'sedentary') { boost(weights, 'thoracic_mobility', 0.7); boost(weights, 'hip_flexor_stretch', 0.5); boost(weights, 'glute_activation', 0.6); }
     else if (workType === 'standing') { boost(weights, 'spine_mobility', 0.4); boost(weights, 'calves', 0.4); }
 
-    if (hobby === 'running') { boost(weights, 'core_stability', 1.0); boost(weights, 'vmo_activation', 0.3); }
-    else if (hobby === 'cycling') { boost(weights, 'thoracic_mobility', 0.8); boost(weights, 'hip_flexor_stretch', 0.9); }
+    if (hobbies.has('running')) { boost(weights, 'core_stability', 1.0); boost(weights, 'vmo_activation', 0.3); }
+    if (hobbies.has('cycling')) { boost(weights, 'thoracic_mobility', 0.8); boost(weights, 'hip_flexor_stretch', 0.9); }
 
     // 4. Diagnosis
     if (diagnosis.has('chondromalacia') || diagnosis.has('osteoarthritis')) {
@@ -647,10 +656,10 @@ function calculateScoreComponents(ex, section, userData, ctx, categoryWeights, s
         }
     }
 
-    const hobby = String(userData?.hobby || '').toLowerCase();
+    const hobbies = normalizeHobbySet(userData?.hobby);
     const diagnoses = normalizeLowerSet(userData?.medical_diagnosis);
 
-    if (hobby.includes('running') && ex.is_unilateral) {
+    if (hobbies.has('running') && ex.is_unilateral) {
         const isRehabControl = phaseContext?.phaseId === 'control' || phaseContext?.phaseId === 'rehab';
         rehabAdjust *= isRehabControl ? 1.1 : 1.2;
     }
@@ -1420,6 +1429,20 @@ exports.handler = async (event) => {
     let userId; try { userId = await getUserIdFromEvent(event); } catch (e) { return { statusCode: 401 }; }
     const userData = safeJsonParse(event.body);
     if (!userData) return { statusCode: 400 };
+
+    const redFlags = normalizeLowerSet(userData?.red_flags);
+    const hasRedFlags = redFlags.size > 0 && !redFlags.has('none');
+    if (hasRedFlags) {
+        console.warn(`[PlanGen] User: ${userId}, status=ineligible_for_plan, reason=red_flags`);
+        return {
+            statusCode: 422,
+            body: JSON.stringify({
+                error: 'INELIGIBLE_FOR_PLAN',
+                status: 'ineligible_for_plan',
+                message: 'Wykryto objawy alarmowe. Plan nie został wygenerowany — skonsultuj się z lekarzem lub fizjoterapeutą.'
+            })
+        };
+    }
 
     const client = await pool.connect();
     try {

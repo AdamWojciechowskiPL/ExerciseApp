@@ -213,6 +213,16 @@ const dataStore = {
         return result;
     },
 
+
+    patchSessionFeedback24h: async (sessionId, after24h, note = '') => {
+        const result = await callAPI('patch-session-feedback', {
+            method: 'POST',
+            body: { sessionId, after24h, note }
+        });
+        state.loadedMonths.clear();
+        return result;
+    },
+
     // NOWA FUNKCJA: Aktualizacja pojedynczego logu ćwiczenia
     updateExerciseLog: async (sessionId, exerciseId, tech, rir, difficultyDeviation, rating) => {
         const body = { sessionId, exerciseId };

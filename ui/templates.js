@@ -51,6 +51,12 @@ const formatFeedback = (session) => {
             if (value === 0) return { label: 'Stabilnie', icon: '⚖️', class: 'neutral', bg: '#f3f4f6' };
             if (value === -1) return { label: 'Gorzej', icon: '⚡', class: 'danger', bg: '#fef2f2' };
         }
+        else if (type === 'pain_monitoring') {
+            const during = Number(session.feedback?.during?.max_nprs || 0);
+            if (during >= 7) return { label: `Ból wysoki: ${during}/10`, icon: '🚨', class: 'danger', bg: '#fef2f2' };
+            if (during >= 4) return { label: `Ból umiarkowany: ${during}/10`, icon: '⚠️', class: 'warning', bg: '#fffbeb' };
+            return { label: `Ból niski: ${during}/10`, icon: '✅', class: 'success', bg: '#ecfdf5' };
+        }
     }
     if (session.pain_during !== undefined && session.pain_during !== null) {
         return { label: `Ból: ${session.pain_during}`, icon: '🤕', class: 'neutral', bg: '#f3f4f6' };

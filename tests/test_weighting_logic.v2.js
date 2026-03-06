@@ -30,7 +30,7 @@ function weights(inputOverrides) {
     pain_locations: inputOverrides.pain_locations || [],
     medical_diagnosis: inputOverrides.diagnoses || [],
     work_type: inputOverrides.work_type || '',
-    hobby: inputOverrides.hobby || '',
+    hobby: inputOverrides.hobby || [],
 
     // Mapowanie celów testowych na focus_locations (np. 'focus_glutes' -> 'glutes')
     focus_locations: (inputOverrides.goals || []).map(g => g.replace('focus_', '')),
@@ -60,10 +60,11 @@ test('Ankle pain boosts: ankle_mobility (+0.8), balance_proprioception (+0.5), c
 });
 
 test('Running boosts: core_stability (+1.0), vmo_activation (+0.3)', () => {
-  const w = weights({ hobby: 'running' });
+  const w = weights({ hobby: ['running', 'cycling'] });
   assertApprox(assert, w.core_stability, 2.0, 1e-9, 'core_stability');
   // FIX: Updated expectation to 1.3 (Base 1.0 + 0.3 Boost per US-06)
   assertApprox(assert, w.vmo_activation, 1.3, 1e-9, 'vmo_activation');
+  assertApprox(assert, w.thoracic_mobility, 1.8, 1e-9, 'thoracic_mobility from cycling');
 });
 
 test('Focus glutes boosts: glute_activation (+1.5), hip_extension (+1.5)', () => {

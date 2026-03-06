@@ -9,10 +9,10 @@
  */
 const PAIN_MAPPING = {
     // Kręgosłup Lędźwiowy
-    'lumbar': ['lumbar_general', 'lumbosacral', 'sciatica'],
-    'lumbar_general': ['lumbar_general', 'lumbosacral'],
-    'low_back': ['lumbar_general', 'lumbosacral', 'sciatica'],
-    'si_joint': ['si_joint', 'lumbosacral'],
+    'lumbar': ['low_back', 'lumbar_general', 'lumbosacral', 'sciatica'],
+    'lumbar_general': ['low_back', 'lumbar_general', 'lumbosacral'],
+    'low_back': ['low_back', 'lumbar_general', 'lumbosacral', 'sciatica'],
+    'si_joint': ['si_joint', 'lumbosacral', 'low_back'],
 
     // Nogi / Biodra
     'sciatica': ['sciatica', 'piriformis', 'lumbar_radiculopathy'],

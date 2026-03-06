@@ -14,7 +14,7 @@ const { calculateFatigueProfile } = require('./_fatigue-calculator.js');
 const { applyMicroLoading } = require('./_amps-engine.js');
 const { derivePainZoneSet, normalizeStringArray, normalizeLowerSet, normalizeDiagnosisSet } = require('./_pain-taxonomy.js');
 const { validateTempoString, enforceTempoByPhaseIntent, SAFE_FALLBACK_TEMPO } = require('./_tempo-validator.js');
-const { normalizeWizardPayload, normalizeEquipmentList: normalizeCanonicalEquipmentList } = require('./_wizard-canonical.js');
+const { CANONICAL, normalizeWizardPayload, normalizeEquipmentList: normalizeCanonicalEquipmentList } = require('./_wizard-canonical.js');
 
 const {
     initializePhaseState,
@@ -1419,20 +1419,13 @@ exports.handler = async (event) => {
     if (!parsedUserData) return { statusCode: 400 };
     const userData = normalizeWizardPayload(parsedUserData);
 
-    const redFlagsRaw = userData?.red_flags;
+    const redFlagsRaw = parsedUserData?.red_flags;
     if (redFlagsRaw !== undefined && !Array.isArray(redFlagsRaw)) {
         return { statusCode: 400, body: JSON.stringify({ error: 'INVALID_RED_FLAGS_PAYLOAD' }) };
     }
 
     const redFlags = normalizeLowerSet(redFlagsRaw);
-    const allowedRedFlags = new Set([
-        'trauma_recent',
-        'cauda_equina_symptoms',
-        'progressive_neuro_deficit',
-        'unexplained_weight_loss_fever',
-        'night_rest_pain_unrelenting',
-        'none'
-    ]);
+    const allowedRedFlags = new Set((CANONICAL.red_flags || []).map((flag) => String(flag).toLowerCase()));
 
     for (const flag of redFlags) {
         if (!allowedRedFlags.has(flag)) {

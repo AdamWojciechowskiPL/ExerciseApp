@@ -57,6 +57,7 @@ function normalizeWizardPayload(payload = {}) {
         pain_locations: normalizeCanonicalArray(payload.pain_locations, 'pain_locations'),
         focus_locations: normalizeCanonicalArray(payload.focus_locations, 'focus_locations'),
         medical_diagnosis: normalizeCanonicalArray(payload.medical_diagnosis, 'medical_diagnosis'),
+        red_flags: normalizeCanonicalArray(payload.red_flags, 'red_flags'),
         physical_restrictions: normalizeCanonicalArray(payload.physical_restrictions, 'physical_restrictions'),
         hobby: normalizeCanonicalArray(payload.hobby, 'hobby'),
         session_component_weights: normalizeCanonicalArray(payload.session_component_weights, 'focus'),

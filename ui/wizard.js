@@ -32,10 +32,13 @@ const STEPS = [
 ];
 
 const RED_FLAG_OPTIONS = [
-    { val: 'trauma_recent', label: '🚨 Świeży uraz / upadek + ból kręgosłupa' },
+    { val: 'trauma_major_recent', label: '🚨 Świeży duży uraz (np. wypadek/upadek z wysokości) + silny ból' },
+    { val: 'minor_trauma_high_fragility', label: '🚨 Mniejszy uraz przy dużej kruchości (np. wiek/kruchość) + ból' },
     { val: 'cauda_equina_symptoms', label: '🚨 Problemy z oddawaniem moczu/stolca lub drętwienie krocza' },
-    { val: 'progressive_neuro_deficit', label: '🚨 Narastające osłabienie lub niedowład kończyny' },
-    { val: 'unexplained_weight_loss_fever', label: '🚨 Niewyjaśniona utrata masy ciała / gorączka + ból' },
+    { val: 'progressive_neuro_deficit', label: '🚨 Narastające objawy neurologiczne (siła/czucie/chód)' },
+    { val: 'oncologic_history_or_cancer_suspicion', label: '🚨 Wywiad onkologiczny lub podejrzenie nowotworu' },
+    { val: 'infection_risk_significant', label: '🚨 Istotne ryzyko infekcji (gorączka/dreszcze/immunosupresja) + ból' },
+    { val: 'fracture_risk_osteoporosis_steroids', label: '🚨 Osteoporoza / przewlekłe steroidy / podejrzenie złamania po małym urazie' },
     { val: 'night_rest_pain_unrelenting', label: '🚨 Stały ból nocny, nieustępujący w spoczynku' },
     { val: 'none', label: '✅ Żadna z powyższych' }
 ];
@@ -102,7 +105,7 @@ function closeWizardWithoutSaving() {
 
 function getStepsToSkip() {
     if (wizardAnswers.pain_locations.length === 0) {
-        return ['p2', 'p3', 'p4', 'p4b', 'p5', 'p6', 'p7'];
+        return ['p2', 'p3', 'p5', 'p6', 'p7'];
     }
     return [];
 }
@@ -130,7 +133,6 @@ function resetSkippedStepData(stepId) {
     switch (stepId) {
         case 'p2': wizardAnswers.pain_intensity = 0; break;
         case 'p3': wizardAnswers.pain_character = []; break;
-        case 'p4': wizardAnswers.medical_diagnosis = ['none']; break;
         case 'p4b': wizardAnswers.red_flags = []; break;
         case 'p5': wizardAnswers.trigger_movements = []; break;
         case 'p6': wizardAnswers.relief_movements = []; break;
@@ -210,7 +212,7 @@ function validateStep(stepId) {
         case 'p1': return (wizardAnswers.pain_locations.length > 0 || wizardAnswers.focus_locations.length > 0);
         case 'p3': return wizardAnswers.pain_locations.length === 0 || wizardAnswers.pain_character.length > 0;
         case 'p4': return wizardAnswers.medical_diagnosis.length > 0;
-        case 'p4b': return wizardAnswers.pain_locations.length === 0 || hasExplicitRedFlagsAnswer();
+        case 'p4b': return hasExplicitRedFlagsAnswer();
         case 'p5': return wizardAnswers.pain_locations.length === 0 || wizardAnswers.trigger_movements.length > 0;
         case 'p6': return wizardAnswers.pain_locations.length === 0 || wizardAnswers.relief_movements.length > 0;
         case 'p8': return wizardAnswers.work_type !== '';
@@ -447,14 +449,17 @@ function renderP4(c) {
     const allOptions = MEDICAL_DIAGNOSIS_OPTIONS;
 
     const currentPainZones = wizardAnswers.pain_locations;
-    const filteredOptions = allOptions.filter(opt => {
-        if (opt.val === 'none') return true;
-        const requiredZones = diagnosisTriggerMap[opt.val];
-        if (!requiredZones) return true;
-        return requiredZones.some(zone => currentPainZones.includes(zone));
-    });
+    const hasCurrentPainSelection = Array.isArray(currentPainZones) && currentPainZones.length > 0;
+    const optionsToRender = hasCurrentPainSelection
+        ? allOptions.filter(opt => {
+            if (opt.val === 'none') return true;
+            const requiredZones = diagnosisTriggerMap[opt.val];
+            if (!requiredZones) return true;
+            return requiredZones.some(zone => currentPainZones.includes(zone));
+        })
+        : allOptions;
 
-    renderMultiSelect(c, title, filteredOptions, 'medical_diagnosis');
+    renderMultiSelect(c, title, optionsToRender, 'medical_diagnosis');
 }
 
 

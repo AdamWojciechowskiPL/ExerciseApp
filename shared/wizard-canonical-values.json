@@ -41,6 +41,17 @@
     "jumpers_knee",
     "none"
   ],
+  "red_flags": [
+    "trauma_major_recent",
+    "minor_trauma_high_fragility",
+    "cauda_equina_symptoms",
+    "progressive_neuro_deficit",
+    "oncologic_history_or_cancer_suspicion",
+    "infection_risk_significant",
+    "fracture_risk_osteoporosis_steroids",
+    "night_rest_pain_unrelenting",
+    "none"
+  ],
   "physical_restrictions": [
     "foot_injury",
     "no_kneeling",

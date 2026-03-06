@@ -1,8 +1,16 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v29.4.7
+# Aplikacja Treningowa (Smart Rehab PWA) v29.4.8
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
 ---
+
+## 🆕 Aktualizacje v29.4.8
+
+* Naprawiono ścieżkę bez bólu w wizardzie: kroki `p4` (rozpoznanie) i `p4b` (objawy alarmowe) nie są już pomijane, więc użytkownik może przekazać diagnozę także w trybach focus/prevention/return-to-sport.
+* Usunięto reset `medical_diagnosis` do `['none']` podczas pomijania kroków bólowych; wartość rozpoznania pozostaje w payloadzie `generate-plan` również przy `pain_locations=[]` i `pain_intensity=0`.
+* Rozszerzono czerwone flagi o kluczowe scenariusze triage (onkologia, infekcja, ryzyko złamania/kruchość, duży i mały uraz z kruchością) oraz ujednolicono kanoniczną listę wartości UI↔backend.
+* Backend waliduje red flags względem wspólnego słownika kanonicznego i nadal zwraca `422 INELIGIBLE_FOR_PLAN` przy wykryciu dowolnej flagi alarmowej.
+* Dodano testy regresyjne dla: no-pain + diagnosis, pełnej listy red flags oraz działania przeciwwskazań diagnozowo-zależnych przy zerowym bólu.
 
 ## 🆕 Aktualizacje v29.4.7
 

@@ -25,6 +25,29 @@ function makeEvent(body) {
   };
 }
 
+
+test('Canonical red flags list contains expanded triage set', () => {
+  const canonical = requireApp('_wizard-canonical.js');
+  const values = new Set((canonical.CANONICAL.red_flags || []).map(String));
+
+  const expected = [
+    'trauma_major_recent',
+    'minor_trauma_high_fragility',
+    'cauda_equina_symptoms',
+    'progressive_neuro_deficit',
+    'oncologic_history_or_cancer_suspicion',
+    'infection_risk_significant',
+    'fracture_risk_osteoporosis_steroids',
+    'night_rest_pain_unrelenting',
+    'none'
+  ];
+
+  for (const val of expected) {
+    assert.equal(values.has(val), true, `missing canonical red flag: ${val}`);
+  }
+});
+
+
 test('API: red_flags with symptom returns 422 INELIGIBLE_FOR_PLAN', async () => {
   const result = await plan.handler(makeEvent({
     pain_locations: ['low_back'],
@@ -35,6 +58,30 @@ test('API: red_flags with symptom returns 422 INELIGIBLE_FOR_PLAN', async () => 
   const parsedBody = JSON.parse(result.body);
   assert.equal(parsedBody.error, 'INELIGIBLE_FOR_PLAN');
   assert.equal(parsedBody.status, 'ineligible_for_plan');
+});
+
+test('API: red_flags contract accepts every canonical flag and still blocks generation for each non-none value', async () => {
+  const allowedFlags = [
+    'trauma_major_recent',
+    'minor_trauma_high_fragility',
+    'cauda_equina_symptoms',
+    'progressive_neuro_deficit',
+    'oncologic_history_or_cancer_suspicion',
+    'infection_risk_significant',
+    'fracture_risk_osteoporosis_steroids',
+    'night_rest_pain_unrelenting'
+  ];
+
+  for (const redFlag of allowedFlags) {
+    const result = await plan.handler(makeEvent({
+      pain_locations: ['low_back'],
+      red_flags: [redFlag]
+    }));
+
+    assert.equal(result.statusCode, 422, `flag ${redFlag} should block generation`);
+    const parsedBody = JSON.parse(result.body);
+    assert.equal(parsedBody.error, 'INELIGIBLE_FOR_PLAN');
+  }
 });
 
 test('API: red_flags payload rejects unknown flag', async () => {
@@ -49,14 +96,30 @@ test('Frontend wizard guardrails: p4b validation and generation block are presen
 
   assert.match(
     wizardSource,
-    /case 'p4b': return wizardAnswers\.pain_locations\.length === 0 \|\| hasExplicitRedFlagsAnswer\(\);/,
-    'wizard should require explicit p4b answer when pain flow is active'
+    /case 'p4b': return hasExplicitRedFlagsAnswer\(\);/,
+    'wizard should require explicit p4b answer in every wizard path'
   );
 
   assert.match(
     wizardSource,
     /if \(hasRedFlags\) \{[\s\S]*plan nie został wygenerowany/,
     'wizard should block plan generation when red flags are present'
+  );
+});
+
+test('Frontend wizard keeps diagnosis step in no-pain path and does not reset medical_diagnosis to none', () => {
+  const wizardSource = fs.readFileSync(wizardPath, 'utf8');
+
+  assert.match(
+    wizardSource,
+    /return \['p2', 'p3', 'p5', 'p6', 'p7'\];/,
+    'wizard skip-list should keep p4 diagnosis and p4b red flags in no-pain flow'
+  );
+
+  assert.doesNotMatch(
+    wizardSource,
+    /case 'p4': wizardAnswers\.medical_diagnosis = \['none'\]; break;/,
+    'wizard should not reset diagnosis to none while skipping steps'
   );
 });
 

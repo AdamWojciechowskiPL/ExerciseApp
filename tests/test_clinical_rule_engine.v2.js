@@ -77,3 +77,26 @@ test('US-11: engine tolerates new spine_motion_profile field (NULL-safe)', () =>
   assert.equal(typeof res, 'boolean');
   assert.equal(res, true, 'Should default to neutral behavior on null profile');
 });
+
+test('Diagnosis hard contraindications apply even with zero pain inputs', () => {
+  const ctx = clinical.buildUserContext({
+    pain_locations: [],
+    pain_intensity: 0,
+    daily_impact: 0,
+    medical_diagnosis: ['acl_rehab']
+  });
+  const diagnosisSet = new Set(ctx.medicalDiagnosis || []);
+
+  const highKneeLoadExercise = {
+    id: 'knee_high_load',
+    knee_load_level: 'high',
+    spine_load_level: 'low',
+    impact_level: 'low'
+  };
+
+  assert.equal(
+    clinical.violatesDiagnosisHardContraindications(highKneeLoadExercise, diagnosisSet, ctx),
+    true,
+    'acl_rehab should still block high knee load even in no-pain path'
+  );
+});

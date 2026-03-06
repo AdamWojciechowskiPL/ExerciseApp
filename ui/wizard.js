@@ -13,7 +13,7 @@ const STEPS = [
     { id: 'p1', title: 'Mapa Ciała', render: renderP1 },
     { id: 'p2', title: 'Nasilenie', render: renderP2 },
     { id: 'p3', title: 'Charakter', render: renderP3 },
-    { id: 'p4', title: 'Rozpoznanie lekarskie', render: renderP4 },
+    { id: 'p4', title: 'Rozpoznanie zgłoszone', render: renderP4 },
     { id: 'p4b', title: 'Czerwone flagi', render: renderP4b },
     { id: 'p5', title: 'Co nasila?', render: renderP5 },
     { id: 'p6', title: 'Co pomaga?', render: renderP6 },
@@ -199,6 +199,7 @@ function validateStep(stepId) {
         case 'p1': return (wizardAnswers.pain_locations.length > 0 || wizardAnswers.focus_locations.length > 0);
         case 'p3': return wizardAnswers.pain_locations.length === 0 || wizardAnswers.pain_character.length > 0;
         case 'p4': return wizardAnswers.medical_diagnosis.length > 0;
+        case 'p4b': return wizardAnswers.pain_locations.length === 0 || wizardAnswers.red_flags.length > 0;
         case 'p5': return wizardAnswers.pain_locations.length === 0 || wizardAnswers.trigger_movements.length > 0;
         case 'p6': return wizardAnswers.pain_locations.length === 0 || wizardAnswers.relief_movements.length > 0;
         case 'p8': return wizardAnswers.work_type !== '';
@@ -214,7 +215,7 @@ function validateStep(stepId) {
     }
 }
 
-function renderIntro(c) { c.innerHTML = `<p class="wizard-step-desc">Algorytm <strong>Virtual Physio</strong> przygotuje dla Ciebie plan.<br><br>Odpowiedz na kilka pytań, abyśmy mogli dopasować ćwiczenia do Twoich potrzeb.</p><div style="font-size:5rem; text-align:center; margin:2rem; animation: pulse-fade 2s infinite;">🧬</div>`; }
+function renderIntro(c) { c.innerHTML = `<p class="wizard-step-desc">Moduł <strong>Virtual Physio</strong> przeanalizuje Twoje odpowiedzi i przygotuje plan ćwiczeń.<br><br>Odpowiedz na kilka pytań, abyśmy mogli bezpiecznie dopasować trening do Twoich potrzeb.</p><div style="font-size:5rem; text-align:center; margin:2rem; animation: pulse-fade 2s infinite;">🧬</div>`; }
 
 async function renderP1(c) {
     const initialMode = (wizardAnswers.pain_locations.length === 0 && wizardAnswers.focus_locations.length > 0) ? 'focus' : 'pain';
@@ -378,7 +379,7 @@ function renderP2(c) {
 function renderP3(c) { renderMultiSelect(c, 'Jaki to rodzaj bólu?', [{ val: 'sharp', label: '🔪 Ostry / Kłujący' }, { val: 'dull', label: '🪨 Tępy / Uciskający' }, { val: 'burning', label: '🔥 Palący' }, { val: 'stiffness', label: '🪵 Sztywność' }, { val: 'radiating', label: '⚡ Promieniujący' }, { val: 'numbness', label: '🧊 Mrowienie' }], 'pain_character'); }
 
 function renderP4(c) {
-    const title = 'Czy masz rozpoznanie lekarskie?';
+    const title = 'Czy masz rozpoznanie zgłoszone przez specjalistę?';
     const diagnosisTriggerMap = {
         'scoliosis': ['thoracic', 'low_back', 'cervical'],
         'disc_herniation': ['low_back', 'cervical', 'sciatica'],
@@ -624,7 +625,7 @@ function renderSummary(c) {
 
     c.innerHTML = `
     <div class="summary-box">
-        <h3 class="summary-title">Twój Profil</h3>
+        <h3 class="summary-title">Analiza odpowiedzi</h3>
         <ul class="summary-list">
             ${painSection}
             ${focusSection}
@@ -637,7 +638,7 @@ function renderSummary(c) {
 
         ${warningHTML}
 
-        <p class="summary-footer">Asystent AI uwzględni Twój kalendarz i ułoży spersonalizowany plan treningowy.</p>
+        <p class="summary-footer">Na podstawie odpowiedzi system dobierze plan ćwiczeń do Twojego kalendarza i preferencji.</p>
     </div>`;
 }
 
@@ -650,9 +651,9 @@ async function renderProcessing(c) {
     
     // ZMIANA: Usunięcie "Gotowe!" z fałszywej pętli
     const logs = [
-        "Ocena profilu treningowego...",
+        "Analiza odpowiedzi...",
         "Weryfikacja ograniczeń bezpieczeństwa...",
-        "Dobór optymalnej objętości...",
+        "Dobór planu ćwiczeń...",
         "Wysyłanie zapytania..."
     ];
     
@@ -691,7 +692,7 @@ async function finalizeGeneration(consoleDiv) {
         };
 
         // ZMIANA: Aktualizacja UI w trakcie czekania na serwer
-        if(consoleDiv) consoleDiv.textContent = "Generowanie planu (AI)...";
+        if(consoleDiv) consoleDiv.textContent = "Generowanie planu ćwiczeń...";
 
         await dataStore.generateDynamicPlan(payload);
         

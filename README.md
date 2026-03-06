@@ -1,16 +1,21 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v29.4.1
+# Aplikacja Treningowa (Smart Rehab PWA) v29.4.2
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
 ---
 
-## 🆕 Aktualizacje v29.4.1
+## 🆕 Aktualizacje v29.4.2
 
 * Naprawiono błąd `Uncaught SyntaxError: unexpected token: identifier` w module wizarda poprzez zastąpienie importu JSON z `assert { type: 'json' }` kompatybilnym modułem ES (`shared/wizard-canonical-values.js`).
 * Dodano centralny słownik kanonicznych wartości wizarda (`shared/wizard-canonical-values.json`) używany przez frontend i backend.
 * Wprowadzono normalizację payloadu z wizarda (w tym alias `lumar_general` → `lumbar_general`) przed filtrowaniem klinicznym i scoringiem.
 * Rozszerzono debug mode generatora o telemetrykę decyzji filtra klinicznego (`passed/failed` + powód odrzucenia na poziomie ćwiczenia).
 * Dodano nowe testy jednostkowe i contract testy dla mapowań klinicznych oraz przepływu wizard → payload → generator.
+
+
+* W kroku „Czerwone flagi” dodano twardą walidację wyboru (`p4b`) – nie da się przejść dalej bez jawnej odpowiedzi.
+* Ujednolicono komunikaty w wizardzie na bardziej neutralne (m.in. „Rozpoznanie zgłoszone”, „Analiza odpowiedzi”, „Dobór planu ćwiczeń”).
+* Dodano testy regresyjne red flags: frontend guardrails + API `422 INELIGIBLE_FOR_PLAN` dla payloadu z objawami alarmowymi.
 
 ## 🚀 Kluczowe Funkcjonalności
 

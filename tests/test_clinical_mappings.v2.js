@@ -31,12 +31,19 @@ test('severityScore and difficulty cap react to sharp pain', () => {
     assert.ok(ctx.severityScore > 9);
 });
 
-test('pain zone mapping keeps lumbar_general and normalizes typo lumar_general', () => {
-    const normalized = canonical.normalizeWizardPayload({ pain_locations: ['lumar_general', 'knee'] });
-    assert.deepEqual(normalized.pain_locations, ['lumbar_general', 'knee']);
+test('pain zone mapping normalizes lumbar aliases to low_back for shared behavior', () => {
+    const normalized = canonical.normalizeWizardPayload({ pain_locations: ['lumar_general', 'lumbar', 'knee'] });
+    assert.deepEqual(normalized.pain_locations, ['lumbar_general', 'low_back', 'knee']);
 
-    const ctx = clinical.buildUserContext({ pain_locations: ['low_back'] });
-    assert.equal(ctx.painFilters.has('lumbar_general'), true);
+    const ctxLowBack = clinical.buildUserContext({ pain_locations: ['low_back'] });
+    const ctxLumbar = clinical.buildUserContext({ pain_locations: ['lumbar'] });
+    const ctxLumbarGeneral = clinical.buildUserContext({ pain_locations: ['lumbar_general'] });
+
+    for (const ctx of [ctxLowBack, ctxLumbar, ctxLumbarGeneral]) {
+        assert.equal(ctx.painFilters.has('low_back'), true);
+        assert.equal(ctx.painFilters.has('lumbar_general'), true);
+        assert.equal(ctx.painZoneSet.has('low_back'), true);
+    }
 });
 
 test('canonical hobby/equipment/restrictions keep only allowed values', () => {

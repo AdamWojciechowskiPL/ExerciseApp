@@ -175,7 +175,7 @@ export const renderSummaryScreen = () => {
                 <div class="feedback-container compact">${globalOptionsHtml}</div>
                 <div style="margin-top:10px;">
                     <label for="during-max-nprs" style="font-size:0.85rem; display:flex; justify-content:space-between;">
-                        <span>Maksymalny ból podczas sesji (NPRS)</span>
+                        <span>Maksymalne nasilenie objawów podczas sesji (NPRS)</span>
                         <strong id="during-max-nprs-value">${selectedFeedback.during.max_nprs}</strong>
                     </label>
                     <input type="range" id="during-max-nprs" min="0" max="10" value="${selectedFeedback.during.max_nprs}" style="width:100%;">

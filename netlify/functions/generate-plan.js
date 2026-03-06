@@ -303,7 +303,7 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
         multiplyMatching(weights, (cat) => isConditioningCategory(cat), condMult);
     }
 
-    if (painLocs.has('lumbar') || painLocs.has('low_back')) {
+    if (painLocs.has('lumbar') || painLocs.has('lumbar_general') || painLocs.has('low_back')) {
         boost(weights, 'breathing', 0.8);
         boost(weights, 'spine_mobility', 0.6);
         const coreBoost = ctx.isSevere ? 1.5 : 1.8;
@@ -332,8 +332,11 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
     if (painLocs.has('ankle') || painLocs.has('foot')) { boost(weights, 'calves', 0.6); boost(weights, 'ankle_mobility', 0.8); boost(weights, 'balance_proprioception', 0.5); }
 
     // 2. Focus/Goal
-    if (focusLocs.has('hip')) { boost(weights, 'glute_activation', 1.1); boost(weights, 'hip_extension', 1.3); }
-    if (focusLocs.has('low_back') || focusLocs.has('lumbar') || focusLocs.has('lumbar_general') || focusLocs.has('si_joint')) {
+    if (focusLocs.has('hip') || focusLocs.has('glutes') || focusLocs.has('glute')) {
+        boost(weights, 'glute_activation', 1.1);
+        boost(weights, 'hip_extension', 1.3);
+    }
+    if (focusLocs.has('low_back') || focusLocs.has('lumbar') || focusLocs.has('lumbar_general') || focusLocs.has('si_joint') || focusLocs.has('abs') || focusLocs.has('core')) {
         boost(weights, 'core_stability', 1.2);
         boost(weights, 'core_anti_extension', 1.0);
     }

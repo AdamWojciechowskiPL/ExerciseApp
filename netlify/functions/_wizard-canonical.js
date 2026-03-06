@@ -103,6 +103,7 @@ function normalizeWizardPayload(payload = {}) {
         symptom_onset: normalizeCanonicalValue(payload.symptom_onset, 'symptom_onset'),
         symptom_duration: normalizeCanonicalValue(payload.symptom_duration, 'symptom_duration'),
         symptom_trend: normalizeCanonicalValue(payload.symptom_trend, 'symptom_trend'),
+        current_activity_status: normalizeCanonicalValue(payload.current_activity_status, 'current_activity_status'),
         exercise_medical_clearance: normalizeMedicalClearance(payload.exercise_medical_clearance)
     };
 }

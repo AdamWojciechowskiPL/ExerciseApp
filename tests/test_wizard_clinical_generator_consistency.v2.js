@@ -49,6 +49,7 @@ test('clinical core fields are provided by wizard or explicitly optional', () =>
     'symptom_onset',
     'symptom_duration',
     'symptom_trend',
+    'current_activity_status',
     'exercise_medical_clearance',
     'trigger_movements',
     'relief_movements',
@@ -102,6 +103,12 @@ test('FE/BE canonical dictionaries stay aligned for diagnosis, red flags, restri
   assert.deepEqual([...feMedicalScreening].sort(), [...beMedicalScreening].sort(), 'exercise_medical_clearance_fields FE/BE mismatch');
 });
 
+test('wizard body map exposes backend pain locations for neck, shoulder and ankle', () => {
+  assert.match(wizardSource, /data-val="neck"/);
+  assert.match(wizardSource, /data-val="shoulder"/);
+  assert.match(wizardSource, /data-val="ankle"/);
+});
+
 test('normalized wizard payload keeps safety-critical fields across clinical core and generator guards', async () => {
   const normalized = canonical.normalizeWizardPayload({
     pain_locations: ['knee'],
@@ -112,6 +119,7 @@ test('normalized wizard payload keeps safety-critical fields across clinical cor
     symptom_onset: 'sudden',
     symptom_duration: 'lt_6_weeks',
     symptom_trend: 'worsening',
+    current_activity_status: 'regular_moderate',
     trigger_movements: ['bending_forward'],
     relief_movements: ['bending_backward']
   });
@@ -176,5 +184,5 @@ test('normalized wizard payload keeps safety-critical fields across clinical cor
 
   assert.equal(handlerResult.statusCode, 422);
   const parsedBody = JSON.parse(handlerResult.body);
-  assert.equal(parsedBody.error, 'INELIGIBLE_FOR_PLAN');
+  assert.equal(parsedBody.error, 'RED_FLAGS_HARD_STOP');
 });

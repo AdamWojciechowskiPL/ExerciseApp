@@ -48,7 +48,7 @@ test('Canonical red flags list contains expanded triage set', () => {
 });
 
 
-test('API: red_flags with symptom returns 422 INELIGIBLE_FOR_PLAN', async () => {
+test('API: red_flags with symptom returns 422 RED_FLAGS_HARD_STOP', async () => {
   const result = await plan.handler(makeEvent({
     pain_locations: ['low_back'],
     red_flags: ['progressive_neuro_deficit']
@@ -56,7 +56,7 @@ test('API: red_flags with symptom returns 422 INELIGIBLE_FOR_PLAN', async () => 
 
   assert.equal(result.statusCode, 422);
   const parsedBody = JSON.parse(result.body);
-  assert.equal(parsedBody.error, 'INELIGIBLE_FOR_PLAN');
+  assert.equal(parsedBody.error, 'RED_FLAGS_HARD_STOP');
   assert.equal(parsedBody.status, 'ineligible_for_plan');
 });
 
@@ -80,7 +80,7 @@ test('API: red_flags contract accepts every canonical flag and still blocks gene
 
     assert.equal(result.statusCode, 422, `flag ${redFlag} should block generation`);
     const parsedBody = JSON.parse(result.body);
-    assert.equal(parsedBody.error, 'INELIGIBLE_FOR_PLAN');
+    assert.equal(parsedBody.error, 'RED_FLAGS_HARD_STOP');
   }
 });
 

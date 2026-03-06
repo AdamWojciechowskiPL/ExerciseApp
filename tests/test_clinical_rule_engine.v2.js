@@ -107,3 +107,50 @@ test('Diagnosis hard contraindications apply even with zero pain inputs', () => 
     'acl_rehab should still block high knee load even in no-pain path'
   );
 });
+
+test('Knee ROM: stable case uses soft cap (penalty instead of hard block)', () => {
+  const ctx = clinical.buildUserContext({
+    pain_locations: ['knee'],
+    pain_intensity: 3,
+    daily_impact: 2,
+    medical_diagnosis: ['knee_oa']
+  });
+  ctx.directionalNegative24hCount = 0;
+
+  const diagnosisSet = new Set(ctx.medicalDiagnosis || []);
+  const ex = {
+    id: 'knee-soft',
+    knee_load_level: 'low',
+    is_foot_loading: true,
+    kneeFlexionApplicability: true,
+    kneeFlexionMaxDeg: 80
+  };
+
+  const blocked = clinical.violatesDiagnosisHardContraindications(ex, diagnosisSet, ctx);
+  assert.equal(blocked, false);
+  assert.equal(ex.kneeRomCapMode, 'soft');
+  assert.equal(ex.kneeRomSoftPenalty < 1, true);
+});
+
+test('Knee ROM: repeated 24h flare escalates to hard cap', () => {
+  const ctx = clinical.buildUserContext({
+    pain_locations: ['knee'],
+    pain_intensity: 3,
+    daily_impact: 2,
+    medical_diagnosis: ['meniscus_tear']
+  });
+  ctx.directionalNegative24hCount = 2;
+
+  const diagnosisSet = new Set(ctx.medicalDiagnosis || []);
+  const ex = {
+    id: 'knee-hard',
+    knee_load_level: 'low',
+    is_foot_loading: true,
+    kneeFlexionApplicability: true,
+    kneeFlexionMaxDeg: 80
+  };
+
+  const blocked = clinical.violatesDiagnosisHardContraindications(ex, diagnosisSet, ctx);
+  assert.equal(blocked, true);
+  assert.equal(ex.kneeRomCapMode, 'hard');
+});

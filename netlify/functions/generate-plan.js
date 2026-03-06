@@ -43,6 +43,8 @@ const MAX_SETS_MOBILITY = 3;
 const GLOBAL_MAX_REPS = 25;
 const MAX_BUCKET_CAPACITY = 120;
 const DIRECTIONAL_BIAS_PENALTY_MULTIPLIER = 0.82;
+const DIFFICULTY_RATING_SOFT_PENALTY = 0.94;
+const DIFFICULTY_RATING_SOFT_BONUS = 1.03;
 
 
 const HIGH_INTENSITY_PRIMARY_GOALS = new Set(['fat_loss', 'sport_return']);
@@ -765,11 +767,13 @@ function calculateScoreComponents(ex, section, userData, ctx, categoryWeights, s
     }
     // ------------------------------------------
 
+    // difficulty_rating pozostaje miękkim, wtórnym sygnałem rankingowym.
+    // Nie zastępuje mechanik AMPS (micro_dose / devolution) ani klinicznych filtrów bezpieczeństwa.
     const difficultyRating = Number(pref.difficultyRating);
     if (difficultyRating === 1) {
-        difficultyAdjust = 0.78;
+        difficultyAdjust = DIFFICULTY_RATING_SOFT_PENALTY;
     } else if (difficultyRating === -1) {
-        difficultyAdjust = 1.08;
+        difficultyAdjust = DIFFICULTY_RATING_SOFT_BONUS;
     }
 
     if (phaseContext) {

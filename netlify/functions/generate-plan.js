@@ -355,6 +355,11 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
     const workType = String(userData?.work_type || '').toLowerCase();
     const hobbies = normalizeHobbySet(userData?.hobby);
     const primaryGoal = String(userData?.primary_goal || '').toLowerCase();
+    const tolerancePattern = String(ctx?.tolerancePattern || 'unknown').toLowerCase();
+    const directionalNegative24hCount = Math.max(0, Number(ctx?.directionalNegative24hCount || 0));
+    const hasConfirmedDirectionalIntolerance = directionalNegative24hCount >= 2;
+    const weightedKneeDiagnoses = new Set(['chondromalacia', 'knee_oa']);
+    const hasWeightedKneeDiagnosis = [...weightedKneeDiagnoses].some((d) => diagnosis.has(d));
 
     // 1. Pain Based Boosts
     if (painLocs.has('knee') || painLocs.has('knee_anterior')) {
@@ -381,8 +386,10 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
         boost(weights, 'hip_mobility', 0.6);
     }
 
-    if (diagnosis.has('disc_herniation') || diagnosis.has('spondylolisthesis')) {
-        boost(weights, 'core_anti_extension', 1.2);
+    if (tolerancePattern === 'flexion_intolerant' && !hasConfirmedDirectionalIntolerance) {
+        boost(weights, 'core_anti_extension', 1.0);
+    } else if (tolerancePattern === 'extension_intolerant') {
+        multiplyMatching(weights, (cat) => cat === 'core_anti_extension', 0.85);
     }
 
     if (painLocs.has('hip')) { boost(weights, 'hip_mobility', 1.0); boost(weights, 'glute_activation', 0.8); }
@@ -419,7 +426,7 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
     if (hobbies.has('cycling')) { boost(weights, 'thoracic_mobility', 0.8); boost(weights, 'hip_flexor_stretch', 0.9); }
 
     // 4. Diagnosis
-    if (diagnosis.has('chondromalacia') || diagnosis.has('knee_oa')) {
+    if (hasWeightedKneeDiagnosis) {
         boost(weights, 'vmo_activation', 0.3); boost(weights, 'glute_activation', 1.2); boost(weights, 'hip_extension', 0.8);
         multiplyMatching(weights, (cat) => isConditioningCategory(cat), 0.9);
     }
@@ -437,6 +444,18 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
     if (componentWeights.has('mobility')) multiplyMatching(weights, (cat) => isMobilityCategory(cat), 1.35);
     if (componentWeights.has('strength')) multiplyMatching(weights, (cat) => isCoreCategory(cat) || isLowerLimbCategory(cat), 1.25);
     if (componentWeights.has('conditioning')) multiplyMatching(weights, (cat) => isConditioningCategory(cat), 1.45);
+    if (componentWeights.has('stability')) {
+        boost(weights, 'core_stability', 1.0);
+        boost(weights, 'core_anti_rotation', 0.9);
+        boost(weights, 'core_anti_extension', 0.9);
+        boost(weights, 'scapular_stability', 0.8);
+        boost(weights, 'knee_stability', 0.8);
+    }
+    if (componentWeights.has('breathing')) {
+        boost(weights, 'breathing', 1.0);
+        boost(weights, 'breathing_control', 1.0);
+        boost(weights, 'muscle_relaxation', 0.8);
+    }
 
     if (primaryGoal === 'pain_relief') {
         multiplyMatching(weights, (cat) => isBreathingCategory(cat) || isMobilityCategory(cat) || String(cat).toLowerCase().includes('nerve') || cat === 'breathing_control' || cat === 'muscle_relaxation', 1.2);
@@ -712,12 +731,13 @@ function calculateScoreComponents(ex, section, userData, ctx, categoryWeights, s
     let affinity = 1.0;
     let phaseFit = 1.0;
     let rehabAdjust = 1.0;
+    let difficultyAdjust = 1.0;
     let fatigueAdjust = 1.0;
     let directionalBiasPenalty = 1.0;
     let kneeRomAdjust = 1.0;
 
     if (state.usedIds.has(ex.id)) {
-        return { base, sectionFit, painRelief, painSafety, goal, variety, affinity, phaseFit, rehabAdjust, fatigueAdjust, directionalBiasPenalty, kneeRomAdjust, finalScore: 0 };
+        return { base, sectionFit, painRelief, painSafety, goal, variety, affinity, phaseFit, rehabAdjust, difficultyAdjust, fatigueAdjust, directionalBiasPenalty, kneeRomAdjust, finalScore: 0 };
     }
 
     sectionFit = sectionCategoryFitMultiplier(section, cat);
@@ -727,8 +747,9 @@ function calculateScoreComponents(ex, section, userData, ctx, categoryWeights, s
     variety = varietyPenalty(ex, state, section);
 
     // --- FIX: AFFINITY LOGIC (User Request) ---
+    let pref = { score: 0, difficultyRating: 0 };
     if (state.preferencesMap) {
-        const pref = state.preferencesMap[ex.id] || { score: 0 };
+        pref = state.preferencesMap[ex.id] || pref;
         const affScore = pref.score || 0;
         if (affScore > 0) {
             affinity = 1.0 + (affScore * 0.02);
@@ -738,10 +759,17 @@ function calculateScoreComponents(ex, section, userData, ctx, categoryWeights, s
     }
     // ------------------------------------------
 
+    const difficultyRating = Number(pref.difficultyRating);
+    if (difficultyRating === 1) {
+        difficultyAdjust = 0.78;
+    } else if (difficultyRating === -1) {
+        difficultyAdjust = 1.08;
+    }
+
     if (phaseContext) {
         phaseFit = calculatePhaseFit(ex, phaseContext);
         if (phaseFit === 0) {
-            return { base, sectionFit, painRelief, painSafety, goal, variety, affinity, phaseFit, rehabAdjust, fatigueAdjust, directionalBiasPenalty, kneeRomAdjust, finalScore: 0 };
+            return { base, sectionFit, painRelief, painSafety, goal, variety, affinity, phaseFit, rehabAdjust, difficultyAdjust, fatigueAdjust, directionalBiasPenalty, kneeRomAdjust, finalScore: 0 };
         }
     }
 
@@ -781,11 +809,11 @@ function calculateScoreComponents(ex, section, userData, ctx, categoryWeights, s
         kneeRomAdjust *= ex.kneeRomSoftPenalty;
     }
 
-    let finalScore = base * sectionFit * painRelief * painSafety * goal * variety * affinity * phaseFit * rehabAdjust * fatigueAdjust * directionalBiasPenalty * kneeRomAdjust;
+    let finalScore = base * sectionFit * painRelief * painSafety * goal * variety * affinity * phaseFit * rehabAdjust * difficultyAdjust * fatigueAdjust * directionalBiasPenalty * kneeRomAdjust;
     finalScore = Math.max(0, finalScore);
 
     return {
-        base, sectionFit, painRelief, painSafety, goal, variety, affinity, phaseFit, rehabAdjust, fatigueAdjust, directionalBiasPenalty, kneeRomAdjust, finalScore
+        base, sectionFit, painRelief, painSafety, goal, variety, affinity, phaseFit, rehabAdjust, difficultyAdjust, fatigueAdjust, directionalBiasPenalty, kneeRomAdjust, finalScore
     };
 }
 
@@ -1621,7 +1649,7 @@ exports.handler = async (event) => {
         const [eR, bR, pR, hR, sR, recentSessionsR, oR, fatigueProfile, settingsR] = await Promise.all([
             client.query('SELECT * FROM exercises'),
             client.query('SELECT exercise_id FROM user_exercise_blacklist WHERE user_id = $1', [userId]),
-            client.query('SELECT exercise_id, affinity_score FROM user_exercise_preferences WHERE user_id = $1', [userId]),
+            client.query('SELECT exercise_id, affinity_score, difficulty_rating FROM user_exercise_preferences WHERE user_id = $1', [userId]),
             client.query(`SELECT session_data->'sessionLog' as logs, completed_at FROM training_sessions WHERE user_id = $1 AND completed_at > NOW() - INTERVAL '30 days'`, [userId]),
             client.query('SELECT exercise_id, avg_seconds_per_rep FROM user_exercise_stats WHERE user_id = $1', [userId]),
             client.query(`SELECT completed_at, session_data->'feedback' as feedback FROM training_sessions WHERE user_id = $1 ORDER BY completed_at DESC LIMIT 3`, [userId]),
@@ -1633,7 +1661,7 @@ exports.handler = async (event) => {
         const exercises = eR.rows.map(r => normalizeExerciseRow(r, userData.exercise_experience));
         const ctx = safeBuildUserContext(userData);
         bR.rows.forEach(r => ctx.blockedIds.add(r.exercise_id));
-        const preferencesMap = {}; pR.rows.forEach(r => preferencesMap[r.exercise_id] = { score: r.affinity_score });
+        const preferencesMap = {}; pR.rows.forEach(r => preferencesMap[r.exercise_id] = { score: r.affinity_score, difficultyRating: r.difficulty_rating });
 
         const historyMap = {};
         hR.rows.forEach(r => {

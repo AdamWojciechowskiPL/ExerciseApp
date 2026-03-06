@@ -491,7 +491,7 @@ function renderP3(c) { renderMultiSelect(c, 'Jakie objawy dominują?', [{ val: '
 
 function renderP4(c) {
     const title = 'Czy masz rozpoznanie zgłoszone przez specjalistę?';
-    const hint = '<p class="wizard-step-desc" style="margin-top:-8px; opacity:0.85;">Wybierz tylko rozpoznania potwierdzone przez lekarza lub fizjoterapeutę.</p>';
+    const hint = '<p class="wizard-step-desc" style="margin-top:-8px; opacity:0.85;">Wybierz tylko rozpoznania potwierdzone przez lekarza lub fizjoterapeutę. Część rozpoznań działa jako guardrail bezpieczeństwa (ROM/obciążenia), a nie osobny profil wag.</p>';
     renderMultiSelect(c, title, MEDICAL_DIAGNOSIS_OPTIONS, 'medical_diagnosis', hint);
 }
 
@@ -833,6 +833,7 @@ function renderSummary(c) {
             <li>⏱️ <strong>Czas:</strong> ${wizardAnswers.target_session_duration_min} min</li>
             <li>${hasRedFlags ? '🚨' : '✅'} <strong>Objawy alarmowe:</strong> ${hasRedFlags ? 'Wymagana konsultacja medyczna przed doborem planu' : 'Brak'}</li>
             <li>${hasHardStopMedicalFlags ? '⛔' : (hasConditionalMedicalFlags ? '⚠️' : '✅')} <strong>Screening medyczny:</strong> ${hasHardStopMedicalFlags ? 'Wykryto objawy wymagające zatrzymania flow i konsultacji medycznej' : (hasConditionalMedicalFlags ? 'Dozwolona wyłącznie ścieżka ostrożna (low-intensity / rehab / mobility)' : 'Bez dodatnich odpowiedzi')}</li>
+            <li>ℹ️ <strong>Rozpoznania:</strong> nie każde rozpoznanie ma osobny profil terapii. Część etykiet działa jako ograniczenia bezpieczeństwa (safety-only), a preferencje wag wynikają głównie z tolerancji ruchu i odpowiedzi objawowej.</li>
         </ul>
 
         ${warningHTML}

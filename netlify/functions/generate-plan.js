@@ -14,6 +14,7 @@ const { calculateFatigueProfile } = require('./_fatigue-calculator.js');
 const { applyMicroLoading } = require('./_amps-engine.js');
 const { derivePainZoneSet, normalizeStringArray, normalizeLowerSet, normalizeDiagnosisSet } = require('./_pain-taxonomy.js');
 const { validateTempoString, enforceTempoByPhaseIntent, SAFE_FALLBACK_TEMPO } = require('./_tempo-validator.js');
+const { normalizeWizardPayload, normalizeEquipmentList: normalizeCanonicalEquipmentList } = require('./_wizard-canonical.js');
 
 const {
     initializePhaseState,
@@ -94,19 +95,12 @@ function cleanString(str) {
 }
 
 function normalizeEquipmentList(raw) {
-    const items = normalizeStringArray(raw).map(cleanString).filter(Boolean);
-    const ignore = new Set(['none', 'brak', '', 'brak sprzętu', 'masa własna', 'bodyweight']);
-    const set = new Set();
-    for (const it of items) {
-        if (ignore.has(it)) continue;
-        set.add(it);
-    }
-    return set;
+    return new Set(normalizeCanonicalEquipmentList(Array.isArray(raw) ? raw : normalizeStringArray(raw)));
 }
 
-
 function normalizeHobbySet(rawHobby) {
-    const normalized = normalizeStringArray(rawHobby)
+    const normalizedPayload = normalizeWizardPayload({ hobby: rawHobby });
+    const normalized = normalizeStringArray(normalizedPayload.hobby)
         .map(cleanString)
         .filter(Boolean)
         .filter(v => v !== 'none' && v !== 'brak');
@@ -416,7 +410,8 @@ function violatesPhysicalRestrictions(ex, restrictionsSet) {
     return false;
 }
 
-function filterExerciseCandidates(exercises, userData, ctx, fatigueProfile, rpeData) {
+function filterExerciseCandidates(exercises, userData, ctx, fatigueProfile, rpeData, options = {}) {
+    const { debug = false } = options;
     const userEquipment = normalizeEquipmentList(userData?.equipment_available);
     const diagnosisSet = normalizeDiagnosisSet(userData?.medical_diagnosis);
     const restrictionsSet = normalizeLowerSet(userData?.physical_restrictions);
@@ -435,28 +430,35 @@ function filterExerciseCandidates(exercises, userData, ctx, fatigueProfile, rpeD
         console.log(`[PlanGen] Monotony Spike Filter Active (Load=${fatigueProfile.weekLoad7d}, M=${fatigueProfile.monotony7d})`);
     }
 
-    const passesClinical = (ex) => {
-        if (!ex || !ex.id) return false;
+    const diagnostics = [];
+    const evaluateCandidate = (ex, fatigueLevel = null) => {
+        if (!ex || !ex.id) return { allowed: false, reason: 'missing_id' };
+
         const validation = validateExerciseRecord(ex);
-        if (!validation.valid) return false;
-        if (ctx.blockedIds && ctx.blockedIds.has(ex.id)) return false;
+        if (!validation.valid) return { allowed: false, reason: validation.error || 'invalid_exercise_record' };
+
+        if (ctx.blockedIds && ctx.blockedIds.has(ex.id)) return { allowed: false, reason: 'blacklisted' };
 
         const safetyCheck = checkExerciseAvailability(ex, ctx, userData);
-        if (!safetyCheck.allowed) return false;
+        if (!safetyCheck.allowed) return { allowed: false, reason: safetyCheck.reason || 'clinical_rejected' };
 
-        if (!isExerciseCompatibleWithEquipment(ex, userEquipment)) return false;
-        if (violatesPhysicalRestrictions(ex, restrictionsSet)) return false;
-        if (violatesDiagnosisHardContraindications(ex, diagnosisSet, ctx)) return false;
-        if (violatesSeverePainRules(ex, ctx)) return false;
-        return true;
+        if (!isExerciseCompatibleWithEquipment(ex, userEquipment)) return { allowed: false, reason: 'missing_equipment' };
+        if (violatesPhysicalRestrictions(ex, restrictionsSet)) return { allowed: false, reason: 'physical_restriction' };
+        if (violatesDiagnosisHardContraindications(ex, diagnosisSet, ctx)) return { allowed: false, reason: 'diagnosis_contraindication' };
+        if (violatesSeverePainRules(ex, ctx)) return { allowed: false, reason: 'severe_pain_rules' };
+
+        if (fatigueLevel !== null && !isExerciseSafeForFatigue(ex, fatigueLevel)) {
+            return { allowed: false, reason: `fatigue_filter_level_${fatigueLevel}` };
+        }
+
+        return { allowed: true, reason: null };
     };
 
     let filtered = [];
     for (const ex of exercises) {
-        if (!passesClinical(ex)) continue;
-        if (applySafetyGate) {
-            if (!isExerciseSafeForFatigue(ex, 0)) continue;
-        }
+        const result = evaluateCandidate(ex, applySafetyGate ? 0 : null);
+        if (debug) diagnostics.push({ id: ex?.id, passed: result.allowed, reason: result.reason, stage: applySafetyGate ? 'strict' : 'base' });
+        if (!result.allowed) continue;
         filtered.push(ex);
     }
 
@@ -464,10 +466,15 @@ function filterExerciseCandidates(exercises, userData, ctx, fatigueProfile, rpeD
         console.warn(`[PlanGen] Fatigue filter too strict. Relaxing rules (Level 1)...`);
         filtered = [];
         for (const ex of exercises) {
-            if (!passesClinical(ex)) continue;
-            if (!isExerciseSafeForFatigue(ex, 1)) continue;
+            const result = evaluateCandidate(ex, 1);
+            if (debug) diagnostics.push({ id: ex?.id, passed: result.allowed, reason: result.reason, stage: 'relaxed' });
+            if (!result.allowed) continue;
             filtered.push(ex);
         }
+    }
+
+    if (debug) {
+        return { candidates: filtered, diagnostics, applySafetyGate };
     }
     return filtered;
 }
@@ -1430,8 +1437,9 @@ function validateAndCorrectPlan(plan, phaseContext) {
 exports.handler = async (event) => {
     if (event.httpMethod !== 'POST') return { statusCode: 405 };
     let userId; try { userId = await getUserIdFromEvent(event); } catch (e) { return { statusCode: 401 }; }
-    const userData = safeJsonParse(event.body);
-    if (!userData) return { statusCode: 400 };
+    const parsedUserData = safeJsonParse(event.body);
+    if (!parsedUserData) return { statusCode: 400 };
+    const userData = normalizeWizardPayload(parsedUserData);
 
     const redFlagsRaw = userData?.red_flags;
     if (redFlagsRaw !== undefined && !Array.isArray(redFlagsRaw)) {
@@ -1541,7 +1549,9 @@ exports.handler = async (event) => {
         const effectiveVolumeModifier = rpeData.volumeModifier * painData.painModifier;
         rpeData.volumeModifier = effectiveVolumeModifier;
 
-        const candidates = filterExerciseCandidates(exercises, userData, ctx, fatigueProfile, rpeData);
+        const devDebugMode = String(event.queryStringParameters?.debug || userData.debug_mode || '').toLowerCase() === 'true';
+        const filterResult = filterExerciseCandidates(exercises, userData, ctx, fatigueProfile, rpeData, { debug: devDebugMode });
+        const candidates = devDebugMode ? filterResult.candidates : filterResult;
 
         // --- LOGGING INJECTION START ---
         try {
@@ -1560,6 +1570,12 @@ exports.handler = async (event) => {
                 anchorFamilies: new Set(),
                 anchorTargetExposure: 2
             };
+
+            if (devDebugMode && Array.isArray(filterResult.diagnostics)) {
+                console.log("=== CLINICAL FILTER DIAGNOSTICS ===");
+                console.log(JSON.stringify(filterResult.diagnostics, null, 2));
+                console.log("===================================");
+            }
 
             const debugLog = candidates.map(ex => {
                 const finalScoreMain = calculateScoreComponents(ex, 'main', userData, ctx, cWeights, debugState, debugPZones, phaseContext, fatigueProfile);
@@ -1614,3 +1630,4 @@ module.exports.safeBuildUserContext = safeBuildUserContext;
 module.exports.deriveFamilyKey = deriveFamilyKey;
 module.exports.selectMicrocycleAnchors = selectMicrocycleAnchors;
 module.exports.analyzePainResponse = analyzePainResponse; // Exported for testing US-02
+module.exports.filterExerciseCandidates = filterExerciseCandidates;

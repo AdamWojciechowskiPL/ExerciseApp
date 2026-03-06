@@ -2,6 +2,7 @@
 // netlify/functions/_clinical-rule-engine.js
 
 const { derivePainZoneSet, normalizeDiagnosisArray } = require('./_pain-taxonomy.js');
+const { normalizeWizardPayload } = require('./_wizard-canonical.js');
 
 const DIFFICULTY_MAP = {
     'none': 1, 'occasional': 2, 'regular': 3, 'advanced': 4
@@ -161,17 +162,18 @@ function detectTolerancePattern(triggers, reliefs) {
 }
 
 function buildUserContext(userData) {
-    const tolerancePattern = detectTolerancePattern(userData.trigger_movements, userData.relief_movements);
-    const painChar = userData.pain_character || [];
+    const normalizedData = normalizeWizardPayload(userData || {});
+    const tolerancePattern = detectTolerancePattern(normalizedData.trigger_movements, normalizedData.relief_movements);
+    const painChar = normalizedData.pain_character || [];
     const isPainSharp = painChar.includes('sharp') || painChar.includes('burning') || painChar.includes('radiating');
-    const painInt = parseInt(userData.pain_intensity) || 0;
-    const impact = parseInt(userData.daily_impact) || 0;
+    const painInt = parseInt(normalizedData.pain_intensity) || 0;
+    const impact = parseInt(normalizedData.daily_impact) || 0;
 
     let severityScore = (painInt + impact) / 2;
     if (isPainSharp) severityScore *= 1.2;
     const isSevere = severityScore >= 6.5;
 
-    const experienceKey = userData.exercise_experience;
+    const experienceKey = normalizedData.exercise_experience;
     const baseDifficultyCap = DIFFICULTY_MAP[experienceKey] || 2;
     let difficultyCap = baseDifficultyCap;
 
@@ -181,7 +183,7 @@ function buildUserContext(userData) {
         difficultyCap = Math.min(baseDifficultyCap, 3);
     }
 
-    const painLocs = userData.pain_locations || [];
+    const painLocs = normalizedData.pain_locations || [];
     const painFilters = new Set();
 
     // Legacy fallback
@@ -199,11 +201,11 @@ function buildUserContext(userData) {
     const painZoneSet = derivePainZoneSet(painLocs);
 
     const userEquipment = new Set(
-        (userData.equipment_available || []).map(e => String(e).trim().toLowerCase()).filter(Boolean)
+        (normalizedData.equipment_available || []).map(e => String(e).trim().toLowerCase()).filter(Boolean)
     );
 
-    const physicalRestrictions = userData.physical_restrictions || [];
-    const medicalDiagnosis = normalizeDiagnosisArray(userData.medical_diagnosis);
+    const physicalRestrictions = normalizedData.physical_restrictions || [];
+    const medicalDiagnosis = normalizeDiagnosisArray(normalizedData.medical_diagnosis);
 
     return {
         tolerancePattern,

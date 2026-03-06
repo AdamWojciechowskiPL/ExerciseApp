@@ -3,6 +3,7 @@ import { state } from '../state.js';
 import dataStore from '../dataStore.js';
 import { navigateTo, showLoader, hideLoader } from './core.js';
 import { renderMainScreen } from './screens/dashboard.js';
+import { HOBBY_OPTIONS, MEDICAL_DIAGNOSIS_OPTIONS, RESTRICTION_OPTIONS } from './wizardCanonical.js';
 
 let currentStep = 0;
 let wizardAnswers = {};
@@ -390,18 +391,7 @@ function renderP4(c) {
         'jumpers_knee': ['knee']
     };
 
-    const allOptions = [
-        { val: 'scoliosis', label: 'Skolioza' },
-        { val: 'disc_herniation', label: 'Dyskopatia / Przepuklina' },
-        { val: 'stenosis', label: 'Stenoza kanału' },
-        { val: 'facet_syndrome', label: 'Stawy międzykręgowe' },
-        { val: 'piriformis', label: 'Mięsień gruszkowaty' },
-        { val: 'chondromalacia', label: '🦴 Chondromalacja / Rzepka' },
-        { val: 'meniscus_tear', label: '🩹 Uszkodzenie łąkotki' },
-        { val: 'acl_rehab', label: '🦵 ACL / Więzadła' },
-        { val: 'jumpers_knee', label: '🏀 Kolano skoczka' },
-        { val: 'none', label: 'Brak rozpoznania / Inne' }
-    ];
+    const allOptions = MEDICAL_DIAGNOSIS_OPTIONS;
 
     const currentPainZones = wizardAnswers.pain_locations;
     const filteredOptions = allOptions.filter(opt => {
@@ -449,7 +439,7 @@ function renderP7(c) {
 }
 
 function renderP8(c) { renderSingleSelect(c, 'Twój typowy dzień?', [{ val: 'sedentary', label: '🪑 Siedzący (Biuro)' }, { val: 'standing', label: '🧍 Stojący' }, { val: 'physical', label: '💪 Fizyczny' }, { val: 'mixed', label: '🔄 Mieszany' }], 'work_type'); }
-function renderP9(c) { renderMultiSelect(c, 'Twoje aktywności?', [{ val: 'cycling', label: '🚴 Rower' }, { val: 'running', label: '🏃 Bieganie' }, { val: 'swimming', label: '🏊 Pływanie' }, { val: 'gym', label: '🏋️ Siłownia' }, { val: 'yoga', label: '🧘 Joga' }, { val: 'walking', label: '🚶 Spacery' }, { val: 'none', label: '❌ Brak' }], 'hobby'); }
+function renderP9(c) { renderMultiSelect(c, 'Twoje aktywności?', HOBBY_OPTIONS, 'hobby'); }
 
 function renderP10(c) {
     const uniqueEquipment = new Set(['Mata']);
@@ -582,15 +572,7 @@ function renderP15(c) {
 }
 
 function renderP16(c) {
-    renderMultiSelect(c, 'Ograniczenia?', [
-        { val: 'foot_injury', label: '🦶 Uraz stopy (bez obciążania)' },
-        { val: 'no_kneeling', label: '🚫 Nie mogę klęczeć' },
-        { val: 'no_deep_squat', label: '🚫 Zakaz głębokich przysiadów' },
-        { val: 'no_floor_sitting', label: 'Nie usiądę na podłodze' },
-        { val: 'no_twisting', label: 'Ból przy skrętach' },
-        { val: 'no_high_impact', label: 'Zakaz skoków' },
-        { val: 'none', label: 'Brak' }
-    ], 'physical_restrictions');
+    renderMultiSelect(c, 'Ograniczenia?', RESTRICTION_OPTIONS, 'physical_restrictions');
 }
 
 function renderSummary(c) {

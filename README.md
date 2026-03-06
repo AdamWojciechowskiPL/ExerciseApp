@@ -1,8 +1,15 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v29.4.2
+# Aplikacja Treningowa (Smart Rehab PWA) v29.4.3
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
 ---
+
+## 🆕 Aktualizacje v29.4.3
+
+* Dodano wymuszony UX follow-up 24h dla feedbacku `pain_monitoring` (baner + modal check-in na Dashboardzie) z polami: `after24h.max_nprs`, `delta_vs_baseline`, `stiffness_increased`, `swelling`, `night_pain`, `neuro_red_flags`.
+* Frontend zapisuje check-in przez endpoint `update-pain-feedback-24h` (alias do patch API), a backend waliduje pełny zestaw pól `after24h` przy patchu.
+* Kontrakt `validatePainMonitoring()` działa teraz fail-closed dla legacy feedbacku; tymczasowe dopuszczenie legacy wymaga feature flagi `ALLOW_LEGACY_PAIN_FEEDBACK=true` i obowiązuje tylko do daty sunset.
+* Dodano test kontraktowy dla schematu `pain_monitoring`/`after24h` (walidacja payloadów poprawnych oraz odrzucanie błędnych typów i legacy bypass).
 
 ## 🆕 Aktualizacje v29.4.2
 
@@ -207,6 +214,7 @@ Projekt posiada zestaw testów regresyjnych w katalogu `/tests`:
 │   │   ├── _fatigue-calculator.js   # Oblicza wskaźniki zmęczenia uwzględniając RIR (Reps In Reserve) oraz Quick Ratings (Kciuki). Wykorzystuje model Banistera z precyzyjniejszym wsadem danych (RPE 1-10 wyliczane dynamicznie).
 │   │   ├── _data-contract.js        # Schematy walidacji JSON (Pain Monitoring)
 │   │   ├── patch-session-feedback.js # Aktualizacja sesji po 24h
+│   │   ├── update-pain-feedback-24h.js # Alias endpointu 24h check-in (pain_monitoring)
 │   │   ├── generate-plan.js         # Generator planów dynamicznych (Rolling Window + Fluid Progression)
 │   │   ├── _phase-manager.js        # Zarządzanie stanem faz i licznikami
 │   │   ├── phase-catalog.js         # Konfiguracja blueprintów i reguł
@@ -390,6 +398,11 @@ Analityka tempa:
     STRAVA_CLIENT_ID=...
     STRAVA_CLIENT_SECRET=...
     URL=http://localhost:8888
+    ```
+
+   Opcjonalnie (tymczasowa migracja legacy feedbacku):
+    ```env
+    ALLOW_LEGACY_PAIN_FEEDBACK=false
     ```
 4.  Uruchom lokalnie:
     ```bash

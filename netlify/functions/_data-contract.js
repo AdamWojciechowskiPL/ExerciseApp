@@ -2,15 +2,39 @@
 'use strict';
 
 const PAIN_MONITORING_VERSION = 1;
+const LEGACY_PAIN_FEEDBACK_SUNSET = '2026-07-01T00:00:00.000Z';
+
+function isLegacyPainFeedbackAllowed() {
+    const featureFlag = process.env.ALLOW_LEGACY_PAIN_FEEDBACK === 'true';
+    if (!featureFlag) return false;
+
+    const now = Date.now();
+    const sunsetTs = Date.parse(LEGACY_PAIN_FEEDBACK_SUNSET);
+    if (!Number.isFinite(sunsetTs)) return false;
+    return now < sunsetTs;
+}
 
 /**
  * Waliduje obiekt feedbacku pod kątem zgodności ze schematem pain_monitoring.
  * Fail-closed: zwraca false przy jakimkolwiek odstępstwie.
  */
-function validatePainMonitoring(feedback) {
-    if (!feedback || feedback.type !== 'pain_monitoring') {
-        // Jeśli to nie jest pain_monitoring, nie walidujemy tym kontraktem (legacy bypass)
+function validatePainMonitoring(feedback, options = {}) {
+    const { allowLegacy = false, requireAfter24h = false } = options;
+
+    if (!feedback) {
         return { valid: true, isSchema: false };
+    }
+
+    if (feedback.type !== 'pain_monitoring') {
+        if (allowLegacy && isLegacyPainFeedbackAllowed()) {
+            return {
+                valid: true,
+                isSchema: false,
+                legacyAccepted: true,
+                legacySunset: LEGACY_PAIN_FEEDBACK_SUNSET
+            };
+        }
+        return { valid: false, error: 'Legacy feedback format is no longer accepted' };
     }
 
     if (feedback.schema_version !== PAIN_MONITORING_VERSION) {
@@ -32,8 +56,14 @@ function validatePainMonitoring(feedback) {
     }
 
     // 2. Sekcja AFTER 24H (Opcjonalna przy pierwszym zapisie, wymagana przy patchu)
+    if (requireAfter24h && !feedback.after24h) {
+        return { valid: false, error: 'Missing "after24h" section' };
+    }
+
     if (feedback.after24h) {
         const a = feedback.after24h;
+        const requiredBoolFields = ['stiffness_increased', 'swelling', 'night_pain', 'neuro_red_flags'];
+
         if (typeof a.max_nprs !== 'number' || a.max_nprs < 0 || a.max_nprs > 10) {
             return { valid: false, error: 'Invalid after24h.max_nprs (0-10)' };
         }
@@ -43,8 +73,10 @@ function validatePainMonitoring(feedback) {
         }
         
         // Flagi bezpieczeństwa
-        const boolFields = ['stiffness_increased', 'swelling', 'night_pain', 'neuro_red_flags'];
-        for (const field of boolFields) {
+        for (const field of requiredBoolFields) {
+            if (requireAfter24h && typeof a[field] !== 'boolean') {
+                return { valid: false, error: `Missing required boolean field: ${field}` };
+            }
             if (a[field] !== undefined && typeof a[field] !== 'boolean') {
                 return { valid: false, error: `Invalid type for ${field}` };
             }
@@ -61,5 +93,7 @@ function validatePainMonitoring(feedback) {
 
 module.exports = {
     validatePainMonitoring,
-    PAIN_MONITORING_VERSION
+    PAIN_MONITORING_VERSION,
+    LEGACY_PAIN_FEEDBACK_SUNSET,
+    isLegacyPainFeedbackAllowed
 };

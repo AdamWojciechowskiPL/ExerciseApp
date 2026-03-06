@@ -26,9 +26,12 @@ exports.handler = async (event) => {
         }
 
         if (feedback) {
-            const validation = validatePainMonitoring(feedback);
+            const validation = validatePainMonitoring(feedback, { allowLegacy: true });
             if (!validation.valid) {
                 return { statusCode: 400, body: JSON.stringify({ error: `Feedback Error: ${validation.error}` }) };
+            }
+            if (validation.legacyAccepted) {
+                console.warn('[save-session] Accepted legacy feedback (temporary migration mode). Sunset:', validation.legacySunset);
             }
         }
 

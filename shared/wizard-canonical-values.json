@@ -110,6 +110,12 @@
     "stable",
     "worsening"
   ],
+  "current_activity_status": [
+    "inactive",
+    "light_regular",
+    "regular_moderate",
+    "regular_vigorous"
+  ],
   "exercise_medical_clearance_fields": [
     "cvd",
     "metabolic",

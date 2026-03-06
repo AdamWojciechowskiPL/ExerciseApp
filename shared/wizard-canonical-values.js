@@ -10,6 +10,7 @@ const CANONICAL_VALUES = {
     symptom_onset: ['sudden', 'post_traumatic', 'gradual'],
     symptom_duration: ['lt_6_weeks', 'w6_12_weeks', 'gt_12_weeks'],
     symptom_trend: ['improving', 'stable', 'worsening'],
+    current_activity_status: ['inactive', 'light_regular', 'regular_moderate', 'regular_vigorous'],
     equipment: {
         ignorable: ['none', 'brak', '', 'brak sprzętu', 'masa własna', 'bodyweight'],
         aliases: {

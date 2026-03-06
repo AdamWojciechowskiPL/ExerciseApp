@@ -46,6 +46,16 @@ const DIRECTIONAL_BIAS_PENALTY_MULTIPLIER = 0.82;
 
 
 const HIGH_INTENSITY_PRIMARY_GOALS = new Set(['fat_loss', 'sport_return']);
+const CAUTIOUS_PRIMARY_GOALS = new Set(['mobility', 'pain_relief', 'prevention']);
+const HARD_STOP_MEDICAL_SCREENING_FIELDS = new Set([
+    'chest_pain_exertional',
+    'syncope_exertional',
+    'dyspnea_disproportionate',
+    'recent_cardiac_event',
+    'uncontrolled_hypertension'
+]);
+const CONDITIONAL_MEDICAL_SCREENING_FIELDS = new Set(['cvd', 'metabolic', 'renal']);
+const HIGH_INTENSITY_ACTIVITY_BLOCK_LIST = new Set(['inactive', 'light_regular']);
 
 function hasPositiveMedicalScreening(clearance = {}) {
     if (!clearance || typeof clearance !== 'object') return false;
@@ -54,6 +64,27 @@ function hasPositiveMedicalScreening(clearance = {}) {
         if (value === true) return true;
     }
     return false;
+}
+
+function hasHardStopMedicalScreening(clearance = {}) {
+    if (!clearance || typeof clearance !== 'object') return false;
+    for (const field of HARD_STOP_MEDICAL_SCREENING_FIELDS) {
+        if (clearance[field] === true) return true;
+    }
+    return false;
+}
+
+function hasConditionalMedicalScreening(clearance = {}) {
+    if (!clearance || typeof clearance !== 'object') return false;
+    for (const field of CONDITIONAL_MEDICAL_SCREENING_FIELDS) {
+        if (clearance[field] === true) return true;
+    }
+    return false;
+}
+
+function isActivityInsufficientForHighIntensity(userData = {}) {
+    const status = String(userData.current_activity_status || '').toLowerCase();
+    return HIGH_INTENSITY_ACTIVITY_BLOCK_LIST.has(status);
 }
 
 function isHighIntensityIntent(userData = {}) {
@@ -67,6 +98,19 @@ function isHighIntensityIntent(userData = {}) {
     return HIGH_INTENSITY_PRIMARY_GOALS.has(goal)
         || componentWeights.includes('conditioning')
         || focusLocs.includes('metabolic');
+}
+
+function isCautiousOnlyIntent(userData = {}) {
+    const goal = String(userData.primary_goal || '').toLowerCase();
+    const componentWeights = Array.isArray(userData.session_component_weights)
+        ? userData.session_component_weights.map((v) => String(v || '').toLowerCase())
+        : [];
+    const focusLocs = Array.isArray(userData.focus_locations)
+        ? userData.focus_locations.map((v) => String(v || '').toLowerCase())
+        : [];
+    const hasConditioning = componentWeights.includes('conditioning');
+    const hasMetabolicFocus = focusLocs.includes('metabolic');
+    return CAUTIOUS_PRIMARY_GOALS.has(goal) && !hasConditioning && !hasMetabolicFocus;
 }
 
 const PAIN_CONFIG = {
@@ -670,9 +714,10 @@ function calculateScoreComponents(ex, section, userData, ctx, categoryWeights, s
     let rehabAdjust = 1.0;
     let fatigueAdjust = 1.0;
     let directionalBiasPenalty = 1.0;
+    let kneeRomAdjust = 1.0;
 
     if (state.usedIds.has(ex.id)) {
-        return { base, sectionFit, painRelief, painSafety, goal, variety, affinity, phaseFit, rehabAdjust, fatigueAdjust, directionalBiasPenalty, finalScore: 0 };
+        return { base, sectionFit, painRelief, painSafety, goal, variety, affinity, phaseFit, rehabAdjust, fatigueAdjust, directionalBiasPenalty, kneeRomAdjust, finalScore: 0 };
     }
 
     sectionFit = sectionCategoryFitMultiplier(section, cat);
@@ -696,7 +741,7 @@ function calculateScoreComponents(ex, section, userData, ctx, categoryWeights, s
     if (phaseContext) {
         phaseFit = calculatePhaseFit(ex, phaseContext);
         if (phaseFit === 0) {
-            return { base, sectionFit, painRelief, painSafety, goal, variety, affinity, phaseFit, rehabAdjust, fatigueAdjust, finalScore: 0 };
+            return { base, sectionFit, painRelief, painSafety, goal, variety, affinity, phaseFit, rehabAdjust, fatigueAdjust, directionalBiasPenalty, kneeRomAdjust, finalScore: 0 };
         }
     }
 
@@ -732,11 +777,15 @@ function calculateScoreComponents(ex, section, userData, ctx, categoryWeights, s
         directionalBiasPenalty *= DIRECTIONAL_BIAS_PENALTY_MULTIPLIER;
     }
 
-    let finalScore = base * sectionFit * painRelief * painSafety * goal * variety * affinity * phaseFit * rehabAdjust * fatigueAdjust * directionalBiasPenalty;
+    if (typeof ex.kneeRomSoftPenalty === 'number' && ex.kneeRomSoftPenalty > 0 && ex.kneeRomSoftPenalty < 1) {
+        kneeRomAdjust *= ex.kneeRomSoftPenalty;
+    }
+
+    let finalScore = base * sectionFit * painRelief * painSafety * goal * variety * affinity * phaseFit * rehabAdjust * fatigueAdjust * directionalBiasPenalty * kneeRomAdjust;
     finalScore = Math.max(0, finalScore);
 
     return {
-        base, sectionFit, painRelief, painSafety, goal, variety, affinity, phaseFit, rehabAdjust, fatigueAdjust, directionalBiasPenalty, finalScore
+        base, sectionFit, painRelief, painSafety, goal, variety, affinity, phaseFit, rehabAdjust, fatigueAdjust, directionalBiasPenalty, kneeRomAdjust, finalScore
     };
 }
 
@@ -1488,7 +1537,7 @@ exports.handler = async (event) => {
         return {
             statusCode: 422,
             body: JSON.stringify({
-                error: 'INELIGIBLE_FOR_PLAN',
+                error: 'RED_FLAGS_HARD_STOP',
                 status: 'ineligible_for_plan',
                 message: 'Wykryto objawy alarmowe. Plan nie został wygenerowany — skonsultuj się z lekarzem lub fizjoterapeutą.'
             })
@@ -1518,17 +1567,51 @@ exports.handler = async (event) => {
         }
     }
 
+    if (!userData.current_activity_status) {
+        return { statusCode: 422, body: JSON.stringify({ error: 'MISSING_CURRENT_ACTIVITY_STATUS', field: 'current_activity_status' }) };
+    }
+    if (!Array.isArray(CANONICAL.current_activity_status) || !CANONICAL.current_activity_status.includes(userData.current_activity_status)) {
+        return { statusCode: 400, body: JSON.stringify({ error: 'INVALID_CURRENT_ACTIVITY_STATUS', field: 'current_activity_status' }) };
+    }
+
     const highIntensityIntent = isHighIntensityIntent(userData);
     const medicalScreeningPositive = hasPositiveMedicalScreening(userData.exercise_medical_clearance);
+    const hardStopMedicalScreening = hasHardStopMedicalScreening(userData.exercise_medical_clearance);
+    const conditionalMedicalScreening = hasConditionalMedicalScreening(userData.exercise_medical_clearance);
 
-    if (highIntensityIntent && medicalScreeningPositive) {
+    if (hardStopMedicalScreening) {
+        console.warn(`[PlanGen] User: ${userId}, status=ineligible_for_plan, reason=medical_screening_hard_stop`);
+        return {
+            statusCode: 422,
+            body: JSON.stringify({
+                error: 'MEDICAL_SCREENING_HARD_STOP',
+                status: 'ineligible_for_plan',
+                message: 'Wykryto objawy wysiłkowe wysokiego ryzyka. Plan nie może zostać wygenerowany bez pilnej konsultacji medycznej.'
+            })
+        };
+    }
+
+    const activityRiskForHighIntensity = isActivityInsufficientForHighIntensity(userData) && medicalScreeningPositive;
+    if (highIntensityIntent && (medicalScreeningPositive || activityRiskForHighIntensity)) {
         console.warn(`[PlanGen] User: ${userId}, status=ineligible_for_plan, reason=medical_screening_high_intensity`);
         return {
             statusCode: 422,
             body: JSON.stringify({
-                error: 'INELIGIBLE_FOR_HIGH_INTENSITY_PLAN',
+                error: 'MEDICAL_SCREENING_HIGH_INTENSITY_BLOCK',
                 status: 'ineligible_for_plan',
                 message: 'Nie możemy wygenerować planu o wyższej intensywności bez konsultacji medycznej. Wybierz plan low-intensity lub skonsultuj się z lekarzem.'
+            })
+        };
+    }
+
+    if (conditionalMedicalScreening && !isCautiousOnlyIntent(userData)) {
+        console.warn(`[PlanGen] User: ${userId}, status=ineligible_for_plan, reason=medical_screening_cautious_only`);
+        return {
+            statusCode: 422,
+            body: JSON.stringify({
+                error: 'MEDICAL_SCREENING_CONDITIONAL_REQUIRES_CAUTIOUS_FLOW',
+                status: 'ineligible_for_plan',
+                message: 'Przy dodatnim screeningu warunkowym dostępne są wyłącznie plany low-intensity / rehab / mobility.'
             })
         };
     }
@@ -1692,4 +1775,8 @@ module.exports.selectMicrocycleAnchors = selectMicrocycleAnchors;
 module.exports.analyzePainResponse = analyzePainResponse; // Exported for testing US-02
 module.exports.filterExerciseCandidates = filterExerciseCandidates;
 module.exports.hasPositiveMedicalScreening = hasPositiveMedicalScreening;
+module.exports.hasHardStopMedicalScreening = hasHardStopMedicalScreening;
+module.exports.hasConditionalMedicalScreening = hasConditionalMedicalScreening;
+module.exports.isActivityInsufficientForHighIntensity = isActivityInsufficientForHighIntensity;
 module.exports.isHighIntensityIntent = isHighIntensityIntent;
+module.exports.isCautiousOnlyIntent = isCautiousOnlyIntent;

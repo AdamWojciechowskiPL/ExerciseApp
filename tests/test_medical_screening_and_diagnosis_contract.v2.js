@@ -89,6 +89,18 @@ test('medical screening normalization includes explicit booleans for each field'
   assert.equal(payload.exercise_medical_clearance.none, false);
 });
 
+test('current activity status normalization keeps only canonical values', () => {
+  const payload = canonical.normalizeWizardPayload({
+    current_activity_status: 'regular_vigorous'
+  });
+  assert.equal(payload.current_activity_status, 'regular_vigorous');
+
+  const invalid = canonical.normalizeWizardPayload({
+    current_activity_status: 'sometimes_active'
+  });
+  assert.equal(invalid.current_activity_status, '');
+});
+
 
 
 test('medical screening normalization persists explicit none and infers none for all-negative payload', () => {
@@ -125,6 +137,7 @@ test('API blocks high-intensity intent with positive medical screening', async (
   const result = await plan.handler(makeEvent({
     primary_goal: 'fat_loss',
     session_component_weights: ['conditioning'],
+    current_activity_status: 'regular_moderate',
     exercise_medical_clearance: {
       cvd: true,
       metabolic: false,
@@ -139,7 +152,69 @@ test('API blocks high-intensity intent with positive medical screening', async (
 
   assert.equal(result.statusCode, 422);
   const parsedBody = JSON.parse(result.body);
-  assert.equal(parsedBody.error, 'INELIGIBLE_FOR_HIGH_INTENSITY_PLAN');
+  assert.equal(parsedBody.error, 'MEDICAL_SCREENING_HIGH_INTENSITY_BLOCK');
+});
+
+test('API hard-stops for exertional red-flag symptoms regardless of intent', async () => {
+  const result = await plan.handler(makeEvent({
+    primary_goal: 'mobility',
+    current_activity_status: 'regular_moderate',
+    exercise_medical_clearance: {
+      cvd: false,
+      metabolic: false,
+      renal: false,
+      chest_pain_exertional: true,
+      syncope_exertional: false,
+      dyspnea_disproportionate: false,
+      recent_cardiac_event: false,
+      uncontrolled_hypertension: false
+    }
+  }));
+
+  assert.equal(result.statusCode, 422);
+  const parsedBody = JSON.parse(result.body);
+  assert.equal(parsedBody.error, 'MEDICAL_SCREENING_HARD_STOP');
+});
+
+test('API blocks non-cautious flow for conditional medical screening', async () => {
+  const result = await plan.handler(makeEvent({
+    primary_goal: 'strength',
+    current_activity_status: 'regular_moderate',
+    exercise_medical_clearance: {
+      cvd: true,
+      metabolic: false,
+      renal: false,
+      chest_pain_exertional: false,
+      syncope_exertional: false,
+      dyspnea_disproportionate: false,
+      recent_cardiac_event: false,
+      uncontrolled_hypertension: false
+    }
+  }));
+
+  assert.equal(result.statusCode, 422);
+  const parsedBody = JSON.parse(result.body);
+  assert.equal(parsedBody.error, 'MEDICAL_SCREENING_CONDITIONAL_REQUIRES_CAUTIOUS_FLOW');
+});
+
+test('API validates current activity status as required wizard field', async () => {
+  const result = await plan.handler(makeEvent({
+    primary_goal: 'mobility',
+    exercise_medical_clearance: {
+      cvd: false,
+      metabolic: false,
+      renal: false,
+      chest_pain_exertional: false,
+      syncope_exertional: false,
+      dyspnea_disproportionate: false,
+      recent_cardiac_event: false,
+      uncontrolled_hypertension: false
+    }
+  }));
+
+  assert.equal(result.statusCode, 422);
+  const parsedBody = JSON.parse(result.body);
+  assert.equal(parsedBody.error, 'MISSING_CURRENT_ACTIVITY_STATUS');
 });
 
 test('API validates missing medical screening answers before generation', async () => {
@@ -160,6 +235,15 @@ test('helpers detect high-intensity intent and positive screening flags', () => 
 
   assert.equal(plan.hasPositiveMedicalScreening({ cvd: true }), true);
   assert.equal(plan.hasPositiveMedicalScreening({ cvd: false, metabolic: false }), false);
+
+  assert.equal(plan.hasHardStopMedicalScreening({ chest_pain_exertional: true }), true);
+  assert.equal(plan.hasHardStopMedicalScreening({ cvd: true }), false);
+  assert.equal(plan.hasConditionalMedicalScreening({ cvd: true }), true);
+  assert.equal(plan.hasConditionalMedicalScreening({ chest_pain_exertional: true }), false);
+  assert.equal(plan.isActivityInsufficientForHighIntensity({ current_activity_status: 'inactive' }), true);
+  assert.equal(plan.isActivityInsufficientForHighIntensity({ current_activity_status: 'regular_moderate' }), false);
+  assert.equal(plan.isCautiousOnlyIntent({ primary_goal: 'mobility' }), true);
+  assert.equal(plan.isCautiousOnlyIntent({ primary_goal: 'fat_loss' }), false);
 });
 
 test('frontend diagnosis step renders full list independent from pain locations map', () => {

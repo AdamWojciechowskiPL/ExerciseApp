@@ -79,7 +79,8 @@ test('integration: handler returns plan-like payload for minimal request', async
       uncontrolled_hypertension: false
     },
     schedule_pattern: [1, 3, 5],
-    exercise_experience: 'beginner'
+    exercise_experience: 'beginner',
+    current_activity_status: 'regular_moderate'
   };
 
   const event = {

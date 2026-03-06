@@ -29,6 +29,7 @@ const STEPS = [
     { id: 'p14', title: 'Główny Cel', render: renderP14 },
     { id: 'p15', title: 'Cele Extra', render: renderP15 },
     { id: 'p16', title: 'Ograniczenia', render: renderP16 },
+    { id: 'p16b', title: 'Aktualna aktywność', render: renderP16b },
     { id: 'summary', title: 'Gotowe', render: renderSummary },
     { id: 'generating', title: 'Przetwarzanie', render: renderProcessing }
 ];
@@ -60,6 +61,13 @@ const MEDICAL_SCREENING_OPTIONS = [
 ];
 
 const MEDICAL_SCREENING_VALUES = new Set(MEDICAL_SCREENING_OPTIONS.map((opt) => opt.val));
+const HARD_STOP_MEDICAL_SCREENING_FIELDS = new Set([
+    'chest_pain_exertional',
+    'syncope_exertional',
+    'dyspnea_disproportionate',
+    'recent_cardiac_event',
+    'uncontrolled_hypertension'
+]);
 
 function normalizeMedicalScreeningState(source = {}) {
     const out = {};
@@ -107,7 +115,8 @@ export function initWizard(forceStart = false) {
         session_component_weights: saved.session_component_weights || [],
         primary_goal: saved.primary_goal || '',
         secondary_goals: saved.secondary_goals || [],
-        physical_restrictions: saved.physical_restrictions || []
+        physical_restrictions: saved.physical_restrictions || [],
+        current_activity_status: saved.current_activity_status || ''
     };
 
     wizardAnswers.hasPain = wizardAnswers.pain_locations.length > 0;
@@ -266,6 +275,7 @@ function validateStep(stepId) {
         case 'p14': return wizardAnswers.primary_goal !== '';
         case 'p15': return wizardAnswers.secondary_goals.length > 0;
         case 'p16': return wizardAnswers.physical_restrictions.length > 0;
+        case 'p16b': return wizardAnswers.current_activity_status !== '';
         default: return true;
     }
 }
@@ -368,6 +378,9 @@ async function renderP1(c) {
          <rect x="132" y="98" width="16" height="110" rx="5" />
       </g>
       <g id="zones">
+        <circle id="neck" class="zone" cx="100" cy="66" r="8" data-val="neck" data-label="Kark"/>
+        <circle id="shoulder_left" class="zone" cx="68" cy="98" r="10" data-val="shoulder" data-label="Bark L"/>
+        <circle id="shoulder_right" class="zone" cx="132" cy="98" r="10" data-val="shoulder" data-label="Bark P"/>
         <rect id="cervical" class="zone" x="86" y="60" width="28" height="20" rx="5" data-label="Szyja"/>
         <path id="thoracic" class="zone" d="M80 85 C84 80 116 80 120 85 L116 145 C114 150 86 150 84 145 Z" data-label="Plecy (Góra)"/>
         <path id="low_back" class="zone" d="M84 148 C88 145 112 145 116 148 L114 185 C112 190 88 190 86 185 Z" data-label="Lędźwia"/>
@@ -378,6 +391,8 @@ async function renderP1(c) {
         <rect id="sciatica_right" class="zone" x="113" y="235" width="22" height="100" rx="5" data-val="sciatica" data-label="Noga P"/>
         <circle id="knee_left" class="zone" cx="76" cy="285" r="12" data-val="knee" data-label="Kolano L"/>
         <circle id="knee_right" class="zone" cx="124" cy="285" r="12" data-val="knee" data-label="Kolano P"/>
+        <circle id="ankle_left" class="zone" cx="76" cy="352" r="10" data-val="ankle" data-label="Kostka L"/>
+        <circle id="ankle_right" class="zone" cx="124" cy="352" r="10" data-val="ankle" data-label="Kostka P"/>
       </g>
     </svg>`;
 
@@ -747,6 +762,15 @@ function renderP16(c) {
     renderMultiSelect(c, 'Ograniczenia?', RESTRICTION_OPTIONS, 'physical_restrictions');
 }
 
+function renderP16b(c) {
+    renderSingleSelect(c, 'Jaki jest Twój aktualny poziom regularnej aktywności fizycznej?', [
+        { val: 'inactive', label: '🛋️ Nie ćwiczę regularnie' },
+        { val: 'light_regular', label: '🚶 Lekka regularna aktywność' },
+        { val: 'regular_moderate', label: '🏃 Regularna umiarkowana aktywność' },
+        { val: 'regular_vigorous', label: '🏋️ Regularna intensywna aktywność' }
+    ], 'current_activity_status');
+}
+
 function renderSummary(c) {
     const painCount = wizardAnswers.pain_locations.length;
     const focusCount = wizardAnswers.focus_locations.length;
@@ -767,7 +791,8 @@ function renderSummary(c) {
     }
 
     const hasRedFlags = Array.isArray(wizardAnswers.red_flags) && wizardAnswers.red_flags.some(flag => flag !== 'none');
-    const hasMedicalScreeningFlags = Object.entries(wizardAnswers.exercise_medical_clearance || {}).some(([key, val]) => key !== 'none' && val === true);
+    const hasHardStopMedicalFlags = Object.entries(wizardAnswers.exercise_medical_clearance || {}).some(([key, val]) => HARD_STOP_MEDICAL_SCREENING_FIELDS.has(key) && val === true);
+    const hasConditionalMedicalFlags = Object.entries(wizardAnswers.exercise_medical_clearance || {}).some(([key, val]) => !HARD_STOP_MEDICAL_SCREENING_FIELDS.has(key) && key !== 'none' && val === true);
 
     const dayLabels = { 1: 'Pn', 2: 'Wt', 3: 'Śr', 4: 'Cz', 5: 'Pt', 6: 'So', 0: 'Nd' };
     const pattern = wizardAnswers.schedule_pattern || [];
@@ -803,10 +828,11 @@ function renderSummary(c) {
             ${focusSection}
             <li>🛠️ <strong>Sprzęt:</strong> ${wizardAnswers.equipment_available.join(', ')}</li>
             <li>🎯 <strong>Główny cel:</strong> ${wizardAnswers.primary_goal}</li>
+            <li>🏃 <strong>Aktualna aktywność:</strong> ${wizardAnswers.current_activity_status || 'Brak odpowiedzi'}</li>
             <li>📅 <strong>Dni:</strong> ${formattedDays || 'Brak'}</li>
             <li>⏱️ <strong>Czas:</strong> ${wizardAnswers.target_session_duration_min} min</li>
             <li>${hasRedFlags ? '🚨' : '✅'} <strong>Objawy alarmowe:</strong> ${hasRedFlags ? 'Wymagana konsultacja medyczna przed doborem planu' : 'Brak'}</li>
-            <li>${hasMedicalScreeningFlags ? '⚠️' : '✅'} <strong>Screening medyczny:</strong> ${hasMedicalScreeningFlags ? 'Przed planem o wyższej intensywności wymagana konsultacja medyczna' : 'Bez dodatnich odpowiedzi'}</li>
+            <li>${hasHardStopMedicalFlags ? '⛔' : (hasConditionalMedicalFlags ? '⚠️' : '✅')} <strong>Screening medyczny:</strong> ${hasHardStopMedicalFlags ? 'Wykryto objawy wymagające zatrzymania flow i konsultacji medycznej' : (hasConditionalMedicalFlags ? 'Dozwolona wyłącznie ścieżka ostrożna (low-intensity / rehab / mobility)' : 'Bez dodatnich odpowiedzi')}</li>
         </ul>
 
         ${warningHTML}
@@ -857,11 +883,26 @@ async function finalizeGeneration(consoleDiv) {
             return;
         }
 
-        const highIntensityIntent = wizardAnswers.primary_goal === 'fat_loss' || Array.isArray(wizardAnswers.session_component_weights) && wizardAnswers.session_component_weights.includes('conditioning');
-        const hasMedicalScreeningFlags = Object.entries(wizardAnswers.exercise_medical_clearance || {}).some(([key, val]) => key !== 'none' && val === true);
+        const highIntensityIntent = wizardAnswers.primary_goal === 'fat_loss'
+            || (Array.isArray(wizardAnswers.session_component_weights) && wizardAnswers.session_component_weights.includes('conditioning'));
+        const hasHardStopMedicalFlags = Object.entries(wizardAnswers.exercise_medical_clearance || {}).some(([key, val]) => HARD_STOP_MEDICAL_SCREENING_FIELDS.has(key) && val === true);
+        const hasConditionalMedicalFlags = Object.entries(wizardAnswers.exercise_medical_clearance || {}).some(([key, val]) => !HARD_STOP_MEDICAL_SCREENING_FIELDS.has(key) && key !== 'none' && val === true);
+        const hasAnyMedicalFlags = hasHardStopMedicalFlags || hasConditionalMedicalFlags;
+        const hasLowActivityReadiness = wizardAnswers.current_activity_status === 'inactive' || wizardAnswers.current_activity_status === 'light_regular';
 
-        if (highIntensityIntent && hasMedicalScreeningFlags) {
-            const msg = 'Na podstawie screeningu medycznego nie możemy dobrać planu o wyższej intensywności. Skonsultuj możliwość wysiłku z lekarzem.';
+        if (hasHardStopMedicalFlags) {
+            const msg = 'Wykryto objawy wymagające pilnej konsultacji medycznej. Ze względów bezpieczeństwa plan nie może zostać wygenerowany.';
+            if (consoleDiv) {
+                consoleDiv.textContent = `⛔ ${msg}`;
+                consoleDiv.style.color = 'var(--danger-color)';
+            }
+            setTimeout(() => alert(msg), 150);
+            currentStep = STEPS.findIndex((step) => step.id === 'summary');
+            return;
+        }
+
+        if (highIntensityIntent && (hasConditionalMedicalFlags || (hasLowActivityReadiness && hasAnyMedicalFlags))) {
+            const msg = 'Plan high-intensity jest niedostępny przy dodatnim screeningu warunkowym lub braku regularnej aktywności. Wybierz low-intensity / rehab / mobility.';
             if (consoleDiv) {
                 consoleDiv.textContent = `⛔ ${msg}`;
                 consoleDiv.style.color = 'var(--danger-color)';

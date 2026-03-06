@@ -19,12 +19,30 @@ const KNEE_FLEXION_SAFETY_LIMITS = {
     OKC_MODERATE: 90
 };
 
+const KNEE_FLEXION_SOFT_LIMITS = {
+    CKC: 110,
+    OKC: 120
+};
+
+const EARLY_REHAB_KNEE_DIAGNOSES = new Set(['acl_rehab', 'mcl_rehab', 'lcl_rehab']);
+
 function getKneeFlexionLimit(ex, ctx) {
     const isFootLoading = ex.is_foot_loading === true;
     if (isFootLoading) {
         return ctx.isSevere ? KNEE_FLEXION_SAFETY_LIMITS.CKC_SEVERE : KNEE_FLEXION_SAFETY_LIMITS.CKC_MODERATE;
     }
     return ctx.isSevere ? KNEE_FLEXION_SAFETY_LIMITS.OKC_SEVERE : KNEE_FLEXION_SAFETY_LIMITS.OKC_MODERATE;
+}
+
+function resolveKneeRomCapMode(ctx, diagnosisSet) {
+    const directionalNegative24hCount = Number(ctx?.directionalNegative24hCount || 0);
+    const hasRecentFlare24h = directionalNegative24hCount >= 2 || String(ctx?.painStatus || '').toLowerCase() === 'red';
+    const hasEarlyRehabDiagnosis = [...diagnosisSet].some((d) => EARLY_REHAB_KNEE_DIAGNOSES.has(d));
+
+    if (ctx?.isSevere || hasRecentFlare24h || hasEarlyRehabDiagnosis) {
+        return 'hard';
+    }
+    return 'soft';
 }
 
 function violatesDiagnosisHardContraindications(ex, diagnosisSet, ctx) {
@@ -40,9 +58,26 @@ function violatesDiagnosisHardContraindications(ex, diagnosisSet, ctx) {
     const hasKneePain = ctx.painFilters && (ctx.painFilters.has('knee') || ctx.painFilters.has('knee_anterior') || ctx.painFilters.has('patella'));
 
     if ((hasKneeDiagnosis || hasKneePain) && ex.kneeFlexionApplicability) {
+        const romCapMode = resolveKneeRomCapMode(ctx, diagnosisSet);
         const safetyLimit = getKneeFlexionLimit(ex, ctx);
-        if (ex.kneeFlexionMaxDeg === null) return true;
-        if (ex.kneeFlexionMaxDeg > safetyLimit) return true;
+        const isFootLoading = ex.is_foot_loading === true;
+        const softLimit = isFootLoading ? KNEE_FLEXION_SOFT_LIMITS.CKC : KNEE_FLEXION_SOFT_LIMITS.OKC;
+
+        ex.kneeRomCapMode = romCapMode;
+        ex.kneeRomSoftPenalty = 1.0;
+
+        if (romCapMode === 'hard') {
+            if (ex.kneeFlexionMaxDeg === null) return true;
+            if (ex.kneeFlexionMaxDeg > safetyLimit) return true;
+        } else {
+            if (ex.kneeFlexionMaxDeg === null) {
+                ex.kneeRomSoftPenalty = 0.85;
+            } else if (ex.kneeFlexionMaxDeg > softLimit) {
+                return true;
+            } else if (ex.kneeFlexionMaxDeg > safetyLimit) {
+                ex.kneeRomSoftPenalty = 0.7;
+            }
+        }
     }
 
     const hasNeckOrShoulderPain = ctx.painFilters && (

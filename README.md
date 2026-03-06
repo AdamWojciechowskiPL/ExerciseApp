@@ -1,9 +1,25 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v29.4.16
+# Aplikacja Treningowa (Smart Rehab PWA) v29.4.18
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
 ---
 
+
+## 🆕 Aktualizacje v29.4.18
+
+* Doprecyzowano bramkowanie high-intensity po stronie wizarda, aby nie blokować ścieżki wyłącznie za niski poziom aktywności bez dodatniego screeningu medycznego.
+* Ujednolicono frontend z backendem dla kryterium aktywności (`inactive`/`light_regular`) w kontekście dodatniego screeningu i blokady high-intensity.
+* Rozszerzono body map o osobny punkt `neck` (obok `cervical`), aby usunąć kolejną nieosiągalną z UI wartość kanoniczną lokalizacji bólu.
+* Rozszerzono test kontraktowy UI/BE dla body map o walidację obecności `neck`.
+
+## 🆕 Aktualizacje v29.4.17
+
+* Rozdzielono screening ogólnomedyczny na dwie klasy ryzyka: **hard stop** (`chest_pain_exertional`, `syncope_exertional`, `dyspnea_disproportionate`, `recent_cardiac_event`, `uncontrolled_hypertension`) oraz **conditional/cautious flow** (`cvd`, `metabolic`, `renal`).
+* Backend zwraca teraz precyzyjne kody 422 dla bezpieczeństwa medycznego: `RED_FLAGS_HARD_STOP`, `MEDICAL_SCREENING_HARD_STOP`, `MEDICAL_SCREENING_CONDITIONAL_REQUIRES_CAUTIOUS_FLOW`, `MEDICAL_SCREENING_HIGH_INTENSITY_BLOCK`.
+* Dodano nowe wymagane pole wizarda `current_activity_status` (inactive/light_regular/regular_moderate/regular_vigorous), walidowane end-to-end FE → payload → backend.
+* Rozszerzono mapę ciała w UI o aktywne lokalizacje `shoulder` i `ankle`, aby usunąć rozjazd względem wartości kanonicznych backendu.
+* Zmieniono logikę ROM kolana na model `hard|soft`: ciężkie przypadki i pogorszenie 24h utrzymują twarde limity, stabilne przypadki dostają miękką karę scoringową zamiast automatycznego odcięcia.
+* Dodano/rozszerzono testy kontraktowe i regresyjne dla nowych kodów bezpieczeństwa medycznego, pola aktywności, body mapy oraz progresji/regresji ROM kolana.
 
 ## 🆕 Aktualizacje v29.4.16
 

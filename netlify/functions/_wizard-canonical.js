@@ -11,6 +11,11 @@ const VALUE_ALIAS = {
     focus_locations: {
         glutes: 'glute',
         abs: 'core'
+    },
+    medical_diagnosis: {
+        osteoarthritis: 'knee_oa',
+        knee_osteoarthritis: 'knee_oa',
+        spondylolisthesis_lumbar: 'spondylolisthesis'
     }
 };
 
@@ -51,6 +56,22 @@ function normalizeEquipmentList(values) {
     return out;
 }
 
+
+function normalizeMedicalClearance(raw) {
+    const fields = Array.isArray(CANONICAL.exercise_medical_clearance_fields)
+        ? CANONICAL.exercise_medical_clearance_fields
+        : [];
+
+    const normalized = {};
+    const source = raw && typeof raw === 'object' ? raw : {};
+
+    for (const field of fields) {
+        normalized[field] = source[field] === true;
+    }
+
+    return normalized;
+}
+
 function normalizeCanonicalValue(value, group) {
     const allowed = new Set((CANONICAL[group] || []).map(v => String(v).toLowerCase()));
     const normalized = normalizeEntry(value, group);
@@ -70,7 +91,8 @@ function normalizeWizardPayload(payload = {}) {
         equipment_available: normalizeEquipmentList(payload.equipment_available),
         symptom_onset: normalizeCanonicalValue(payload.symptom_onset, 'symptom_onset'),
         symptom_duration: normalizeCanonicalValue(payload.symptom_duration, 'symptom_duration'),
-        symptom_trend: normalizeCanonicalValue(payload.symptom_trend, 'symptom_trend')
+        symptom_trend: normalizeCanonicalValue(payload.symptom_trend, 'symptom_trend'),
+        exercise_medical_clearance: normalizeMedicalClearance(payload.exercise_medical_clearance)
     };
 }
 
@@ -79,5 +101,6 @@ module.exports = {
     normalizeCanonicalArray,
     normalizeEquipmentList,
     normalizeCanonicalValue,
-    normalizeWizardPayload
+    normalizeWizardPayload,
+    normalizeMedicalClearance
 };

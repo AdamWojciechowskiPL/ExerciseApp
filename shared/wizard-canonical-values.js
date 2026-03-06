@@ -1,7 +1,8 @@
 const CANONICAL_VALUES = {
     pain_locations: ['neck', 'cervical', 'thoracic', 'low_back', 'lumbar_general', 'lumbar', 'si_joint', 'hip', 'sciatica', 'knee', 'ankle', 'shoulder'],
     focus_locations: ['neck', 'thoracic', 'low_back', 'lumbar', 'lumbar_general', 'si_joint', 'hip', 'knee', 'core', 'glute', 'full_body', 'metabolic', 'sleep', 'office'],
-    medical_diagnosis: ['scoliosis', 'disc_herniation', 'stenosis', 'facet_syndrome', 'piriformis', 'chondromalacia', 'meniscus_tear', 'acl_rehab', 'jumpers_knee', 'none'],
+    medical_diagnosis: ['scoliosis', 'disc_herniation', 'stenosis', 'facet_syndrome', 'piriformis', 'spondylolisthesis', 'chondromalacia', 'meniscus_tear', 'acl_rehab', 'mcl_rehab', 'lcl_rehab', 'knee_oa', 'jumpers_knee', 'none'],
+    exercise_medical_clearance_fields: ['cvd', 'metabolic', 'renal', 'chest_pain_exertional', 'syncope_exertional', 'dyspnea_disproportionate', 'recent_cardiac_event', 'uncontrolled_hypertension'],
     red_flags: ['trauma_major_recent', 'minor_trauma_high_fragility', 'cauda_equina_symptoms', 'progressive_neuro_deficit', 'oncologic_history_or_cancer_suspicion', 'infection_risk_significant', 'fracture_risk_osteoporosis_steroids', 'night_rest_pain_unrelenting', 'none'],
     physical_restrictions: ['foot_injury', 'no_kneeling', 'no_deep_squat', 'no_floor_sitting', 'no_twisting', 'no_high_impact', 'none'],
     hobby: ['cycling', 'running', 'swimming', 'gym', 'yoga', 'walking', 'none'],

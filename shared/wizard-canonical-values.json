@@ -35,9 +35,13 @@
     "stenosis",
     "facet_syndrome",
     "piriformis",
+    "spondylolisthesis",
     "chondromalacia",
     "meniscus_tear",
     "acl_rehab",
+    "mcl_rehab",
+    "lcl_rehab",
+    "knee_oa",
     "jumpers_knee",
     "none"
   ],
@@ -105,5 +109,15 @@
     "improving",
     "stable",
     "worsening"
+  ],
+  "exercise_medical_clearance_fields": [
+    "cvd",
+    "metabolic",
+    "renal",
+    "chest_pain_exertional",
+    "syncope_exertional",
+    "dyspnea_disproportionate",
+    "recent_cardiac_event",
+    "uncontrolled_hypertension"
   ]
 }

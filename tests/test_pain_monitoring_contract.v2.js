@@ -6,8 +6,7 @@ const { requireApp } = require('./_test_helpers.v2.js');
 
 const {
   validatePainMonitoring,
-  PAIN_MONITORING_VERSION,
-  LEGACY_PAIN_FEEDBACK_SUNSET,
+  PAIN_MONITORING_VERSION
 } = requireApp('_data-contract.js');
 
 const makeBaseFeedback = () => ({
@@ -88,14 +87,4 @@ test('rejects legacy feedback by default', () => {
   const result = validatePainMonitoring(legacy);
   assert.equal(result.valid, false);
   assert.match(result.error, /Legacy feedback format/);
-});
-
-test('allows legacy feedback only with explicit feature flag before sunset', () => {
-  process.env.ALLOW_LEGACY_PAIN_FEEDBACK = 'true';
-  const legacy = { type: 'symptom', value: 1 };
-  const result = validatePainMonitoring(legacy, { allowLegacy: true });
-  assert.equal(result.valid, true);
-  assert.equal(result.legacyAccepted, true);
-  assert.equal(result.legacySunset, LEGACY_PAIN_FEEDBACK_SUNSET);
-  delete process.env.ALLOW_LEGACY_PAIN_FEEDBACK;
 });

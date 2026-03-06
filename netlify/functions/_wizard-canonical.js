@@ -9,8 +9,8 @@ const VALUE_ALIAS = {
         lumbar_general: 'low_back'
     },
     focus_locations: {
-        glute: 'glutes',
-        core: 'abs'
+        glutes: 'glute',
+        abs: 'core'
     }
 };
 

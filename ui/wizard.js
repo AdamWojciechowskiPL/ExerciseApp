@@ -292,8 +292,8 @@ async function renderP1(c) {
             <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px;">
                 <div style="font-size: 0.8rem; opacity: 0.75; text-align: center;">Dodatkowe cele (tryb CEL)</div>
                 <div id="focus-quick-goals" style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">
-                    <button type="button" class="chip-toggle" data-focus="abs" style="padding:6px 10px; border-radius:999px; border:1px solid rgba(255,255,255,0.2); background:transparent; color:#fff;">Brzuch (core)</button>
-                    <button type="button" class="chip-toggle" data-focus="glutes" style="padding:6px 10px; border-radius:999px; border:1px solid rgba(255,255,255,0.2); background:transparent; color:#fff;">Pośladki</button>
+                    <button type="button" class="chip-toggle" data-focus="core" style="padding:6px 10px; border-radius:999px; border:1px solid rgba(255,255,255,0.2); background:transparent; color:#fff;">Brzuch (core)</button>
+                    <button type="button" class="chip-toggle" data-focus="glute" style="padding:6px 10px; border-radius:999px; border:1px solid rgba(255,255,255,0.2); background:transparent; color:#fff;">Pośladki</button>
                 </div>
             </div>
         </div>

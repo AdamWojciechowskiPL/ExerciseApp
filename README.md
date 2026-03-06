@@ -1,10 +1,16 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v29.4.20
+# Aplikacja Treningowa (Smart Rehab PWA) v29.4.21
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
 ---
 
 
+
+## 🆕 Aktualizacje v29.4.21
+
+* Domknięto flow AMPS w kolejności: pierwszy sygnał `hard` zapisuje `micro_dose` (redukcja objętości), a dewolucja wariantu jest uruchamiana dopiero przy kolejnym negatywnym sygnale dla tego samego ćwiczenia.
+* Generator planu konsumuje teraz pełne override AMPS: `micro_dose` wymusza obniżenie objętości (serie), a `devolution`/`evolution` podmieniają wariant ćwiczenia podczas wyboru do planu.
+* Ujednolicono semantykę AMPS do redukcji objętości (`sets/reps/time`) zamiast zmiany częstotliwości sesji tygodniowych.
 
 ## 🆕 Aktualizacje v29.4.20
 

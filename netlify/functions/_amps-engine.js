@@ -179,7 +179,8 @@ async function analyzeAndAdjustPlan(client, userId, sessionLog) {
     // Priorytet: Dewolucja (Bezpieczeństwo) > Ewolucja (Progres)
 
     // 1. KRYTYCZNE PROBLEMY (RIR 0, Tech <= 4, Rating 'hard')
-    // Szukamy najtrudniejszego ćwiczenia w sesji
+    // Kolejność AMPS: najpierw redukcja objętości (micro_dose),
+    // dewolucja wariantu dopiero po kolejnym sygnale trudności.
     const hardEx = sessionLog.find(l =>
         l.status === 'completed' &&
         !l.isRest &&
@@ -190,40 +191,44 @@ async function analyzeAndAdjustPlan(client, userId, sessionLog) {
         const currentId = hardEx.exerciseId || hardEx.id;
         console.log(`[AMPS] Detected struggle with ${currentId} (RIR:${hardEx.rir}, Tech:${hardEx.tech}). Checking options...`);
 
-        // Sprawdź czy to nie "ping-pong" (czy już nie ewoluowaliśmy do tego)
-        const historyCheck = await client.query(`
-            SELECT original_exercise_id FROM user_plan_overrides
-            WHERE user_id = $1 AND replacement_exercise_id = $2 AND adjustment_type = 'evolution'
+        const currentOverrideRes = await client.query(`
+            SELECT adjustment_type, replacement_exercise_id
+            FROM user_plan_overrides
+            WHERE user_id = $1 AND original_exercise_id = $2
+            LIMIT 1
         `, [userId, currentId]);
 
-        if (historyCheck.rows.length > 0) {
-            // Ping-Pong: User awansował, ale nowe ćwiczenie go pokonało.
-            // Strategia: Micro-Dose (Zostań przy tym ćwiczeniu, ale zmniejsz objętość)
+        const currentOverride = currentOverrideRes.rows[0] || null;
+
+        // Pierwszy negatywny sygnał: zawsze redukcja objętości na tym samym wariancie.
+        if (!currentOverride || currentOverride.adjustment_type !== 'micro_dose') {
             await client.query(`
                 INSERT INTO user_plan_overrides (user_id, original_exercise_id, replacement_exercise_id, adjustment_type, reason, updated_at)
-                VALUES ($1, $2, $2, 'micro_dose', 'AMPS: Ping-Pong detected', CURRENT_TIMESTAMP)
+                VALUES ($1, $2, $2, 'micro_dose', 'AMPS: First hard signal -> volume reduction', CURRENT_TIMESTAMP)
                 ON CONFLICT (user_id, original_exercise_id) DO UPDATE SET
-                    replacement_exercise_id = $2, adjustment_type = 'micro_dose', updated_at = CURRENT_TIMESTAMP
+                    replacement_exercise_id = EXCLUDED.replacement_exercise_id,
+                    adjustment_type = EXCLUDED.adjustment_type,
+                    reason = EXCLUDED.reason,
+                    updated_at = CURRENT_TIMESTAMP
             `, [userId, currentId]);
 
-            // Reset affinity, żeby user nie forsował "like" na siłę
-            await client.query(`UPDATE user_exercise_preferences SET affinity_score = 0 WHERE user_id = $1 AND exercise_id = $2`, [userId, currentId]);
-
-            return { original: hardEx.name, type: 'micro_dose', newName: `${hardEx.name} (Regresja objętości)` };
+            return { original: hardEx.name, type: 'micro_dose', newName: `${hardEx.name} (Redukcja objętości)` };
         }
 
-        // Standardowa Dewolucja (Szukamy łatwiejszego rodzica)
+        // Powtórzony negatywny sygnał mimo micro_dose: dewolucja wariantu.
         const parentRes = await client.query(`SELECT id, name FROM exercises WHERE next_progression_id = $1 ORDER BY difficulty_level DESC LIMIT 1`, [currentId]);
         if (parentRes.rows.length > 0) {
             const parentEx = parentRes.rows[0];
             await client.query(`
                 INSERT INTO user_plan_overrides (user_id, original_exercise_id, replacement_exercise_id, adjustment_type, reason, updated_at)
-                VALUES ($1, $2, $3, 'devolution', 'AMPS: Tech breakdown/RIR failure', CURRENT_TIMESTAMP)
+                VALUES ($1, $2, $3, 'devolution', 'AMPS: Repeated hard signal after micro_dose', CURRENT_TIMESTAMP)
                 ON CONFLICT (user_id, original_exercise_id) DO UPDATE SET
-                    replacement_exercise_id = EXCLUDED.replacement_exercise_id, adjustment_type = 'devolution', updated_at = CURRENT_TIMESTAMP
+                    replacement_exercise_id = EXCLUDED.replacement_exercise_id,
+                    adjustment_type = EXCLUDED.adjustment_type,
+                    reason = EXCLUDED.reason,
+                    updated_at = CURRENT_TIMESTAMP
             `, [userId, currentId, parentEx.id]);
 
-            // Ustaw flagę trudności
             await client.query(`
                 INSERT INTO user_exercise_preferences (user_id, exercise_id, difficulty_rating) VALUES ($1, $2, 1)
                 ON CONFLICT (user_id, exercise_id) DO UPDATE SET difficulty_rating = 1
@@ -231,6 +236,9 @@ async function analyzeAndAdjustPlan(client, userId, sessionLog) {
 
             return { original: hardEx.name, type: 'devolution', newId: parentEx.id, newName: parentEx.name };
         }
+
+        // Brak prostszej dewolucji w drzewie: utrzymaj micro_dose.
+        return { original: hardEx.name, type: 'micro_dose', newName: `${hardEx.name} (Redukcja objętości)` };
     }
 
     // 2. PROGRESJA (RIR >= 4, Tech >= 9, Rating 'good')
@@ -287,6 +295,12 @@ async function applyImmediatePlanAdjustmentsInMemory(client, ratings, sessionLog
 function applyMicroLoading(sets, historyEntry) {
     if (!historyEntry) return sets;
     let newSets = sets;
+
+    if (historyEntry.forceMicroDose === true) {
+        const reduced = Math.max(1, newSets - 1);
+        console.log('[AMPS] Micro-Loading: Forced volume reduction from micro_dose override');
+        return reduced;
+    }
 
     const isHard = historyEntry.rir === 0 || historyEntry.rating === 'hard' || historyEntry.difficultyDeviation === 'hard';
     const isEasy = historyEntry.rir >= 3 || historyEntry.rating === 'good' || historyEntry.difficultyDeviation === 'easy';

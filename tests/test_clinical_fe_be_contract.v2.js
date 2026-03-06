@@ -36,6 +36,8 @@ async function expectSame(caseName, wizard, exercise, options = {}) {
   const fe = await loadFrontend();
   const feCtx = fe.buildClinicalContext(wizard);
   const beCtx = be.buildUserContext(wizard);
+  assert.deepEqual(feCtx.acuteGuard, beCtx.acuteGuard, `${caseName}: acuteGuard mismatch`);
+  assert.deepEqual(feCtx.toleranceBias, beCtx.toleranceBias, `${caseName}: toleranceBias mismatch`);
   const feResult = fe.checkExerciseAvailability(exercise, feCtx, options);
   const beResult = be.checkExerciseAvailability(exercise, beCtx, options);
   assert.deepEqual(feResult, beResult, `${caseName}: checkExerciseAvailability mismatch`);
@@ -47,6 +49,19 @@ async function expectSame(caseName, wizard, exercise, options = {}) {
 
 test('FE/BE contract parity matrix for clinical rules', async () => {
   const cases = [
+    {
+      name: 'acute_worsening_context_parity',
+      wizard: {
+        pain_locations: ['low_back'],
+        pain_intensity: 4,
+        daily_impact: 4,
+        symptom_onset: 'sudden',
+        symptom_duration: 'lt_6_weeks',
+        symptom_trend: 'worsening'
+      },
+      exercise: ex({ pain_relief_zones: ['low_back'], painReliefZones: ['low_back'] }),
+      expected: { allowed: true, reason: null }
+    },
     {
       name: 'knee_pain_high_load',
       wizard: { pain_locations: ['knee'] },
@@ -97,7 +112,7 @@ test('FE/BE contract parity matrix for clinical rules', async () => {
     },
     {
       name: 'followup_escalation_hard_restriction',
-      wizard: { trigger_movements: ['bending_forward'], directional_negative_24h_count: 2 },
+      wizard: { trigger_movements: ['bending_forward'], directional_negative_24h_count: 2, symptom_trend: 'worsening' },
       exercise: ex({ primary_plane: 'flexion', primaryPlane: 'flexion' }),
       expected: { allowed: false, reason: 'biomechanics_mismatch' }
     }

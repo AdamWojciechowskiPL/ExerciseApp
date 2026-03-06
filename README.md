@@ -1,9 +1,21 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v29.4.10
+# Aplikacja Treningowa (Smart Rehab PWA) v29.4.12
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
 ---
 
+
+## 🆕 Aktualizacje v29.4.12
+
+* Poprawiono flow wizarda dla ścieżki bez bólu: skip-list nie pomija już kroku `p4c` (przebieg objawów), dzięki czemu przechodzi test guardrails dla zachowania kroków klinicznych.
+* Utrzymano walidację explicit-answer dla `p4b` (objawy alarmowe) oraz blokadę generowania planu przy red flags.
+
+## 🆕 Aktualizacje v29.4.11
+
+* Wydzielono współdzielony moduł `shared/clinical-core/` z jednym źródłem reguł klinicznych (`contracts.js` + `index.js`) dla FE i BE, wraz z jawnym kontraktem powodów decyzji i flag kontekstu (`acuteGuard`, `toleranceBias`).
+* `clinicalEngine.js` oraz `netlify/functions/_clinical-rule-engine.js` pełnią rolę cienkich adapterów mapujących lokalny shape danych do wspólnego core bez zmiany publicznego API wywołań.
+* Dodano test kontraktu `tests/test_clinical_core_contract.v2.js` oraz rozszerzono parity suite o przypadek `acute_worsening` i asercję flag kontekstu FE/BE.
+* Dodano workflow CI `.github/workflows/clinical-parity.yml`, który uruchamia parity suite przy zmianach w clinical core i blokuje cichy rozjazd FE/BE.
 
 ## 🆕 Aktualizacje v29.4.10
 

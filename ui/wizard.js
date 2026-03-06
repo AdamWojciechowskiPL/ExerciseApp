@@ -109,7 +109,7 @@ function closeWizardWithoutSaving() {
 
 function getStepsToSkip() {
     if (wizardAnswers.pain_locations.length === 0) {
-        return ['p2', 'p3', 'p4c', 'p5', 'p6', 'p7'];
+        return ['p2', 'p3', 'p5', 'p6', 'p7'];
     }
     return [];
 }

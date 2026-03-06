@@ -1,9 +1,18 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v29.4.18
+# Aplikacja Treningowa (Smart Rehab PWA) v29.4.19
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
 ---
 
+
+
+## 🆕 Aktualizacje v29.4.19
+
+* Usunięto bezwarunkowy bias `core_anti_extension` oparty wyłącznie na etykiecie `disc_herniation` / `spondylolisthesis`; preferencja kierunku jest teraz zależna od `tolerancePattern` i sygnałów 24h.
+* Podłączono komponenty wizarda `stability` i `breathing` do realnych wag generatora (wpływają na ranking kategorii stabilizacji oraz oddech/relaks).
+* Wpięto `difficulty_rating` z modułu affinity do scoringu generatora jako miękki modyfikator (kara dla "za trudne", lekki bonus dla "za łatwe").
+* Uporządkowano komunikację diagnoz kolana: część etykiet działa jako **safety-only** (guardrails), bez obietnicy osobnego profilu wag.
+* Urealniono dokumentację AMPS: natychmiastowe Injection/Ejection bieżącego planu nie jest aktywne, a adaptacja działa przez preferencje i kolejne generacje planu.
 
 ## 🆕 Aktualizacje v29.4.18
 
@@ -224,12 +233,12 @@ Nowatorski model **Progresji Probabilistycznej**, który działa podczas **gener
 | **Cel Ewolucji (Trudne)** | **x3.0** (Priorytet) | x0.5 (Unikaj) | x0.1 (Zabronione) | Nauka nowego ruchu. |
 | **Źródło Ewolucji (Łatwe)** | x0.2 (Nuda) | **x1.5** (Idealne) | **x2.0** (Idealne) | Degradacja do roli rozgrzewki. |
 
-### 6. Real-Time Feedback Loop (Injection & Ejection)
-Mechanizm natychmiastowej adaptacji **bieżącego planu** (JSON) w momencie zapisu sesji. Sprawia, że opinia użytkownika działa "od razu", a nie dopiero w przyszłym tygodniu.
+### 6. Feedback Loop (Affinity + kolejne generacje planu)
+Mechanizm adaptacji oparty na zapisie preferencji (`affinity_score`, `difficulty_rating`) podczas zapisu sesji i wykorzystaniu tych sygnałów przy **następnych** generacjach planu.
 
-*   **Injection (Like 👍):** Jeśli użytkownik polubi ćwiczenie, system skanuje resztę tygodnia. Jeśli znajdzie "nudne" ćwiczenie z tej samej kategorii, podmienia je na to polubione. *Cel: Budowanie nawyku i satysfakcji.*
-*   **Ejection (Dislike 👎):** Jeśli użytkownik da "Dislike", system natychmiast usuwa to ćwiczenie z przyszłych dni bieżącego planu i zastępuje je bezpieczną alternatywą. *Cel: Zapobieganie demotywacji (Adherence Protection).*
-*   **Entropy Grace Period:** Punkty "Affinity" są chronione przed wygaszaniem (Time Decay) przez 7 dni od ostatniej interakcji.
+*   **Like/Dislike (Affinity):** Aktualizuje `affinity_score`, który wzmacnia lub osłabia przyszłe pozycje w rankingu.
+*   **Trudność (`difficulty_rating`):** Oznaczenie "za trudne" nakłada miękką karę scoringową, a "za łatwe" daje niewielki bonus (bez omijania guardrails bezpieczeństwa).
+*   **Uwaga:** natychmiastowe podmiany Injection/Ejection w bieżącym JSON planu nie są obecnie aktywne (placeholder w `_amps-engine.js`).
 
 ### 7. Bio-Protocol Hub (Front-end)
 Sesje celowane generowane natychmiastowo po stronie klienta (Time-Boxing):

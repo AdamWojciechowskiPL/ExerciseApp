@@ -14,7 +14,7 @@ const { requireApp, makeExercise } = require('./_test_helpers.v2');
 const plan = requireApp('generate-plan.js');
 
 // Helper do wywoływania scoreExercise z poprawną sygnaturą (uwzględniającą ctx)
-function getScore(ex, weights, userData = {}, phaseCtx = null) {
+function getScore(ex, weights, userData = {}, phaseCtx = null, preferencesMap = {}) {
   // 1. Zbuduj stan dummy
   const state = {
     usedIds: new Set(),
@@ -23,7 +23,8 @@ function getScore(ex, weights, userData = {}, phaseCtx = null) {
     weeklyFamilyUsage: new Map(),
     sessionFamilyUsage: new Map(),
     anchorFamilies: new Set(),
-    anchorTargetExposure: 2
+    anchorTargetExposure: 2,
+    preferencesMap
   };
 
   // 2. Zbuduj kontekst kliniczny (US-11 requirement)
@@ -119,7 +120,8 @@ test('Variety: repeated family in session is heavily penalized (non-anchor)', ()
     weeklyFamilyUsage: new Map(),
     sessionFamilyUsage: new Map(),
     anchorFamilies: new Set(),
-    anchorTargetExposure: 2
+    anchorTargetExposure: 2,
+    preferencesMap: {}
   };
   
   // Simulate that this family was ALREADY used in this session
@@ -131,4 +133,54 @@ test('Variety: repeated family in session is heavily penalized (non-anchor)', ()
 
   // Expect drastic penalty (factor 0.1) -> 100 * 0.1 = 10
   assert.ok(score < 20, `Score should be crushed for session duplicate (got ${score})`);
+});
+
+test('Difficulty rating soft-adjust: hard lowers score, easy mildly raises score', () => {
+  const ex = makeExercise({ id: 'pref-ex', category_id: 'core_stability' });
+  const weights = { core_stability: 1.0 };
+
+  const neutral = getScore(ex, weights, {}, null, { 'pref-ex': { score: 20, difficultyRating: 0 } });
+  const hard = getScore(ex, weights, {}, null, { 'pref-ex': { score: 20, difficultyRating: 1 } });
+  const easy = getScore(ex, weights, {}, null, { 'pref-ex': { score: 20, difficultyRating: -1 } });
+
+  assert.ok(hard < neutral, `Hard difficulty flag should reduce score (${hard} < ${neutral})`);
+  assert.ok(easy > neutral, `Easy difficulty flag should modestly increase score (${easy} > ${neutral})`);
+});
+
+test('Difficulty rating does not bypass phase safety filters', () => {
+  const ex = makeExercise({ id: 'blocked-by-phase', category_id: 'core_stability', difficulty_level: 5 });
+  const weights = { core_stability: 2.0 };
+  const phaseCtx = { config: { forbidden: { maxDifficulty: 3 } } };
+  const score = getScore(ex, weights, {}, phaseCtx, { 'blocked-by-phase': { score: 40, difficultyRating: -1 } });
+  assert.equal(score, 0);
+});
+
+
+test('Component flags: stability changes top-k, breathing changes weights', () => {
+  const exercisePool = [
+    makeExercise({ id: 'cond', category_id: 'conditioning_low_impact' }),
+    makeExercise({ id: 'breath', category_id: 'breathing' }),
+    makeExercise({ id: 'core-stab', category_id: 'core_stability' }),
+    makeExercise({ id: 'scap-stab', category_id: 'scapular_stability' })
+  ];
+
+  const baseUser = { pain_locations: [], focus_locations: [], medical_diagnosis: [] };
+  const baseCtx = plan.safeBuildUserContext(baseUser);
+
+  const baseWeights = plan.buildDynamicCategoryWeights(exercisePool, { ...baseUser, session_component_weights: [] }, baseCtx);
+  const stabilityWeights = plan.buildDynamicCategoryWeights(exercisePool, { ...baseUser, session_component_weights: ['stability'] }, baseCtx);
+  const breathingWeights = plan.buildDynamicCategoryWeights(exercisePool, { ...baseUser, session_component_weights: ['breathing'] }, baseCtx);
+
+  const rank = (weights) => exercisePool
+    .map((ex) => ({ id: ex.id, score: getScore(ex, weights, baseUser) }))
+    .sort((a, b) => b.score - a.score)
+    .map((x) => x.id);
+
+  const topBase = rank(baseWeights).slice(0, 2);
+  const topStability = rank(stabilityWeights).slice(0, 2);
+  const baseCore = getScore(exercisePool[2], baseWeights, baseUser);
+  const stabilityCore = getScore(exercisePool[2], stabilityWeights, baseUser);
+  assert.ok(stabilityCore > baseCore, 'stability flag should increase stability candidates score');
+  assert.notDeepEqual(topBase, topStability, 'stability flag should affect top-k order');
+  assert.ok(breathingWeights.breathing > baseWeights.breathing, 'breathing flag should raise breathing category weight');
 });

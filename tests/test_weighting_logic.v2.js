@@ -19,7 +19,8 @@ const ALL_CATS = [
   'terminal_knee_extension', 'conditioning_low_impact',
   'spine_mobility', 'thoracic_mobility', 'core_anti_extension',
   'nerve_flossing', 'hip_extension', 'hip_flexor_stretch',
-  'cervical_motor_control', 'scapular_stability'
+  'cervical_motor_control', 'scapular_stability',
+  'core_anti_rotation', 'breathing', 'breathing_control', 'muscle_relaxation'
 ];
 
 function basePool() { return makeCategoryPool(ALL_CATS); }
@@ -145,4 +146,99 @@ test('Focus canonical: core i glute mają aktywne boosty scoringu', () => {
   assertApprox(assert, core.core_anti_extension, 2.0, 1e-9, 'core core_anti_extension');
   assertApprox(assert, glute.glute_activation, 2.1, 1e-9, 'glute activation');
   assertApprox(assert, glute.hip_extension, 2.3, 1e-9, 'glute hip extension');
+});
+
+
+test('Component weights: stability boosts stability categories', () => {
+  const ws = plan.buildDynamicCategoryWeights(basePool(), {
+    pain_locations: [],
+    medical_diagnosis: [],
+    work_type: '',
+    hobby: [],
+    focus_locations: [],
+    pain_intensity: 0,
+    daily_impact: 0,
+    physical_restrictions: [],
+    session_component_weights: ['stability'],
+    equipment_available: []
+  }, plan.safeBuildUserContext({}));
+
+  assertApprox(assert, ws.core_stability, 2.0, 1e-9, 'stability core_stability');
+  assertApprox(assert, ws.core_anti_rotation, 1.9, 1e-9, 'stability core_anti_rotation');
+  assertApprox(assert, ws.core_anti_extension, 1.9, 1e-9, 'stability core_anti_extension');
+  assertApprox(assert, ws.scapular_stability, 1.8, 1e-9, 'stability scapular_stability');
+  assertApprox(assert, ws.knee_stability, 1.8, 1e-9, 'stability knee_stability');
+});
+
+test('Component weights: breathing boosts breathing categories', () => {
+  const ws = plan.buildDynamicCategoryWeights(basePool(), {
+    pain_locations: [],
+    medical_diagnosis: [],
+    work_type: '',
+    hobby: [],
+    focus_locations: [],
+    pain_intensity: 0,
+    daily_impact: 0,
+    physical_restrictions: [],
+    session_component_weights: ['breathing'],
+    equipment_available: []
+  }, plan.safeBuildUserContext({}));
+
+  assertApprox(assert, ws.breathing, 2.0, 1e-9, 'breathing breathing');
+  assertApprox(assert, ws.breathing_control, 2.0, 1e-9, 'breathing breathing_control');
+  assertApprox(assert, ws.muscle_relaxation, 1.8, 1e-9, 'breathing muscle_relaxation');
+});
+
+test('Diagnosis label parity: disc_herniation vs spondylolisthesis without directional data', () => {
+  const herniation = weights({ diagnoses: ['disc_herniation'] });
+  const spondy = weights({ diagnoses: ['spondylolisthesis'] });
+  assertApprox(assert, herniation.core_anti_extension, spondy.core_anti_extension, 1e-9, 'diagnosis-only parity');
+});
+
+test('Directional pattern drives anti-extension: extension intolerance does not boost', () => {
+  const exIntolerantData = {
+    pain_locations: [],
+    medical_diagnosis: ['disc_herniation'],
+    trigger_movements: ['bending_backward'],
+    relief_movements: [],
+    pain_intensity: 3,
+    daily_impact: 3,
+    session_component_weights: []
+  };
+  const flexIntolerantData = {
+    pain_locations: [],
+    medical_diagnosis: ['disc_herniation'],
+    trigger_movements: ['bending_forward'],
+    relief_movements: [],
+    pain_intensity: 3,
+    daily_impact: 3,
+    session_component_weights: []
+  };
+
+  const wExt = plan.buildDynamicCategoryWeights(basePool(), exIntolerantData, plan.safeBuildUserContext(exIntolerantData));
+  const wFlex = plan.buildDynamicCategoryWeights(basePool(), flexIntolerantData, plan.safeBuildUserContext(flexIntolerantData));
+
+  assertApprox(assert, wExt.core_anti_extension, 0.85, 1e-9, 'extension intolerant anti-extension penalty');
+  assertApprox(assert, wFlex.core_anti_extension, 2.0, 1e-9, 'flexion intolerant anti-extension boost');
+});
+
+test('Safety-only knee diagnoses do not change category weights', () => {
+  const baseline = weights({});
+  const meniscus = weights({ diagnoses: ['meniscus_tear'] });
+  assertApprox(assert, meniscus.knee_stability, baseline.knee_stability, 1e-9, 'meniscus should be safety-only');
+  assertApprox(assert, meniscus.vmo_activation, baseline.vmo_activation, 1e-9, 'meniscus should be safety-only');
+});
+
+
+test('Spondylolisthesis with worsening trend still needs directional signal for anti-extension bias', () => {
+  const data = {
+    pain_locations: [],
+    medical_diagnosis: ['spondylolisthesis'],
+    symptom_trend: 'worsening',
+    pain_intensity: 3,
+    daily_impact: 3,
+    session_component_weights: []
+  };
+  const w = plan.buildDynamicCategoryWeights(basePool(), data, plan.safeBuildUserContext(data));
+  assertApprox(assert, w.core_anti_extension, 1.0, 1e-9, 'no diagnosis-only anti-extension boost');
 });

@@ -22,12 +22,12 @@ export const MEDICAL_DIAGNOSIS_OPTIONS = [
     { val: 'piriformis', label: 'Mięsień gruszkowaty' },
     { val: 'spondylolisthesis', label: 'Kręgozmyk (spondylolisthesis)' },
     { val: 'chondromalacia', label: '🦴 Chondromalacja / Rzepka' },
-    { val: 'meniscus_tear', label: '🩹 Uszkodzenie łąkotki' },
-    { val: 'acl_rehab', label: '🦵 ACL (rehabilitacja)' },
-    { val: 'mcl_rehab', label: '🦵 MCL (rehabilitacja)' },
-    { val: 'lcl_rehab', label: '🦵 LCL (rehabilitacja)' },
+    { val: 'meniscus_tear', label: '🩹 Uszkodzenie łąkotki (safety-only)' },
+    { val: 'acl_rehab', label: '🦵 ACL (rehabilitacja, safety-only)' },
+    { val: 'mcl_rehab', label: '🦵 MCL (rehabilitacja, safety-only)' },
+    { val: 'lcl_rehab', label: '🦵 LCL (rehabilitacja, safety-only)' },
     { val: 'knee_oa', label: '🦴 Choroba zwyrodnieniowa kolana (OA)' },
-    { val: 'jumpers_knee', label: '🏀 Kolano skoczka' },
+    { val: 'jumpers_knee', label: '🏀 Kolano skoczka (safety-only)' },
     { val: 'none', label: 'Brak rozpoznania / Inne' }
 ].filter(opt => WIZARD_CANONICAL.medical_diagnosis.includes(opt.val));
 

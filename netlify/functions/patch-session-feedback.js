@@ -52,7 +52,7 @@ exports.handler = async (event) => {
             }
 
             // 4. Walidacja całego obiektu po scaleniu
-            const validation = validatePainMonitoring(currentFeedback);
+            const validation = validatePainMonitoring(currentFeedback, { requireAfter24h: true });
             if (!validation.valid) {
                 await client.query('ROLLBACK');
                 return { statusCode: 400, body: JSON.stringify({ error: `Validation failed: ${validation.error}` }) };

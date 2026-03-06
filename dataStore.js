@@ -215,7 +215,7 @@ const dataStore = {
 
 
     patchSessionFeedback24h: async (sessionId, after24h, note = '') => {
-        const result = await callAPI('patch-session-feedback', {
+        const result = await callAPI('update-pain-feedback-24h', {
             method: 'POST',
             body: { sessionId, after24h, note }
         });

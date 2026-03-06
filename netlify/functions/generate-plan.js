@@ -873,13 +873,49 @@ function pickExerciseForSection(section, candidates, userData, ctx, categoryWeig
     }
     if (filtered.length === 0) return null;
 
+    const overrideMap = state.progressionMap?.overridesByOriginal;
+    if (overrideMap && overrideMap.size > 0) {
+        const overriddenCandidates = filtered
+            .map(ex => ({ ex, override: overrideMap.get(ex.id) }))
+            .filter(item => item.override && (item.override.adjustment_type === 'evolution' || item.override.adjustment_type === 'devolution'));
+
+        if (overriddenCandidates.length > 0) {
+            overriddenCandidates.sort((a, b) => {
+                const sA = scoreExercise(a.ex, section, userData, ctx, categoryWeights, state, painZoneSet, phaseContext, fatigueProfile);
+                const sB = scoreExercise(b.ex, section, userData, ctx, categoryWeights, state, painZoneSet, phaseContext, fatigueProfile);
+                return sB - sA;
+            });
+
+            const top = overriddenCandidates[0];
+            const replacement = filtered.find(ex => ex.id === top.override.replacement_exercise_id);
+            if (replacement) {
+                const selected = replacement;
+                state.usedIds.add(selected.id);
+                state.weeklyUsage.set(selected.id, (state.weeklyUsage.get(selected.id) || 0) + 1);
+                state.weeklyCategoryUsage.set(selected.category_id, (state.weeklyCategoryUsage.get(selected.category_id) || 0) + 1);
+                state.sessionCategoryUsage.set(selected.category_id, (state.sessionCategoryUsage.get(selected.category_id) || 0) + 1);
+                const famKey = deriveFamilyKey(selected);
+                state.weeklyFamilyUsage.set(famKey, (state.weeklyFamilyUsage.get(famKey) || 0) + 1);
+                state.sessionFamilyUsage.set(famKey, (state.sessionFamilyUsage.get(famKey) || 0) + 1);
+                return JSON.parse(JSON.stringify(selected));
+            }
+        }
+    }
+
     const picked = weightedPick(filtered, (ex) => scoreExercise(ex, section, userData, ctx, categoryWeights, state, painZoneSet, phaseContext, fatigueProfile));
     if (!picked) return null;
 
+    let selected = picked;
+    const override = state.progressionMap?.overridesByOriginal?.get(picked.id);
+    if (override && (override.adjustment_type === 'evolution' || override.adjustment_type === 'devolution')) {
+        const replacement = filtered.find(ex => ex.id === override.replacement_exercise_id);
+        if (replacement) selected = replacement;
+    }
+
     if (section === 'main') {
-        const primaryScore = scoreExercise(picked, section, userData, ctx, categoryWeights, state, painZoneSet, phaseContext, fatigueProfile);
-        const primaryFamily = deriveFamilyKey(picked);
-        const potentialAlts = filtered.filter(ex => ex.id !== picked.id && deriveFamilyKey(ex) === primaryFamily);
+        const primaryScore = scoreExercise(selected, section, userData, ctx, categoryWeights, state, painZoneSet, phaseContext, fatigueProfile);
+        const primaryFamily = deriveFamilyKey(selected);
+        const potentialAlts = filtered.filter(ex => ex.id !== selected.id && deriveFamilyKey(ex) === primaryFamily);
         let altCandidate = null;
         if (potentialAlts.length > 0) {
             potentialAlts.sort((a, b) => {
@@ -891,19 +927,19 @@ function pickExerciseForSection(section, candidates, userData, ctx, categoryWeig
         }
         if (altCandidate) {
             const altScore = scoreExercise(altCandidate, section, userData, ctx, categoryWeights, state, painZoneSet, phaseContext, fatigueProfile);
-            if (altScore >= primaryScore * 0.95) { picked.alternatives = [JSON.parse(JSON.stringify(altCandidate))]; }
+            if (altScore >= primaryScore * 0.95) { selected.alternatives = [JSON.parse(JSON.stringify(altCandidate))]; }
         }
     }
 
-    state.usedIds.add(picked.id);
-    state.weeklyUsage.set(picked.id, (state.weeklyUsage.get(picked.id) || 0) + 1);
-    state.weeklyCategoryUsage.set(picked.category_id, (state.weeklyCategoryUsage.get(picked.category_id) || 0) + 1);
-    state.sessionCategoryUsage.set(picked.category_id, (state.sessionCategoryUsage.get(picked.category_id) || 0) + 1);
-    const famKey = deriveFamilyKey(picked);
+    state.usedIds.add(selected.id);
+    state.weeklyUsage.set(selected.id, (state.weeklyUsage.get(selected.id) || 0) + 1);
+    state.weeklyCategoryUsage.set(selected.category_id, (state.weeklyCategoryUsage.get(selected.category_id) || 0) + 1);
+    state.sessionCategoryUsage.set(selected.category_id, (state.sessionCategoryUsage.get(selected.category_id) || 0) + 1);
+    const famKey = deriveFamilyKey(selected);
     state.weeklyFamilyUsage.set(famKey, (state.weeklyFamilyUsage.get(famKey) || 0) + 1);
     state.sessionFamilyUsage.set(famKey, (state.sessionFamilyUsage.get(famKey) || 0) + 1);
 
-    return JSON.parse(JSON.stringify(picked));
+    return JSON.parse(JSON.stringify(selected));
 }
 
 // ============================================================================
@@ -1444,12 +1480,17 @@ function buildRollingPlan(candidates, categoryWeights, userData, ctx, userId, hi
             session.date = dateString;
             session.type = 'workout';
             const pZones = derivePainZoneSet(userData.pain_locations);
+
             const sState = {
                 usedIds: new Set(),
                 weeklyUsage, weeklyCategoryUsage, weeklyFamilyUsage,
                 sessionCategoryUsage: new Map(), sessionFamilyUsage: new Map(), sessionPlaneUsage: new Map(),
                 historyMap: historyMap || {}, preferencesMap: preferencesMap || {},
-                progressionMap: progressionMap || { sources: new Map(), targets: new Set() },
+                progressionMap: {
+                    sources: progressionMap?.sources || new Map(),
+                    targets: progressionMap?.targets || new Set(),
+                    overridesByOriginal: progressionMap?.overridesByOriginal || new Map()
+                },
                 anchorFamilies, anchorTargetExposure: targetExposure
             };
 
@@ -1680,8 +1721,22 @@ exports.handler = async (event) => {
             });
         });
 
-        const progressionMap = { sources: new Map(), targets: new Set() };
-        oR.rows.forEach(r => { if (r.adjustment_type === 'evolution') { progressionMap.sources.set(r.original_exercise_id, r.replacement_exercise_id); progressionMap.targets.add(r.replacement_exercise_id); } });
+        const progressionMap = { sources: new Map(), targets: new Set(), overridesByOriginal: new Map() };
+        oR.rows.forEach(r => {
+            progressionMap.overridesByOriginal.set(r.original_exercise_id, r);
+            if (r.adjustment_type === 'evolution') {
+                progressionMap.sources.set(r.original_exercise_id, r.replacement_exercise_id);
+                progressionMap.targets.add(r.replacement_exercise_id);
+            }
+            if (r.adjustment_type === 'devolution') {
+                progressionMap.sources.set(r.original_exercise_id, r.replacement_exercise_id);
+                progressionMap.targets.add(r.replacement_exercise_id);
+            }
+            if (r.adjustment_type === 'micro_dose') {
+                const existing = historyMap[r.original_exercise_id] || {};
+                historyMap[r.original_exercise_id] = { ...existing, forceMicroDose: true };
+            }
+        });
         const paceMap = {}; sR.rows.forEach(r => { paceMap[r.exercise_id] = parseFloat(r.avg_seconds_per_rep); });
         const recentSessions = recentSessionsR.rows;
         const rpeData = analyzeRpeTrend(recentSessions);

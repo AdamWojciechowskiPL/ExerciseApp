@@ -20,9 +20,13 @@ export const MEDICAL_DIAGNOSIS_OPTIONS = [
     { val: 'stenosis', label: 'Stenoza kanału' },
     { val: 'facet_syndrome', label: 'Stawy międzykręgowe' },
     { val: 'piriformis', label: 'Mięsień gruszkowaty' },
+    { val: 'spondylolisthesis', label: 'Kręgozmyk (spondylolisthesis)' },
     { val: 'chondromalacia', label: '🦴 Chondromalacja / Rzepka' },
     { val: 'meniscus_tear', label: '🩹 Uszkodzenie łąkotki' },
-    { val: 'acl_rehab', label: '🦵 ACL / Więzadła' },
+    { val: 'acl_rehab', label: '🦵 ACL (rehabilitacja)' },
+    { val: 'mcl_rehab', label: '🦵 MCL (rehabilitacja)' },
+    { val: 'lcl_rehab', label: '🦵 LCL (rehabilitacja)' },
+    { val: 'knee_oa', label: '🦴 Choroba zwyrodnieniowa kolana (OA)' },
     { val: 'jumpers_knee', label: '🏀 Kolano skoczka' },
     { val: 'none', label: 'Brak rozpoznania / Inne' }
 ].filter(opt => WIZARD_CANONICAL.medical_diagnosis.includes(opt.val));

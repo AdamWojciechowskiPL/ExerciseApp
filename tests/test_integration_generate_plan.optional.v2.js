@@ -68,6 +68,16 @@ test('integration: handler returns plan-like payload for minimal request', async
   const body = {
     primary_goal: 'strength',
     pain_intensity: 2,
+    exercise_medical_clearance: {
+      cvd: false,
+      metabolic: false,
+      renal: false,
+      chest_pain_exertional: false,
+      syncope_exertional: false,
+      dyspnea_disproportionate: false,
+      recent_cardiac_event: false,
+      uncontrolled_hypertension: false
+    },
     schedule_pattern: [1, 3, 5],
     exercise_experience: 'beginner'
   };

@@ -44,6 +44,31 @@ const GLOBAL_MAX_REPS = 25;
 const MAX_BUCKET_CAPACITY = 120;
 const DIRECTIONAL_BIAS_PENALTY_MULTIPLIER = 0.82;
 
+
+const HIGH_INTENSITY_PRIMARY_GOALS = new Set(['fat_loss', 'sport_return']);
+
+function hasPositiveMedicalScreening(clearance = {}) {
+    if (!clearance || typeof clearance !== 'object') return false;
+    for (const [key, value] of Object.entries(clearance)) {
+        if (key === 'none') continue;
+        if (value === true) return true;
+    }
+    return false;
+}
+
+function isHighIntensityIntent(userData = {}) {
+    const goal = String(userData.primary_goal || '').toLowerCase();
+    const componentWeights = Array.isArray(userData.session_component_weights)
+        ? userData.session_component_weights.map((v) => String(v || '').toLowerCase())
+        : [];
+    const focusLocs = Array.isArray(userData.focus_locations)
+        ? userData.focus_locations.map((v) => String(v || '').toLowerCase())
+        : [];
+    return HIGH_INTENSITY_PRIMARY_GOALS.has(goal)
+        || componentWeights.includes('conditioning')
+        || focusLocs.includes('metabolic');
+}
+
 const PAIN_CONFIG = {
     maxPainDuring: {
         green: 5,
@@ -1470,6 +1495,44 @@ exports.handler = async (event) => {
         };
     }
 
+
+    const medicalScreeningRaw = parsedUserData?.exercise_medical_clearance;
+    if (medicalScreeningRaw === undefined) {
+        return { statusCode: 422, body: JSON.stringify({ error: 'MISSING_MEDICAL_SCREENING_ANSWER', field: 'exercise_medical_clearance' }) };
+    }
+    if (medicalScreeningRaw === null || Array.isArray(medicalScreeningRaw) || typeof medicalScreeningRaw !== 'object') {
+        return { statusCode: 400, body: JSON.stringify({ error: 'INVALID_MEDICAL_SCREENING_PAYLOAD' }) };
+    }
+
+    const screeningKeys = new Set(Object.keys(userData.exercise_medical_clearance || {}));
+    const requiredScreeningKeys = new Set(CANONICAL.exercise_medical_clearance_fields || []);
+
+    if (requiredScreeningKeys.size > 0) {
+        for (const key of requiredScreeningKeys) {
+            if (!screeningKeys.has(key)) {
+                return { statusCode: 422, body: JSON.stringify({ error: 'MISSING_MEDICAL_SCREENING_ANSWER', field: key }) };
+            }
+            if (typeof userData.exercise_medical_clearance[key] !== 'boolean') {
+                return { statusCode: 400, body: JSON.stringify({ error: 'INVALID_MEDICAL_SCREENING_VALUE', field: key }) };
+            }
+        }
+    }
+
+    const highIntensityIntent = isHighIntensityIntent(userData);
+    const medicalScreeningPositive = hasPositiveMedicalScreening(userData.exercise_medical_clearance);
+
+    if (highIntensityIntent && medicalScreeningPositive) {
+        console.warn(`[PlanGen] User: ${userId}, status=ineligible_for_plan, reason=medical_screening_high_intensity`);
+        return {
+            statusCode: 422,
+            body: JSON.stringify({
+                error: 'INELIGIBLE_FOR_HIGH_INTENSITY_PLAN',
+                status: 'ineligible_for_plan',
+                message: 'Nie możemy wygenerować planu o wyższej intensywności bez konsultacji medycznej. Wybierz plan low-intensity lub skonsultuj się z lekarzem.'
+            })
+        };
+    }
+
     const client = await pool.connect();
     try {
         const [eR, bR, pR, hR, sR, recentSessionsR, oR, fatigueProfile, settingsR] = await Promise.all([
@@ -1628,3 +1691,5 @@ module.exports.deriveFamilyKey = deriveFamilyKey;
 module.exports.selectMicrocycleAnchors = selectMicrocycleAnchors;
 module.exports.analyzePainResponse = analyzePainResponse; // Exported for testing US-02
 module.exports.filterExerciseCandidates = filterExerciseCandidates;
+module.exports.hasPositiveMedicalScreening = hasPositiveMedicalScreening;
+module.exports.isHighIntensityIntent = isHighIntensityIntent;

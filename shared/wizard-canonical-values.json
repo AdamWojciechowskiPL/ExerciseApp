@@ -90,5 +90,20 @@
       "mata": "mata",
       "mat": "mata"
     }
-  }
+  },
+  "symptom_onset": [
+    "sudden",
+    "post_traumatic",
+    "gradual"
+  ],
+  "symptom_duration": [
+    "lt_6_weeks",
+    "w6_12_weeks",
+    "gt_12_weeks"
+  ],
+  "symptom_trend": [
+    "improving",
+    "stable",
+    "worsening"
+  ]
 }

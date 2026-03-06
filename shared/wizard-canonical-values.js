@@ -6,6 +6,9 @@ const CANONICAL_VALUES = {
     physical_restrictions: ['foot_injury', 'no_kneeling', 'no_deep_squat', 'no_floor_sitting', 'no_twisting', 'no_high_impact', 'none'],
     hobby: ['cycling', 'running', 'swimming', 'gym', 'yoga', 'walking', 'none'],
     focus: ['mobility', 'stability', 'strength', 'conditioning', 'breathing'],
+    symptom_onset: ['sudden', 'post_traumatic', 'gradual'],
+    symptom_duration: ['lt_6_weeks', 'w6_12_weeks', 'gt_12_weeks'],
+    symptom_trend: ['improving', 'stable', 'worsening'],
     equipment: {
         ignorable: ['none', 'brak', '', 'brak sprzętu', 'masa własna', 'bodyweight'],
         aliases: {

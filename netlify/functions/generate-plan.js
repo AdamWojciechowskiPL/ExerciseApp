@@ -1185,11 +1185,23 @@ function analyzePainResponse(recentSessions) {
         painDuringMax: 0,
         pain24hDelta: 0,
         consecutiveSymptomNegatives: 0,
+        directionalNegative24hCount: 0,
         painModifier: 1.0,
         painReason: 'ok'
     };
 
     if (!recentSessions || recentSessions.length === 0) return result;
+
+    let directionalCount = 0;
+    for (const session of recentSessions) {
+        const delta = session?.feedback?.after24h?.delta_vs_baseline || 0;
+        const directionalWorse = session?.feedback?.after24h?.directional_worse === true;
+        if (delta >= 2 || directionalWorse) directionalCount += 1;
+        else break;
+        if (directionalCount >= 2) break;
+    }
+    result.directionalNegative24hCount = directionalCount;
+
     const lastSession = recentSessions[0];
     const fb = lastSession.feedback;
 
@@ -1482,6 +1494,8 @@ exports.handler = async (event) => {
         const recentSessions = recentSessionsR.rows;
         const rpeData = analyzeRpeTrend(recentSessions);
         const painData = analyzePainResponse(recentSessions);
+        ctx.directionalNegative24hCount = painData.directionalNegative24hCount || 0;
+        if (ctx.toleranceBias && ctx.directionalNegative24hCount >= 2) ctx.toleranceBias.strength = 1;
 
         let settings = settingsR.rows[0]?.settings || {};
         let phaseState = settings.phase_manager;

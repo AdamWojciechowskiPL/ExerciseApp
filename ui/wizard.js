@@ -15,6 +15,7 @@ const STEPS = [
     { id: 'p3', title: 'Charakter', render: renderP3 },
     { id: 'p4', title: 'Rozpoznanie zgłoszone', render: renderP4 },
     { id: 'p4b', title: 'Objawy alarmowe', render: renderP4b },
+    { id: 'p4c', title: 'Przebieg objawów', render: renderP4c },
     { id: 'p5', title: 'Co nasila?', render: renderP5 },
     { id: 'p6', title: 'Co pomaga?', render: renderP6 },
     { id: 'p7', title: 'Wpływ na życie', render: renderP7 },
@@ -56,6 +57,9 @@ export function initWizard(forceStart = false) {
         pain_character: saved.pain_character || [],
         medical_diagnosis: saved.medical_diagnosis || [],
         red_flags: saved.red_flags || [],
+        symptom_onset: saved.symptom_onset || '',
+        symptom_duration: saved.symptom_duration || '',
+        symptom_trend: saved.symptom_trend || '',
         trigger_movements: saved.trigger_movements || [],
         relief_movements: saved.relief_movements || [],
         daily_impact: saved.daily_impact !== undefined ? saved.daily_impact : 0,
@@ -105,7 +109,7 @@ function closeWizardWithoutSaving() {
 
 function getStepsToSkip() {
     if (wizardAnswers.pain_locations.length === 0) {
-        return ['p2', 'p3', 'p5', 'p6', 'p7'];
+        return ['p2', 'p3', 'p4c', 'p5', 'p6', 'p7'];
     }
     return [];
 }
@@ -134,6 +138,7 @@ function resetSkippedStepData(stepId) {
         case 'p2': wizardAnswers.pain_intensity = 0; break;
         case 'p3': wizardAnswers.pain_character = []; break;
         case 'p4b': wizardAnswers.red_flags = []; break;
+        case 'p4c': wizardAnswers.symptom_onset = ''; wizardAnswers.symptom_duration = ''; wizardAnswers.symptom_trend = ''; break;
         case 'p5': wizardAnswers.trigger_movements = []; break;
         case 'p6': wizardAnswers.relief_movements = []; break;
         case 'p7': wizardAnswers.daily_impact = 0; break;
@@ -213,6 +218,7 @@ function validateStep(stepId) {
         case 'p3': return wizardAnswers.pain_locations.length === 0 || wizardAnswers.pain_character.length > 0;
         case 'p4': return wizardAnswers.medical_diagnosis.length > 0;
         case 'p4b': return hasExplicitRedFlagsAnswer();
+        case 'p4c': return wizardAnswers.pain_locations.length === 0 || (wizardAnswers.symptom_onset !== '' && wizardAnswers.symptom_duration !== '' && wizardAnswers.symptom_trend !== '');
         case 'p5': return wizardAnswers.pain_locations.length === 0 || wizardAnswers.trigger_movements.length > 0;
         case 'p6': return wizardAnswers.pain_locations.length === 0 || wizardAnswers.relief_movements.length > 0;
         case 'p8': return wizardAnswers.work_type !== '';
@@ -465,6 +471,60 @@ function renderP4(c) {
 
 function renderP4b(c) {
     renderMultiSelect(c, 'Czy występuje coś z poniższych objawów alarmowych?', RED_FLAG_OPTIONS, 'red_flags');
+}
+
+
+function renderP4c(c) {
+    c.innerHTML = `
+        <p class="wizard-step-desc">Ustalmy przebieg objawów (bez stawiania diagnozy).</p>
+        <div style="display:flex; flex-direction:column; gap:16px;">
+            <div class="form-group">
+                <label style="display:block; margin-bottom:8px;">Początek objawów</label>
+                <div id="symptom-onset" class="options-list"></div>
+            </div>
+            <div class="form-group">
+                <label style="display:block; margin-bottom:8px;">Czas trwania</label>
+                <div id="symptom-duration" class="options-list"></div>
+            </div>
+            <div class="form-group">
+                <label style="display:block; margin-bottom:8px;">Kierunek zmian</label>
+                <div id="symptom-trend" class="options-list"></div>
+            </div>
+        </div>
+    `;
+
+    const renderSingleInline = (containerId, key, options) => {
+        const list = c.querySelector(containerId);
+        options.forEach((opt) => {
+            const btn = document.createElement('div');
+            btn.className = `option-btn ${wizardAnswers[key] === opt.val ? 'selected' : ''}`;
+            btn.textContent = opt.label;
+            btn.addEventListener('click', () => {
+                list.querySelectorAll('.option-btn').forEach((el) => el.classList.remove('selected'));
+                btn.classList.add('selected');
+                wizardAnswers[key] = opt.val;
+            });
+            list.appendChild(btn);
+        });
+    };
+
+    renderSingleInline('#symptom-onset', 'symptom_onset', [
+        { val: 'sudden', label: 'Nagły' },
+        { val: 'post_traumatic', label: 'Po urazie' },
+        { val: 'gradual', label: 'Stopniowy' }
+    ]);
+
+    renderSingleInline('#symptom-duration', 'symptom_duration', [
+        { val: 'lt_6_weeks', label: '< 6 tygodni' },
+        { val: 'w6_12_weeks', label: '6–12 tygodni' },
+        { val: 'gt_12_weeks', label: '> 12 tygodni' }
+    ]);
+
+    renderSingleInline('#symptom-trend', 'symptom_trend', [
+        { val: 'improving', label: 'Poprawa' },
+        { val: 'stable', label: 'Bez zmian' },
+        { val: 'worsening', label: 'Pogorszenie' }
+    ]);
 }
 
 function renderP5(c) { renderMultiSelect(c, 'Kiedy ból się NASILA?', [{ val: 'bending_forward', label: 'Pochylanie do przodu' }, { val: 'bending_backward', label: 'Odchylanie w tył' }, { val: 'twisting', label: 'Skręty tułowia' }, { val: 'sitting', label: 'Długie siedzenie' }, { val: 'standing', label: 'Długie stanie' }, { val: 'walking', label: 'Chodzenie' }, { val: 'lying_back', label: 'Leżenie na plecach' }], 'trigger_movements'); }

@@ -536,7 +536,7 @@ function hasExplicitMedicalScreeningAnswer() {
 }
 
 function renderP4d(c) {
-    c.innerHTML = '<p class="wizard-step-desc">Przed planami o wyższej intensywności potrzebujemy krótkiego przesiewu bezpieczeństwa.</p><div class="options-list" id="medical-screening-list"></div>';
+    c.innerHTML = '<p class="wizard-step-desc">Przed planami o wyższej intensywności potrzebujemy krótkiej analizy odpowiedzi bezpieczeństwa.</p><div class="options-list" id="medical-screening-list"></div>';
     const list = c.querySelector('#medical-screening-list');
 
     const current = wizardAnswers.exercise_medical_clearance || {};
@@ -789,8 +789,8 @@ function renderSummary(c) {
             <li>🎯 <strong>Główny cel:</strong> ${wizardAnswers.primary_goal}</li>
             <li>📅 <strong>Dni:</strong> ${formattedDays || 'Brak'}</li>
             <li>⏱️ <strong>Czas:</strong> ${wizardAnswers.target_session_duration_min} min</li>
-            <li>${hasRedFlags ? '🚨' : '✅'} <strong>Objawy alarmowe:</strong> ${hasRedFlags ? 'Wykryto (wymagana konsultacja)' : 'Brak'}</li>
-            <li>${hasMedicalScreeningFlags ? '⚠️' : '✅'} <strong>Screening medyczny:</strong> ${hasMedicalScreeningFlags ? 'Wymagana konsultacja przed intensywnym wysiłkiem' : 'Bez dodatnich odpowiedzi'}</li>
+            <li>${hasRedFlags ? '🚨' : '✅'} <strong>Objawy alarmowe:</strong> ${hasRedFlags ? 'Wymagana konsultacja medyczna przed doborem planu' : 'Brak'}</li>
+            <li>${hasMedicalScreeningFlags ? '⚠️' : '✅'} <strong>Screening medyczny:</strong> ${hasMedicalScreeningFlags ? 'Przed planem o wyższej intensywności wymagana konsultacja medyczna' : 'Bez dodatnich odpowiedzi'}</li>
         </ul>
 
         ${warningHTML}
@@ -832,7 +832,7 @@ async function finalizeGeneration(consoleDiv) {
     try {
         const hasRedFlags = Array.isArray(wizardAnswers.red_flags) && wizardAnswers.red_flags.some(flag => flag !== 'none');
         if (hasRedFlags) {
-            const msg = 'Wykryto objawy alarmowe. Ze względów bezpieczeństwa plan nie został wygenerowany. Skonsultuj się pilnie z lekarzem lub fizjoterapeutą.';
+            const msg = 'Wskazano objawy alarmowe. Ze względów bezpieczeństwa dobór planu został zatrzymany. Skonsultuj się pilnie z lekarzem lub fizjoterapeutą.';
             if (consoleDiv) {
                 consoleDiv.textContent = `⛔ ${msg}`;
                 consoleDiv.style.color = 'var(--danger-color)';
@@ -845,7 +845,7 @@ async function finalizeGeneration(consoleDiv) {
         const hasMedicalScreeningFlags = Object.entries(wizardAnswers.exercise_medical_clearance || {}).some(([key, val]) => key !== 'none' && val === true);
 
         if (highIntensityIntent && hasMedicalScreeningFlags) {
-            const msg = 'Na podstawie screeningu medycznego nie możemy wygenerować planu o wyższej intensywności. Skonsultuj możliwość wysiłku z lekarzem.';
+            const msg = 'Na podstawie screeningu medycznego nie możemy dobrać planu o wyższej intensywności. Skonsultuj możliwość wysiłku z lekarzem.';
             if (consoleDiv) {
                 consoleDiv.textContent = `⛔ ${msg}`;
                 consoleDiv.style.color = 'var(--danger-color)';

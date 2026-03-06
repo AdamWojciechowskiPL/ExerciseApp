@@ -12,7 +12,7 @@ const STEPS = [
     { id: 'p1', title: 'Mapa Ciała', render: renderP1 },
     { id: 'p2', title: 'Nasilenie', render: renderP2 },
     { id: 'p3', title: 'Charakter', render: renderP3 },
-    { id: 'p4', title: 'Diagnoza', render: renderP4 },
+    { id: 'p4', title: 'Rozpoznanie lekarskie', render: renderP4 },
     { id: 'p4b', title: 'Czerwone flagi', render: renderP4b },
     { id: 'p5', title: 'Co nasila?', render: renderP5 },
     { id: 'p6', title: 'Co pomaga?', render: renderP6 },
@@ -27,7 +27,7 @@ const STEPS = [
     { id: 'p15', title: 'Cele Extra', render: renderP15 },
     { id: 'p16', title: 'Ograniczenia', render: renderP16 },
     { id: 'summary', title: 'Gotowe', render: renderSummary },
-    { id: 'generating', title: 'Analiza', render: renderProcessing }
+    { id: 'generating', title: 'Przetwarzanie', render: renderProcessing }
 ];
 
 export function initWizard(forceStart = false) {
@@ -377,7 +377,7 @@ function renderP2(c) {
 function renderP3(c) { renderMultiSelect(c, 'Jaki to rodzaj bólu?', [{ val: 'sharp', label: '🔪 Ostry / Kłujący' }, { val: 'dull', label: '🪨 Tępy / Uciskający' }, { val: 'burning', label: '🔥 Palący' }, { val: 'stiffness', label: '🪵 Sztywność' }, { val: 'radiating', label: '⚡ Promieniujący' }, { val: 'numbness', label: '🧊 Mrowienie' }], 'pain_character'); }
 
 function renderP4(c) {
-    const title = 'Czy masz diagnozę lekarską?';
+    const title = 'Czy masz rozpoznanie lekarskie?';
     const diagnosisTriggerMap = {
         'scoliosis': ['thoracic', 'low_back', 'cervical'],
         'disc_herniation': ['low_back', 'cervical', 'sciatica'],
@@ -400,7 +400,7 @@ function renderP4(c) {
         { val: 'meniscus_tear', label: '🩹 Uszkodzenie łąkotki' },
         { val: 'acl_rehab', label: '🦵 ACL / Więzadła' },
         { val: 'jumpers_knee', label: '🏀 Kolano skoczka' },
-        { val: 'none', label: 'Brak diagnozy / Inna' }
+        { val: 'none', label: 'Brak rozpoznania / Inne' }
     ];
 
     const currentPainZones = wizardAnswers.pain_locations;
@@ -655,7 +655,7 @@ function renderSummary(c) {
 
         ${warningHTML}
 
-        <p class="summary-footer">Asystent AI przeanalizuje Twój kalendarz i ułoży spersonalizowany plan.</p>
+        <p class="summary-footer">Asystent AI uwzględni Twój kalendarz i ułoży spersonalizowany plan treningowy.</p>
     </div>`;
 }
 
@@ -663,13 +663,13 @@ async function renderProcessing(c) {
     c.innerHTML = `
         <div class="processing-container">
             <div class="processing-spinner"></div>
-            <div id="console-output" class="processing-log">Analiza danych...</div>
+            <div id="console-output" class="processing-log">Przetwarzanie danych...</div>
         </div>`;
     
     // ZMIANA: Usunięcie "Gotowe!" z fałszywej pętli
     const logs = [
-        "Analiza profilu biometrycznego...",
-        "Weryfikacja wykluczeń medycznych...",
+        "Ocena profilu treningowego...",
+        "Weryfikacja ograniczeń bezpieczeństwa...",
         "Dobór optymalnej objętości...",
         "Wysyłanie zapytania..."
     ];

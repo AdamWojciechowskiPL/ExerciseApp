@@ -1,7 +1,7 @@
 // ExerciseApp/netlify/functions/_clinical-rule-engine.js
 // netlify/functions/_clinical-rule-engine.js
 
-const { derivePainZoneSet } = require('./_pain-taxonomy.js');
+const { derivePainZoneSet, normalizeDiagnosisArray } = require('./_pain-taxonomy.js');
 
 const DIFFICULTY_MAP = {
     'none': 1, 'occasional': 2, 'regular': 3, 'advanced': 4
@@ -203,7 +203,7 @@ function buildUserContext(userData) {
     );
 
     const physicalRestrictions = userData.physical_restrictions || [];
-    const medicalDiagnosis = userData.medical_diagnosis || [];
+    const medicalDiagnosis = normalizeDiagnosisArray(userData.medical_diagnosis);
 
     return {
         tolerancePattern,
@@ -271,7 +271,7 @@ function violatesRestrictions(ex, ctx) {
 
     // 6. Ochrona Kolan
     const hasKneeIssue = ctx.painFilters.has('knee') || ctx.painFilters.has('knee_anterior');
-    const isChondromalacia = diagnosis.includes('chondromalacia') || diagnosis.includes('runners_knee');
+    const isChondromalacia = diagnosis.includes('chondromalacia');
 
     // Strict Knee Control: Block High Load (Deep Flexion/High Force) for ANY knee pain.
     // Originally this checked ctx.isSevere, but clinically moderate knee pain also requires ROM restriction.

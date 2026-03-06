@@ -7,6 +7,7 @@ const {
     getPhaseConfig,
     PHASE_IDS
 } = require('./phase-catalog');
+const { normalizeDiagnosisArray } = require('./_pain-taxonomy.js');
 
 // ============================================================================
 // HELPERY
@@ -42,7 +43,7 @@ const createPhaseStats = (phaseId, userCtx) => {
 const initializeRomProfile = (userCtx) => {
     const romProfile = {};
     const painLocs = (userCtx.pain_locations || []).map(s => s.toLowerCase());
-    const diagnosis = (userCtx.medical_diagnosis || []).map(s => s.toLowerCase());
+    const diagnosis = normalizeDiagnosisArray(userCtx.medical_diagnosis);
 
     // Logika dla kolana (PFPS, Chondromalacja, OA, ACL)
     const hasKneeIssue = painLocs.includes('knee') ||

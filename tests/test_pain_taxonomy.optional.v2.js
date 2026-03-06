@@ -21,4 +21,12 @@ if (!maybe.ok) {
     assert.equal(low.has('low_back'), true);
     assert.equal(lum.has('low_back'), true);
   });
+
+  test('pain-taxonomy normalizes diagnosis aliases to canonical keys', () => {
+    const set = tax.normalizeDiagnosisSet(['runners_knee', 'patellofemoral', 'chondromalacia']);
+    assert.equal(set.has('chondromalacia'), true);
+    assert.equal(set.has('runners_knee'), false);
+    assert.equal(set.has('patellofemoral'), false);
+  });
+
 }

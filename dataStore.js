@@ -36,24 +36,51 @@ const callAPI = async (endpoint, { body, method = 'GET', params } = {}) => {
 
 const getMonthCacheKey = (year, month) => `${year}-${month}`;
 
+const mergeSessionIntoUserProgress = (session) => {
+    if (!session || !session.completedAt) return;
+    const dayKey = getISODate(new Date(session.completedAt));
+    if (!state.userProgress[dayKey]) state.userProgress[dayKey] = [];
+
+    const existingIndex = state.userProgress[dayKey].findIndex(
+        (savedSession) => String(savedSession.sessionId) === String(session.sessionId)
+    );
+
+    if (existingIndex === -1) {
+        state.userProgress[dayKey].push(session);
+        return;
+    }
+
+    state.userProgress[dayKey][existingIndex] = {
+        ...state.userProgress[dayKey][existingIndex],
+        ...session
+    };
+};
+
+const mergeSessionsIntoUserProgress = (sessions = []) => {
+    sessions.forEach(mergeSessionIntoUserProgress);
+};
+
+const applySessionLogUpdate = (sessionId, updatedLog) => {
+    if (!Array.isArray(updatedLog)) return;
+    Object.values(state.userProgress).forEach((sessions) => {
+        const existingSession = sessions.find((session) => String(session.sessionId) === String(sessionId));
+        if (existingSession) {
+            existingSession.sessionLog = updatedLog;
+        }
+    });
+};
+
 const dataStore = {
     loadAppContent: async () => {
         try {
-            const token = await getToken();
-            const headers = { 'Content-Type': 'application/json' };
-            if (token) headers['Authorization'] = `Bearer ${token}`;
-
-            const response = await fetch('/.netlify/functions/get-app-content', { headers });
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-            const data = await response.json();
+            const data = await callAPI('get-app-content') || {};
             state.exerciseLibrary = data.exercises || {};
 
             const total = Object.keys(state.exerciseLibrary).length;
             const blocked = Object.values(state.exerciseLibrary).filter(ex => ex.isAllowed === false).length;
             const allowed = total - blocked;
 
-            console.log(token
+            console.log((await getToken())
                 ? `📦 Zasoby PERSONALIZOWANE: ${allowed} dostępnych, ${blocked} zablokowanych.`
                 : '📦 Zasoby PUBLICZNE załadowane.');
 
@@ -126,14 +153,7 @@ const dataStore = {
                 try { state.userStats = JSON.parse(cachedStats); } catch (e) { state.userStats = { totalSessions: 0, streak: 0, resilience: null }; }
             } else { state.userStats = { totalSessions: 0, streak: 0, resilience: null }; }
 
-            if (data.recentSessions) {
-                data.recentSessions.forEach(session => {
-                    const dateKey = getISODate(new Date(session.completedAt));
-                    if (!state.userProgress[dateKey]) state.userProgress[dateKey] = [];
-                    const exists = state.userProgress[dateKey].find(s => String(s.sessionId) === String(session.sessionId));
-                    if (!exists) state.userProgress[dateKey].push(session);
-                });
-            }
+            mergeSessionsIntoUserProgress(data.recentSessions);
 
             return data;
         } catch (error) { console.error("Initialization failed:", error); throw error; }
@@ -183,27 +203,13 @@ const dataStore = {
         const key = getMonthCacheKey(y, m);
         if (!f && state.loadedMonths.has(key)) return;
         const sessions = await callAPI('get-history-by-month', { params: { year: y, month: m } });
-        if (sessions) {
-            sessions.forEach(session => {
-                const k = getISODate(new Date(session.completedAt));
-                if (!state.userProgress[k]) state.userProgress[k] = [];
-                const ex = state.userProgress[k].find(s => String(s.sessionId) === String(session.sessionId));
-                if (!ex) state.userProgress[k].push(session); else { const idx = state.userProgress[k].indexOf(ex); state.userProgress[k][idx] = session; }
-            });
-        }
+        mergeSessionsIntoUserProgress(sessions);
         state.loadedMonths.add(key);
     },
 
     loadRecentHistory: async (d) => {
         const sessions = await callAPI('get-recent-history', { params: { days: d } });
-        if (sessions) {
-            sessions.forEach(session => {
-                const k = getISODate(new Date(session.completedAt));
-                if (!state.userProgress[k]) state.userProgress[k] = [];
-                const ex = state.userProgress[k].find(s => String(s.sessionId) === String(session.sessionId));
-                if (!ex) state.userProgress[k].push(session); else { const idx = state.userProgress[k].indexOf(ex); state.userProgress[k][idx] = session; }
-            });
-        }
+        mergeSessionsIntoUserProgress(sessions);
         state.isHistoryLoaded = true;
     },
 
@@ -238,32 +244,7 @@ const dataStore = {
 
         if (res) {
             state.loadedMonths.clear();
-
-            // Sync local state immediately to avoid stale data
-            // We need to find the session and update the log entry
-            for (const dateKey in state.userProgress) {
-                const sessions = state.userProgress[dateKey];
-                const session = sessions.find(s => String(s.sessionId) === String(sessionId));
-                if (session && session.sessionLog) {
-                    const entry = session.sessionLog.find(e => {
-                        const eId = e.exerciseId || e.id;
-                        return String(eId) === String(exerciseId);
-                    });
-
-                    if (entry) {
-                        if (tech !== undefined && tech !== null) entry.tech = tech;
-                        if (rir !== undefined && rir !== null) entry.rir = rir;
-                        if (difficultyDeviation !== undefined) entry.difficultyDeviation = difficultyDeviation;
-                        if (rating !== undefined) entry.rating = rating;
-                        else if (difficultyDeviation === 'easy') entry.rating = 'good';
-                        else if (difficultyDeviation === 'hard') entry.rating = 'hard';
-
-                        entry.inferred = false;
-                        // entry.inferenceReason? usually distinct but good to clear logic if we could
-                    }
-                    break; // Stop searching once found
-                }
-            }
+            applySessionLogUpdate(sessionId, res.updatedLog);
         }
         return res;
     },

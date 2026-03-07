@@ -1,4 +1,4 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v5.0.52
+# Aplikacja Treningowa (Smart Rehab PWA) v5.0.53
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
@@ -9,6 +9,12 @@ Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening
 * `npm run test:ci` — pełny gate lokalny: testy + lint + smoke (analogicznie do CI).
 
 ---
+
+## 🆕 Aktualizacje v5.0.53
+
+* Podbito wersję aplikacji do `5.0.53`.
+* Zsynchronizowano sekcję „Pełna Struktura Plików” z realnym stanem repo (aktualne ścieżki, nazwy plików i odpowiedzialności modułów).
+* Oznaczono moduły jako **legacy-free** (`✅`) lub nadal w **refactoringu/warstwie przejściowej** (`🔧`), aby ułatwić dalsze porządki architektury.
 
 ## 🆕 Aktualizacje v5.0.52
 
@@ -465,106 +471,111 @@ Projekt posiada zestaw testów regresyjnych w katalogu `/tests`:
 ```text
 /ExerciseApp
 │
-├── index.html                  # Główny kontener SPA
-├── style.css                   # Główny plik stylów (importuje moduły z folderu /css)
-├── app.js                      # Punkt wejścia, routing, init, session recovery check
-├── auth.js                     # Obsługa logowania (Auth0 SDK + JWT)
-├── state.js                    # Globalny stan aplikacji (+ userPreferences)
-├── dataStore.js                # Warstwa API (Fetch, Cache, Sync, Preferences)
-├── utils.js                    # Helpery (Daty, Parsowanie, Hydracja, SVG)
-├── sessionRecovery.js          # Backup/restore sesji treningowej
+├── index.html                  # Główny kontener SPA + mount screenów i shell UI
+├── style.css                   # Główny punkt wejścia CSS (importy z /css)
+├── app.js                      # Bootstrap aplikacji, routing, rejestracje globalne (✅ legacy-free)
+├── state.js                    # Globalny stan aplikacji
+├── dom.js                      # Mapa referencji DOM i screenów
+├── utils.js                    # Narzędzia wspólne (daty, parsowanie, helpery UI)
+├── auth.js                     # Integracja Auth0 + token flow
+├── dataStore.js                # Facade API do warstw store (🔧 warstwa przejściowa po rozbiciu)
+├── apiClient.js                # Wspólny klient requestów FE→Netlify
+├── historyStore.js             # Moduł historii treningów (✅ legacy-free)
+├── preferencesStore.js         # Moduł preferencji ćwiczeń (✅ legacy-free)
+├── settingsStore.js            # Moduł ustawień i konfiguracji użytkownika (✅ legacy-free)
+├── integrationsStore.js        # Moduł integracji zewnętrznych (✅ legacy-free)
+├── sessionRecovery.js          # Odtwarzanie sesji/guard dla aktywnego treningu
 │
-├── CSS (MODULAR STYLES):
-│   ├── css/
-│   │   ├── variables.css       # Zmienne globalne (kolory, fonty), reset, animacje
-│   │   ├── global.css          # Layout, Header, Footer, wspólne komponenty UI
-│   │   ├── dashboard.css       # Ekran Główny: Hero, Kalendarz, Oś czasu
-│   │   ├── training.css        # Tryb Focus (trening) i podgląd (Pre-training)
-│   │   ├── modules.css         # Pozostałe ekrany: Historia, Wizard, Atlas, Podsumowanie
-│   │   └── responsive.css      # Media Queries (Mobile/Desktop overrides)
+├── LOGIKA TRENINGU I SILNIKI FE:
+│   ├── training.js             # Orkiestrator sesji treningowej (🔧 po refactoringu trwa dalsze odchudzanie)
+│   ├── training/
+│   │   ├── castSync.js         # Synchronizacja stanu z Google Cast
+│   │   ├── flatPlanGenerator.js# Generowanie płaskiego planu sesji
+│   │   ├── sessionBackup.js    # Backup i resume sesji
+│   │   └── uiBridge.js         # Adapter komunikacji trening ↔ UI
+│   ├── clinicalEngine.js       # Adapter FE do shared/clinical-core
+│   ├── assistantEngine.js      # Adaptacja obciążeń i logika podsumowań
+│   ├── protocolGenerator.js    # Generator Bio-Protocol Hub (SOS/Flow/Ladder...)
+│   ├── workoutMixer.js         # Zamiany ćwiczeń i dewolucja/progresja
+│   ├── timer.js                # Timer, pacing audio i liczniki
+│   ├── tts.js                  # Text-to-Speech
+│   ├── cast.js                 # Google Cast sender
+│   └── gamification.js         # Poziomy, streak i metryki grywalizacji
 │
-├── LOGIKA BIZNESOWA (FRONTEND):
-│   ├── protocolGenerator.js    # Generator Bio-Protokołów (Time-Boxing logic)
-│   ├── workoutMixer.js         # Mixer v3.0 Lite (Manual swap logic) + Helpery Dewolucji (szukanie łatwiejszych wariantów)
-│   ├── assistantEngine.js      # Skalowanie objętości (Pain/Time adaptation) + Klasyfikacja sesji (Smart Summary logic)
-│   ├── clinicalEngine.js       # Frontendowy adapter walidatora reguł medycznych (rdzeń: shared/clinical-core)
-│   ├── training.js             # Kontroler przebiegu treningu + pętla backupu + Obsługa Quick Rating i Detail Prompt (State-First)
-│   ├── timer.js                # Obsługa stopera (z Audio Pacing) i timera
-│   ├── tts.js                  # Text-to-Speech (Synteza mowy)
-│   ├── cast.js                 # Google Cast Sender SDK
-│   ├── gamification.js         # Obliczanie poziomów i statystyk
-│   ├── help.js                 # Wyświetlanie widoku pomocy
-│   └── dom.js                  # Cache referencji DOM
-│
-├── SHARED (WSPÓLNE MODUŁY FE/BE):
-│   ├── shared/clinical-core/contracts.js # Kontrakt powodów decyzji i stałych clinical core
-│   ├── shared/clinical-core/index.js     # Wspólny rdzeń reguł klinicznych używany przez FE i BE
-│   ├── shared/wizard-canonical-values.js # Kanoniczne słowniki wizarda (moduł JS)
-│   └── shared/wizard-canonical-values.json # Dane źródłowe słowników wizarda
-│
-├── UI (MODUŁY PREZENTACJI):
+├── UI:
 │   ├── ui.js                   # Eksporter modułów UI
-│   ├── ui/
-│   │   ├── core.js             # Loader, WakeLock, Nawigacja
-│   │   ├── templates.js        # Generatory HTML (Karty Kalendarza, Badges)
-│   │   ├── modals.js           # Okna dialogowe (Tuner, Swap, Evolution, Move Day)
-│   │   ├── wizard.js           # Kreator konfiguracji (Ankieta medyczna, SVG Body Map)
-│   │   └── screens/            # Widoki poszczególnych ekranów:
-│   │       ├── dashboard.js    # Ekran Główny (Logic + Render)
-│   │       ├── training.js     # Ekran Treningu (Render + Eventy)
-│   │       ├── history.js      # Historia + edycja ocen/trudności
-│   │       ├── library.js      # Baza Ćwiczeń + filtry
-│   │       ├── settings.js     # Ustawienia i Integracje
-│   │       └── summary.js      # Podsumowanie z kafelkami ocen
-│   │
+│   └── ui/
+│       ├── core.js             # Nawigacja, loader, wake lock
+│       ├── templates.js        # Szablony i render helpery
+│       ├── modals.js           # Dialogi i akcje modalne
+│       ├── wizard.js           # Wizard konfiguracji użytkownika
+│       ├── wizardCanonical.js  # Mapowanie do kanonicznych wartości wizarda
+│       └── screens/
+│           ├── dashboard.js    # Ekran główny
+│           ├── training.js     # Widok treningu
+│           ├── history.js      # Historia sesji
+│           ├── library.js      # Biblioteka ćwiczeń
+│           ├── settings.js     # Ustawienia
+│           ├── summary.js      # Podsumowanie treningu
+│           └── help.js         # Pomoc i instrukcje
+│
+├── STYLE:
+│   └── css/
+│       ├── variables.css       # Tokeny stylu i zmienne globalne
+│       ├── global.css          # Layout i elementy współdzielone
+│       ├── dashboard.css       # Style dashboard
+│       ├── training.css        # Style trybu treningowego
+│       ├── modules.css         # Style ekranów modułowych
+│       └── responsive.css      # Media queries
+│
+├── SHARED (FE/BE):
+│   └── shared/
+│       ├── clinical-core/
+│       │   ├── contracts.js    # Kontrakty reguł klinicznych
+│       │   └── index.js        # Wspólny rdzeń clinical rules (✅ legacy-free)
+│       ├── wizard-canonical-values.js   # Słowniki kanoniczne wizarda (JS)
+│       ├── wizard-canonical-values.json # Słowniki kanoniczne wizarda (JSON źródłowy)
+│       ├── exercise-difficulty-rating.mjs # Kontrakt i normalizacja difficulty rating
+│       └── summary-feedback-payload.mjs   # Kontrakt payloadu feedbacku sesji
+│
 ├── BACKEND (NETLIFY FUNCTIONS):
-│   ├── netlify/functions/
-│   │   ├── _auth-helper.js          # Weryfikacja JWT i puli połączeń DB
-│   │   ├── _clinical-rule-engine.js # Backendowy adapter walidatora medycznego (rdzeń: shared/clinical-core)
-│   │   ├── _crypto-helper.js        # Szyfrowanie tokenów (AES-256-GCM)
-│   │   ├── _stats-helper.js         # Logika statystyk (Streak, Resilience, Pacing)
-│   │   ├── _pain-taxonomy.js        # Ujednolicony słownik stref bólu
-│   │   ├── _tempo-validator.js      # Walidacja i egzekwowanie tempa fazy
-│   │   ├── _fatigue-calculator.js   # Oblicza wskaźniki zmęczenia uwzględniając RIR (Reps In Reserve) oraz Quick Ratings (Kciuki). Wykorzystuje model Banistera z precyzyjniejszym wsadem danych (RPE 1-10 wyliczane dynamicznie).
-│   │   ├── _data-contract.js        # Schematy walidacji JSON (Pain Monitoring)
-│   │   ├── patch-session-feedback.js # Aktualizacja sesji po 24h
-│   │   ├── update-pain-feedback-24h.js # Alias endpointu 24h check-in (pain_monitoring)
-│   │   ├── generate-plan.js         # Generator planów dynamicznych (Rolling Window + Fluid Progression)
-│   │   ├── _phase-manager.js        # Zarządzanie stanem faz i licznikami
-│   │   ├── phase-catalog.js         # Konfiguracja blueprintów i reguł
-│   │   ├── get-app-content.js       # Pobieranie bazy wiedzy i personalizacji
-│   │   ├── get-or-create-user-data.js # Bootstrap usera (Parallel Fetch)
-│   │   ├── get-user-preferences.js  # Pobieranie affinity score
-│   │   ├── get-user-stats.js        # Pobieranie statystyk głównych
-│   │   ├── get-recent-history.js    # Historia sesji
-│   │   ├── get-history-by-month.js  # Historia kalendarzowa
-│   │   ├── get-exercise-animation.js # Pobieranie SVG (Cacheable)
-│   │   ├── get-exercise-mastery.js  # Statystyki objętości per ćwiczenie
-│   │   ├── save-session.js          # Zapis treningu z uruchomieniem Inference Engine (uzupełnianie brakujących ocen) oraz obsługą natychmiastowej Dewolucji (wymuszanie łatwiejszych wariantów).
-│   │   ├── save-settings.js         # Zapis ustawień i planów
-│   │   ├── update-preference.js     # Pojedyncza aktualizacja oceny
-│   │   ├── recalculate-stats.js     # Wymuszone przeliczenie tempa
-│   │   ├── manage-blacklist.js      # Zarządzanie czarną listą
-│   │   ├── delete-session.js        # Usuwanie sesji + korekta statystyk
-│   │   ├── delete-user-data.js      # GDPR: Pełne usunięcie konta
-│   │   ├── migrate-data.js          # Migracja z LocalStorage do DB
-│   │   └── strava-*.js              # Endpointy integracji OAuth ze Strava
-│   │
-├── RECEIVER (APLIKACJA TV):
+│   └── netlify/functions/
+│       ├── generate-plan.js         # Wejście generatora planu (🔧 orchestrator po rozbiciu)
+│       ├── save-session.js          # Wejście zapisu sesji (🔧 orchestrator po rozbiciu)
+│       ├── get-*.js / update-*.js / delete-*.js / strava-*.js # Endpointy API i integracje
+│       ├── _auth-helper.js          # Auth helper + db pool
+│       ├── _clinical-rule-engine.js # Adapter BE do shared/clinical-core
+│       ├── _data-contract.js        # Kontrakty wejścia/wyjścia API
+│       ├── _pacing-engine.js        # Silnik pacingu czasowego
+│       ├── _phase-manager.js        # Zarządzanie fazami planu
+│       ├── _fatigue-calculator.js   # Kalkulacja zmęczenia i obciążenia
+│       ├── _wizard-canonical.js     # Kanonizacja słowników wizarda po stronie BE
+│       └── _*.js (pozostałe helpery) # Moduły pomocnicze i guardrails
+│
+├── PWA / ASSETY:
+│   ├── manifest.json            # Manifest PWA (aktywny i linkowany z index/service worker)
+│   ├── service-worker.js        # Cache shell + asset strategy
+│   ├── icons/                   # Ikony aplikacji i sprite SVG
+│   ├── privacy.html             # Polityka prywatności
+│   └── terms.html               # Regulamin
+│
+├── TV RECEIVER:
 │   └── receiver/
-│       ├── index.html          # Widok na telewizorze
-│       ├── style.css           # Style TV
-│       └── receiver.js         # Logika odbiornika (Anti-Idle v8, MediaSession)
+│       ├── index.html
+│       ├── style.css
+│       └── receiver.js
+│
+├── TESTY I JAKOŚĆ:
+│   ├── tests/                   # Testy regresyjne + kontraktowe + smoke
+│   ├── eslint.config.mjs        # Konfiguracja ESLint
+│   ├── .stylelintrc.json        # Konfiguracja Stylelint
+│   └── .github/workflows/       # CI quality gate + clinical parity
 │
 └── KONFIGURACJA:
-    ├── netlify.toml            # Config hostingu
-    ├── package.json            # Zależności Node.js
-    ├── manifest.json           # PWA Manifest
-    ├── privacy.html            # RODO / Polityka prywatności
-    ├── terms.html              # Regulamin
-    └── service-worker.js       # Cache PWA
+    ├── package.json             # Zależności i wersja aplikacji
+    ├── netlify.toml             # Konfiguracja Netlify
+    └── deno.lock                # Lockfile narzędzi używanych w projekcie
 ```
----
 
 ## 🗄 Struktura Bazy Danych (PostgreSQL)
 

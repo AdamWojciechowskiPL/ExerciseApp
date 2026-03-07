@@ -247,8 +247,42 @@ async function generateWithDebugRanking(userId) {
   assert.ok(target, 'debug ranking should include target exercise');
   assert.ok(neutralPeer, 'debug ranking should include neutral peer exercise');
 
-  return { target, neutralPeer };
+  return { ranking, target, neutralPeer };
 }
+
+function getRankIndex(ranking, exerciseId) {
+  return ranking.findIndex((entry) => entry.id === exerciseId);
+}
+
+
+
+test("E2E regression: difficulty_rating zmienia top-k oraz pozycję targetu na fixture'ach", async () => {
+  authHelper.pool.connect = createInMemoryDb().connect;
+
+  const neutral = await generateWithDebugRanking('difficulty-neutral-user');
+
+  await saveDifficultyRating('difficulty-hard-user', 1);
+  const hard = await generateWithDebugRanking('difficulty-hard-user');
+
+  await saveDifficultyRating('difficulty-easy-user', -1);
+  const easy = await generateWithDebugRanking('difficulty-easy-user');
+
+  const neutralTop3 = neutral.ranking.slice(0, 3).map((entry) => entry.id);
+  const hardTop3 = hard.ranking.slice(0, 3).map((entry) => entry.id);
+  const easyTop3 = easy.ranking.slice(0, 3).map((entry) => entry.id);
+
+  const neutralIdx = getRankIndex(neutral.ranking, 'target-x');
+  const hardIdx = getRankIndex(hard.ranking, 'target-x');
+  const easyIdx = getRankIndex(easy.ranking, 'target-x');
+
+  assert.ok(neutralIdx >= 0 && hardIdx >= 0 && easyIdx >= 0, 'target should appear in all ranking variants');
+  assert.ok(hardIdx > neutralIdx, `hard rating should push target lower (${hardIdx} > ${neutralIdx})`);
+  assert.ok(easyIdx <= neutralIdx, `easy rating should not worsen target rank (${easyIdx} <= ${neutralIdx})`);
+  assert.ok(easy.target.w_main > neutral.target.w_main, 'easy rating should measurably increase target score vs neutral');
+
+  assert.notDeepEqual(neutralTop3, hardTop3, 'hard rating should change top-3 composition/order');
+  assert.deepEqual(neutralTop3, easyTop3, 'easy rating may keep top-3 stable when target is already first');
+});
 
 test('E2E regression: difficulty_rating=1 zapisane w save-session obniża ranking targetu w generate-plan', async () => {
   authHelper.pool.connect = createInMemoryDb().connect;
@@ -256,7 +290,7 @@ test('E2E regression: difficulty_rating=1 zapisane w save-session obniża rankin
   await saveDifficultyRating('difficulty-penalty-user', 1);
   const { target, neutralPeer } = await generateWithDebugRanking('difficulty-penalty-user');
 
-  assert.equal(target.breakdown.difficultyAdjust, 0.94);
+  assert.equal(target.breakdown.difficultyAdjust, 0.88);
   assert.equal(neutralPeer.breakdown.difficultyAdjust, 1);
   assert.ok(target.w_main < neutralPeer.w_main, `penalty scenario should lower target score (${target.w_main} < ${neutralPeer.w_main})`);
 });
@@ -267,7 +301,7 @@ test('E2E regression: difficulty_rating=-1 zapisane w save-session daje bonus ra
   await saveDifficultyRating('difficulty-bonus-user', -1);
   const { target, neutralPeer } = await generateWithDebugRanking('difficulty-bonus-user');
 
-  assert.equal(target.breakdown.difficultyAdjust, 1.03);
+  assert.equal(target.breakdown.difficultyAdjust, 1.07);
   assert.equal(neutralPeer.breakdown.difficultyAdjust, 1);
   assert.ok(target.w_main > neutralPeer.w_main, `bonus scenario should raise target score (${target.w_main} > ${neutralPeer.w_main})`);
 });

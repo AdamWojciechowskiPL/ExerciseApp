@@ -1,6 +1,6 @@
 {
   "name": "aplikacja-treningowa",
-  "version": "5.0.51",
+  "version": "5.0.52",
   "description": "Aplikacja do śledzenia planów treningowych.",
   "main": "app.js",
   "private": true,
@@ -8,10 +8,13 @@
     "test": "node tests/run.js",
     "lint": "npm run lint:css && npm run lint:js",
     "lint:css": "stylelint \"*.css\" \"css/**/*.css\"",
-    "lint:js": "node tests/smoke/js-syntax-check.js",
-    "smoke": "npm run lint:js && npm run smoke:manifest",
-    "test:ci": "npm run test && npm run smoke",
-    "smoke:manifest": "node tests/smoke/manifest-check.js"
+    "lint:js": "npm run lint:js:eslint && npm run lint:js:syntax",
+    "smoke": "npm run smoke:manifest && npm run smoke:assets",
+    "test:ci": "npm run test && npm run lint && npm run smoke",
+    "smoke:manifest": "node tests/smoke/manifest-check.js",
+    "lint:js:eslint": "eslint . --max-warnings=0",
+    "lint:js:syntax": "node tests/smoke/js-syntax-check.js",
+    "smoke:assets": "node tests/smoke/asset-paths-check.js"
   },
   "author": "",
   "license": "ISC",

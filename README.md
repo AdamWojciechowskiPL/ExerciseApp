@@ -1,11 +1,22 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v5.0.51
+# Aplikacja Treningowa (Smart Rehab PWA) v5.0.52
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
+## ✅ Kontrola jakości (lokalnie)
+
+* `npm run lint` — uruchamia `stylelint` oraz pełny lint JS (`ESLint + smoke syntax check`).
+* `npm run smoke` — uruchamia smoke check manifestu i check spójności assetów/ścieżek.
+* `npm run test:ci` — pełny gate lokalny: testy + lint + smoke (analogicznie do CI).
+
 ---
 
+## 🆕 Aktualizacje v5.0.52
 
-
+* Podbito wersję aplikacji do `5.0.52`.
+* Dodano prawdziwy lint JavaScript oparty o ESLint (`eslint.config.mjs`) z regułami: `no-unused-vars`, `no-undef`, `no-unreachable`; kontrola nieużywanych importów jest realizowana przez `no-unused-vars` (importy są traktowane jako zmienne).
+* Zachowano osobny smoke syntax check (`tests/smoke/js-syntax-check.js`) i włączono go do `lint:js` obok ESLint.
+* Dodano check spójności assetów i ścieżek (`tests/smoke/asset-paths-check.js`) weryfikujący zasoby linkowane w `index.html` oraz app shell z `service-worker.js`.
+* Zaktualizowano skrypty jakościowe (`lint`, `smoke`, `test:ci`) oraz instrukcję uruchamiania lint/checków lokalnie.
 
 ## 🆕 Aktualizacje v5.0.51
 

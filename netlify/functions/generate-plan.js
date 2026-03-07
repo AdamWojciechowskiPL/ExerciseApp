@@ -45,6 +45,9 @@ const MAX_BUCKET_CAPACITY = 120;
 const DIRECTIONAL_BIAS_PENALTY_MULTIPLIER = 0.82;
 const DIFFICULTY_RATING_SOFT_PENALTY = 0.88;
 const DIFFICULTY_RATING_SOFT_BONUS = 1.07;
+const AFFINITY_SCORE_TO_MULTIPLIER_FACTOR = 0.005;
+const AFFINITY_MULTIPLIER_MIN = 0.80;
+const AFFINITY_MULTIPLIER_MAX = 1.20;
 
 
 const HIGH_INTENSITY_PRIMARY_GOALS = new Set(['fat_loss', 'sport_return']);
@@ -754,18 +757,15 @@ function calculateScoreComponents(ex, section, userData, ctx, categoryWeights, s
     goal = goalMultiplierForExercise(ex, userData, ctx);
     variety = varietyPenalty(ex, state, section);
 
-    // --- FIX: AFFINITY LOGIC (User Request) ---
+    // Affinity score pełni rolę miękkiego sygnału adherencji i nie dominuje rankingu.
+    // Dodatkowo clamp utrzymuje wpływ w bezpiecznym zakresie.
     let pref = { score: 0, difficultyRating: 0 };
     if (state.preferencesMap) {
         pref = state.preferencesMap[ex.id] || pref;
         const affScore = pref.score || 0;
-        if (affScore > 0) {
-            affinity = 1.0 + (affScore * 0.02);
-        } else if (affScore < 0) {
-            affinity = Math.max(0.1, 1.0 + (affScore * 0.02));
-        }
+        const rawAffinityMultiplier = 1.0 + (affScore * AFFINITY_SCORE_TO_MULTIPLIER_FACTOR);
+        affinity = clamp(rawAffinityMultiplier, AFFINITY_MULTIPLIER_MIN, AFFINITY_MULTIPLIER_MAX);
     }
-    // ------------------------------------------
 
     // difficulty_rating pozostaje miękkim, wtórnym sygnałem rankingowym.
     // Wagi są asymetryczne: mocniejsza kara za "hard" niż bonus za "easy",

@@ -147,6 +147,24 @@ test('Difficulty rating soft-adjust: hard lowers score, easy mildly raises score
   assert.ok(easy > neutral, `Easy difficulty flag should modestly increase score (${easy} > ${neutral})`);
 });
 
+
+
+test('Affinity multiplier is softly scaled and clamped to 0.80-1.20', () => {
+  const ex = makeExercise({ id: 'affinity-clamp', category_id: 'core_stability' });
+  const weights = { core_stability: 1.0 };
+
+  const neutral = getScore(ex, weights, {}, null, { 'affinity-clamp': { score: 0, difficultyRating: 0 } });
+  const oneLike = getScore(ex, weights, {}, null, { 'affinity-clamp': { score: 15, difficultyRating: 0 } });
+  const oneDislike = getScore(ex, weights, {}, null, { 'affinity-clamp': { score: -30, difficultyRating: 0 } });
+  const maxLike = getScore(ex, weights, {}, null, { 'affinity-clamp': { score: 100, difficultyRating: 0 } });
+  const maxDislike = getScore(ex, weights, {}, null, { 'affinity-clamp': { score: -100, difficultyRating: 0 } });
+
+  assert.ok(Math.abs(oneLike / neutral - 1.075) < 0.001, `Expected ~1.075x for one like, got ${oneLike / neutral}`);
+  assert.ok(Math.abs(oneDislike / neutral - 0.85) < 0.001, `Expected ~0.85x for one dislike, got ${oneDislike / neutral}`);
+  assert.ok(Math.abs(maxLike / neutral - 1.2) < 0.001, `Expected clamp at 1.2x, got ${maxLike / neutral}`);
+  assert.ok(Math.abs(maxDislike / neutral - 0.8) < 0.001, `Expected clamp at 0.8x, got ${maxDislike / neutral}`);
+});
+
 test('Difficulty rating does not bypass phase safety filters', () => {
   const ex = makeExercise({ id: 'blocked-by-phase', category_id: 'core_stability', difficulty_level: 5 });
   const weights = { core_stability: 2.0 };
@@ -198,7 +216,7 @@ test('Component flags: stability changes top-k, breathing changes weights', () =
   assert.ok(breathingWeights.breathing > baseWeights.breathing, 'breathing flag should raise breathing category weight');
 });
 
-test('Component flags: breathing changes ranking order of candidates', () => {
+test('Component flags: breathing boost still increases candidate score under negative affinity', () => {
   const exercisePool = [
     makeExercise({ id: 'breath', category_id: 'breathing' }),
     makeExercise({ id: 'core-stab', category_id: 'core_stability' })
@@ -209,7 +227,7 @@ test('Component flags: breathing changes ranking order of candidates', () => {
   const baseWeights = plan.buildDynamicCategoryWeights(exercisePool, { ...baseUser, session_component_weights: [] }, baseCtx);
   const breathingWeights = plan.buildDynamicCategoryWeights(exercisePool, { ...baseUser, session_component_weights: ['breathing'] }, baseCtx);
 
-  const rank = (weights) => {
+  const scoreFor = (weights, id) => {
     const state = {
       usedIds: new Set(),
       weeklyUsage: new Map(),
@@ -223,14 +241,15 @@ test('Component flags: breathing changes ranking order of candidates', () => {
       }
     };
     const ctx = plan.safeBuildUserContext(baseUser);
-    return exercisePool
-      .map((ex) => ({ id: ex.id, score: plan.scoreExercise(ex, 'cooldown', baseUser, ctx, weights, state, new Set(), null, null) }))
-      .sort((a, b) => b.score - a.score)
-      .map((x) => x.id);
+    const ex = exercisePool.find((item) => item.id === id);
+    return plan.scoreExercise(ex, 'cooldown', baseUser, ctx, weights, state, new Set(), null, null);
   };
 
-  const baseRanking = rank(baseWeights);
-  const breathingRanking = rank(breathingWeights);
-  assert.deepEqual(baseRanking[0], 'core-stab', 'without breathing boost, core should rank first under negative breathing preference');
-  assert.deepEqual(breathingRanking[0], 'breath', 'breathing boost should flip ranking and restore breathing candidate to first place');
+  const breathBase = scoreFor(baseWeights, 'breath');
+  const breathBoosted = scoreFor(breathingWeights, 'breath');
+  const coreBase = scoreFor(baseWeights, 'core-stab');
+
+  assert.ok(breathBoosted > breathBase, 'breathing weight should raise breathing candidate even with dislike history');
+  assert.ok(breathBase > 0, 'single dislike should not collapse breathing candidate score close to zero');
+  assert.ok(coreBase > 0, 'core candidate should remain valid baseline comparator');
 });

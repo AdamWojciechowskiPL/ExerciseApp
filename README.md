@@ -1,10 +1,22 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v29.4.35
+# Aplikacja Treningowa (Smart Rehab PWA) v5.0.40
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
 ---
 
 
+
+## 🆕 Aktualizacje v5.0.40
+
+* Podbito wersję aplikacji do `5.0.40`.
+* Ujednolicono wyświetlanie wersji w UI: footer w `index.html` nie ma już hardcodowanego numeru, tylko renderuje wersję runtime z `package.json`.
+* Naprawiono app-shell w Service Workerze: zamiast nieistniejącego `/manifest.json` cache'owany jest poprawny `/manifest.webmanifest`; dodano też `/package.json`, aby wersja była dostępna także offline.
+
+## 🆕 Aktualizacje v5.0.39
+
+* Ujednolicono wersjonowanie: jedynym źródłem prawdy jest teraz `package.json` (`version: 5.0.39`).
+* Service Worker nie wymaga już ręcznego podbijania nazwy cache przy deployu — używa stałych nazw cache i automatycznie czyści legacy cache z prefiksem wersji.
+* Ograniczono ręcznie utrzymywaną listę `APP_SHELL_ASSETS` do krytycznego shella aplikacji; pozostałe assety są dociągane i odświeżane runtime.
 
 ## 🆕 Aktualizacje v29.4.35
 

@@ -58,6 +58,25 @@ function showUpdateNotification(worker) {
 
 // === 3. GŁÓWNE FUNKCJE APLIKACJI ===
 
+function setAppVersionInFooter() {
+    const appVersionEl = document.getElementById('app-version');
+    if (!appVersionEl) return;
+
+    fetch('/package.json', { cache: 'no-store' })
+        .then((response) => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            return response.json();
+        })
+        .then((pkg) => {
+            appVersionEl.textContent = pkg?.version || 'nieznana';
+        })
+        .catch(() => {
+            appVersionEl.textContent = 'nieznana';
+        });
+}
+
 function initAppLogic() {
     renderTrainingScreen();
 
@@ -164,6 +183,7 @@ function initAppLogic() {
     if (state.tts.isSupported) { loadVoices(); if (speechSynthesis.onvoiceschanged !== undefined) speechSynthesis.onvoiceschanged = loadVoices; }
     const yearEl = document.getElementById('current-year');
     if (yearEl) yearEl.textContent = new Date().getFullYear();
+    setAppVersionInFooter();
 }
 
 function checkAndMigrateLocalData() {

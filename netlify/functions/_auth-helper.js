@@ -11,16 +11,40 @@ const pool = new Pool({
   connectionString: process.env.NETLIFY_DATABASE_URL,
 });
 
-const jwksRsaClient = jwksClient({
-  cache: true,
-  rateLimit: true,
-  jwksRequestsPerMinute: 5,
-  jwksUri: `${process.env.AUTH0_ISSUER_BASE_URL.replace(/\/$/, '')}/.well-known/jwks.json`,
-});
+const buildJwksUri = () => {
+  const issuerBaseUrl = process.env.AUTH0_ISSUER_BASE_URL;
+  if (!issuerBaseUrl) {
+    return null;
+  }
+
+  return `${issuerBaseUrl.replace(/\/$/, '')}/.well-known/jwks.json`;
+};
+
+let cachedJwksClient = null;
+
+const getJwksRsaClient = () => {
+  if (cachedJwksClient) {
+    return cachedJwksClient;
+  }
+
+  const jwksUri = buildJwksUri();
+  if (!jwksUri) {
+    throw new Error('Missing AUTH0_ISSUER_BASE_URL environment variable');
+  }
+
+  cachedJwksClient = jwksClient({
+    cache: true,
+    rateLimit: true,
+    jwksRequestsPerMinute: 5,
+    jwksUri,
+  });
+
+  return cachedJwksClient;
+};
 
 // Reszta pliku pozostaje bez żadnych zmian
 function getKey(header, callback) {
-  jwksRsaClient.getSigningKey(header.kid, function (err, key) {
+  getJwksRsaClient().getSigningKey(header.kid, function (err, key) {
     if (err) {
       callback(err);
       return;

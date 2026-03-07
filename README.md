@@ -1,10 +1,17 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v5.0.40
+# Aplikacja Treningowa (Smart Rehab PWA) v5.0.41
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
 ---
 
 
+
+## 🆕 Aktualizacje v5.0.41
+
+* Podbito wersję aplikacji do `5.0.41`.
+* Dodano standardowe skrypty jakościowe w `package.json`: `lint`, `lint:css`, `lint:js`, `smoke`, `test:ci`.
+* Podłączono `stylelint` do realnego użycia (konfiguracja `.stylelintrc.json`).
+* Dodano workflow CI `.github/workflows/quality-gate.yml`, który egzekwuje lint + testy/smoke jako minimalny quality gate dla PR.
 
 ## 🆕 Aktualizacje v5.0.40
 

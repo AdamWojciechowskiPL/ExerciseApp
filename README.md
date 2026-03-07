@@ -1,10 +1,22 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v29.4.31
+# Aplikacja Treningowa (Smart Rehab PWA) v29.4.33
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
 ---
 
 
+
+## 🆕 Aktualizacje v29.4.33
+
+* Krok `Cele Extra` (`secondary_goals`) w wizardzie jest teraz opcjonalny, aby nie blokować flow przy braku dodatkowych preferencji.
+* `secondary_goals` nadal wpływa na generator jako lekkie, niekliniczne nudges, gdy użytkownik je poda.
+* Podbito wersję aplikacji i zsynchronizowano dokumentację.
+
+## 🆕 Aktualizacje v29.4.32
+
+* Podłączono `secondary_goals` z wizarda do generatora jako lekkie, niekliniczne nudges wag kategorii (posture/core_side/energy/strength/flexibility), dzięki czemu pole nie jest już martwymi danymi.
+* Zsynchronizowano opis rankingu: `difficulty_rating = hard` ma priorytet nad dodatnią preferencją (`affinity`) i nie pozwala na dodatni bonus netto.
+* Utrzymano guardrails bezpieczeństwa bez zmian; nowe nudges dotyczą wyłącznie miękkiej warstwy rankingowej i nie służą do diagnozowania.
 
 ## 🆕 Aktualizacje v29.4.31
 
@@ -308,8 +320,9 @@ Nowatorski model **Progresji Probabilistycznej**, który działa podczas **gener
 ### 6. Feedback Loop (Affinity + kolejne generacje planu)
 Mechanizm adaptacji oparty na zapisie preferencji (`affinity_score`, `difficulty_rating`) podczas zapisu sesji i wykorzystaniu tych sygnałów przy **następnych** generacjach planu.
 
-*   **Like/Dislike (Affinity):** Aktualizuje `affinity_score`, który wzmacnia lub osłabia przyszłe pozycje w rankingu.
+*   **Like/Dislike (Affinity):** Aktualizuje `affinity_score`, który wzmacnia lub osłabia przyszłe pozycje w rankingu (w granicach soft-scoringu).
 *   **Trudność (`difficulty_rating`):** Oznaczenie "za trudne" nakłada miękką karę scoringową, a "za łatwe" daje niewielki bonus (bez omijania guardrails bezpieczeństwa).
+*   **Priorytet sygnału hard:** `difficulty_rating = hard` ma pierwszeństwo nad dodatnim `affinity` — ćwiczenie nie dostaje dodatniego bonusu netto.
 *   **Kontrakt `save-session` (jawny):**
     * `exerciseRatings[]` → `{ exerciseId: string, action: 'like' | 'dislike' }`
     * `exerciseDifficultyRatings[]` → `{ exerciseId: string, difficultyRating: -1 | 0 | 1 }`
@@ -640,6 +653,7 @@ Generator przyjmuje strukturę `wizardData` zawierającą m.in.:
 * tryb pracy (`work_type`),
 * hobby (`hobby`),
 * priorytety treningowe (`primary_goal`, `secondary_goals`, `session_component_weights`),
+  * `secondary_goals` są opcjonalne i działają jako lekkie, niekliniczne nudges rankingowe (bez wpływu na guardrails bezpieczeństwa),
 * liczba sesji w tygodniu (`sessions_per_week`) i docelowy czas sesji (`target_session_duration_min`),
 * dostępny sprzęt (`equipment_available`),
 * doświadczenie treningowe (`exercise_experience`),
@@ -684,7 +698,7 @@ Generator buduje wektor wag kategorii (`weights`) wychodząc od neutralnych wart
 * diagnoz medycznych (np. scoliosis, disc_herniation, stenosis, piriformis),
 * typu pracy,
 * hobby (np. bieganie, rower, siłownia),
-* priorytetów użytkownika (mobilność, stabilizacja, siła, oddech, postawa).
+* priorytetów użytkownika (`session_component_weights`) oraz `secondary_goals` jako miękkich, nieklinicznych nudge'ów (mobilność/postawa/energia/siła).
 
 Wagi określają, które kategorie (np. core_anti_extension, core_anti_rotation, glute_activation, hip_mobility, nerve_flossing, breathing) będą preferowane przy budowaniu sesji.
 

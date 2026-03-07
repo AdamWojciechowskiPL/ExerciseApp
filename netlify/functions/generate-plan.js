@@ -774,6 +774,8 @@ function calculateScoreComponents(ex, section, userData, ctx, categoryWeights, s
     const difficultyRating = Number(pref.difficultyRating);
     if (difficultyRating === 1) {
         difficultyAdjust = DIFFICULTY_RATING_SOFT_PENALTY;
+        // Priorytet sygnału "za trudne": dodatni affinity nie może dać bonusu netto.
+        affinity = Math.min(affinity, 1.0);
     } else if (difficultyRating === -1) {
         difficultyAdjust = DIFFICULTY_RATING_SOFT_BONUS;
     }

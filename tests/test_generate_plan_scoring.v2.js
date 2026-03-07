@@ -165,6 +165,17 @@ test('Affinity multiplier is softly scaled and clamped to 0.80-1.20', () => {
   assert.ok(Math.abs(maxDislike / neutral - 0.8) < 0.001, `Expected clamp at 0.8x, got ${maxDislike / neutral}`);
 });
 
+
+test('Difficulty hard clamps positive affinity to neutral (no net bonus)', () => {
+  const ex = makeExercise({ id: 'hard-clamp', category_id: 'core_stability' });
+  const weights = { core_stability: 1.0 };
+
+  const neutral = getScore(ex, weights, {}, null, { 'hard-clamp': { score: 0, difficultyRating: 0 } });
+  const hardPositiveAffinity = getScore(ex, weights, {}, null, { 'hard-clamp': { score: 40, difficultyRating: 1 } });
+
+  assert.ok(hardPositiveAffinity <= neutral, `Hard flag should block positive affinity net bonus (${hardPositiveAffinity} <= ${neutral})`);
+});
+
 test('Difficulty rating does not bypass phase safety filters', () => {
   const ex = makeExercise({ id: 'blocked-by-phase', category_id: 'core_stability', difficulty_level: 5 });
   const weights = { core_stability: 2.0 };

@@ -1,10 +1,16 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v29.4.25
+# Aplikacja Treningowa (Smart Rehab PWA) v29.4.26
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
 ---
 
 
+
+## 🆕 Aktualizacje v29.4.26
+
+* Usunięto martwą gałąź budowania payloadu affinity opartą o nieistniejące akcje typu `hard`; kanał `exerciseRatings` zawiera już wyłącznie `like/dislike`.
+* Ujednolicono budowę payloadu w Summary: affinity (`exerciseRatings`) i trudność (`exerciseDifficultyRatings`) są składane przez osobne, jawne ścieżki.
+* Dodano regresyjny test jednostkowy potwierdzający rozdzielenie kanałów feedbacku i brak przecieku sygnału `hard` do pola `action`.
 
 ## 🆕 Aktualizacje v29.4.25
 

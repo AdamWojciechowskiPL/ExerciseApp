@@ -8,6 +8,7 @@ import { clearSessionBackup } from '../../sessionRecovery.js';
 import { clearPlanFromStorage } from './dashboard.js';
 import { checkNewBadges } from '../../gamification.js';
 import { mapDifficultySelectionToRating, buildExerciseDifficultyRatingsPayload } from '../../shared/exercise-difficulty-rating.mjs';
+import { buildExerciseRatingsPayload } from '../../shared/summary-feedback-payload.mjs';
 
 let selectedFeedback = {
     type: 'pain_monitoring',
@@ -398,18 +399,10 @@ export async function handleSummarySubmit(e) {
     submitBtn.textContent = "Zapisywanie...";
     showLoader();
 
-    const ratingsArray = [];
-    const difficultyRatingsArray = buildExerciseDifficultyRatingsPayload(sessionDifficultyRatings);
     const ratingCards = e.target.querySelectorAll('.rating-card');
-
-    ratingCards.forEach(card => {
-        const id = card.dataset.id;
-        const delta = sessionAffinityDeltas[id];
-        if (delta) {
-            const action = delta === SCORE_LIKE ? 'like' : 'dislike';
-            ratingsArray.push({ exerciseId: id, action: action });
-        }
-    });
+    const exerciseIds = Array.from(ratingCards).map(card => card.dataset.id);
+    const ratingsArray = buildExerciseRatingsPayload(sessionAffinityDeltas, exerciseIds);
+    const difficultyRatingsArray = buildExerciseDifficultyRatingsPayload(sessionDifficultyRatings);
 
     if (state.sessionLog) {
         state.sessionLog.forEach(entry => {

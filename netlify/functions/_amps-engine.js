@@ -145,15 +145,31 @@ function inferMissingSessionData(sessionLog, feedback, userSettings = {}) {
  * AMPS: PREFERENCES ENGINE
  * Aktualizacja Affinity Score (Lubi/Nie lubi)
  */
-async function updatePreferences(client, userId, ratings) {
-    if (!ratings || !Array.isArray(ratings) || ratings.length === 0) return;
+function normalizeDifficultyRating(value) {
+    const parsed = Number(value);
+    if (parsed === -1 || parsed === 0 || parsed === 1) return parsed;
+    return null;
+}
+
+async function updatePreferences(client, userId, ratings = [], difficultyRatings = []) {
+    const hasAffinityRatings = Array.isArray(ratings) && ratings.length > 0;
+    const hasDifficultyRatings = Array.isArray(difficultyRatings) && difficultyRatings.length > 0;
+    if (!hasAffinityRatings && !hasDifficultyRatings) return;
 
     const scoreDeltas = new Map();
+    const difficultyMap = new Map();
 
-    ratings.forEach(r => {
+    (hasAffinityRatings ? ratings : []).forEach(r => {
         const exId = String(r.exerciseId);
         if (r.action === 'like') scoreDeltas.set(exId, SCORE_LIKE_INCREMENT);
         else if (r.action === 'dislike') scoreDeltas.set(exId, -SCORE_DISLIKE_DECREMENT);
+    });
+
+    (hasDifficultyRatings ? difficultyRatings : []).forEach(r => {
+        const exId = String(r.exerciseId || '');
+        const normalized = normalizeDifficultyRating(r.difficultyRating);
+        if (!exId || normalized === null) return;
+        difficultyMap.set(exId, normalized);
     });
 
     for (const [exerciseId, delta] of scoreDeltas.entries()) {
@@ -165,6 +181,17 @@ async function updatePreferences(client, userId, ratings) {
                 updated_at = CURRENT_TIMESTAMP
         `;
         await client.query(sql, [userId, exerciseId, delta]);
+    }
+
+    for (const [exerciseId, difficultyRating] of difficultyMap.entries()) {
+        const sql = `
+            INSERT INTO user_exercise_preferences (user_id, exercise_id, difficulty_rating, updated_at)
+            VALUES ($1, $2, $3::INTEGER, CURRENT_TIMESTAMP)
+            ON CONFLICT (user_id, exercise_id) DO UPDATE SET
+                difficulty_rating = $3::INTEGER,
+                updated_at = CURRENT_TIMESTAMP
+        `;
+        await client.query(sql, [userId, exerciseId, difficultyRating]);
     }
 }
 

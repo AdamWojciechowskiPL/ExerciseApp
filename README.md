@@ -1,10 +1,16 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v29.4.26
+# Aplikacja Treningowa (Smart Rehab PWA) v29.4.27
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
 ---
 
 
+
+## 🆕 Aktualizacje v29.4.27
+
+* Rozdzielono i utwardzono kontrakt `save-session`: `exerciseRatings` obsługuje wyłącznie affinity (`like`/`dislike`), a `exerciseDifficultyRatings` wyłącznie trudność (`difficultyRating` = `-1|0|1`).
+* Backend waliduje oba strumienie wejściowe i zwraca `400` dla wartości spoza dozwolonego zbioru (bez cichego zgadywania intencji użytkownika).
+* Dodano contract tests dla poprawnych i błędnych payloadów oraz regresję potwierdzającą kompatybilność scenariuszy legacy bez `exerciseDifficultyRatings`.
 
 ## 🆕 Aktualizacje v29.4.26
 
@@ -280,6 +286,10 @@ Mechanizm adaptacji oparty na zapisie preferencji (`affinity_score`, `difficulty
 
 *   **Like/Dislike (Affinity):** Aktualizuje `affinity_score`, który wzmacnia lub osłabia przyszłe pozycje w rankingu.
 *   **Trudność (`difficulty_rating`):** Oznaczenie "za trudne" nakłada miękką karę scoringową, a "za łatwe" daje niewielki bonus (bez omijania guardrails bezpieczeństwa).
+*   **Kontrakt `save-session` (jawny):**
+    * `exerciseRatings[]` → `{ exerciseId: string, action: 'like' | 'dislike' }`
+    * `exerciseDifficultyRatings[]` → `{ exerciseId: string, difficultyRating: -1 | 0 | 1 }`
+    * Każdy kanał jest walidowany niezależnie; wartości spoza kontraktu są odrzucane kodem `400`.
 *   **Uwaga:** natychmiastowe podmiany Injection/Ejection w bieżącym JSON planu nie są obecnie aktywne (placeholder w `_amps-engine.js`).
 
 ### 7. Bio-Protocol Hub (Front-end)

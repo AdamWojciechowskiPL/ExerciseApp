@@ -1,6 +1,6 @@
 {
   "name": "aplikacja-treningowa",
-  "version": "5.0.29",
+  "version": "5.0.30",
   "description": "Aplikacja do śledzenia planów treningowych.",
   "main": "app.js",
   "private": true,

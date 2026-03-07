@@ -1,10 +1,16 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v5.0.41
+# Aplikacja Treningowa (Smart Rehab PWA) v5.0.42
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
 ---
 
 
+
+## 🆕 Aktualizacje v5.0.42
+
+* Podbito wersję aplikacji do `5.0.42`.
+* Rozbito `netlify/functions/generate-plan.js` na moduły odpowiedzialności: walidację requestu (`generate-plan/request-validation.js`) oraz warstwę repository/DB (`generate-plan/repositories.js`), a handler endpointu korzysta teraz z tych modułów bez zmiany kontraktu API.
+* Dodano testy jednostkowe dla nowych modułów: `tests/test_generate_plan_request_validation.v2.js` i `tests/test_generate_plan_repositories.v2.js`.
 
 ## 🆕 Aktualizacje v5.0.41
 

@@ -29,6 +29,18 @@ const {
     PHASE_IDS
 } = require('./phase-catalog.js');
 
+const {
+    safeJsonParse,
+    hasPositiveMedicalScreening,
+    hasHardStopMedicalScreening,
+    hasConditionalMedicalScreening,
+    isActivityInsufficientForHighIntensity,
+    isHighIntensityIntent,
+    isCautiousOnlyIntent,
+    validateGeneratePlanRequest
+} = require('./generate-plan/request-validation.js');
+const { fetchPlanGenerationData } = require('./generate-plan/repositories.js');
+
 // ============================================================================
 // 1. CONSTANTS & CONFIG
 // ============================================================================
@@ -49,74 +61,6 @@ const AFFINITY_SCORE_TO_MULTIPLIER_FACTOR = 0.005;
 const AFFINITY_MULTIPLIER_MIN = 0.80;
 const AFFINITY_MULTIPLIER_MAX = 1.20;
 
-
-const HIGH_INTENSITY_PRIMARY_GOALS = new Set(['fat_loss', 'sport_return']);
-const CAUTIOUS_PRIMARY_GOALS = new Set(['mobility', 'pain_relief', 'prevention']);
-const HARD_STOP_MEDICAL_SCREENING_FIELDS = new Set([
-    'chest_pain_exertional',
-    'syncope_exertional',
-    'dyspnea_disproportionate',
-    'recent_cardiac_event',
-    'uncontrolled_hypertension'
-]);
-const CONDITIONAL_MEDICAL_SCREENING_FIELDS = new Set(['cvd', 'metabolic', 'renal']);
-const HIGH_INTENSITY_ACTIVITY_BLOCK_LIST = new Set(['inactive', 'light_regular']);
-
-function hasPositiveMedicalScreening(clearance = {}) {
-    if (!clearance || typeof clearance !== 'object') return false;
-    for (const [key, value] of Object.entries(clearance)) {
-        if (key === 'none') continue;
-        if (value === true) return true;
-    }
-    return false;
-}
-
-function hasHardStopMedicalScreening(clearance = {}) {
-    if (!clearance || typeof clearance !== 'object') return false;
-    for (const field of HARD_STOP_MEDICAL_SCREENING_FIELDS) {
-        if (clearance[field] === true) return true;
-    }
-    return false;
-}
-
-function hasConditionalMedicalScreening(clearance = {}) {
-    if (!clearance || typeof clearance !== 'object') return false;
-    for (const field of CONDITIONAL_MEDICAL_SCREENING_FIELDS) {
-        if (clearance[field] === true) return true;
-    }
-    return false;
-}
-
-function isActivityInsufficientForHighIntensity(userData = {}) {
-    const status = String(userData.current_activity_status || '').toLowerCase();
-    return HIGH_INTENSITY_ACTIVITY_BLOCK_LIST.has(status);
-}
-
-function isHighIntensityIntent(userData = {}) {
-    const goal = String(userData.primary_goal || '').toLowerCase();
-    const componentWeights = Array.isArray(userData.session_component_weights)
-        ? userData.session_component_weights.map((v) => String(v || '').toLowerCase())
-        : [];
-    const focusLocs = Array.isArray(userData.focus_locations)
-        ? userData.focus_locations.map((v) => String(v || '').toLowerCase())
-        : [];
-    return HIGH_INTENSITY_PRIMARY_GOALS.has(goal)
-        || componentWeights.includes('conditioning')
-        || focusLocs.includes('metabolic');
-}
-
-function isCautiousOnlyIntent(userData = {}) {
-    const goal = String(userData.primary_goal || '').toLowerCase();
-    const componentWeights = Array.isArray(userData.session_component_weights)
-        ? userData.session_component_weights.map((v) => String(v || '').toLowerCase())
-        : [];
-    const focusLocs = Array.isArray(userData.focus_locations)
-        ? userData.focus_locations.map((v) => String(v || '').toLowerCase())
-        : [];
-    const hasConditioning = componentWeights.includes('conditioning');
-    const hasMetabolicFocus = focusLocs.includes('metabolic');
-    return CAUTIOUS_PRIMARY_GOALS.has(goal) && !hasConditioning && !hasMetabolicFocus;
-}
 
 const PAIN_CONFIG = {
     maxPainDuring: {
@@ -142,11 +86,6 @@ const PAIN_CONFIG = {
 // ============================================================================
 // 2. UTILITY HELPERS
 // ============================================================================
-
-function safeJsonParse(body) {
-    if (!body) return {};
-    try { return JSON.parse(body); } catch (e) { return null; }
-}
 
 function toNumber(val, fallback) {
     const n = Number(val);
@@ -1618,182 +1557,42 @@ function validateAndCorrectPlan(plan, phaseContext) {
 
 exports.handler = async (event) => {
     if (event.httpMethod !== 'POST') return { statusCode: 405 };
-    let userId; try { userId = await getUserIdFromEvent(event); } catch (e) { return { statusCode: 401 }; }
-    const parsedUserData = safeJsonParse(event.body);
-    if (!parsedUserData) return { statusCode: 400 };
-    const userData = normalizeWizardPayload(parsedUserData);
 
-    const redFlagsRaw = parsedUserData?.red_flags;
-    if (redFlagsRaw !== undefined && !Array.isArray(redFlagsRaw)) {
-        return { statusCode: 400, body: JSON.stringify({ error: 'INVALID_RED_FLAGS_PAYLOAD' }) };
-    }
+    let userId;
+    try { userId = await getUserIdFromEvent(event); } catch (e) { return { statusCode: 401 }; }
 
-    const redFlags = normalizeLowerSet(redFlagsRaw);
-    const allowedRedFlags = new Set((CANONICAL.red_flags || []).map((flag) => String(flag).toLowerCase()));
+    const requestValidation = validateGeneratePlanRequest(event, userId, {
+        normalizeWizardPayload,
+        normalizeLowerSet,
+        CANONICAL
+    });
+    if (!requestValidation.ok) return requestValidation.response;
 
-    for (const flag of redFlags) {
-        if (!allowedRedFlags.has(flag)) {
-            return { statusCode: 400, body: JSON.stringify({ error: 'INVALID_RED_FLAG_VALUE', value: flag }) };
-        }
-    }
-
-    const hasRedFlags = redFlags.size > 0 && !redFlags.has('none');
-    if (hasRedFlags) {
-        console.warn(`[PlanGen] User: ${userId}, status=ineligible_for_plan, reason=red_flags`);
-        return {
-            statusCode: 422,
-            body: JSON.stringify({
-                error: 'RED_FLAGS_HARD_STOP',
-                status: 'ineligible_for_plan',
-                message: 'Wykryto objawy alarmowe. Plan nie został wygenerowany — skonsultuj się z lekarzem lub fizjoterapeutą.'
-            })
-        };
-    }
-
-
-    const medicalScreeningRaw = parsedUserData?.exercise_medical_clearance;
-    if (medicalScreeningRaw === undefined) {
-        return { statusCode: 422, body: JSON.stringify({ error: 'MISSING_MEDICAL_SCREENING_ANSWER', field: 'exercise_medical_clearance' }) };
-    }
-    if (medicalScreeningRaw === null || Array.isArray(medicalScreeningRaw) || typeof medicalScreeningRaw !== 'object') {
-        return { statusCode: 400, body: JSON.stringify({ error: 'INVALID_MEDICAL_SCREENING_PAYLOAD' }) };
-    }
-
-    const screeningKeys = new Set(Object.keys(userData.exercise_medical_clearance || {}));
-    const requiredScreeningKeys = new Set(CANONICAL.exercise_medical_clearance_fields || []);
-
-    if (requiredScreeningKeys.size > 0) {
-        for (const key of requiredScreeningKeys) {
-            if (!screeningKeys.has(key)) {
-                return { statusCode: 422, body: JSON.stringify({ error: 'MISSING_MEDICAL_SCREENING_ANSWER', field: key }) };
-            }
-            if (typeof userData.exercise_medical_clearance[key] !== 'boolean') {
-                return { statusCode: 400, body: JSON.stringify({ error: 'INVALID_MEDICAL_SCREENING_VALUE', field: key }) };
-            }
-        }
-    }
-
-    if (!userData.current_activity_status) {
-        return { statusCode: 422, body: JSON.stringify({ error: 'MISSING_CURRENT_ACTIVITY_STATUS', field: 'current_activity_status' }) };
-    }
-    if (!Array.isArray(CANONICAL.current_activity_status) || !CANONICAL.current_activity_status.includes(userData.current_activity_status)) {
-        return { statusCode: 400, body: JSON.stringify({ error: 'INVALID_CURRENT_ACTIVITY_STATUS', field: 'current_activity_status' }) };
-    }
-
-    const highIntensityIntent = isHighIntensityIntent(userData);
-    const medicalScreeningPositive = hasPositiveMedicalScreening(userData.exercise_medical_clearance);
-    const hardStopMedicalScreening = hasHardStopMedicalScreening(userData.exercise_medical_clearance);
-    const conditionalMedicalScreening = hasConditionalMedicalScreening(userData.exercise_medical_clearance);
-
-    if (hardStopMedicalScreening) {
-        console.warn(`[PlanGen] User: ${userId}, status=ineligible_for_plan, reason=medical_screening_hard_stop`);
-        return {
-            statusCode: 422,
-            body: JSON.stringify({
-                error: 'MEDICAL_SCREENING_HARD_STOP',
-                status: 'ineligible_for_plan',
-                message: 'Wykryto objawy wysiłkowe wysokiego ryzyka. Plan nie może zostać wygenerowany bez pilnej konsultacji medycznej.'
-            })
-        };
-    }
-
-    const activityRiskForHighIntensity = isActivityInsufficientForHighIntensity(userData) && medicalScreeningPositive;
-    if (highIntensityIntent && (medicalScreeningPositive || activityRiskForHighIntensity)) {
-        console.warn(`[PlanGen] User: ${userId}, status=ineligible_for_plan, reason=medical_screening_high_intensity`);
-        return {
-            statusCode: 422,
-            body: JSON.stringify({
-                error: 'MEDICAL_SCREENING_HIGH_INTENSITY_BLOCK',
-                status: 'ineligible_for_plan',
-                message: 'Nie możemy wygenerować planu o wyższej intensywności bez konsultacji medycznej. Wybierz plan low-intensity lub skonsultuj się z lekarzem.'
-            })
-        };
-    }
-
-    if (conditionalMedicalScreening && !isCautiousOnlyIntent(userData)) {
-        console.warn(`[PlanGen] User: ${userId}, status=ineligible_for_plan, reason=medical_screening_cautious_only`);
-        return {
-            statusCode: 422,
-            body: JSON.stringify({
-                error: 'MEDICAL_SCREENING_CONDITIONAL_REQUIRES_CAUTIOUS_FLOW',
-                status: 'ineligible_for_plan',
-                message: 'Przy dodatnim screeningu warunkowym dostępne są wyłącznie plany low-intensity / rehab / mobility.'
-            })
-        };
-    }
+    const { userData } = requestValidation;
 
     const client = await pool.connect();
     try {
-        const [eR, bR, pR, hR, sR, recentSessionsR, oR, fatigueProfile, settingsR] = await Promise.all([
-            client.query('SELECT * FROM exercises'),
-            client.query('SELECT exercise_id FROM user_exercise_blacklist WHERE user_id = $1', [userId]),
-            client.query('SELECT exercise_id, affinity_score, difficulty_rating FROM user_exercise_preferences WHERE user_id = $1', [userId]),
-            client.query(`SELECT session_data->'sessionLog' as logs, completed_at FROM training_sessions WHERE user_id = $1 AND completed_at > NOW() - INTERVAL '30 days'`, [userId]),
-            client.query('SELECT exercise_id, avg_seconds_per_rep FROM user_exercise_stats WHERE user_id = $1', [userId]),
-            client.query(`SELECT completed_at, session_data->'feedback' as feedback FROM training_sessions WHERE user_id = $1 ORDER BY completed_at DESC LIMIT 3`, [userId]),
-            client.query('SELECT original_exercise_id, replacement_exercise_id, adjustment_type FROM user_plan_overrides WHERE user_id = $1', [userId]),
-            calculateFatigueProfile(client, userId),
-            client.query('SELECT settings FROM user_settings WHERE user_id = $1', [userId])
-        ]);
-
-        const exercises = eR.rows.map(r => normalizeExerciseRow(r, userData.exercise_experience));
-        const ctx = safeBuildUserContext(userData);
-        bR.rows.forEach(r => ctx.blockedIds.add(r.exercise_id));
-        const preferencesMap = {}; pR.rows.forEach(r => preferencesMap[r.exercise_id] = { score: r.affinity_score, difficultyRating: r.difficulty_rating });
-
-        const historyMap = {};
-        hR.rows.forEach(r => {
-            const sessionDate = new Date(r.completed_at);
-            (r.logs || []).forEach(l => {
-                const id = l.exerciseId || l.id;
-                if (!id) return;
-
-                const existing = historyMap[id];
-                const sameSession = existing && existing.date && sessionDate.getTime() === existing.date.getTime();
-                const incomingSet = Number.isFinite(Number(l.currentSet)) ? Number(l.currentSet) : 0;
-                const existingSet = Number.isFinite(Number(existing?.currentSet)) ? Number(existing.currentSet) : 0;
-                const shouldReplace = !existing
-                    || sessionDate > existing.date
-                    || (sameSession && incomingSet >= existingSet);
-
-                if (shouldReplace) {
-                    historyMap[id] = {
-                        date: sessionDate,
-                        rir: l.rir,
-                        rating: l.rating,
-                        difficultyDeviation: l.difficultyDeviation,
-                        currentSet: l.currentSet,
-                        totalSets: l.totalSets,
-                        tech: l.tech
-                    };
-                }
-            });
+        const generationData = await fetchPlanGenerationData(client, userId, userData, {
+            normalizeExerciseRow,
+            safeBuildUserContext,
+            analyzeRpeTrend,
+            analyzePainResponse,
+            calculateFatigueProfile
         });
 
-        const progressionMap = { sources: new Map(), targets: new Set(), overridesByOriginal: new Map() };
-        oR.rows.forEach(r => {
-            progressionMap.overridesByOriginal.set(r.original_exercise_id, r);
-            if (r.adjustment_type === 'evolution') {
-                progressionMap.sources.set(r.original_exercise_id, r.replacement_exercise_id);
-                progressionMap.targets.add(r.replacement_exercise_id);
-            }
-            if (r.adjustment_type === 'devolution') {
-                progressionMap.sources.set(r.original_exercise_id, r.replacement_exercise_id);
-                progressionMap.targets.add(r.replacement_exercise_id);
-            }
-            if (r.adjustment_type === 'micro_dose') {
-                const existing = historyMap[r.original_exercise_id] || {};
-                historyMap[r.original_exercise_id] = { ...existing, forceMicroDose: true };
-            }
-        });
-        const paceMap = {}; sR.rows.forEach(r => { paceMap[r.exercise_id] = parseFloat(r.avg_seconds_per_rep); });
-        const recentSessions = recentSessionsR.rows;
-        const rpeData = analyzeRpeTrend(recentSessions);
-        const painData = analyzePainResponse(recentSessions);
-        ctx.directionalNegative24hCount = painData.directionalNegative24hCount || 0;
-        if (ctx.toleranceBias && ctx.directionalNegative24hCount >= 2) ctx.toleranceBias.strength = 1;
+        const {
+            exercises,
+            ctx,
+            preferencesMap,
+            historyMap,
+            progressionMap,
+            paceMap,
+            rpeData,
+            painData,
+            fatigueProfile
+        } = generationData;
 
-        let settings = settingsR.rows[0]?.settings || {};
+        let settings = generationData.settings || {};
         let phaseState = settings.phase_manager;
 
         if (!phaseState) { phaseState = initializePhaseState(userData.primary_goal, userData); }

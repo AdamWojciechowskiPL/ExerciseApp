@@ -1,10 +1,16 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v5.0.46
+# Aplikacja Treningowa (Smart Rehab PWA) v5.0.47
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
 ---
 
 
+
+## 🆕 Aktualizacje v5.0.47
+
+* Podbito wersję aplikacji do `5.0.47`.
+* Usunięto warstwę compatibility `shared/clinical-rules-core.js` (legacy shim CommonJS przekierowujący do `shared/clinical-core/index.js`), ponieważ stara ścieżka importu nie była już używana.
+* Zaktualizowano dokumentację architektury repo: kliniczny rdzeń FE/BE jest utrzymywany bezpośrednio w `shared/clinical-core/`, a `clinicalEngine.js` i `netlify/functions/_clinical-rule-engine.js` działają jako adaptery.
 
 ## 🆕 Aktualizacje v5.0.46
 
@@ -218,7 +224,7 @@ Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening
 
 ## 🆕 Aktualizacje v29.4.10
 
-* Ujednolicono FE/BE Clinical Engine do wspólnego modułu `shared/clinical-rules-core.js` — kluczowe reguły (`detectTolerancePattern`, budowa kontekstu, `passesTolerancePattern`, `checkExerciseAvailability`, severe pain, knee/neck/overhead restrictions) są utrzymywane w jednym miejscu.
+* Ujednolicono FE/BE Clinical Engine do współdzielonego modułu `shared/clinical-core/` — kluczowe reguły (`detectTolerancePattern`, budowa kontekstu, `passesTolerancePattern`, `checkExerciseAvailability`, severe pain, knee/neck/overhead restrictions) są utrzymywane w jednym miejscu.
 * Frontend (`clinicalEngine.js`) i backend (`_clinical-rule-engine.js`) korzystają teraz z tej samej implementacji rdzenia reguł, co eliminuje drift decyzji allowed/reason między warstwami.
 * Rozszerzono test parity FE/BE o macierz przypadków bezpieczeństwa i tolerancji (knee pain, disc herniation, severe pain, no_kneeling, no_twisting, overhead, sciatica, tolerance soft bias, follow-up escalation).
 * Dodano regresję dla nowych pól objawowych (`symptom_onset`, `symptom_duration`, `symptom_trend`) obejmującą scenariusze porównawcze ostre/przewlekłe oraz test odporności na brak pól.
@@ -443,7 +449,7 @@ Projekt posiada zestaw testów regresyjnych w katalogu `/tests`:
 │   ├── protocolGenerator.js    # Generator Bio-Protokołów (Time-Boxing logic)
 │   ├── workoutMixer.js         # Mixer v3.0 Lite (Manual swap logic) + Helpery Dewolucji (szukanie łatwiejszych wariantów)
 │   ├── assistantEngine.js      # Skalowanie objętości (Pain/Time adaptation) + Klasyfikacja sesji (Smart Summary logic)
-│   ├── clinicalEngine.js       # Frontendowy walidator reguł medycznych
+│   ├── clinicalEngine.js       # Frontendowy adapter walidatora reguł medycznych (rdzeń: shared/clinical-core)
 │   ├── training.js             # Kontroler przebiegu treningu + pętla backupu + Obsługa Quick Rating i Detail Prompt (State-First)
 │   ├── timer.js                # Obsługa stopera (z Audio Pacing) i timera
 │   ├── tts.js                  # Text-to-Speech (Synteza mowy)
@@ -451,6 +457,12 @@ Projekt posiada zestaw testów regresyjnych w katalogu `/tests`:
 │   ├── gamification.js         # Obliczanie poziomów i statystyk
 │   ├── help.js                 # Wyświetlanie widoku pomocy
 │   └── dom.js                  # Cache referencji DOM
+│
+├── SHARED (WSPÓLNE MODUŁY FE/BE):
+│   ├── shared/clinical-core/contracts.js # Kontrakt powodów decyzji i stałych clinical core
+│   ├── shared/clinical-core/index.js     # Wspólny rdzeń reguł klinicznych używany przez FE i BE
+│   ├── shared/wizard-canonical-values.js # Kanoniczne słowniki wizarda (moduł JS)
+│   └── shared/wizard-canonical-values.json # Dane źródłowe słowników wizarda
 │
 ├── UI (MODUŁY PREZENTACJI):
 │   ├── ui.js                   # Eksporter modułów UI
@@ -470,7 +482,7 @@ Projekt posiada zestaw testów regresyjnych w katalogu `/tests`:
 ├── BACKEND (NETLIFY FUNCTIONS):
 │   ├── netlify/functions/
 │   │   ├── _auth-helper.js          # Weryfikacja JWT i puli połączeń DB
-│   │   ├── _clinical-rule-engine.js # Backendowy walidator medyczny
+│   │   ├── _clinical-rule-engine.js # Backendowy adapter walidatora medycznego (rdzeń: shared/clinical-core)
 │   │   ├── _crypto-helper.js        # Szyfrowanie tokenów (AES-256-GCM)
 │   │   ├── _stats-helper.js         # Logika statystyk (Streak, Resilience, Pacing)
 │   │   ├── _pain-taxonomy.js        # Ujednolicony słownik stref bólu

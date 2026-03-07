@@ -149,6 +149,30 @@ test('Focus canonical: core i glute mają aktywne boosty scoringu', () => {
 });
 
 
+
+
+test('Secondary goals: posture/core_side/energy/strength/flexibility apply soft weighting nudges', () => {
+  const w = plan.buildDynamicCategoryWeights(basePool(), {
+    pain_locations: [],
+    medical_diagnosis: [],
+    work_type: '',
+    hobby: [],
+    focus_locations: [],
+    pain_intensity: 0,
+    daily_impact: 0,
+    physical_restrictions: [],
+    session_component_weights: [],
+    secondary_goals: ['posture', 'core_side', 'energy', 'strength', 'flexibility'],
+    equipment_available: []
+  }, plan.safeBuildUserContext({}));
+
+  assertApprox(assert, w.scapular_stability, 1.6, 1e-9, 'posture scapular_stability');
+  assertApprox(assert, w.thoracic_mobility, 1.725, 1e-9, 'posture thoracic_mobility');
+  assertApprox(assert, w.core_anti_rotation, 1.76, 1e-9, 'core_side anti-rotation');
+  assertApprox(assert, w.core_stability, 2.09, 1e-9, 'posture+core_side+strength core_stability');
+  assertApprox(assert, w.conditioning_low_impact, 1.12, 1e-9, 'energy conditioning multiplier');
+  assertApprox(assert, w.spine_mobility, 1.15, 1e-9, 'flexibility mobility multiplier');
+});
 test('Component weights: stability boosts stability categories', () => {
   const ws = plan.buildDynamicCategoryWeights(basePool(), {
     pain_locations: [],

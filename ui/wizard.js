@@ -273,7 +273,7 @@ function validateStep(stepId) {
         case 'p12': return wizardAnswers.schedule_pattern && wizardAnswers.schedule_pattern.length > 0;
         case 'p13': return wizardAnswers.session_component_weights.length > 0;
         case 'p14': return wizardAnswers.primary_goal !== '';
-        case 'p15': return wizardAnswers.secondary_goals.length > 0;
+        case 'p15': return true;
         case 'p16': return wizardAnswers.physical_restrictions.length > 0;
         case 'p16b': return wizardAnswers.current_activity_status !== '';
         default: return true;
@@ -749,7 +749,7 @@ function renderP14(c) {
 }
 
 function renderP15(c) {
-    renderMultiSelect(c, 'Cele dodatkowe?', [
+    renderMultiSelect(c, 'Cele dodatkowe? (opcjonalnie)', [
         { val: 'posture', label: 'Prosta postawa' },
         { val: 'core_side', label: 'Talia / Boczny brzuch' },
         { val: 'energy', label: 'Więcej energii' },

@@ -357,6 +357,7 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
     const diagnosis = normalizeDiagnosisSet(userData?.medical_diagnosis);
     const restrictions = normalizeLowerSet(userData?.physical_restrictions);
     const componentWeights = normalizeLowerSet(userData?.session_component_weights);
+    const secondaryGoals = normalizeLowerSet(userData?.secondary_goals);
     const workType = String(userData?.work_type || '').toLowerCase();
     const hobbies = normalizeHobbySet(userData?.hobby);
     const primaryGoal = String(userData?.primary_goal || '').toLowerCase();
@@ -466,6 +467,28 @@ function buildDynamicCategoryWeights(exercises, userData, ctx) {
         boost(weights, 'breathing', 1.0);
         boost(weights, 'breathing_control', 1.0);
         boost(weights, 'muscle_relaxation', 0.8);
+    }
+
+    // 6b. Secondary goals (soft, non-clinical nudges)
+    if (secondaryGoals.has('posture')) {
+        boost(weights, 'scapular_stability', 0.6);
+        boost(weights, 'thoracic_mobility', 0.5);
+        boost(weights, 'core_stability', 0.5);
+    }
+    if (secondaryGoals.has('core_side')) {
+        boost(weights, 'core_anti_lateral_flexion', 0.8);
+        boost(weights, 'core_anti_rotation', 0.6);
+        boost(weights, 'core_stability', 0.4);
+    }
+    if (secondaryGoals.has('energy')) {
+        multiplyMatching(weights, (cat) => isConditioningCategory(cat), 1.12);
+        boost(weights, 'breathing_control', 0.2);
+    }
+    if (secondaryGoals.has('strength')) {
+        multiplyMatching(weights, (cat) => isCoreCategory(cat) || isLowerLimbCategory(cat), 1.1);
+    }
+    if (secondaryGoals.has('flexibility')) {
+        multiplyMatching(weights, (cat) => isMobilityCategory(cat), 1.15);
     }
 
     if (primaryGoal === 'pain_relief') {

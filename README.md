@@ -1,10 +1,22 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v29.4.33
+# Aplikacja Treningowa (Smart Rehab PWA) v29.4.35
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
 ---
 
 
+
+## 🆕 Aktualizacje v29.4.35
+
+* Naprawiono inicjalizację auth helpera backendu: brak `AUTH0_ISSUER_BASE_URL` nie wywołuje już błędu na etapie importu modułu.
+* Klient JWKS jest teraz tworzony leniwie (dopiero przy faktycznej weryfikacji tokena), co odblokowuje uruchamianie testów klinicznych bez pełnego kontekstu Auth0.
+* Podbito wersję aplikacji do `5.0.38`.
+
+## 🆕 Aktualizacje v29.4.34
+
+* Podbito wersję aplikacji (`package.json`) do `5.0.37`.
+* `netlify-cli` przeniesiono z `dependencies` do `devDependencies`, bo jest to narzędzie deweloperskie.
+* Zweryfikowano użycie `axios`: pakiet jest nadal wymagany przez Netlify Functions (`strava-*`).
 
 ## 🆕 Aktualizacje v29.4.33
 

@@ -1,6 +1,6 @@
 {
   "name": "aplikacja-treningowa",
-  "version": "5.0.36",
+  "version": "5.0.38",
   "description": "Aplikacja do śledzenia planów treningowych.",
   "main": "app.js",
   "private": true,
@@ -16,10 +16,10 @@
     "jose": "^6.1.0",
     "jsonwebtoken": "^9.0.2",
     "jwks-rsa": "^3.1.0",
-    "netlify-cli": "^12.5.0",
     "pg": "^8.11.3"
   },
   "devDependencies": {
+    "netlify-cli": "^12.5.0",
     "stylelint": "^16.26.1",
     "stylelint-config-standard": "^39.0.1"
   }

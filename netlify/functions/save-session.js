@@ -13,6 +13,53 @@ const {
     applyImmediatePlanAdjustmentsInMemory
 } = require('./_amps-engine.js');
 
+const ALLOWED_AFFINITY_ACTIONS = new Set(['like', 'dislike']);
+const ALLOWED_DIFFICULTY_RATINGS = new Set([-1, 0, 1]);
+
+function parseExerciseId(rawId) {
+    return String(rawId || '').trim();
+}
+
+function validateExerciseRatingsContract(ratings) {
+    if (ratings === undefined) return { valid: true };
+    if (!Array.isArray(ratings)) {
+        return { valid: false, error: 'Bad Request: exerciseRatings must be an array' };
+    }
+
+    for (const [index, rating] of ratings.entries()) {
+        const exerciseId = parseExerciseId(rating?.exerciseId);
+        const action = rating?.action;
+        if (!exerciseId) {
+            return { valid: false, error: `Bad Request: exerciseRatings[${index}].exerciseId is required` };
+        }
+        if (!ALLOWED_AFFINITY_ACTIONS.has(action)) {
+            return { valid: false, error: `Bad Request: exerciseRatings[${index}].action must be like/dislike` };
+        }
+    }
+
+    return { valid: true };
+}
+
+function validateExerciseDifficultyRatingsContract(ratings) {
+    if (ratings === undefined) return { valid: true };
+    if (!Array.isArray(ratings)) {
+        return { valid: false, error: 'Bad Request: exerciseDifficultyRatings must be an array' };
+    }
+
+    for (const [index, rating] of ratings.entries()) {
+        const exerciseId = parseExerciseId(rating?.exerciseId);
+        const difficultyRating = Number(rating?.difficultyRating);
+        if (!exerciseId) {
+            return { valid: false, error: `Bad Request: exerciseDifficultyRatings[${index}].exerciseId is required` };
+        }
+        if (!ALLOWED_DIFFICULTY_RATINGS.has(difficultyRating)) {
+            return { valid: false, error: `Bad Request: exerciseDifficultyRatings[${index}].difficultyRating must be one of -1/0/1` };
+        }
+    }
+
+    return { valid: true };
+}
+
 exports.handler = async (event) => {
     if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method Not Allowed' };
 
@@ -30,6 +77,16 @@ exports.handler = async (event) => {
             if (!validation.valid) {
                 return { statusCode: 400, body: JSON.stringify({ error: `Feedback Error: ${validation.error}` }) };
             }
+        }
+
+        const affinityValidation = validateExerciseRatingsContract(exerciseRatings);
+        if (!affinityValidation.valid) {
+            return { statusCode: 400, body: JSON.stringify({ error: affinityValidation.error }) };
+        }
+
+        const difficultyValidation = validateExerciseDifficultyRatingsContract(exerciseDifficultyRatings);
+        if (!difficultyValidation.valid) {
+            return { statusCode: 400, body: JSON.stringify({ error: difficultyValidation.error }) };
         }
 
         const client = await pool.connect();

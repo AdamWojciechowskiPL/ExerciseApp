@@ -151,3 +151,203 @@ test('save-session forwards exerciseDifficultyRatings to preferences update and 
   assert.deepEqual(capturedUpdateArgs[3], [{ exerciseId: 'ex1', difficultyRating: 1 }]);
   assert.deepEqual(capturedInsertPayload.exerciseDifficultyRatings, [{ exerciseId: 'ex1', difficultyRating: 1 }]);
 });
+
+test('save-session rejects invalid affinity contract payload', async (t) => {
+  const authPath = stubModule('_auth-helper.js', {
+    getUserIdFromEvent: async () => 'user-1',
+    pool: {
+      connect: async () => ({
+        query: async () => ({ rows: [], rowCount: 0 }),
+        release: () => {},
+      }),
+    },
+  });
+
+  const statsPath = stubModule('_stats-helper.js', {
+    calculateStreak: () => 0,
+    calculateResilience: () => 0,
+    calculateAndUpsertPace: async () => {},
+  });
+
+  const phasePath = stubModule('_phase-manager.js', {
+    updatePhaseStateAfterSession: (state) => ({ newState: state, transition: null }),
+    checkDetraining: (state) => state,
+  });
+
+  const contractPath = stubModule('_data-contract.js', {
+    validatePainMonitoring: () => ({ valid: true }),
+  });
+
+  const ampsPath = stubModule('_amps-engine.js', {
+    inferMissingSessionData: (log) => log,
+    updatePreferences: async () => {},
+    analyzeAndAdjustPlan: async () => null,
+    applyImmediatePlanAdjustmentsInMemory: async () => false,
+  });
+
+  const savePath = resolveAppModule('save-session.js');
+  delete require.cache[savePath];
+  const { handler } = require(savePath);
+
+  t.after(() => {
+    delete require.cache[savePath];
+    delete require.cache[authPath];
+    delete require.cache[statsPath];
+    delete require.cache[phasePath];
+    delete require.cache[contractPath];
+    delete require.cache[ampsPath];
+  });
+
+  const event = {
+    httpMethod: 'POST',
+    body: JSON.stringify({
+      planId: 'plan-1',
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      sessionLog: [],
+      exerciseRatings: [{ exerciseId: 'ex1', action: 'hard' }],
+    }),
+  };
+
+  const response = await handler(event);
+  assert.equal(response.statusCode, 400);
+  const parsed = JSON.parse(response.body);
+  assert.match(parsed.error, /exerciseRatings\[0\]\.action must be like\/dislike/);
+});
+
+test('save-session rejects invalid difficulty contract payload', async (t) => {
+  const authPath = stubModule('_auth-helper.js', {
+    getUserIdFromEvent: async () => 'user-1',
+    pool: {
+      connect: async () => ({
+        query: async () => ({ rows: [], rowCount: 0 }),
+        release: () => {},
+      }),
+    },
+  });
+
+  const statsPath = stubModule('_stats-helper.js', {
+    calculateStreak: () => 0,
+    calculateResilience: () => 0,
+    calculateAndUpsertPace: async () => {},
+  });
+
+  const phasePath = stubModule('_phase-manager.js', {
+    updatePhaseStateAfterSession: (state) => ({ newState: state, transition: null }),
+    checkDetraining: (state) => state,
+  });
+
+  const contractPath = stubModule('_data-contract.js', {
+    validatePainMonitoring: () => ({ valid: true }),
+  });
+
+  const ampsPath = stubModule('_amps-engine.js', {
+    inferMissingSessionData: (log) => log,
+    updatePreferences: async () => {},
+    analyzeAndAdjustPlan: async () => null,
+    applyImmediatePlanAdjustmentsInMemory: async () => false,
+  });
+
+  const savePath = resolveAppModule('save-session.js');
+  delete require.cache[savePath];
+  const { handler } = require(savePath);
+
+  t.after(() => {
+    delete require.cache[savePath];
+    delete require.cache[authPath];
+    delete require.cache[statsPath];
+    delete require.cache[phasePath];
+    delete require.cache[contractPath];
+    delete require.cache[ampsPath];
+  });
+
+  const event = {
+    httpMethod: 'POST',
+    body: JSON.stringify({
+      planId: 'plan-1',
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      sessionLog: [],
+      exerciseDifficultyRatings: [{ exerciseId: 'ex1', difficultyRating: 2 }],
+    }),
+  };
+
+  const response = await handler(event);
+  assert.equal(response.statusCode, 400);
+  const parsed = JSON.parse(response.body);
+  assert.match(parsed.error, /exerciseDifficultyRatings\[0\]\.difficultyRating must be one of -1\/0\/1/);
+});
+
+test('save-session keeps backward compatibility when exerciseDifficultyRatings is missing', async (t) => {
+  let capturedUpdateArgs = null;
+
+  const authPath = stubModule('_auth-helper.js', {
+    getUserIdFromEvent: async () => 'user-1',
+    pool: {
+      connect: async () => ({
+        query: async (sql) => {
+          if (sql.includes('SELECT settings FROM user_settings')) {
+            return { rows: [{ settings: {} }], rowCount: 1 };
+          }
+          if (sql.includes('SELECT completed_at FROM training_sessions')) {
+            return { rows: [], rowCount: 0 };
+          }
+          return { rows: [], rowCount: 0 };
+        },
+        release: () => {},
+      }),
+    },
+  });
+
+  const statsPath = stubModule('_stats-helper.js', {
+    calculateStreak: () => 0,
+    calculateResilience: () => 0,
+    calculateAndUpsertPace: async () => {},
+  });
+
+  const phasePath = stubModule('_phase-manager.js', {
+    updatePhaseStateAfterSession: (state) => ({ newState: state, transition: null }),
+    checkDetraining: (state) => state,
+  });
+
+  const contractPath = stubModule('_data-contract.js', {
+    validatePainMonitoring: () => ({ valid: true }),
+  });
+
+  const ampsPath = stubModule('_amps-engine.js', {
+    inferMissingSessionData: (log) => log,
+    updatePreferences: async (...args) => { capturedUpdateArgs = args; },
+    analyzeAndAdjustPlan: async () => null,
+    applyImmediatePlanAdjustmentsInMemory: async () => false,
+  });
+
+  const savePath = resolveAppModule('save-session.js');
+  delete require.cache[savePath];
+  const { handler } = require(savePath);
+
+  t.after(() => {
+    delete require.cache[savePath];
+    delete require.cache[authPath];
+    delete require.cache[statsPath];
+    delete require.cache[phasePath];
+    delete require.cache[contractPath];
+    delete require.cache[ampsPath];
+  });
+
+  const event = {
+    httpMethod: 'POST',
+    body: JSON.stringify({
+      planId: 'plan-1',
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      sessionLog: [],
+      exerciseRatings: [{ exerciseId: 'ex1', action: 'like' }],
+    }),
+  };
+
+  const response = await handler(event);
+  assert.equal(response.statusCode, 201);
+  assert.ok(capturedUpdateArgs, 'updatePreferences should be called for affinity');
+  assert.deepEqual(capturedUpdateArgs[2], [{ exerciseId: 'ex1', action: 'like' }]);
+  assert.equal(capturedUpdateArgs[3], undefined);
+});

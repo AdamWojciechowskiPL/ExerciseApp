@@ -13,7 +13,8 @@ const APP_SHELL_ASSETS = [
     '/index.html',
     '/style.css',
     '/app.js',
-    '/manifest.webmanifest',
+    '/manifest.json',
+    '/icons/sprite.svg',
     '/package.json'
 ];
 

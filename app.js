@@ -10,6 +10,7 @@ import {
     renderDayDetailsScreen,
     renderLibraryScreen,
     renderTrainingScreen,
+    renderHelpScreen,
     navigateTo,
     showLoader,
     hideLoader,
@@ -107,6 +108,10 @@ function initAppLogic() {
             if (!checkUnsavedSummaryNavigation()) return;
             renderSettingsScreen();
         });
+        mainNav.querySelector('#nav-help').addEventListener('click', () => {
+            if (!checkUnsavedSummaryNavigation()) return;
+            renderHelpScreen();
+        });
     }
 
     const bottomNav = document.getElementById('app-bottom-nav');
@@ -124,6 +129,7 @@ function initAppLogic() {
                 case 'history': renderHistoryScreen(); break;
                 case 'library': renderLibraryScreen(); break;
                 case 'settings': renderSettingsScreen(); break;
+                case 'help': renderHelpScreen(); break;
             }
         });
     }

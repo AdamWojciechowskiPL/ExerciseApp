@@ -9,7 +9,6 @@ export const screens = {
     training: document.getElementById('training-screen'),
     summary: document.getElementById('summary-screen'),
     help: document.getElementById('help-screen'),
-    analytics: document.getElementById('analytics-screen'),
 };
 
 export const containers = {

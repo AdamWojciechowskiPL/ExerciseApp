@@ -295,9 +295,6 @@ const dataStore = {
                 current += SCORE_DISLIKE;
             }
             state.userPreferences[exerciseId].score = Math.max(SCORE_MIN, Math.min(SCORE_MAX, current));
-
-            if (action === 'hard') state.userPreferences[exerciseId].difficulty = 1;
-            else if (action === 'easy') state.userPreferences[exerciseId].difficulty = -1;
         }
 
         state.userPreferences[exerciseId].updatedAt = new Date().toISOString();

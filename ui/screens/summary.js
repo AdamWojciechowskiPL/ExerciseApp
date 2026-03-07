@@ -7,6 +7,7 @@ import { getIsCasting, sendShowIdle } from '../../cast.js';
 import { clearSessionBackup } from '../../sessionRecovery.js';
 import { clearPlanFromStorage } from './dashboard.js';
 import { checkNewBadges } from '../../gamification.js';
+import { mapDifficultySelectionToRating, buildExerciseDifficultyRatingsPayload } from '../../shared/exercise-difficulty-rating.mjs';
 
 let selectedFeedback = {
     type: 'pain_monitoring',
@@ -15,6 +16,7 @@ let selectedFeedback = {
     note: ''
 };
 let sessionAffinityDeltas = {};
+let sessionDifficultyRatings = {};
 const SCORE_LIKE = 15;
 const SCORE_DISLIKE = -30;
 
@@ -116,6 +118,7 @@ export const renderSummaryScreen = () => {
         note: ''
     };
     sessionAffinityDeltas = {};
+    sessionDifficultyRatings = {};
 
     const summaryScreen = screens.summary;
 
@@ -325,6 +328,7 @@ export const renderSummaryScreen = () => {
                     logEntry.inferred = true;
                     logEntry.difficultyDeviation = null;
                 });
+                sessionDifficultyRatings[exerciseId] = mapDifficultySelectionToRating(null);
                 container.querySelectorAll('.deviation-btn').forEach(btn => btn.classList.remove('active'));
             } else {
                 // Ustaw odchylenie dla wszystkich serii
@@ -339,6 +343,8 @@ export const renderSummaryScreen = () => {
                     logEntry.inferred = false;
                     logEntry.difficultyDeviation = type;
                 });
+
+                sessionDifficultyRatings[exerciseId] = mapDifficultySelectionToRating(type);
 
                 container.querySelectorAll('.deviation-btn').forEach(btn => btn.classList.remove('active'));
                 deviationBtn.classList.add('active');
@@ -393,6 +399,7 @@ export async function handleSummarySubmit(e) {
     showLoader();
 
     const ratingsArray = [];
+    const difficultyRatingsArray = buildExerciseDifficultyRatingsPayload(sessionDifficultyRatings);
     const ratingCards = e.target.querySelectorAll('.rating-card');
 
     ratingCards.forEach(card => {
@@ -439,6 +446,7 @@ export async function handleSummarySubmit(e) {
         status: 'completed',
         feedback: selectedFeedback,
         exerciseRatings: ratingsArray,
+        exerciseDifficultyRatings: difficultyRatingsArray,
         notes: document.getElementById('general-notes').value,
         startedAt: state.sessionStartTime.toISOString(),
         completedAt: now.toISOString(),
@@ -493,11 +501,10 @@ export async function handleSummarySubmit(e) {
             }
         });
 
-        ratingsArray.forEach(r => {
-            if (r.action === 'hard') {
-                if (!state.userPreferences[r.exerciseId]) state.userPreferences[r.exerciseId] = {};
-                state.userPreferences[r.exerciseId].difficulty = 1;
-            }
+        difficultyRatingsArray.forEach(r => {
+            if (!state.userPreferences[r.exerciseId]) state.userPreferences[r.exerciseId] = {};
+            state.userPreferences[r.exerciseId].difficulty = r.difficultyRating;
+            state.userPreferences[r.exerciseId].difficultyRating = r.difficultyRating;
         });
 
         const finalizeProcess = async () => {

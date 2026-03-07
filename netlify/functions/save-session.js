@@ -19,7 +19,7 @@ exports.handler = async (event) => {
     try {
         const userId = await getUserIdFromEvent(event);
         const body = JSON.parse(event.body);
-        let { planId, startedAt, completedAt, feedback, exerciseRatings, ...session_data } = body;
+        let { planId, startedAt, completedAt, feedback, exerciseRatings, exerciseDifficultyRatings, ...session_data } = body;
 
         if (!planId || !startedAt || !completedAt) {
             return { statusCode: 400, body: JSON.stringify({ error: 'Bad Request: Missing required fields' }) };
@@ -65,11 +65,11 @@ exports.handler = async (event) => {
             await client.query(`
                 INSERT INTO training_sessions (user_id, plan_id, started_at, completed_at, session_data)
                 VALUES ($1, $2, $3, $4, $5)
-            `, [userId, planId, startedAt, completedAt, JSON.stringify({ ...session_data, feedback, exerciseRatings })]);
+            `, [userId, planId, startedAt, completedAt, JSON.stringify({ ...session_data, feedback, exerciseRatings, exerciseDifficultyRatings })]);
 
-            // AMPS: Aktualizacja Preferencji (Tylko Affinity)
-            if (exerciseRatings && exerciseRatings.length > 0) {
-                await updatePreferences(client, userId, exerciseRatings);
+            // AMPS: Aktualizacja Preferencji (Affinity + Difficulty Rating)
+            if ((exerciseRatings && exerciseRatings.length > 0) || (exerciseDifficultyRatings && exerciseDifficultyRatings.length > 0)) {
+                await updatePreferences(client, userId, exerciseRatings, exerciseDifficultyRatings);
             }
 
             // AMPS: Analiza Progresji (Na podstawie Logów, nie Przycisków)

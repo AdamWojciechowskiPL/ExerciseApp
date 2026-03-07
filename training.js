@@ -1,4 +1,4 @@
-import { state } from './state.js';
+import { state, mergeSessionParams } from './state.js';
 import { focus, screens, initializeFocusElements } from './dom.js';
 import { speak } from './tts.js';
 import { startTimer, stopTimer, startStopwatch, stopStopwatch, updateTimerDisplay, updateStopwatchDisplay } from './timer.js';
@@ -658,7 +658,7 @@ export function resumeFromBackup(backup, timeGapMs) {
     state.todaysDynamicPlan = backup.todaysDynamicPlan;
     state.flatExercises = backup.flatExercises;
     state.sessionLog = backup.sessionLog || [];
-    state.sessionParams = backup.sessionParams || { initialPainLevel: 0, timeFactor: 1.0 };
+    mergeSessionParams(backup.sessionParams || { initialPainLevel: 0, timeFactor: 1.0 });
     state.sessionDetailPromptCount = backup.sessionDetailPromptCount || 0;
 
     state.stopwatch.seconds = backup.stopwatchSeconds || 0;

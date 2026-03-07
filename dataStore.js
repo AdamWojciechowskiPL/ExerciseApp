@@ -1,4 +1,4 @@
-import { state } from './state.js';
+import { state, mergeSettings } from './state.js';
 import { getToken, getUserPayload } from './auth.js';
 import { getISODate } from './utils.js';
 
@@ -88,7 +88,7 @@ const dataStore = {
             if (!state.userProgress) state.userProgress = {};
 
             if (data.settings) {
-                state.settings = { ...state.settings, ...data.settings };
+                mergeSettings(data.settings);
                 if (typeof state.settings.restTimeFactor !== 'number') {
                     state.settings.restTimeFactor = 1.0;
                 }

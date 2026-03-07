@@ -1,4 +1,4 @@
-import { state } from '../../state.js';
+import { state, mergeSessionParams } from '../../state.js';
 import { screens, initializeFocusElements, focus } from '../../dom.js';
 import { getActiveTrainingPlan, getHydratedDay, getISODate, calculateSmartDuration, calculateSystemLoad, calculateClinicalProfile, getSessionFocus, savePlanToStorage } from '../../utils.js';
 import { assistant } from '../../assistantEngine.js';
@@ -194,7 +194,7 @@ export const renderProtocolStart = (protocol) => {
 
         scaledProtocol.totalDuration = Math.round(protocol.totalDuration * timeFactor);
         state.todaysDynamicPlan = scaledProtocol;
-        state.sessionParams = { initialPainLevel: 0, timeFactor: timeFactor };
+        mergeSessionParams({ initialPainLevel: 0, timeFactor });
         startModifiedTraining();
     });
 

@@ -1,10 +1,32 @@
 // ExerciseApp/state.js
 // ExerciseApp/state.js
 
+const defaultSettings = {
+    appStartDate: null,
+    activePlanId: null,
+    planMode: 'dynamic',
+    dynamicPlanData: null,
+    onboardingCompleted: false,
+    painZones: [],
+    equipment: [],
+    schedule: {},
+    ttsEnabled: true,
+    secondsPerRep: 6,
+    restTimeFactor: 1.0,
+    wizardData: {}
+};
+
+const defaultSessionParams = {
+    initialPainLevel: 0,
+    timeFactor: 1.0
+};
+
 export const state = {
     isAppInitialized: false,
+    isPaused: false,
     userProgress: {},
     userPreferences: {}, // { score, difficulty, updatedAt }
+    userStats: { totalSessions: 0, streak: 0, resilience: null },
     exercisePace: {},
     masteryStats: null,
     animationCache: new Map(),
@@ -12,20 +34,7 @@ export const state = {
     // NOWOŚĆ: Przechowywanie mapy nadpisań (Ewolucji/Dewolucji)
     overrides: {},
 
-    settings: {
-        appStartDate: null,
-        activePlanId: null,
-        planMode: 'dynamic',
-        dynamicPlanData: null,
-        onboardingCompleted: false,
-        painZones: [],
-        equipment: [],
-        schedule: {},
-        ttsEnabled: true,
-        secondsPerRep: 6,
-        restTimeFactor: 1.0,
-        wizardData: {}
-    },
+    settings: { ...defaultSettings },
 
     exerciseLibrary: {},
     blacklist: [],
@@ -33,6 +42,7 @@ export const state = {
     stravaIntegration: { isConnected: false },
 
     currentTrainingDate: null,
+    currentTrainingDayId: null,
     loadedMonths: new Set(),
     currentCalendarView: new Date(),
     currentExerciseIndex: null,
@@ -50,8 +60,10 @@ export const state = {
     timer: {
         interval: null,
         timeLeft: 0,
+        initialDuration: 0,
         isActive: false,
         isPaused: false,
+        countUp: false,
         onTimerEnd: () => { }
     },
 
@@ -62,10 +74,7 @@ export const state = {
 
     audioContext: null,
 
-    sessionParams: {
-        initialPainLevel: 0,
-        timeFactor: 1.0
-    },
+    sessionParams: { ...defaultSessionParams },
 
     completionSound: () => {
         if (!state.audioContext) {
@@ -113,4 +122,27 @@ export const state = {
         isSupported: 'speechSynthesis' in window,
         isSoundOn: null
     }
+};
+
+Object.seal(state);
+Object.seal(state.settings);
+Object.seal(state.timer);
+Object.seal(state.stopwatch);
+Object.seal(state.sessionParams);
+Object.seal(state.tts);
+
+export const mergeSettings = (incoming = {}) => {
+    Object.keys(defaultSettings).forEach((key) => {
+        if (Object.hasOwn(incoming, key) && incoming[key] !== undefined) {
+            state.settings[key] = incoming[key];
+        }
+    });
+};
+
+export const mergeSessionParams = (incoming = {}) => {
+    Object.keys(defaultSessionParams).forEach((key) => {
+        if (Object.hasOwn(incoming, key) && incoming[key] !== undefined) {
+            state.sessionParams[key] = incoming[key];
+        }
+    });
 };

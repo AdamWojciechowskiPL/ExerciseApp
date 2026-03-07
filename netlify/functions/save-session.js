@@ -64,6 +64,7 @@ exports.handler = async (event) => {
     if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method Not Allowed' };
 
     try {
+        const requestStartedAtMs = Date.now();
         const userId = await getUserIdFromEvent(event);
         const body = JSON.parse(event.body);
         let { planId, startedAt, completedAt, feedback, exerciseRatings, exerciseDifficultyRatings, ...session_data } = body;
@@ -152,7 +153,8 @@ exports.handler = async (event) => {
 
             await client.query('COMMIT');
 
-            // Fire & Forget: Pace stats
+            // Synchronous post-commit update: endpoint intentionally waits for pace stats update.
+            let paceUpdateDurationMs = 0;
             try {
                 if (session_data.sessionLog && Array.isArray(session_data.sessionLog)) {
                     const exerciseIds = new Set();
@@ -162,9 +164,19 @@ exports.handler = async (event) => {
                             if (!valStr.includes('s') && !valStr.includes('min') && !valStr.includes(':')) exerciseIds.add(log.exerciseId || log.id);
                         }
                     });
-                    if (exerciseIds.size > 0) await calculateAndUpsertPace(client, userId, Array.from(exerciseIds));
+                    if (exerciseIds.size > 0) {
+                        const paceUpdateStartedAtMs = Date.now();
+                        await calculateAndUpsertPace(client, userId, Array.from(exerciseIds));
+                        paceUpdateDurationMs = Date.now() - paceUpdateStartedAtMs;
+                    }
                 }
             } catch (e) { console.error("Pace update failed:", e); }
+
+            console.info('[save-session] Request cost', {
+                userId,
+                totalDurationMs: Date.now() - requestStartedAtMs,
+                paceUpdateDurationMs
+            });
 
             return {
                 statusCode: 201,

@@ -5,130 +5,33 @@ import dataStore from '../../dataStore.js';
 import { renderEvolutionModal, renderPhaseTransitionModal, renderRewardModal } from '../modals.js';
 import { getIsCasting, sendShowIdle } from '../../cast.js';
 import { clearSessionBackup } from '../../sessionRecovery.js';
-import { clearPlanFromStorage } from './dashboard.js';
 import { checkNewBadges } from '../../gamification.js';
 import { mapDifficultySelectionToRating, buildExerciseDifficultyRatingsPayload } from '../../shared/exercise-difficulty-rating.mjs';
 import { buildExerciseRatingsPayload } from '../../shared/summary-feedback-payload.mjs';
 
-let selectedFeedback = {
-    type: 'pain_monitoring',
-    schema_version: 1,
-    during: { max_nprs: 0, locations: [] },
-    note: ''
-};
 let sessionAffinityDeltas = {};
 let sessionDifficultyRatings = {};
 const SCORE_LIKE = 15;
 const SCORE_DISLIKE = -30;
 
 
-const renderPainFollowUp24hModal = () => {
-    return new Promise((resolve) => {
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay active';
-        overlay.innerHTML = `
-            <div class="modal-content" style="max-width:540px;">
-                <h3 style="margin-bottom:6px;">Check-in po 24h</h3>
-                <p style="opacity:0.75; margin-top:0; font-size:0.9rem;">
-                    Aby domknąć monitoring po sesji, uzupełnij teraz krótkie dane follow-up.
-                </p>
-                <form id="pain-24h-form-summary" class="settings-form">
-                    <div class="form-group">
-                        <label for="after24h-max-nprs-summary" style="display:flex; justify-content:space-between; font-weight:700;">
-                            <span>Maksymalne nasilenie objawów po 24h (NPRS)</span>
-                            <strong id="after24h-max-nprs-summary-value">0</strong>
-                        </label>
-                        <input type="range" id="after24h-max-nprs-summary" min="0" max="10" value="0" style="width:100%;">
-                    </div>
-                    <div class="form-group">
-                        <label for="after24h-delta-summary">Zmiana vs baseline (-10 do 10)</label>
-                        <input id="after24h-delta-summary" type="number" min="-10" max="10" step="1" value="0" required>
-                    </div>
-                    <div class="form-group" style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px;">
-                        <label class="checkbox-label"><input type="checkbox" id="after24h-stiffness-summary"> Sztywność wzrosła</label>
-                        <label class="checkbox-label"><input type="checkbox" id="after24h-swelling-summary"> Obrzęk</label>
-                        <label class="checkbox-label"><input type="checkbox" id="after24h-night-pain-summary"> Ból nocny</label>
-                        <label class="checkbox-label"><input type="checkbox" id="after24h-neuro-summary"> Objawy neuro red flags</label>
-                    </div>
-                    <div class="form-group">
-                        <label for="after24h-note-summary">Notatka (opcjonalnie)</label>
-                        <textarea id="after24h-note-summary" rows="2" maxlength="200" placeholder="Co się zmieniło po 24h?"></textarea>
-                    </div>
-                    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;">
-                        <button type="button" class="action-btn secondary" id="skip-24h-summary-btn">Później</button>
-                        <button type="submit" class="action-btn" id="save-24h-summary-btn">Zapisz check-in</button>
-                    </div>
-                </form>
-            </div>
-        `;
-
-        const close = () => {
-            overlay.remove();
-            resolve({ skipped: true });
-        };
-
-        const slider = overlay.querySelector('#after24h-max-nprs-summary');
-        const sliderLabel = overlay.querySelector('#after24h-max-nprs-summary-value');
-        slider.addEventListener('input', () => {
-            sliderLabel.textContent = slider.value;
-        });
-
-        overlay.querySelector('#skip-24h-summary-btn').addEventListener('click', close);
-
-        overlay.querySelector('#pain-24h-form-summary').addEventListener('submit', async (ev) => {
-            ev.preventDefault();
-            const after24h = {
-                max_nprs: parseInt(slider.value, 10) || 0,
-                delta_vs_baseline: parseInt(overlay.querySelector('#after24h-delta-summary').value, 10) || 0,
-                stiffness_increased: !!overlay.querySelector('#after24h-stiffness-summary').checked,
-                swelling: !!overlay.querySelector('#after24h-swelling-summary').checked,
-                night_pain: !!overlay.querySelector('#after24h-night-pain-summary').checked,
-                neuro_red_flags: !!overlay.querySelector('#after24h-neuro-summary').checked,
-            };
-            const note = overlay.querySelector('#after24h-note-summary').value || '';
-            overlay.remove();
-            resolve({ skipped: false, after24h, note });
-        });
-
-        document.body.appendChild(overlay);
-    });
-};
-
 export const renderSummaryScreen = () => {
     if (getIsCasting()) sendShowIdle();
 
     let trainingTitle = "Trening";
-    let isSafetyMode = false;
-
     if (state.todaysDynamicPlan && state.todaysDynamicPlan.type === 'protocol') {
         trainingTitle = state.todaysDynamicPlan.title;
-        isSafetyMode = state.todaysDynamicPlan.mode === 'sos';
     } else {
         const activePlan = state.settings.dynamicPlanData;
         const daysList = activePlan?.days || [];
         const trainingDay = daysList.find(d => d.dayNumber === state.currentTrainingDayId);
         trainingTitle = trainingDay ? trainingDay.title : "Trening";
-        isSafetyMode = (state.sessionParams.initialPainLevel || 0) > 3;
     }
 
-    const initialPain = isSafetyMode ? 2 : 0;
-    selectedFeedback = {
-        type: 'pain_monitoring',
-        schema_version: 1,
-        during: { max_nprs: initialPain, locations: [] },
-        note: ''
-    };
     sessionAffinityDeltas = {};
     sessionDifficultyRatings = {};
 
     const summaryScreen = screens.summary;
-
-    let globalOptionsHtml = `
-        <div class="feedback-option ${isSafetyMode ? '' : 'selected'}" data-pain="0"><div class="fb-icon">🙂</div><div class="fb-text"><h4>Bez bólu</h4></div></div>
-        <div class="feedback-option ${isSafetyMode ? 'selected' : ''}" data-pain="3"><div class="fb-icon">⚖️</div><div class="fb-text"><h4>Lekki ból</h4></div></div>
-        <div class="feedback-option" data-pain="6"><div class="fb-icon">⚠️</div><div class="fb-text"><h4>Umiarkowany</h4></div></div>
-        <div class="feedback-option" data-pain="8"><div class="fb-icon">🚨</div><div class="fb-text"><h4>Silny ból</h4></div></div>
-    `;
 
     const completedLogs = (state.sessionLog || []).filter(l => l.status === 'completed' && !l.isRest);
     const hasData = completedLogs.length > 0;
@@ -247,17 +150,6 @@ export const renderSummaryScreen = () => {
         <h2 id="summary-title" style="margin-bottom:0.5rem">${trainingTitle}</h2>
         <p style="opacity:0.6; font-size:0.9rem; margin-top:0;">Podsumowanie sesji</p>
         <form id="summary-form">
-            <div class="form-group">
-                <label style="display:block; margin-bottom:10px; font-weight:700;">${isSafetyMode ? "Samopoczucie po treningu" : "Ocena ogólna"}</label>
-                <div class="feedback-container compact">${globalOptionsHtml}</div>
-                <div style="margin-top:10px;">
-                    <label for="during-max-nprs" style="font-size:0.85rem; display:flex; justify-content:space-between;">
-                        <span>Maksymalne nasilenie objawów podczas sesji (NPRS)</span>
-                        <strong id="during-max-nprs-value">${selectedFeedback.during.max_nprs}</strong>
-                    </label>
-                    <input type="range" id="during-max-nprs" min="0" max="10" value="${selectedFeedback.during.max_nprs}" style="width:100%;">
-                </div>
-            </div>
             <div class="form-group" style="margin-top:1.5rem;">
                 <label style="display:block; margin-bottom:5px; font-weight:700;">Raport Ćwiczeń</label>
                 <p style="font-size:0.8rem; color:#666; margin-bottom:10px;">
@@ -275,31 +167,6 @@ export const renderSummaryScreen = () => {
     `;
 
     // --- EVENT LISTENERS ---
-
-    summaryScreen.querySelectorAll('.feedback-option').forEach(opt => {
-        opt.addEventListener('click', () => {
-            summaryScreen.querySelectorAll('.feedback-option').forEach(o => o.classList.remove('selected'));
-            opt.classList.add('selected');
-            const mappedPain = parseInt(opt.dataset.pain, 10);
-            if (Number.isFinite(mappedPain)) {
-                selectedFeedback.during.max_nprs = mappedPain;
-                const slider = summaryScreen.querySelector('#during-max-nprs');
-                const valLabel = summaryScreen.querySelector('#during-max-nprs-value');
-                if (slider) slider.value = String(mappedPain);
-                if (valLabel) valLabel.textContent = String(mappedPain);
-            }
-        });
-    });
-
-    const duringPainSlider = summaryScreen.querySelector('#during-max-nprs');
-    const duringPainLabel = summaryScreen.querySelector('#during-max-nprs-value');
-    if (duringPainSlider && duringPainLabel) {
-        duringPainSlider.addEventListener('input', (ev) => {
-            const val = parseInt(ev.target.value, 10) || 0;
-            selectedFeedback.during.max_nprs = val;
-            duringPainLabel.textContent = String(val);
-        });
-    }
 
     const formContainer = summaryScreen.querySelector('#summary-form');
 
@@ -429,15 +296,12 @@ export async function handleSummarySubmit(e) {
 
     const title = document.getElementById('summary-title').textContent;
 
-    selectedFeedback.note = document.getElementById('general-notes').value || '';
-
     const sessionPayload = {
         sessionId: Date.now(),
         planId: planId,
         trainingDayId: state.currentTrainingDayId,
         trainingTitle: title,
         status: 'completed',
-        feedback: selectedFeedback,
         exerciseRatings: ratingsArray,
         exerciseDifficultyRatings: difficultyRatingsArray,
         notes: document.getElementById('general-notes').value,
@@ -450,19 +314,6 @@ export async function handleSummarySubmit(e) {
     try {
         const response = await dataStore.saveSession(sessionPayload);
         clearSessionBackup();
-
-        const shouldPrompt24hFollowUp = (selectedFeedback?.during?.max_nprs || 0) > 0;
-        if (shouldPrompt24hFollowUp) {
-            const followUpResult = await renderPainFollowUp24hModal();
-            if (!followUpResult.skipped) {
-                await dataStore.patchSessionFeedback24h(sessionPayload.sessionId, followUpResult.after24h, followUpResult.note || '');
-                selectedFeedback.after24h = { ...followUpResult.after24h, updated_at: new Date().toISOString() };
-                if (followUpResult.note) {
-                    selectedFeedback.note = (selectedFeedback.note ? selectedFeedback.note + "\n[24h]: " : "[24h]: ") + followUpResult.note;
-                }
-                alert('Check-in po 24h został zapisany. Dziękujemy!');
-            }
-        }
 
         await dataStore.loadRecentHistory(7);
         if (state.todaysDynamicPlan?.type === 'protocol') state.todaysDynamicPlan = null;
@@ -506,22 +357,7 @@ export async function handleSummarySubmit(e) {
             navigateTo('main');
             renderMainScreen();
         };
-
         const checkRpeAndNavigate = async () => {
-            if ((selectedFeedback?.during?.max_nprs || 0) !== 0) {
-                let msg = '';
-                if ((selectedFeedback?.during?.max_nprs || 0) >= 6) msg = "Zgłosiłeś podwyższony ból po sesji.\n\nCzy chcesz, aby Asystent przeliczył plan i zmniejszył obciążenie na kolejne dni?";
-                else if ((selectedFeedback?.during?.max_nprs || 0) <= 1) msg = "Sesja była bardzo lekka bólowo.\n\nCzy chcesz, aby Asystent zwiększył intensywność planu?";
-
-                if (msg && confirm(msg)) {
-                    showLoader();
-                    try {
-                        await dataStore.generateDynamicPlan(state.settings.wizardData);
-                        clearPlanFromStorage();
-                        alert("Plan został pomyślnie zaktualizowany przez Asystenta.");
-                    } catch (e) { console.error("[AutoReg] Failed:", e); }
-                }
-            }
             await finalizeProcess();
         };
 

@@ -5,7 +5,7 @@ const { enrichSessionLog, applyPreferenceAndPlanAdaptation } = require('./adapta
 const { calculateUserStats } = require('./stats-service.js');
 
 async function executeSaveSessionTransaction(client, userId, payload) {
-    const { planId, startedAt, completedAt, feedback, exerciseRatings, exerciseDifficultyRatings } = payload;
+    const { planId, startedAt, completedAt, exerciseRatings, exerciseDifficultyRatings } = payload;
     let { session_data } = payload;
 
     await client.query('BEGIN');
@@ -26,14 +26,13 @@ async function executeSaveSessionTransaction(client, userId, payload) {
             settings.phase_manager = phaseState;
         }
 
-        session_data = enrichSessionLog(session_data, feedback, settings);
+        session_data = enrichSessionLog(session_data, settings);
 
         await client.query(`
             INSERT INTO training_sessions (user_id, plan_id, started_at, completed_at, session_data)
             VALUES ($1, $2, $3, $4, $5)
         `, [userId, planId, startedAt, completedAt, JSON.stringify({
             ...session_data,
-            feedback,
             exerciseRatings,
             exerciseDifficultyRatings
         })]);

@@ -36,20 +36,11 @@ function calculateExpectedDuration(repsOrTime, secondsPerRep = 6) {
  * AMPS: SMART INFERENCE ENGINE v2.0
  * Uzupełnia brakujące dane w logu sesji na podstawie kontekstu (czas, trudność).
  */
-function inferMissingSessionData(sessionLog, feedback, userSettings = {}) {
+function inferMissingSessionData(sessionLog, userSettings = {}) {
     if (!Array.isArray(sessionLog)) return sessionLog;
 
     // Pobieramy globalne tempo usera (domyślnie 6s na powtórzenie)
     const pace = userSettings.secondsPerRep || 6;
-
-    let defaultRating = 'ok';
-    let defaultRir = 2;
-
-    if (feedback) {
-        const val = parseInt(feedback.value, 10);
-        if (val === -1) { defaultRating = 'hard'; defaultRir = 1; }
-        else if (val === 1) { defaultRating = 'good'; defaultRir = 4; }
-    }
 
     return sessionLog.map(entry => {
         if (entry.status === 'skipped' || entry.isRest) return entry;

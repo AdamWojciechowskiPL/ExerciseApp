@@ -63,15 +63,6 @@ export const historyStore = {
         return result;
     },
 
-    async patchSessionFeedback24h(sessionId, after24h, note = '') {
-        const result = await callAPI('update-pain-feedback-24h', {
-            method: 'POST',
-            body: { sessionId, after24h, note }
-        });
-        state.loadedMonths.clear();
-        return result;
-    },
-
     async updateExerciseLog(sessionId, exerciseId, tech, rir, difficultyDeviation, rating) {
         const body = { sessionId, exerciseId };
         if (tech !== undefined && tech !== null) body.tech = tech;

@@ -36,7 +36,6 @@ exports.handler = async (event) => {
             planId,
             startedAt,
             completedAt,
-            feedback,
             exerciseRatings,
             exerciseDifficultyRatings,
             ...session_data
@@ -48,7 +47,6 @@ exports.handler = async (event) => {
                 planId,
                 startedAt,
                 completedAt,
-                feedback,
                 exerciseRatings,
                 exerciseDifficultyRatings,
                 session_data

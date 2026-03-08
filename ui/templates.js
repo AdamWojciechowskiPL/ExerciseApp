@@ -559,8 +559,6 @@ export function generateSessionCardHTML(session) {
     }
     const mins = Math.floor(durationNetto / 60);
 
-    const fb = formatFeedback(session);
-
     let sessionLoad = 0;
     if (session.sessionLog) sessionLoad = calculateSystemLoad(session.sessionLog, true);
     if (sessionLoad === 0) sessionLoad = 50;
@@ -617,16 +615,11 @@ export function generateSessionCardHTML(session) {
                     ${statusBadge}
                 </div>
 
-                <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:6px; margin-top:10px;">
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-top:10px;">
                     <div style="${gridItemStyle}">
                         <div style="font-size:1rem; margin-bottom:2px;">⏱️</div>
                         <div style="font-weight:800; font-size:0.9rem; color:#333;">${mins}m</div>
                         <div style="font-size:0.6rem; color:#888; text-transform:uppercase;">Czas Netto</div>
-                    </div>
-                    <div style="${gridItemStyle} background:${fb.bg};">
-                        <div style="font-size:1rem; margin-bottom:2px;">${fb.icon}</div>
-                        <div style="font-weight:800; font-size:0.9rem; color:#333;">${fb.label}</div>
-                        <div style="font-size:0.6rem; color:#888; text-transform:uppercase;">Odczucie</div>
                     </div>
                     <div style="${gridItemStyle}">
                         <div style="font-size:1rem; margin-bottom:2px;">📊</div>

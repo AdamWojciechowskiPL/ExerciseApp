@@ -19,13 +19,33 @@ export const hideLoader = () => {
 // --- Wake Lock API ---
 export const wakeLockManager = {
     wakeLock: null,
-    async request() {
-        if ('wakeLock' in navigator) {
-            try {
-                this.wakeLock = await navigator.wakeLock.request('screen');
-            } catch (err) {
-                console.error(`Błąd Wake Lock: ${err.name}, ${err.message}`);
+    visibilityHandlerAttached: false,
+    isTrainingActive() {
+        return Boolean(screens.training?.classList.contains('active'));
+    },
+    attachVisibilityHandler() {
+        if (this.visibilityHandlerAttached) return;
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && this.isTrainingActive()) {
+                this.request();
             }
+        });
+
+        this.visibilityHandlerAttached = true;
+    },
+    async request() {
+        if (!('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+
+        this.attachVisibilityHandler();
+
+        try {
+            this.wakeLock = await navigator.wakeLock.request('screen');
+            this.wakeLock.addEventListener('release', () => {
+                this.wakeLock = null;
+            });
+        } catch (err) {
+            console.error(`Błąd Wake Lock: ${err.name}, ${err.message}`);
         }
     },
     async release() {

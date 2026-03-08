@@ -1,10 +1,10 @@
 // service-worker.js
 
-// Jedno źródło wersji aplikacji: package.json.
-// Service Worker celowo używa stabilnych nazw cache, żeby uniknąć ręcznego
-// zarządzania numerami wersji w tym pliku przy każdym deployu.
-const STATIC_CACHE_NAME = 'static-assets';
-const DYNAMIC_CACHE_NAME = 'dynamic-content';
+// Wersja cache jest powiązana z wersją aplikacji (package.json).
+// Dzięki temu nowy deploy zawsze dostaje świeży cache shella.
+const APP_VERSION = '5.0.55';
+const STATIC_CACHE_NAME = `static-assets-v${APP_VERSION}`;
+const DYNAMIC_CACHE_NAME = `dynamic-content-v${APP_VERSION}`;
 const LEGACY_CACHE_PREFIXES = ['static-assets-v', 'dynamic-content-v'];
 
 // Minimalny app shell; pozostałe assety są cache'owane runtime podczas fetch.

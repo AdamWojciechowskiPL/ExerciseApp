@@ -37,18 +37,30 @@ function checkUnsavedSummaryNavigation() {
     return true;
 }
 
-function showUpdateNotification(worker) {
-    const notification = document.createElement('div');
-    notification.className = 'update-notification';
-    notification.innerHTML = `
-        <div class="update-content">
-            <span>Dostępna nowa wersja aplikacji!</span>
-            <button id="reload-btn">Odśwież</button>
-        </div>
-    `;
-    document.body.appendChild(notification);
-    document.getElementById('reload-btn').addEventListener('click', () => {
-        worker.postMessage({ type: 'SKIP_WAITING' });
+function activateWaitingServiceWorker(worker) {
+    if (!worker) return;
+    worker.postMessage({ type: 'SKIP_WAITING' });
+}
+
+function wireServiceWorkerAutoActivation(registration) {
+    const handleInstalledWorker = (worker) => {
+        if (!worker || worker.state !== 'installed' || !navigator.serviceWorker.controller) {
+            return;
+        }
+        activateWaitingServiceWorker(worker);
+    };
+
+    if (registration.waiting) {
+        activateWaitingServiceWorker(registration.waiting);
+    }
+
+    registration.addEventListener('updatefound', () => {
+        const newWorker = registration.installing;
+        if (!newWorker) return;
+
+        newWorker.addEventListener('statechange', () => {
+            handleInstalledWorker(newWorker);
+        });
     });
 }
 
@@ -383,15 +395,20 @@ export function registerServiceWorker() {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('/service-worker.js')
             .then((registration) => {
-                if (registration.waiting) showUpdateNotification(registration.waiting);
-                registration.addEventListener('updatefound', () => {
-                    const newWorker = registration.installing;
-                    newWorker.addEventListener('statechange', () => {
-                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                            showUpdateNotification(newWorker);
-                        }
+                wireServiceWorkerAutoActivation(registration);
+
+                const checkForUpdates = () => {
+                    registration.update().catch((error) => {
+                        console.warn('[Service Worker] Update check failed:', error);
                     });
-                });
+                };
+
+                setInterval(checkForUpdates, 60 * 1000);
+                window.addEventListener('focus', checkForUpdates);
+                window.addEventListener('online', checkForUpdates);
+            })
+            .catch((error) => {
+                console.error('[Service Worker] Registration failed:', error);
             });
 
         let refreshing = false;

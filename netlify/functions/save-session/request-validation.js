@@ -1,7 +1,5 @@
 'use strict';
 
-const { validatePainMonitoring } = require('../_data-contract.js');
-
 const ALLOWED_AFFINITY_ACTIONS = new Set(['like', 'dislike']);
 const ALLOWED_DIFFICULTY_RATINGS = new Set([-1, 0, 1]);
 
@@ -43,11 +41,8 @@ function validateSaveSessionRequest(body) {
         return { ok: false, response: { statusCode: 400, body: JSON.stringify({ error: 'Bad Request: Missing required fields' }) } };
     }
 
-    if (feedback) {
-        const validation = validatePainMonitoring(feedback);
-        if (!validation.valid) {
-            return { ok: false, response: { statusCode: 400, body: JSON.stringify({ error: `Feedback Error: ${validation.error}` }) } };
-        }
+    if (feedback !== undefined) {
+        return { ok: false, response: { statusCode: 400, body: JSON.stringify({ error: 'Bad Request: feedback is no longer supported' }) } };
     }
 
     const affinityValidation = validateExerciseRatingsContract(exerciseRatings);

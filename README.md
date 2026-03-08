@@ -1,4 +1,4 @@
-# Aplikacja Treningowa (Smart Rehab PWA) v5.0.53
+# Aplikacja Treningowa (Smart Rehab PWA) v5.0.54
 
 Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening siłowy z nowoczesną rehabilitacją. System wykorzystuje architekturę Serverless (Netlify Functions + Neon DB) oraz silnik **"Adaptive Calendar Engine (ACE)"**, który zamiast sztywnych planów tygodniowych generuje dynamiczne, "kroczące" okno treningowe dopasowane do realnego kalendarza użytkownika.
 
@@ -8,330 +8,21 @@ Zaawansowana aplikacja PWA (Progressive Web App) łącząca inteligentny trening
 * `npm run smoke` — uruchamia smoke check manifestu i check spójności assetów/ścieżek.
 * `npm run test:ci` — pełny gate lokalny: testy + lint + smoke (analogicznie do CI).
 
+## 📌 Aktualny kontrakt zapisu sesji (`save-session`)
+
+Po zapisaniu sesji frontend wysyła wyłącznie aktywnie wspierane pola:
+
+* `exerciseRatings`
+* `exerciseDifficultyRatings`
+* `sessionLog`
+* `startedAt`
+* `completedAt`
+* `notes`
+* pozostałe wymagane metadane sesji (`planId`, `sessionId`, `trainingDayId`, `trainingTitle`, `status`, `netDurationSeconds`)
+
+Pole `feedback` (w tym historyczny format `pain_monitoring`) nie jest już obsługiwane przez API `save-session`.
+
 ---
-
-## 🆕 Aktualizacje v5.0.53
-
-* Podbito wersję aplikacji do `5.0.53`.
-* Zsynchronizowano sekcję „Pełna Struktura Plików” z realnym stanem repo (aktualne ścieżki, nazwy plików i odpowiedzialności modułów).
-* Oznaczono moduły jako **legacy-free** (`✅`) lub nadal w **refactoringu/warstwie przejściowej** (`🔧`), aby ułatwić dalsze porządki architektury.
-
-## 🆕 Aktualizacje v5.0.52
-
-* Podbito wersję aplikacji do `5.0.52`.
-* Dodano prawdziwy lint JavaScript oparty o ESLint (`eslint.config.mjs`) z regułami: `no-unused-vars`, `no-undef`, `no-unreachable`; kontrola nieużywanych importów jest realizowana przez `no-unused-vars` (importy są traktowane jako zmienne).
-* Zachowano osobny smoke syntax check (`tests/smoke/js-syntax-check.js`) i włączono go do `lint:js` obok ESLint.
-* Dodano check spójności assetów i ścieżek (`tests/smoke/asset-paths-check.js`) weryfikujący zasoby linkowane w `index.html` oraz app shell z `service-worker.js`.
-* Zaktualizowano skrypty jakościowe (`lint`, `smoke`, `test:ci`) oraz instrukcję uruchamiania lint/checków lokalnie.
-
-## 🆕 Aktualizacje v5.0.51
-
-* Podbito wersję aplikacji do `5.0.51`.
-* Rozbito monolityczny `dataStore.js` na wyspecjalizowane moduły (`apiClient.js`, `historyStore.js`, `preferencesStore.js`, `settingsStore.js`, `integrationsStore.js`) i zachowano istniejący kontrakt UI przez cienki facade eksportowany z `dataStore.js`.
-* Odchudzono `app.js`: wydzielono `bootstrapApp()`, `registerGlobalEventHandlers()`, `initAuthenticatedFlow()`, `initUnauthenticatedFlow()`, `registerServiceWorker()` oraz `loadSvgSprite()`, pozostawiając `main()` jako cienki entrypoint.
-
-## 🆕 Aktualizacje v5.0.50
-
-* Podbito wersję aplikacji do `5.0.50`.
-* Rozbito `netlify/functions/generate-plan.js` na moduły domenowe (`generate-plan/scoring.js`, `generate-plan/candidate-filtering.js`, `generate-plan/prescription.js`, `generate-plan/plan-builder.js`, `generate-plan/plan-validator.js`) i pozostawiono w pliku endpointu cienką warstwę orkiestracji bez zmian kontraktu API.
-* Rozbito `netlify/functions/save-session.js` na warstwy odpowiedzialności: walidację requestu (`save-session/request-validation.js`), transakcję (`save-session/session-transaction.js`), adaptację (`save-session/adaptation-service.js`) oraz statystyki (`save-session/stats-service.js`).
-
-## 🆕 Aktualizacje v5.0.49
-
-* Podbito wersję aplikacji do `5.0.49`.
-* Domknięto ekran Pomocy jako oficjalną ścieżkę nawigacji: dodano wejścia „Pomoc” w górnej i dolnej nawigacji oraz podłączono routing w `app.js`.
-* Usunięto ghost reference do nieistniejącego ekranu analytics z mapy `screens` w `dom.js`.
-* Dodano test regresyjny UI (`tests/test_ui_help_navigation_cleanup.v2.js`) weryfikujący dostępność ekranu Help i brak martwych referencji analytics.
-
-## 🆕 Aktualizacje v5.0.48
-
-* Podbito wersję aplikacji do `5.0.48`.
-* Ujednolicono źródło manifestu PWA do `manifest.json` (spójnie w `index.html`, Service Workerze i repo), eliminując odwołania do nieistniejącego `manifest.webmanifest`.
-* Usunięto redundancję ikon SVG: aplikacja korzysta z jednego mechanizmu (`/icons/sprite.svg` ładowanego przez `app.js`), a inline sprite został usunięty z `index.html`.
-* Dodano smoke check `tests/smoke/manifest-check.js`, który wykrywa brak `manifest.json` w CI.
-
-## 🆕 Aktualizacje v5.0.47
-
-* Podbito wersję aplikacji do `5.0.47`.
-* Usunięto warstwę compatibility `shared/clinical-rules-core.js` (legacy shim CommonJS przekierowujący do `shared/clinical-core/index.js`), ponieważ stara ścieżka importu nie była już używana.
-* Zaktualizowano dokumentację architektury repo: kliniczny rdzeń FE/BE jest utrzymywany bezpośrednio w `shared/clinical-core/`, a `clinicalEngine.js` i `netlify/functions/_clinical-rule-engine.js` działają jako adaptery.
-
-## 🆕 Aktualizacje v5.0.46
-
-* Podbito wersję aplikacji do `5.0.46`.
-* Uporządkowano semantykę `save-session`: komentarz przy aktualizacji pace stats opisuje teraz faktyczne zachowanie synchroniczne po `COMMIT` (brak mylącego „Fire & Forget”).
-* Dodano pomiar kosztu requestu `save-session` (`totalDurationMs` oraz `paceUpdateDurationMs`) logowany po stronie backendu, aby świadomie monitorować wpływ synchronicznej aktualizacji pace stats.
-
-## 🆕 Aktualizacje v5.0.45
-
-* Podbito wersję aplikacji do `5.0.45`.
-* Ujednolicono warstwę requestów w `dataStore.js`: `loadAppContent()` korzysta teraz z tego samego helpera `callAPI()` co pozostałe endpointy.
-* Wydzielono współdzielone helpery synchronizacji historii (`mergeSessionIntoUserProgress`, `mergeSessionsIntoUserProgress`) i użyto ich w `initialize()`, `getHistoryForMonth()` oraz `loadRecentHistory()`.
-* Usunięto duplikację reguł domenowych FE przy aktualizacji logu ćwiczenia: frontend synchronizuje `sessionLog` na podstawie odpowiedzi backendu (`updatedLog`) zamiast ponownie wyliczać rating/deviation lokalnie.
-
-## 🆕 Aktualizacje v5.0.44
-
-* Podbito wersję aplikacji do `5.0.44`.
-* Zrefaktoryzowano `training.js` na mniejsze moduły odpowiedzialności: casting (`training/castSync.js`), backup i resume (`training/sessionBackup.js`), generator flat planu (`training/flatPlanGenerator.js`) oraz most UI (`training/uiBridge.js`).
-* Uproszczono orchestrację sesji w `training.js`, zachowując dotychczasowy UX i publiczne API modułu (`startExercise`, `moveToNextExercise`, `resumeFromBackup`, `startModifiedTraining`).
-
-## 🆕 Aktualizacje v5.0.43
-
-* Podbito wersję aplikacji do `5.0.43`.
-* Uszczelniono kontrakt globalnego stanu w `state.js`: dodano pełny, jawny shape pól runtime (`isPaused`, `currentTrainingDayId`, `timer.initialDuration`, `timer.countUp`, `userStats`) oraz wartości startowe dla timera/sesji.
-* Dodano kontrolowane merge dla obiektów stanowych (`mergeSettings`, `mergeSessionParams`), dzięki czemu runtime nie dopisuje pól poza kontraktem.
-* Zaktualizowano miejsca odtwarzania sesji i inicjalizacji danych (`dataStore.js`, `training.js`, `ui/screens/training.js`) tak, by mutacje odbywały się w ramach zdefiniowanego shape stanu.
-
-## 🆕 Aktualizacje v5.0.42
-
-* Podbito wersję aplikacji do `5.0.42`.
-* Rozbito `netlify/functions/generate-plan.js` na moduły odpowiedzialności: walidację requestu (`generate-plan/request-validation.js`) oraz warstwę repository/DB (`generate-plan/repositories.js`), a handler endpointu korzysta teraz z tych modułów bez zmiany kontraktu API.
-* Dodano testy jednostkowe dla nowych modułów: `tests/test_generate_plan_request_validation.v2.js` i `tests/test_generate_plan_repositories.v2.js`.
-
-## 🆕 Aktualizacje v5.0.41
-
-* Podbito wersję aplikacji do `5.0.41`.
-* Dodano standardowe skrypty jakościowe w `package.json`: `lint`, `lint:css`, `lint:js`, `smoke`, `test:ci`.
-* Podłączono `stylelint` do realnego użycia (konfiguracja `.stylelintrc.json`).
-* Dodano workflow CI `.github/workflows/quality-gate.yml`, który egzekwuje lint + testy/smoke jako minimalny quality gate dla PR.
-
-## 🆕 Aktualizacje v5.0.40
-
-* Podbito wersję aplikacji do `5.0.40`.
-* Ujednolicono wyświetlanie wersji w UI: footer w `index.html` nie ma już hardcodowanego numeru, tylko renderuje wersję runtime z `package.json`.
-* Naprawiono app-shell w Service Workerze: zamiast nieistniejącego `/manifest.json` cache'owany jest poprawny manifest PWA; dodano też `/package.json`, aby wersja była dostępna także offline.
-
-## 🆕 Aktualizacje v5.0.39
-
-* Ujednolicono wersjonowanie: jedynym źródłem prawdy jest teraz `package.json` (`version: 5.0.39`).
-* Service Worker nie wymaga już ręcznego podbijania nazwy cache przy deployu — używa stałych nazw cache i automatycznie czyści legacy cache z prefiksem wersji.
-* Ograniczono ręcznie utrzymywaną listę `APP_SHELL_ASSETS` do krytycznego shella aplikacji; pozostałe assety są dociągane i odświeżane runtime.
-
-## 🆕 Aktualizacje v29.4.35
-
-* Naprawiono inicjalizację auth helpera backendu: brak `AUTH0_ISSUER_BASE_URL` nie wywołuje już błędu na etapie importu modułu.
-* Klient JWKS jest teraz tworzony leniwie (dopiero przy faktycznej weryfikacji tokena), co odblokowuje uruchamianie testów klinicznych bez pełnego kontekstu Auth0.
-* Podbito wersję aplikacji do `5.0.38`.
-
-## 🆕 Aktualizacje v29.4.34
-
-* Podbito wersję aplikacji (`package.json`) do `5.0.37`.
-* `netlify-cli` przeniesiono z `dependencies` do `devDependencies`, bo jest to narzędzie deweloperskie.
-* Zweryfikowano użycie `axios`: pakiet jest nadal wymagany przez Netlify Functions (`strava-*`).
-
-## 🆕 Aktualizacje v29.4.33
-
-* Krok `Cele Extra` (`secondary_goals`) w wizardzie jest teraz opcjonalny, aby nie blokować flow przy braku dodatkowych preferencji.
-* `secondary_goals` nadal wpływa na generator jako lekkie, niekliniczne nudges, gdy użytkownik je poda.
-* Podbito wersję aplikacji i zsynchronizowano dokumentację.
-
-## 🆕 Aktualizacje v29.4.32
-
-* Podłączono `secondary_goals` z wizarda do generatora jako lekkie, niekliniczne nudges wag kategorii (posture/core_side/energy/strength/flexibility), dzięki czemu pole nie jest już martwymi danymi.
-* Zsynchronizowano opis rankingu: `difficulty_rating = hard` ma priorytet nad dodatnią preferencją (`affinity`) i nie pozwala na dodatni bonus netto.
-* Utrzymano guardrails bezpieczeństwa bez zmian; nowe nudges dotyczą wyłącznie miękkiej warstwy rankingowej i nie służą do diagnozowania.
-
-## 🆕 Aktualizacje v29.4.31
-
-* Zmieniono priorytet scoringu w `calculateScoreComponents()`: przy `difficulty_rating = 1` dodatni `affinity` jest clampowany do poziomu neutralnego (`<= 1.0`), więc sygnał „za trudne” ma pierwszeństwo.
-* Utrzymano dotychczasowe zachowanie dla `difficulty_rating = -1` (niewielki bonus) oraz bez zmian pozostawiono AMPS (`micro_dose`/`devolution`) i filtry kliniczne/phase-fit.
-* Dodano test regresyjny potwierdzający brak dodatniego bonusu netto dla kombinacji `difficulty_rating = 1` + dodatni `affinity_score`.
-
-## 🆕 Aktualizacje v29.4.30
-
-* Osłabiono wpływ `affinity_score` na ranking generatora: mapowanie zmieniono z `1 + affScore * 0.02` na łagodniejsze `1 + affScore * 0.005`.
-* Dodano twardy clamp mnożnika affinity do zakresu `0.80–1.20`, co ogranicza skokowe zmiany rankingu po pojedynczym `like/dislike`.
-* Guardrails kliniczne i filtry bezpieczeństwa pozostały bez zmian; korekta dotyczy wyłącznie etapu soft-scoringu (`affinity`) w `calculateScoreComponents()`.
-
-## 🆕 Aktualizacje v29.4.29
-
-* Urealniono wpływ sygnału `difficulty_rating` w rankingu generatora: zmieniono mnożniki z `hard=0.94` / `easy=1.03` na `hard=0.88` / `easy=1.07`.
-* Zachowano kliniczne guardrails bez zmian — korekta dotyczy wyłącznie miękkiego etapu scoringu rankingowego (`difficultyAdjust`) i nie omija filtrów bezpieczeństwa.
-* Dodano regresję rankingową na fixture’ach porównującą wariant neutralny vs `hard` vs `easy` i asercje zmian top-k/pozycji targetu.
-
-## 🆕 Aktualizacje v29.4.28
-
-* Dodano regresję E2E/integration dla przepływu `save-session -> generate-plan`: zapis `exerciseDifficultyRatings` z `difficultyRating=1` powoduje spadek score/rankingu ćwiczenia w kolejnym generowaniu planu.
-* Dodano drugi scenariusz E2E/integration dla `difficultyRating=-1`, który potwierdza lekki bonus rankingowy i wzrost score względem neutralnych kandydatów.
-* Testy asercyjnie sprawdzają `breakdown.difficultyAdjust` (0.94 / 1.03) z debug scoringu generatora, dzięki czemu regresja wykrywa utratę wpływu `difficulty_rating` w `calculateScoreComponents()`.
-
-## 🆕 Aktualizacje v29.4.27
-
-* Rozdzielono i utwardzono kontrakt `save-session`: `exerciseRatings` obsługuje wyłącznie affinity (`like`/`dislike`), a `exerciseDifficultyRatings` wyłącznie trudność (`difficultyRating` = `-1|0|1`).
-* Backend waliduje oba strumienie wejściowe i zwraca `400` dla wartości spoza dozwolonego zbioru (bez cichego zgadywania intencji użytkownika).
-* Dodano contract tests dla poprawnych i błędnych payloadów oraz regresję potwierdzającą kompatybilność scenariuszy legacy bez `exerciseDifficultyRatings`.
-
-## 🆕 Aktualizacje v29.4.26
-
-* Usunięto martwą gałąź budowania payloadu affinity opartą o nieistniejące akcje typu `hard`; kanał `exerciseRatings` zawiera już wyłącznie `like/dislike`.
-* Ujednolicono budowę payloadu w Summary: affinity (`exerciseRatings`) i trudność (`exerciseDifficultyRatings`) są składane przez osobne, jawne ścieżki.
-* Dodano regresyjny test jednostkowy potwierdzający rozdzielenie kanałów feedbacku i brak przecieku sygnału `hard` do pola `action`.
-
-## 🆕 Aktualizacje v29.4.25
-
-* Domknięto trwały zapis sygnału trudności po sesji: frontend wysyła teraz jawny payload `exerciseDifficultyRatings` (`-1/0/1`) niezależnie od `exerciseRatings` (like/dislike).
-* Backend `save-session` i AMPS `updatePreferences` zapisują `difficulty_rating` do `user_exercise_preferences` bez mieszania z `affinity_score`; reset (`0`) jest utrwalany jako neutralny sygnał rankingowy.
-* Dodano testy mapowania easy/hard/reset → payload, test backendowego update preferencji oraz test integracyjny przepływu `summary -> save-session` z przekazaniem `exerciseDifficultyRatings`.
-
-## 🆕 Aktualizacje v29.4.24
-
-* Doprecyzowano status Injection/Ejection AMPS: w kodzie i dokumentacji nie ma już deklaracji sugerujących aktywne natychmiastowe podmiany bieżącego planu (mechanizm pozostaje wyłączony, adaptacja działa przez preferencje i kolejne generacje).
-* Rozszerzono testy rankingowe dla `session_component_weights`: zarówno `stability`, jak i `breathing` mają teraz regresje potwierdzające realną zmianę top-k kandydatów.
-* Dodano testy regresyjne dla diagnoz kolana typu safety-only (`meniscus_tear`, `acl_rehab`, `mcl_rehab`, `lcl_rehab`, `jumpers_knee`) oraz test potwierdzający, że `chondromalacia` i `knee_oa` pozostają diagnozami weighted.
-
-## 🆕 Aktualizacje v29.4.23
-
-* Utrzymano `difficulty_rating` jako wtórny, miękki sygnał rankingowy w `calculateScoreComponents()` (łagodna kara/bonus), bez dublowania logiki AMPS i bez wpływu na filtry kliniczne/fazowe.
-* Dodano testy end-to-end AMPS dla scenariuszy: pierwszy `hard` → `micro_dose`, kolejny `hard` → `devolution`, `easy` → `evolution` zgodnie z polityką progresji.
-* Dodano testy potwierdzające respektowanie override'ów przez generator: `micro_dose` redukuje serie, a `devolution` podmienia wariant ćwiczenia w wygenerowanym planie.
-
-## 🆕 Aktualizacje v29.4.22
-
-* Rozszerzono budowę `historyMap` w generatorze planu o pola `difficultyDeviation`, `currentSet`, `totalSets` oraz `tech`, aby `applyMicroLoading()` dostawało pełny kontekst ostatniej serii dla danego ćwiczenia.
-* Doprecyzowano wybór wpisu historii dla tej samej sesji: preferowana jest późniejsza seria (`currentSet`), co pozwala odróżnić sygnał „hard early” od „hard on last set”.
-* Uodporniono `applyMicroLoading()` na brak danych liczbowych przez jawne parsowanie `rir/currentSet/totalSets` i bezpieczne fallbacki.
-
-## 🆕 Aktualizacje v29.4.21
-
-* Domknięto flow AMPS w kolejności: pierwszy sygnał `hard` zapisuje `micro_dose` (redukcja objętości), a dewolucja wariantu jest uruchamiana dopiero przy kolejnym negatywnym sygnale dla tego samego ćwiczenia.
-* Generator planu konsumuje teraz pełne override AMPS: `micro_dose` wymusza obniżenie objętości (serie), a `devolution`/`evolution` podmieniają wariant ćwiczenia podczas wyboru do planu.
-* Ujednolicono semantykę AMPS do redukcji objętości (`sets/reps/time`) zamiast zmiany częstotliwości sesji tygodniowych.
-
-## 🆕 Aktualizacje v29.4.20
-
-* Usunięto bezwarunkowy boost `core_anti_extension` wynikający wyłącznie z lokalizacji bólu lędźwi (`low_back` / `lumbar` / `lumbar_general`).
-* Preferencja dla `core_anti_extension` jest teraz warunkowa i oparta o odpowiedź objawową: `tolerancePattern`, licznik `directionalNegative24hCount`, trend objawów (`symptom_trend`) oraz `acuteGuard`.
-* Zachowano neutralne boosty lędźwi dla oddechu/mobilności (`breathing`, `spine_mobility`, `hip_mobility`) bez mechanicznego biasu wyprostnego.
-
-## 🆕 Aktualizacje v29.4.19
-
-* Usunięto bezwarunkowy bias `core_anti_extension` oparty wyłącznie na etykiecie `disc_herniation` / `spondylolisthesis`; preferencja kierunku jest teraz zależna od `tolerancePattern` i sygnałów 24h.
-* Podłączono komponenty wizarda `stability` i `breathing` do realnych wag generatora (wpływają na ranking kategorii stabilizacji oraz oddech/relaks).
-* Wpięto `difficulty_rating` z modułu affinity do scoringu generatora jako miękki modyfikator (kara dla "za trudne", lekki bonus dla "za łatwe").
-* Uporządkowano komunikację diagnoz kolana: część etykiet działa jako **safety-only** (guardrails), bez obietnicy osobnego profilu wag.
-* Urealniono dokumentację AMPS: natychmiastowe Injection/Ejection bieżącego planu nie jest aktywne, a adaptacja działa przez preferencje i kolejne generacje planu.
-
-## 🆕 Aktualizacje v29.4.18
-
-* Doprecyzowano bramkowanie high-intensity po stronie wizarda, aby nie blokować ścieżki wyłącznie za niski poziom aktywności bez dodatniego screeningu medycznego.
-* Ujednolicono frontend z backendem dla kryterium aktywności (`inactive`/`light_regular`) w kontekście dodatniego screeningu i blokady high-intensity.
-* Rozszerzono body map o osobny punkt `neck` (obok `cervical`), aby usunąć kolejną nieosiągalną z UI wartość kanoniczną lokalizacji bólu.
-* Rozszerzono test kontraktowy UI/BE dla body map o walidację obecności `neck`.
-
-## 🆕 Aktualizacje v29.4.17
-
-* Rozdzielono screening ogólnomedyczny na dwie klasy ryzyka: **hard stop** (`chest_pain_exertional`, `syncope_exertional`, `dyspnea_disproportionate`, `recent_cardiac_event`, `uncontrolled_hypertension`) oraz **conditional/cautious flow** (`cvd`, `metabolic`, `renal`).
-* Backend zwraca teraz precyzyjne kody 422 dla bezpieczeństwa medycznego: `RED_FLAGS_HARD_STOP`, `MEDICAL_SCREENING_HARD_STOP`, `MEDICAL_SCREENING_CONDITIONAL_REQUIRES_CAUTIOUS_FLOW`, `MEDICAL_SCREENING_HIGH_INTENSITY_BLOCK`.
-* Dodano nowe wymagane pole wizarda `current_activity_status` (inactive/light_regular/regular_moderate/regular_vigorous), walidowane end-to-end FE → payload → backend.
-* Rozszerzono mapę ciała w UI o aktywne lokalizacje `shoulder` i `ankle`, aby usunąć rozjazd względem wartości kanonicznych backendu.
-* Zmieniono logikę ROM kolana na model `hard|soft`: ciężkie przypadki i pogorszenie 24h utrzymują twarde limity, stabilne przypadki dostają miękką karę scoringową zamiast automatycznego odcięcia.
-* Dodano/rozszerzono testy kontraktowe i regresyjne dla nowych kodów bezpieczeństwa medycznego, pola aktywności, body mapy oraz progresji/regresji ROM kolana.
-
-## 🆕 Aktualizacje v29.4.16
-
-* Naprawiono legacy check w generatorze: logika wag dla OA kolana używa teraz wyłącznie canonical `knee_oa` (z zachowaniem wsparcia aliasu wejściowego `osteoarthritis` na etapie normalizacji payloadu).
-* Utrwalono jawną odpowiedź negatywną w screeningu ogólnomedycznym: backend i frontend normalizują `exercise_medical_clearance` tak, aby stan `none` był zachowany i poprawnie odtwarzany po ponownym otwarciu wizarda.
-* Zmieniono copy kroku `p4d` na neutralny komunikat o standardowym screeningu bezpieczeństwa (bez sugestii warunkowości flow).
-* Dodano testy regresyjne dla `medical_diagnosis=['knee_oa']`, aliasu `osteoarthritis` oraz cyklu normalizacji odpowiedzi `none` w screeningu.
-
-## 🆕 Aktualizacje v29.4.15
-
-* Dodano systemowy test kontraktu `wizard input → clinical rules → generator`, który pilnuje spójności pól wymaganych przez clinical core, słowników FE/BE (`medical_diagnosis`, `red_flags`, `physical_restrictions`, screening ogólnomedyczny) oraz przejścia znormalizowanego payloadu przez guardrails generatora bez cichej utraty pól bezpieczeństwa.
-* Ujednolicono copy w wizardzie i podsumowaniu, aby aplikacja jednoznacznie komunikowała „dobór planu ćwiczeń” oraz neutralne komunikaty bezpieczeństwa, bez sugerowania stawiania diagnozy przez algorytm.
-
-## 🆕 Aktualizacje v29.4.14
-
-* Dodano nowy krok wizarda `p4d` (screening ogólnomedyczny) z jawnymi odpowiedziami bezpieczeństwa (`exercise_medical_clearance`) wymaganymi przed zakończeniem flow.
-* Usunięto filtrowanie listy rozpoznań po `pain_locations` — krok `p4` renderuje pełną listę wspieranych diagnoz niezależnie od aktualnie zaznaczonej lokalizacji bólu.
-* Ujednolicono słownik diagnoz UI↔backend: dodano m.in. `spondylolisthesis`, `knee_oa`, `mcl_rehab`, `lcl_rehab` oraz aliasy normalizacji po stronie backendu.
-* Backend blokuje generację planów high-intensity (np. `fat_loss`/`conditioning`/`metabolic`) przy dodatnim screeningu medycznym, zwracając neutralny komunikat o konieczności konsultacji medycznej.
-* Rozszerzono testy kontraktowe i regresyjne o nowe pola screeningu, regułę blokady high-intensity oraz spójność listy diagnoz i aliasów.
-
-## 🆕 Aktualizacje v29.4.13
-
-* Wpięto `directional_bias` do realnego rankingu generatora: kandydat przechodzi filtr jako soft bias, ale otrzymuje jawny mnożnik kary w `calculateScoreComponents()` przy pojedynczym sygnale i bez potwierdzonej nietolerancji 24h.
-* Zachowano eskalację bezpieczeństwa: przy `directionalNegative24hCount >= 2` directional mismatch nadal przechodzi w hard block (`biomechanics_mismatch`) na etapie klinicznej dostępności.
-* Dodano regresje dla directional bias scoringu (soft penalty, brak kary bez sygnału, hard block po 24h, fallback przy małej puli kandydatów).
-* Naprawiono entrypoint testów: `npm test` uruchamia teraz rzeczywisty runner (`node tests/run.js`) z automatycznym wykryciem plików `test_*.js`.
-
-## 🆕 Aktualizacje v29.4.12
-
-* Poprawiono flow wizarda dla ścieżki bez bólu: skip-list nie pomija już kroku `p4c` (przebieg objawów), dzięki czemu przechodzi test guardrails dla zachowania kroków klinicznych.
-* Utrzymano walidację explicit-answer dla `p4b` (objawy alarmowe) oraz blokadę generowania planu przy red flags.
-
-## 🆕 Aktualizacje v29.4.11
-
-* Wydzielono współdzielony moduł `shared/clinical-core/` z jednym źródłem reguł klinicznych (`contracts.js` + `index.js`) dla FE i BE, wraz z jawnym kontraktem powodów decyzji i flag kontekstu (`acuteGuard`, `toleranceBias`).
-* `clinicalEngine.js` oraz `netlify/functions/_clinical-rule-engine.js` pełnią rolę cienkich adapterów mapujących lokalny shape danych do wspólnego core bez zmiany publicznego API wywołań.
-* Dodano test kontraktu `tests/test_clinical_core_contract.v2.js` oraz rozszerzono parity suite o przypadek `acute_worsening` i asercję flag kontekstu FE/BE.
-* Dodano workflow CI `.github/workflows/clinical-parity.yml`, który uruchamia parity suite przy zmianach w clinical core i blokuje cichy rozjazd FE/BE.
-
-## 🆕 Aktualizacje v29.4.10
-
-* Ujednolicono FE/BE Clinical Engine do współdzielonego modułu `shared/clinical-core/` — kluczowe reguły (`detectTolerancePattern`, budowa kontekstu, `passesTolerancePattern`, `checkExerciseAvailability`, severe pain, knee/neck/overhead restrictions) są utrzymywane w jednym miejscu.
-* Frontend (`clinicalEngine.js`) i backend (`_clinical-rule-engine.js`) korzystają teraz z tej samej implementacji rdzenia reguł, co eliminuje drift decyzji allowed/reason między warstwami.
-* Rozszerzono test parity FE/BE o macierz przypadków bezpieczeństwa i tolerancji (knee pain, disc herniation, severe pain, no_kneeling, no_twisting, overhead, sciatica, tolerance soft bias, follow-up escalation).
-* Dodano regresję dla nowych pól objawowych (`symptom_onset`, `symptom_duration`, `symptom_trend`) obejmującą scenariusze porównawcze ostre/przewlekłe oraz test odporności na brak pól.
-
-## 🆕 Aktualizacje v29.4.9
-
-* Dodano do wizarda kliniczne pola przebiegu objawów: `symptom_onset`, `symptom_duration`, `symptom_trend` i zapis tych danych w `wizardData`/payloadzie.
-* Backend oraz frontend silnika klinicznego używają tej samej logiki oceny ostrego + pogarszającego się przebiegu do ostrożniejszego pierwszego planu (`difficultyCap`), bez używania tych pól do diagnozy.
-* `tolerancePattern` został zmieniony z twardego filtra na soft bias (`reason: directional_bias`) przy pojedynczym sygnale; hard-block wraca dopiero po powtarzalnym pogorszeniu 24h (`directional_negative_24h_count >= 2`).
-* Rozszerzono testy o scenariusze porównawcze (acute vs chronic stable), soft-vs-confirmed directional preference oraz kontrakt FE/BE 1:1 dla kluczowych przypadków bezpieczeństwa.
-
-## 🆕 Aktualizacje v29.4.8
-
-* Naprawiono ścieżkę bez bólu w wizardzie: kroki `p4` (rozpoznanie) i `p4b` (objawy alarmowe) nie są już pomijane, więc użytkownik może przekazać diagnozę także w trybach focus/prevention/return-to-sport.
-* Usunięto reset `medical_diagnosis` do `['none']` podczas pomijania kroków bólowych; wartość rozpoznania pozostaje w payloadzie `generate-plan` również przy `pain_locations=[]` i `pain_intensity=0`.
-* Rozszerzono czerwone flagi o kluczowe scenariusze triage (onkologia, infekcja, ryzyko złamania/kruchość, duży i mały uraz z kruchością) oraz ujednolicono kanoniczną listę wartości UI↔backend.
-* Backend waliduje red flags względem wspólnego słownika kanonicznego i nadal zwraca `422 INELIGIBLE_FOR_PLAN` przy wykryciu dowolnej flagi alarmowej.
-* Dodano testy regresyjne dla: no-pain + diagnosis, pełnej listy red flags oraz działania przeciwwskazań diagnozowo-zależnych przy zerowym bólu.
-
-## 🆕 Aktualizacje v29.4.7
-
-* Usunięto wpływ legacy feedbacku (`symptom` / `pain` / `pain_during`) na standardowy flow generatora: analiza statusu bólu działa wyłącznie na `pain_monitoring`.
-* Zakończono ścieżkę migracyjną dla zapisu sesji: `save-session` i kontrakt danych nie akceptują już legacy feedbacku (bez fallbacków feature-flag).
-* Ujednolicono `focus_locations` pod realne wejścia UI (`core`, `glute`) oraz usunięto martwe gałęzie scoringu dla `abs` / `glutes`.
-* Dodano test regresyjny pilnujący spójności UI↔backend dla focusów i mapowania aliasów legacy do kanonicznych wartości.
-
-## 🆕 Aktualizacje v29.4.6
-
-* Zmieniono copy w intro wizarda na neutralne: aplikacja "dobiera plan ćwiczeń" na podstawie odpowiedzi, bez sugestii stawiania diagnozy.
-* Domknięto 24h follow-up bezpośrednio po zapisie sesji: użytkownik otrzymuje modal check-in z pełnym zestawem pól `after24h` i zapisem do `pain_monitoring`.
-* Rozszerzono testy kontraktowe o przypadki handlerów (`save-session`, `update-pain-feedback-24h`) oraz walidację brakujących pól boolean w `after24h`.
-
-## 🆕 Aktualizacje v29.4.5
-
-* Wymuszono jawną odpowiedź w kroku `Objawy alarmowe` (`p4b`) przez walidację opartą o kanoniczne opcje red flags; przejście dalej bez wyboru jest zablokowane.
-* Dla kroku `p4b` dopuszczalne odpowiedzi „jawne” to `none` albo dowolna konkretna flaga alarmowa (jedna lub wiele).
-* Rozszerzono test regresyjny UI guardrails o asercję logiki explicit-answer dla red flags oraz utrzymano blokadę generacji planu przy wykrytych objawach alarmowych.
-
-## 🆕 Aktualizacje v29.4.4
-
-* Usunięto niespójność focusów: kreator ma teraz szybkie cele `Brzuch (core)` i `Pośladki`, a backend normalizuje aliasy `core/abs` oraz `glute/glutes` do wspólnego scoringu.
-* Ujednolicono słownictwo medyczne w wizardzie: krok `Objawy alarmowe` oraz komunikaty końcowe konsekwentnie używają terminów „objawy alarmowe”, „rozpoznanie zgłoszone” i „plan ćwiczeń”.
-* Dodano regresyjne testy aliasów bólu lędźwi (`low_back`, `lumbar`, `lumbar_general`) dla backendowego i frontendowego silnika klinicznego oraz scoringu generatora.
-
-## 🆕 Aktualizacje v29.4.3
-
-* Dodano wymuszony UX follow-up 24h dla feedbacku `pain_monitoring` (baner + modal check-in na Dashboardzie) z polami: `after24h.max_nprs`, `delta_vs_baseline`, `stiffness_increased`, `swelling`, `night_pain`, `neuro_red_flags`.
-* Frontend zapisuje check-in przez endpoint `update-pain-feedback-24h` (alias do patch API), a backend waliduje pełny zestaw pól `after24h` przy patchu.
-* Kontrakt `validatePainMonitoring()` działa teraz fail-closed dla legacy feedbacku; tymczasowe dopuszczenie legacy wymaga feature flagi `ALLOW_LEGACY_PAIN_FEEDBACK=true` i obowiązuje tylko do daty sunset.
-* Dodano test kontraktowy dla schematu `pain_monitoring`/`after24h` (walidacja payloadów poprawnych oraz odrzucanie błędnych typów i legacy bypass).
-
-## 🆕 Aktualizacje v29.4.2
-
-* Naprawiono błąd `Uncaught SyntaxError: unexpected token: identifier` w module wizarda poprzez zastąpienie importu JSON z `assert { type: 'json' }` kompatybilnym modułem ES (`shared/wizard-canonical-values.js`).
-* Dodano centralny słownik kanonicznych wartości wizarda (`shared/wizard-canonical-values.json`) używany przez frontend i backend.
-* Wprowadzono normalizację payloadu z wizarda (w tym alias `lumar_general` → `lumbar_general`) przed filtrowaniem klinicznym i scoringiem.
-* Rozszerzono debug mode generatora o telemetrykę decyzji filtra klinicznego (`passed/failed` + powód odrzucenia na poziomie ćwiczenia).
-* Dodano nowe testy jednostkowe i contract testy dla mapowań klinicznych oraz przepływu wizard → payload → generator.
-
-
-* W kroku „Czerwone flagi” dodano twardą walidację wyboru (`p4b`) – nie da się przejść dalej bez jawnej odpowiedzi.
-* Ujednolicono komunikaty w wizardzie na bardziej neutralne (m.in. „Rozpoznanie zgłoszone”, „Analiza odpowiedzi”, „Dobór planu ćwiczeń”).
-* Dodano testy regresyjne red flags: frontend guardrails + API `422 INELIGIBLE_FOR_PLAN` dla payloadu z objawami alarmowymi.
 
 ## 🚀 Kluczowe Funkcjonalności
 
@@ -536,7 +227,7 @@ Projekt posiada zestaw testów regresyjnych w katalogu `/tests`:
 │       ├── wizard-canonical-values.js   # Słowniki kanoniczne wizarda (JS)
 │       ├── wizard-canonical-values.json # Słowniki kanoniczne wizarda (JSON źródłowy)
 │       ├── exercise-difficulty-rating.mjs # Kontrakt i normalizacja difficulty rating
-│       └── summary-feedback-payload.mjs   # Kontrakt payloadu feedbacku sesji
+│       └── summary-feedback-payload.mjs   # Kontrakt payloadu ocen ćwiczeń (affinity)
 │
 ├── BACKEND (NETLIFY FUNCTIONS):
 │   └── netlify/functions/
@@ -545,7 +236,6 @@ Projekt posiada zestaw testów regresyjnych w katalogu `/tests`:
 │       ├── get-*.js / update-*.js / delete-*.js / strava-*.js # Endpointy API i integracje
 │       ├── _auth-helper.js          # Auth helper + db pool
 │       ├── _clinical-rule-engine.js # Adapter BE do shared/clinical-core
-│       ├── _data-contract.js        # Kontrakty wejścia/wyjścia API
 │       ├── _pacing-engine.js        # Silnik pacingu czasowego
 │       ├── _phase-manager.js        # Zarządzanie fazami planu
 │       ├── _fatigue-calculator.js   # Kalkulacja zmęczenia i obciążenia
@@ -725,10 +415,6 @@ Analityka tempa:
     URL=http://localhost:8888
     ```
 
-   Opcjonalnie (tymczasowa migracja legacy feedbacku):
-    ```env
-    ALLOW_LEGACY_PAIN_FEEDBACK=false
-    ```
 4.  Uruchom lokalnie:
     ```bash
     netlify dev

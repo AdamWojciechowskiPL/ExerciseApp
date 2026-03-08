@@ -7,9 +7,9 @@ const {
     applyImmediatePlanAdjustmentsInMemory
 } = require('../_amps-engine.js');
 
-function enrichSessionLog(session_data, feedback, settings) {
+function enrichSessionLog(session_data, settings) {
     if (session_data.sessionLog) {
-        session_data.sessionLog = inferMissingSessionData(session_data.sessionLog, feedback, settings);
+        session_data.sessionLog = inferMissingSessionData(session_data.sessionLog, settings);
     }
     return session_data;
 }

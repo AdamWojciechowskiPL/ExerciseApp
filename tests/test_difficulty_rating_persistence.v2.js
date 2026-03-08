@@ -108,10 +108,6 @@ test('save-session forwards exerciseDifficultyRatings to preferences update and 
     checkDetraining: (state) => state,
   });
 
-  const contractPath = stubModule('_data-contract.js', {
-    validatePainMonitoring: () => ({ valid: true }),
-  });
-
   const ampsPath = stubModule('_amps-engine.js', {
     inferMissingSessionData: (log) => log,
     updatePreferences: async (...args) => { capturedUpdateArgs = args; },
@@ -128,7 +124,6 @@ test('save-session forwards exerciseDifficultyRatings to preferences update and 
     delete require.cache[authPath];
     delete require.cache[statsPath];
     delete require.cache[phasePath];
-    delete require.cache[contractPath];
     delete require.cache[ampsPath];
   });
 
@@ -174,10 +169,6 @@ test('save-session rejects invalid affinity contract payload', async (t) => {
     checkDetraining: (state) => state,
   });
 
-  const contractPath = stubModule('_data-contract.js', {
-    validatePainMonitoring: () => ({ valid: true }),
-  });
-
   const ampsPath = stubModule('_amps-engine.js', {
     inferMissingSessionData: (log) => log,
     updatePreferences: async () => {},
@@ -194,7 +185,6 @@ test('save-session rejects invalid affinity contract payload', async (t) => {
     delete require.cache[authPath];
     delete require.cache[statsPath];
     delete require.cache[phasePath];
-    delete require.cache[contractPath];
     delete require.cache[ampsPath];
   });
 
@@ -237,10 +227,6 @@ test('save-session rejects invalid difficulty contract payload', async (t) => {
     checkDetraining: (state) => state,
   });
 
-  const contractPath = stubModule('_data-contract.js', {
-    validatePainMonitoring: () => ({ valid: true }),
-  });
-
   const ampsPath = stubModule('_amps-engine.js', {
     inferMissingSessionData: (log) => log,
     updatePreferences: async () => {},
@@ -257,7 +243,6 @@ test('save-session rejects invalid difficulty contract payload', async (t) => {
     delete require.cache[authPath];
     delete require.cache[statsPath];
     delete require.cache[phasePath];
-    delete require.cache[contractPath];
     delete require.cache[ampsPath];
   });
 
@@ -310,10 +295,6 @@ test('save-session keeps backward compatibility when exerciseDifficultyRatings i
     checkDetraining: (state) => state,
   });
 
-  const contractPath = stubModule('_data-contract.js', {
-    validatePainMonitoring: () => ({ valid: true }),
-  });
-
   const ampsPath = stubModule('_amps-engine.js', {
     inferMissingSessionData: (log) => log,
     updatePreferences: async (...args) => { capturedUpdateArgs = args; },
@@ -330,7 +311,6 @@ test('save-session keeps backward compatibility when exerciseDifficultyRatings i
     delete require.cache[authPath];
     delete require.cache[statsPath];
     delete require.cache[phasePath];
-    delete require.cache[contractPath];
     delete require.cache[ampsPath];
   });
 

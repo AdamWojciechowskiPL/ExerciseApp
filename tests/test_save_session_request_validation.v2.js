@@ -24,3 +24,20 @@ test('validateSaveSessionRequest: rejects invalid difficulty rating payload', ()
   assert.equal(result.response.statusCode, 400);
   assert.match(result.response.body, /difficultyRating/);
 });
+
+test('validateSaveSessionRequest: rejects legacy feedback payload', () => {
+  const result = validation.validateSaveSessionRequest({
+    planId: 'p1',
+    startedAt: '2024-01-01T10:00:00.000Z',
+    completedAt: '2024-01-01T11:00:00.000Z',
+    feedback: {
+      type: 'pain_monitoring',
+      schema_version: 1,
+      during: { max_nprs: 3 }
+    }
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.response.statusCode, 400);
+  assert.match(result.response.body, /feedback is no longer supported/);
+});

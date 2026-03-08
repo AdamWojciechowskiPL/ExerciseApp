@@ -253,116 +253,6 @@ const closeGlobalMenu = () => {
 };
 
 
-const MS_24H = 24 * 60 * 60 * 1000;
-
-const parseDateOrNull = (value) => {
-    if (!value) return null;
-    const dt = new Date(value);
-    if (Number.isNaN(dt.getTime())) return null;
-    return dt;
-};
-
-const shouldPromptPainFollowUp24h = (session) => {
-    if (!session || session.status !== 'completed') return false;
-    const fb = session.feedback;
-    if (!fb || fb.type !== 'pain_monitoring') return false;
-    if (fb.after24h) return false;
-
-    const completedAt = parseDateOrNull(session.completedAt);
-    if (!completedAt) return false;
-    return (Date.now() - completedAt.getTime()) >= MS_24H;
-};
-
-const renderPainFollowUp24hModal = (session, onDone = () => { }) => {
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-
-    overlay.innerHTML = `
-        <div class="modal-content" style="max-width:560px; width:min(94vw,560px); max-height:90vh; overflow:auto;">
-            <h3 style="margin-bottom:6px;">Check-in po 24h</h3>
-            <p style="font-size:0.9rem; color:#64748b; margin-bottom:1rem;">
-                Uzupełnij proszę objawy po ostatniej sesji, aby plan był bezpiecznie dostrajany.
-            </p>
-            <form id="pain-24h-form" class="settings-form">
-                <div class="form-group">
-                    <label for="after24h-max-nprs" style="display:flex; justify-content:space-between; font-weight:700;">
-                        <span>Maksymalny ból po 24h (NPRS)</span>
-                        <strong id="after24h-max-nprs-value">0</strong>
-                    </label>
-                    <input type="range" id="after24h-max-nprs" min="0" max="10" value="0" style="width:100%;">
-                </div>
-
-                <div class="form-group">
-                    <label for="after24h-delta">Zmiana vs baseline (-10 do 10)</label>
-                    <input id="after24h-delta" type="number" min="-10" max="10" step="1" value="0" required>
-                </div>
-
-                <div class="form-group" style="display:grid; gap:8px;">
-                    <label class="checkbox-label"><input type="checkbox" id="stiffness-increased"> Sztywność wzrosła</label>
-                    <label class="checkbox-label"><input type="checkbox" id="swelling"> Obrzęk</label>
-                    <label class="checkbox-label"><input type="checkbox" id="night-pain"> Ból nocny</label>
-                    <label class="checkbox-label"><input type="checkbox" id="neuro-red-flags"> Objawy neurologiczne (red flags)</label>
-                </div>
-
-                <div class="form-group">
-                    <label for="after24h-note">Notatka (opcjonalnie)</label>
-                    <textarea id="after24h-note" rows="2" maxlength="200" placeholder="Co się zmieniło po 24h?"></textarea>
-                </div>
-
-                <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:1rem;">
-                    <button type="button" class="action-btn secondary" id="close-24h-modal-btn">Później</button>
-                    <button type="submit" class="action-btn" id="save-24h-modal-btn">Zapisz check-in</button>
-                </div>
-            </form>
-        </div>
-    `;
-
-    const close = () => {
-        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
-    };
-
-    const slider = overlay.querySelector('#after24h-max-nprs');
-    const sliderLabel = overlay.querySelector('#after24h-max-nprs-value');
-    slider.addEventListener('input', () => {
-        sliderLabel.textContent = slider.value;
-    });
-
-    overlay.querySelector('#close-24h-modal-btn').addEventListener('click', close);
-
-    overlay.querySelector('#pain-24h-form').addEventListener('submit', async (ev) => {
-        ev.preventDefault();
-
-        const saveBtn = overlay.querySelector('#save-24h-modal-btn');
-        saveBtn.disabled = true;
-        saveBtn.textContent = 'Zapisywanie...';
-
-        const after24h = {
-            max_nprs: parseInt(slider.value, 10) || 0,
-            delta_vs_baseline: parseInt(overlay.querySelector('#after24h-delta').value, 10) || 0,
-            stiffness_increased: !!overlay.querySelector('#stiffness-increased').checked,
-            swelling: !!overlay.querySelector('#swelling').checked,
-            night_pain: !!overlay.querySelector('#night-pain').checked,
-            neuro_red_flags: !!overlay.querySelector('#neuro-red-flags').checked
-        };
-
-        try {
-            await dataStore.patchSessionFeedback24h(session.sessionId, after24h, overlay.querySelector('#after24h-note').value || '');
-            if (session.feedback && session.feedback.type === 'pain_monitoring') {
-                session.feedback.after24h = { ...after24h, updated_at: new Date().toISOString() };
-            }
-            alert('Dziękujemy! Check-in po 24h został zapisany.');
-            close();
-            onDone();
-        } catch (err) {
-            console.error('24h follow-up save failed:', err);
-            alert('Nie udało się zapisać check-in po 24h. Spróbuj ponownie.');
-            saveBtn.disabled = false;
-            saveBtn.textContent = 'Zapisz check-in';
-        }
-    });
-
-    document.body.appendChild(overlay);
-};
 
 
 function attachLongPressHandlers(element, dataCallback) {
@@ -498,27 +388,7 @@ export const renderMainScreen = async (isLoading = false) => {
         const detailsBtn = missionWrapper.querySelector('.view-details-btn');
         if (detailsBtn) detailsBtn.addEventListener('click', () => renderDayDetailsScreen(todayISO, () => { navigateTo('main'); renderMainScreen(); }));
 
-        if (shouldPromptPainFollowUp24h(completedSession)) {
-            const reminder = document.createElement('div');
-            reminder.className = 'pain-24h-reminder';
-            reminder.style.cssText = 'margin:12px 0 4px; padding:12px; border:1px solid #fde68a; background:#fffbeb; border-radius:12px; display:flex; align-items:center; justify-content:space-between; gap:10px;';
-            reminder.innerHTML = `
-                <div>
-                    <strong style="display:block;">⏰ Follow-up 24h wymagany</strong>
-                    <span style="font-size:0.85rem; color:#78350f;">Uzupełnij ból i flagi bezpieczeństwa po 24h od sesji.</span>
-                </div>
-                <button type="button" class="action-btn" id="open-24h-followup-btn" style="margin:0; white-space:nowrap;">Uzupełnij teraz</button>
-            `;
-            missionWrapper.prepend(reminder);
-            const followupBtn = reminder.querySelector('#open-24h-followup-btn');
-            if (followupBtn) {
-                followupBtn.addEventListener('click', () => {
-                    renderPainFollowUp24hModal(completedSession, () => {
-                        reminder.remove();
-                    });
-                });
-            }
-        }
+
 
         // 2. Event Listener dla Karty (Delegacja Zdarzeń)
         missionWrapper.addEventListener('click', async (e) => {

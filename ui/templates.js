@@ -465,8 +465,6 @@ function renderGroupedExerciseRow(exerciseGroup, sessionRatings, sessionId = nul
             ? 'background:#fef2f2; color:#991b1b; border:1px solid #ef4444;'
             : 'background:#f8fafc; color:#64748b; border:1px solid #e2e8f0;';
 
-    const uniqueId = representativeSet.uniqueId; // Używamy ID pierwszej serii jako kotwicy
-
     const difficultyBadge = difficultyIndicator
         ? `<span class="difficulty-indicator" style="${difficultyBadgeStyle} padding:2px 8px; border-radius:4px; font-size:0.7rem; font-weight:600; cursor:pointer;" data-id="${realId}" data-current="${difficultyClass}" title="Kliknij aby zmienić">${difficultyIndicator}</span>`
         : '';
@@ -481,7 +479,7 @@ function renderGroupedExerciseRow(exerciseGroup, sessionRatings, sessionId = nul
     let romInfo = '';
     if (representativeSet.romConstraint) {
         const label = representativeSet.romConstraint.instruction || `${representativeSet.romConstraint.limitDegrees}°`;
-        romInfo = `<span style="font-size:0.65rem; color:#0369a1; background:#e0f2fe; padding:1px 4px; border-radius:4px; margin-left:4px; font-weight:700;">📏 ${label}</span>`;
+        romInfo = `<span class="history-rom-badge">📏 ${label}</span>`;
     }
 
     // --- TABELA SERII ---
@@ -499,10 +497,10 @@ function renderGroupedExerciseRow(exerciseGroup, sessionRatings, sessionId = nul
             : (idx + 1);
 
         return `
-            <div class="set-row">
-                <div class="set-cell num">${setLabel}</div>
-                <div class="set-cell target">${set.reps_or_time}</div>
-                <div class="set-cell time">${timeStr}</div>
+            <div class="set-chip">
+                <span class="set-chip-label">${setLabel}</span>
+                <span class="set-chip-target">${set.reps_or_time}</span>
+                <span class="set-chip-time">${timeStr}</span>
             </div>
         `;
     }).join('');
@@ -511,23 +509,24 @@ function renderGroupedExerciseRow(exerciseGroup, sessionRatings, sessionId = nul
     <div class="rating-card history-mode" data-id="${realId}" data-session-id="${sessionId || ''}">
         <div class="rating-card-main">
             <div class="rating-info">
-                <div style="line-height:1.2;">
-                    <span class="rating-name">${displayName}</span> ${romInfo}
+                <div class="rating-heading">
+                    <span class="rating-name" title="${displayName}">${displayName}</span>
+                    ${romInfo}
                     ${difficultyBadge}
                 </div>
                 <div class="history-meta-row">
-                    <span style="font-size:0.7rem; color:#94a3b8;">
+                    <span class="history-set-count">
                         ${sets.length} ${sets.length === 1 ? 'seria' : (sets.length < 5 ? 'serie' : 'serii')}
                     </span>
-                    <span class="dynamic-score-val" style="font-size:0.65rem; font-weight:700; color:${scoreColor}; transition: color 0.2s;">${scoreContent}</span>
+                    <span class="dynamic-score-val" style="color:${scoreColor};">${scoreContent}</span>
                 </div>
             </div>
             <div class="rating-actions-group">
-                <div class="difficulty-deviation-group history-mode" style="gap:2px;">
+                <div class="difficulty-deviation-group history-mode" aria-label="Ocena trudności">
                     <button class="deviation-btn-hist easy ${isEasyActive}" data-id="${realId}" data-type="easy" title="Oznacz jako łatwe">⬆️</button>
                     <button class="deviation-btn-hist hard ${isHardActive}" data-id="${realId}" data-type="hard" title="Oznacz jako trudne">⬇️</button>
                 </div>
-                <div class="btn-group-affinity">
+                <div class="btn-group-affinity" aria-label="Ocena ćwiczenia">
                     <button class="rate-btn-hist affinity-btn ${isLikeActive}" data-id="${realId}" data-action="like">👍</button>
                     <button class="rate-btn-hist affinity-btn ${isDislikeActive}" data-id="${realId}" data-action="dislike">👎</button>
                 </div>
@@ -594,49 +593,43 @@ export function generateSessionCardHTML(session) {
         </div>
     ` : '';
 
-    const gridItemStyle = `
-        background: rgba(255,255,255,0.6); padding: 4px; border-radius: 6px; text-align: center;
-        border: 1px solid rgba(0,0,0,0.05); display: flex; flex-direction: column;
-        align-items: center; justify-content: center; min-height: 50px;
-    `;
-
     return `
-    <div class="calendar-sheet completed-mode" style="border:none; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 1.5rem;">
-        <div class="workout-context-card" style="background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%); border: 1px solid var(--success-color); border-radius: 12px; padding: 0; overflow:hidden;">
-            <div style="padding: 1rem; border-bottom: 1px solid rgba(0,0,0,0.05);">
-                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <div style="font-size:1.5rem;">🏆</div>
+    <div class="calendar-sheet completed-mode history-session-sheet">
+        <div class="workout-context-card history-session-card">
+            <div class="history-session-header">
+                <div class="history-session-topline">
+                    <div class="history-session-title-wrap">
+                        <div class="history-session-icon">🏆</div>
                         <div>
-                            <h3 style="margin:0; font-size:1rem; color:#166534; line-height:1.2;">${title}</h3>
-                            <div style="font-size:0.7rem; color:#666;">${dateStr}</div>
+                            <h3 class="history-session-title">${title}</h3>
+                            <div class="history-session-date">${dateStr}</div>
                         </div>
                     </div>
                     ${statusBadge}
                 </div>
 
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-top:10px;">
-                    <div style="${gridItemStyle}">
-                        <div style="font-size:1rem; margin-bottom:2px;">⏱️</div>
-                        <div style="font-weight:800; font-size:0.9rem; color:#333;">${mins}m</div>
-                        <div style="font-size:0.6rem; color:#888; text-transform:uppercase;">Czas Netto</div>
+                <div class="history-session-kpis">
+                    <div class="history-kpi-card">
+                        <div class="history-kpi-icon">⏱️</div>
+                        <div class="history-kpi-value">${mins}m</div>
+                        <div class="history-kpi-label">Czas Netto</div>
                     </div>
-                    <div style="${gridItemStyle}">
-                        <div style="font-size:1rem; margin-bottom:2px;">📊</div>
-                        <div style="width:80%; height:4px; background:#e5e7eb; border-radius:2px; margin-bottom:2px; overflow:hidden;">
-                            <div style="width:${sessionLoad}%; height:100%; background:${loadColor};"></div>
+                    <div class="history-kpi-card">
+                        <div class="history-kpi-icon">📊</div>
+                        <div class="history-load-track">
+                            <div class="history-load-fill" style="width:${sessionLoad}%; background:${loadColor};"></div>
                         </div>
-                        <div style="font-weight:800; font-size:0.9rem; color:#333;">${sessionLoad}%</div>
-                        <div style="font-size:0.6rem; color:#888; text-transform:uppercase;">Obciążenie</div>
+                        <div class="history-kpi-value">${sessionLoad}%</div>
+                        <div class="history-kpi-label">Obciążenie</div>
                     </div>
                 </div>
                 ${notesHtml}
             </div>
-            <div class="history-exercise-list" style="background:#fff; padding: 2px 0;">
+            <div class="history-exercise-list">
                 ${exercisesHtml}
             </div>
-            <div style="padding: 8px; background:#f9fafb; border-top:1px solid #f3f4f6; display:flex; justify-content:flex-end;">
-                <button class="delete-session-btn" data-session-id="${session.sessionId}" style="background:transparent; border:none; color:#ef4444; font-size:0.75rem; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:4px; opacity:0.6; transition:opacity 0.2s;">
+            <div class="history-session-footer">
+                <button class="delete-session-btn" data-session-id="${session.sessionId}">
                     <svg width="14" height="14"><use href="#icon-trash"/></svg> Usuń
                 </button>
             </div>

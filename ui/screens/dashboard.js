@@ -19,6 +19,7 @@ import { generateBioProtocol } from '../../protocolGenerator.js';
 import { renderMoveDayModal, renderDetailAssessmentModal } from '../modals.js';
 import dataStore from '../../dataStore.js';
 import { initWizard } from '../wizard.js';
+import { handleHistoryInteractions } from '../historyInteractions.js';
 
 // --- POMOCNICZE FUNKCJE STORAGE ---
 // savePlanToStorage is now imported from utils.js
@@ -392,172 +393,14 @@ export const renderMainScreen = async (isLoading = false) => {
 
         // 2. Event Listener dla Karty (Delegacja Zdarzeń)
         missionWrapper.addEventListener('click', async (e) => {
+            const handledBySharedHistoryLayer = await handleHistoryInteractions(e, {
+                root: missionWrapper,
+                fallbackSessionId: completedSession.sessionId,
+                openDetailAssessmentModal: renderDetailAssessmentModal
+            });
 
-            // --- A. EDYCJA PARAMETRÓW AMPS (BADGE: RIR/TECH) ---
-            const ampsBadge = e.target.closest('.amps-inline-badge');
-            if (ampsBadge) {
-                e.stopPropagation();
-
-                // Szukamy ID sesji (pobieramy z przycisku usuwania, który jest renderowany w generateCompletedMissionCardHTML)
-                const deleteBtn = missionWrapper.querySelector('.delete-session-btn');
-                const sessionId = deleteBtn ? deleteBtn.dataset.sessionId : completedSession.sessionId;
-
-                const row = ampsBadge.closest('.rating-card');
-                const exerciseId = row ? row.dataset.id : null;
-                const ratingNameEl = row ? row.querySelector('.rating-name') : null;
-                const exerciseName = ratingNameEl ? ratingNameEl.innerText : "Ćwiczenie";
-
-                if (sessionId && exerciseId) {
-                    renderDetailAssessmentModal(exerciseName, async (newTech, newRir) => {
-                        // Optymistyczna aktualizacja UI
-                        const icon = (newRir === 0) ? '👎' : ((newRir >= 3) ? '👍' : '👌');
-                        const originalContent = ampsBadge.innerHTML;
-
-                        ampsBadge.innerHTML = `<span class="pulsate-slow" style="font-size:0.6rem">⏳ Zapis...</span>`;
-
-                        try {
-                            const res = await dataStore.updateExerciseLog(sessionId, exerciseId, newTech, newRir);
-                            if (res) {
-                                ampsBadge.innerHTML = `${icon} T:${newTech} RIR:${newRir}`;
-                                ampsBadge.style.backgroundColor = "#dcfce7"; // Sukces
-                                ampsBadge.style.borderColor = "#bbf7d0";
-                                setTimeout(() => {
-                                    ampsBadge.style.backgroundColor = "#f1f5f9"; // Powrót do standardu
-                                    ampsBadge.style.borderColor = "#e2e8f0";
-                                }, 1500);
-                            } else {
-                                throw new Error("Brak odpowiedzi");
-                            }
-                        } catch (err) {
-                            console.error("AMPS Update Failed:", err);
-                            alert("Nie udało się zapisać oceny.");
-                            ampsBadge.innerHTML = originalContent;
-                        }
-                    });
-                }
+            if (handledBySharedHistoryLayer) {
                 return;
-            }
-
-            // --- C. DEVIATION BUTTONS (DASHBOARD) ---
-            const deviationBtn = e.target.closest('.deviation-btn-hist');
-            if (deviationBtn) {
-                e.stopPropagation();
-
-                const uniqueId = deviationBtn.dataset.uniqueId;
-                const type = deviationBtn.dataset.type; // 'easy' or 'hard'
-                const isActive = deviationBtn.classList.contains('active');
-                const card = deviationBtn.closest('.rating-card');
-                const deviationGroup = card.querySelector('.difficulty-deviation-group');
-                const difficultyIndicator = card.querySelector('.difficulty-indicator');
-
-                // Toggle all buttons in this group off first
-                deviationGroup.querySelectorAll('.deviation-btn-hist').forEach(btn => btn.classList.remove('active'));
-
-                if (!isActive) {
-                    // Activate this button
-                    deviationBtn.classList.add('active');
-
-                    // Update the difficulty indicator
-                    if (difficultyIndicator) {
-                        if (type === 'easy') {
-                            difficultyIndicator.textContent = '⬆️ Łatwe';
-                            difficultyIndicator.style.background = '#ecfdf5';
-                            difficultyIndicator.style.color = '#166534';
-                            difficultyIndicator.style.borderColor = '#10b981';
-                        } else if (type === 'hard') {
-                            difficultyIndicator.textContent = '⬇️ Trudne';
-                            difficultyIndicator.style.background = '#fef2f2';
-                            difficultyIndicator.style.color = '#991b1b';
-                            difficultyIndicator.style.borderColor = '#ef4444';
-                        }
-                    }
-
-                    const sessionId = card.dataset.sessionId;
-                    const exerciseId = card.dataset.id;
-
-                    if (sessionId) {
-                        let newRir = undefined;
-                        let newRating = undefined;
-                        if (type === 'easy') { newRir = 4; newRating = 'good'; }
-                        else if (type === 'hard') { newRir = 0; newRating = 'hard'; }
-
-                        dataStore.updateExerciseLog(sessionId, exerciseId, undefined, newRir, type, newRating)
-                            .then(res => { if (!res) console.warn("Dash Update might have failed"); })
-                            .catch(err => console.error("Dash deviation update failed:", err));
-                    }
-                } else {
-                    // Reset to OK
-                    if (difficultyIndicator) {
-                        difficultyIndicator.textContent = '👌 OK';
-                        difficultyIndicator.style.background = '#f8fafc';
-                        difficultyIndicator.style.color = '#64748b';
-                        difficultyIndicator.style.borderColor = '#e2e8f0';
-                    }
-
-                    const sessionId = card.dataset.sessionId;
-                    const exerciseId = card.dataset.id;
-
-                    if (sessionId) {
-                        dataStore.updateExerciseLog(sessionId, exerciseId, undefined, 2, null, 'ok')
-                            .catch(err => console.error("Dash deviation reset failed:", err));
-                    }
-                }
-                return;
-            }
-
-            // --- B. OBSŁUGA KCIUKÓW (AFFINITY RATING) ---
-            const rateBtn = e.target.closest('.rate-btn-hist');
-            if (rateBtn) {
-                e.stopPropagation();
-                const exerciseId = rateBtn.dataset.id;
-                const action = rateBtn.dataset.action;
-                const isAffinity = rateBtn.classList.contains('affinity-btn');
-                const allRowsForExercise = missionWrapper.querySelectorAll(`.rating-card[data-id="${exerciseId}"]`);
-
-                if (isAffinity) {
-                    const SCORE_LIKE = 15;
-                    const SCORE_DISLIKE = 30;
-                    const isTurningOff = rateBtn.classList.contains('active');
-                    const currentRow = rateBtn.closest('.rating-card');
-                    const siblingBtn = action === 'like' ? currentRow.querySelector('[data-action="dislike"]') : currentRow.querySelector('[data-action="like"]');
-                    const isSwitching = siblingBtn && siblingBtn.classList.contains('active');
-                    let delta = 0;
-
-                    if (action === 'like') {
-                        if (isTurningOff) delta = -SCORE_LIKE;
-                        else { delta = SCORE_LIKE; if (isSwitching) delta += SCORE_DISLIKE; }
-                    } else if (action === 'dislike') {
-                        if (isTurningOff) delta = SCORE_DISLIKE;
-                        else { delta = -SCORE_DISLIKE; if (isSwitching) delta -= SCORE_LIKE; }
-                    }
-
-                    let currentScore = state.userPreferences[exerciseId]?.score || 0;
-                    let newScore = Math.max(-100, Math.min(100, currentScore + delta));
-                    if (!state.userPreferences[exerciseId]) state.userPreferences[exerciseId] = {};
-                    state.userPreferences[exerciseId].score = newScore;
-
-                    allRowsForExercise.forEach(row => {
-                        const likeBtn = row.querySelector('[data-action="like"]');
-                        const dislikeBtn = row.querySelector('[data-action="dislike"]');
-                        likeBtn.classList.remove('active');
-                        dislikeBtn.classList.remove('active');
-                        if (!isTurningOff) {
-                            if (action === 'like') likeBtn.classList.add('active');
-                            if (action === 'dislike') dislikeBtn.classList.add('active');
-                        }
-
-                        const scoreSpan = row.querySelector('.dynamic-score-val');
-                        let scoreText = newScore > 0 ? `+${newScore}` : `${newScore}`;
-                        let scoreColor = newScore > 0 ? '#10b981' : (newScore < 0 ? '#ef4444' : '#6b7280');
-
-                        if (scoreSpan) {
-                            scoreSpan.textContent = newScore !== 0 ? `[${scoreText}]` : '';
-                            scoreSpan.style.color = scoreColor;
-                        }
-                    });
-
-                    try { await dataStore.updatePreference(exerciseId, 'set', newScore); } catch (err) { console.error("Błąd zapisu punktów:", err); }
-                }
             }
         });
 
